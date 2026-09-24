@@ -8,6 +8,14 @@
     PR = PACK.base_price,
     T0 = PACK.t0,
     CUT = (Date.parse(PACK.cutoff) / 1000 - T0) / BASE;
+  // Diagonal through the resolution lattice: least-squares fit of
+  // log2(median column price range / 125) against n over the full history,
+  // n = 6..13, measured on the 2026-09-24 extraction (exponent 0.49).
+  const ISO_A = -1.06,
+    ISO_B = 0.486,
+    N_MAX = 20,
+    M_MAX = 9;
+  const diagonalM = (n) => clamp(Math.round(ISO_A + ISO_B * n), 0, M_MAX);
   const canvas = el("canvas"),
     ctx = canvas.getContext("2d"),
     reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -36,6 +44,8 @@
       refit: true,
       lens: false,
       table: false,
+      diagonal: false,
+      lensDepth: 2,
       evidenceKind: "poc",
       barrier: 1,
       caseFilter: "all",
@@ -559,8 +569,8 @@
     return sources[S.dataset];
   }
   function limits() {
-    S.n = clamp(Math.round(S.n), 0, 22);
-    S.m = clamp(Math.round(S.m), 0, 12);
+    S.n = clamp(Math.round(S.n), 0, N_MAX);
+    S.m = clamp(Math.round(S.m), 0, M_MAX);
     S.horizon = [1, 2, 4, 8].includes(S.horizon) ? S.horizon : 1;
   }
   function requestedBounds() {
@@ -649,7 +659,12 @@
             realData: true,
             cutoff: PACK.cutoff,
           },
-          privateContent: { version: 3, ...S },
+          privateContent: {
+            version: 3,
+            ...S,
+            crumbs: nav.crumbs,
+            crumbIndex: nav.crumbIndex,
+          },
         })
         .catch(() => {
           el("copy-status").textContent =
@@ -659,7 +674,17 @@
   function restore(snapshot) {
     const x = snapshot?.privateContent;
     if (!x || x.version !== 3) return false;
-    for (const k of ["n", "m", "tA", "tB", "pA", "pB", "horizon", "barrier"])
+    for (const k of [
+      "n",
+      "m",
+      "tA",
+      "tB",
+      "pA",
+      "pB",
+      "horizon",
+      "barrier",
+      "lensDepth",
+    ])
       if (Number.isFinite(x[k])) S[k] = x[k];
     for (const k of [
       "poc",
@@ -669,11 +694,31 @@
       "select",
       "auto",
       "coupled",
+      "diagonal",
       "refit",
       "lens",
       "table",
     ])
       if (typeof x[k] === "boolean") S[k] = x[k];
+    if (Array.isArray(x.crumbs)) {
+      nav.crumbs = x.crumbs
+        .filter(
+          (c) =>
+            c &&
+            typeof c.label === "string" &&
+            c.state &&
+            ["tA", "tB", "pA", "pB", "n", "m"].every((k) =>
+              Number.isFinite(c.state[k]),
+            ),
+        )
+        .slice(-8)
+        .map((c) => ({ ...c, key: navSnapshotKey(c.state) }));
+      nav.crumbIndex = clamp(
+        Number.isInteger(x.crumbIndex) ? x.crumbIndex : nav.crumbs.length - 1,
+        -1,
+        nav.crumbs.length - 1,
+      );
+    }
     if (["volume", "flow", "geometry", "density", "delta"].includes(x.mode))
       S.mode = x.mode;
     if (["context", "evidence"].includes(x.tab)) S.tab = x.tab;
@@ -749,6 +794,7 @@
       S.auto = false;
       S.n = n;
       S.m = m;
+      if (S.diagonal && m !== diagonalM(n)) S.diagonal = false;
       S.selection = [
         Math.floor(a + 0.5),
         Math.floor(b + 0.5),
@@ -1101,9 +1147,9 @@
     el("tr").textContent = dur(BASE * 2 ** S.n);
     el("pr").textContent = price(PR * 2 ** S.m) + " USDT";
     el("tminus").disabled = S.n === 0;
-    el("tplus").disabled = S.n === 22;
+    el("tplus").disabled = S.n === N_MAX;
     el("pminus").disabled = S.m === 0;
-    el("pplus").disabled = S.m === 12;
+    el("pplus").disabled = S.m === M_MAX;
     qsa("[data-window]").forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.window === S.window)),
     );
@@ -1632,26 +1678,18 @@
     );
   }
 
-  function evidenceColumns(n, m, p0, p1, end) {
+  function evidenceColumns(n, m, end) {
     const ts = 2 ** n,
       owners = new Map(),
       byColumn = new Map(),
-      used = new Map(),
-      excluded = [];
+      used = new Map();
     const candidates = Object.values(sources)
       .filter((src) => src.n <= n && src.m <= m)
       .sort((a, b) => a.n - b.n || a.m - b.m);
     for (const src of candidates) {
-      const ps = 2 ** src.m,
-        meta = PACK.blocks[src.id],
+      const meta = PACK.blocks[src.id],
         start = meta?.b0 ?? src.col0 * 2 ** src.n,
         stop = Math.min(end, meta?.b1 ?? src.col1 * 2 ** src.n);
-      if (p0 % ps !== 0 || p1 % ps !== 0) {
-        excluded.push(
-          src.id + " needs " + price(ps * PR) + " USDT price edges",
-        );
-        continue;
-      }
       const c0 = Math.ceil(start / ts),
         c1 = Math.floor(stop / ts);
       if (c1 <= c0) continue;
@@ -1662,7 +1700,7 @@
           owned.add(c);
         }
       if (!owned.size) continue;
-      const grouped = aggregate(src, n, m, [c0 * ts, c1 * ts, p0, p1]);
+      const grouped = aggregate(src, n, m, [c0 * ts, c1 * ts, 0, Infinity]);
       let accepted = 0;
       for (const col of grouped.cols)
         if (owned.has(col.c) && col.v > 0 && col.poc !== null) {
@@ -1675,7 +1713,6 @@
     return {
       cols: [...byColumn.values()].sort((a, b) => a.c - b.c),
       sources: [...used.values()],
-      excluded,
       covered: owners.size,
     };
   }
@@ -1704,17 +1741,15 @@
         .map((src) => src.id + ":" + src.cells.length)
         .sort()
         .join(","),
-      key = ["v3", n, m, a, b[2], b[3], barrier, loaded].join("|");
+      key = ["v4", n, m, a, barrier, loaded].join("|");
     if (evidenceCache.has(key)) return evidenceCache.get(key);
-    const history = evidenceColumns(n, m, b[2], b[3], (a + 1) * ts),
+    const history = evidenceColumns(n, m, (a + 1) * ts),
       cols = history.cols,
       ai = cols.findIndex((c) => c.c === a);
     const shared = {
       a,
       from: cols[0]?.c,
-      priceBounds: [b[2], b[3]],
       sources: history.sources,
-      excluded: history.excluded,
       covered: history.covered,
     };
     if (ai < 1)
@@ -1722,7 +1757,7 @@
         ...shared,
         error:
           ai < 0
-            ? "No completed POC at this anchor within the selected price window."
+            ? "No completed POC at this anchor."
             : "Not enough earlier columns in loaded history.",
       };
     const prior = cols.slice(0, ai),
@@ -1744,8 +1779,7 @@
     if (!state)
       return {
         ...shared,
-        error:
-          "The anchor has no preceding POC in a contiguous column within the selected price window.",
+        error: "The anchor has no preceding POC in a contiguous column.",
       };
     const cases = Array.from({ length: 9 }, () => []),
       matched = Array.from({ length: 9 }, () => []);
@@ -1882,8 +1916,8 @@
       overview: "full-history overview",
     };
     el("evidence-provenance").textContent = e.sources?.length
-      ? `${e.sources.map((s) => sourceNames[s.id] || s.id).join(" + ")} · deduplicated · ${price(e.priceBounds[0] * PR)}–${price(e.priceBounds[1] * PR)} USDT${e.excluded.length ? " · " + e.excluded.join("; ") : ""}`
-      : "No loaded history represents this grid and price window.";
+      ? `${e.sources.map((s) => sourceNames[s.id] || s.id).join(" + ")} · deduplicated · all price rows, independent of the visible window`
+      : "No loaded history represents this grid.";
     el("evidence-note").textContent = e.error
       ? "Choose a completed column containing trades."
       : (supported
@@ -2131,8 +2165,21 @@
     crumbs: [],
     crumbIndex: -1,
     planeKey: "",
+    planeStatus: "",
     bound: false,
   };
+  function stepAnchor(delta) {
+    S.anchor = clamp(
+      (S.anchor || activeCutoff()) + delta * stepT(),
+      stepT(),
+      Math.floor(CUT / stepT()) * stepT(),
+    );
+    S.tab = "evidence";
+    hover = null;
+    el("tip").hidden = true;
+    update();
+    save();
+  }
   function pixelLevel(level, span, pixels, max) {
     let n = clamp(Math.round(level), 0, max),
       size = (2 ** n * pixels) / span;
@@ -2156,8 +2203,8 @@
   function autoLevel() {
     if (!S.auto || !(S.tB > S.tA) || !(S.pB > S.pA)) return false;
     const g = navGeometry(),
-      n = pixelLevel(S.n, S.tB - S.tA, g.w, 22),
-      m = pixelLevel(S.m, S.pB - S.pA, g.h, 12),
+      n = pixelLevel(S.n, S.tB - S.tA, g.w, N_MAX),
+      m = S.diagonal ? diagonalM(n) : pixelLevel(S.m, S.pB - S.pA, g.h, M_MAX),
       changed = n !== S.n || m !== S.m;
     if (changed) {
       transition = reduce
@@ -2204,13 +2251,10 @@
   }
   function initPlane() {
     const g = navGeometry(),
-      n0 = clamp(S.n - 2, 0, 18),
-      m0 = clamp(S.m - 2, 0, 8),
       key = [
-        n0,
-        m0,
         S.n,
         S.m,
+        S.diagonal,
         Math.round(g.w),
         Math.round(g.h),
         S.tA,
@@ -2223,23 +2267,19 @@
     if (key === nav.planeKey) return;
     nav.planeKey = key;
     const frag = document.createDocumentFragment(),
-      corner = document.createElement("span");
-    corner.textContent = "USDT";
-    frag.append(corner);
-    for (let n = n0; n < n0 + 5; n++) {
-      const h = document.createElement("span");
-      h.textContent = dur(BASE * 2 ** n);
-      frag.append(h);
-    }
-    for (let m = m0 + 4; m >= m0; m--) {
-      const h = document.createElement("span");
-      h.textContent = price(PR * 2 ** m);
-      frag.append(h);
-      for (let n = n0; n < n0 + 5; n++) {
+      label = (textContent) => {
+        const span = document.createElement("span");
+        span.textContent = textContent;
+        return span;
+      };
+    for (let m = M_MAX; m >= 0; m--) {
+      frag.append(label(String(m)));
+      for (let n = 0; n <= N_MAX; n++) {
         const b = document.createElement("button"),
           px = (2 ** n * g.w) / (S.tB - S.tA),
           py = (2 ** m * g.h) / (S.pB - S.pA),
           r = resolutionReadiness(n, m),
+          onPath = m === diagonalM(n),
           kind =
             r.status === "loading"
               ? "loading"
@@ -2250,31 +2290,43 @@
                   : px > 32 || py > 32
                     ? "large"
                     : "ready",
-          size = (v) =>
-            v < 1 ? "<1" : Math.round(v) > 999 ? "1k+" : String(Math.round(v));
+          text = `n ${n} · m ${m} · ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT · ${px.toFixed(1)} by ${py.toFixed(1)} px · ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}${onPath ? " · on the diagonal" : ""}`;
         b.type = "button";
-        b.className = "cursor-interaction ol-plane-" + kind;
-        b.textContent =
-          r.status === "loading" ? "…" : `${size(px)}×${size(py)}`;
+        b.className =
+          "cursor-interaction ol-plane-" + kind + (onPath ? " ol-plane-path" : "");
         b.dataset.n = n;
         b.dataset.m = m;
         b.setAttribute("aria-pressed", String(S.n === n && S.m === m));
-        const label = `${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT; ${px.toFixed(1)} by ${py.toFixed(1)} pixels; ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}`;
-        b.setAttribute("aria-label", label);
-        b.title = label;
+        b.setAttribute("aria-label", text);
+        b.title = text;
+        const show = () => {
+          el("plane-status").textContent = text;
+        };
+        b.addEventListener("mouseenter", show);
+        b.addEventListener("focus", show);
         b.addEventListener("click", () => changeResolution(n, m));
         frag.append(b);
       }
     }
+    frag.append(label("n"));
+    for (let n = 0; n <= N_MAX; n++)
+      frag.append(label(n % 4 === 0 ? String(n) : ""));
     el("plane").replaceChildren(frag);
   }
-  function changeResolution(n, m) {
+  function changeResolution(n, m, timeOnly = false) {
+    n = clamp(Math.round(n), 0, N_MAX);
+    m = clamp(Math.round(m), 0, M_MAX);
+    if (S.diagonal) {
+      if (timeOnly) m = diagonalM(n);
+      else if ((n !== S.n || m !== S.m) && m !== diagonalM(n))
+        S.diagonal = false;
+    }
     transition = reduce
       ? null
       : { n: renderN(), m: renderM(), start: performance.now() };
     S.auto = false;
-    S.n = clamp(n, 0, 22);
-    S.m = clamp(m, 0, 12);
+    S.n = n;
+    S.m = m;
     limits();
     hover = null;
     el("tip").hidden = true;
@@ -2312,6 +2364,7 @@
       m: S.m,
       auto: S.auto,
       coupled: S.coupled,
+      diagonal: S.diagonal,
       refit: S.refit,
       window: S.window,
       selection: S.selection?.slice() || null,
@@ -2381,28 +2434,32 @@
     renderCrumbs();
   }
   function updateNavigation() {
-    for (const field of ["auto", "coupled", "refit", "lens"])
+    for (const field of ["auto", "coupled", "diagonal", "refit", "lens"])
       el(field).setAttribute("aria-pressed", String(S[field]));
+    el("lens-depth").value = String(clamp(Math.round(S.lensDepth) || 2, 1, 4));
+    el("lens-pin").hidden = !S.lens;
     el("auto").textContent = S.auto ? "Auto level" : "Level locked";
     const g = navGeometry(),
       px = (stepT() * g.w) / (S.tB - S.tA),
       py = (stepP() * g.h) / (S.pB - S.pA),
       fmt = (x) => (x < 1 ? x.toFixed(1) : Math.round(x));
     el("pixel-state").textContent = `${fmt(px)} × ${fmt(py)} px / cell`;
-    el("plane-status").textContent =
-      `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · button values are pixels`;
+    nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)`;
+    el("plane-status").textContent = nav.planeStatus;
     el("gesture").textContent = S.lens
-      ? "Move to inspect · tap Lens to release"
+      ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · L releases"
       : S.select
         ? "Drag a rectangle · base-cell edges"
         : S.coupled
           ? "Wheel / pinch: time + price · Alt: lens"
-          : "Wheel / pinch: time · Shift-wheel: price · Alt: lens";
+          : S.diagonal
+            ? "Wheel / pinch: time ×k, price ×√k · Alt: lens"
+            : "Wheel / pinch: time · Shift-wheel: price · Alt: lens";
     initPlane();
   }
   function settleNavigation(label, refit = false) {
     confine();
-    if (refit && S.refit && !S.coupled) fit();
+    if (refit && S.refit && !S.coupled && !S.diagonal) fit();
     autoLevel();
     hover = null;
     el("tip").hidden = true;
@@ -2421,8 +2478,10 @@
       S.tA = p.t - u * span;
       S.tB = S.tA + span;
     }
-    if (priceOnly || S.coupled) {
-      const span = clamp(pspan * k, 1, 400000 / PR),
+    const priceFactor =
+      priceOnly || S.coupled ? k : S.diagonal ? Math.sqrt(k) : null;
+    if (priceFactor !== null) {
+      const span = clamp(pspan * priceFactor, 1, 400000 / PR),
         u = (p.p - S.pA) / pspan;
       S.pA = p.p - u * span;
       S.pB = S.pA + span;
@@ -2431,8 +2490,8 @@
     settleNavigation(null, !priceOnly);
     return p;
   }
-  function drawResolutionLens() {
-    if (!(S.lens || nav.alt || nav.hold) || !G.w) return;
+  function lensFrame() {
+    if (!G.w) return null;
     const p =
         nav.last && inPlot(nav.last)
           ? nav.last
@@ -2447,16 +2506,54 @@
       x = clamp(p.x - w / 2, G.x + 4, G.x + G.w - w - 4),
       y = clamp(p.y - h / 2, G.y + 4, G.y + G.h - h - 4),
       ta = G.X.invert(x),
-      tb = Math.min(G.X.invert(x + w), activeCutoff()),
+      tbRaw = G.X.invert(x + w),
+      tb = Math.min(tbRaw, activeCutoff()),
       pa = G.Y.invert(y + h),
       pb = G.Y.invert(y),
+      depth = clamp(Math.round(S.lensDepth) || 2, 1, 4),
       candidates = Object.values(sources)
         .filter((s) => {
           const [a, b] = sourceRange(s);
           return a <= p.t && b > p.t;
         })
         .sort((a, b) => a.n - b.n || a.m - b.m),
-      src = candidates[0];
+      src = candidates[0] || null,
+      n = src ? Math.max(src.n, renderN() - depth) : renderN(),
+      m = src ? Math.max(src.m, renderM() - depth) : renderM();
+    return { p, w, h, x, y, ta, tb, tbRaw, pa, pb, depth, src, n, m };
+  }
+  function pinLens() {
+    const f = lensFrame();
+    if (!f || !f.src) return false;
+    transition = reduce
+      ? null
+      : { n: renderN(), m: renderM(), start: performance.now() };
+    S.tA = f.ta;
+    S.tB = f.tbRaw;
+    S.pA = Math.max(0, f.pa);
+    S.pB = f.pb;
+    const changed = f.n !== S.n || f.m !== S.m;
+    S.n = f.n;
+    S.m = f.m;
+    if (S.diagonal && changed && f.m !== diagonalM(f.n)) S.diagonal = false;
+    S.auto = false;
+    S.lens = false;
+    S.window = "";
+    nav.alt = false;
+    nav.hold = false;
+    confine();
+    hover = null;
+    el("tip").hidden = true;
+    update();
+    recordCrumb("Pinned lens");
+    save();
+    return true;
+  }
+  function drawResolutionLens() {
+    if (!(S.lens || nav.alt || nav.hold)) return;
+    const f = lensFrame();
+    if (!f) return;
+    const { w, h, x, y, ta, tb, pa, pb, depth, src, n, m } = f;
     ctx.save();
     ctx.beginPath();
     ctx.rect(x, y, w, h);
@@ -2467,9 +2564,7 @@
       sub = "No finer recorded cells in this region",
       localLegend = "";
     if (src) {
-      const n = Math.max(src.n, renderN() - 2),
-        m = Math.max(src.m, renderM() - 2),
-        ts = 2 ** n,
+      const ts = 2 ** n,
         ps = 2 ** m,
         [start, end] = sourceRange(src),
         fine = n < renderN() || m < renderM();
@@ -2588,9 +2683,9 @@
           ctx.lineWidth = 1.5;
           ctx.stroke();
         }
-        label = `${fine ? "Lens" : "Finest recorded"} · ${dur(BASE * ts)} × ${price(PR * ps)} USDT`;
+        label = `${fine ? `Lens −${depth}` : "Finest recorded"} · ${dur(BASE * ts)} × ${price(PR * ps)} USDT`;
         sub = fine
-          ? "Finer cells · surroundings unchanged"
+          ? "Finer cells · surroundings unchanged · Enter pins"
           : src.n === 0 && src.m === 0
             ? "Base cells · no finer level exists"
             : "Finer detail unavailable in this region";
@@ -2630,14 +2725,35 @@
     });
     el("coupled").addEventListener("click", () => {
       S.coupled = !S.coupled;
-      if (S.coupled) S.refit = false;
+      if (S.coupled) {
+        S.refit = false;
+        S.diagonal = false;
+      }
       update();
+      save();
+    });
+    el("diagonal").addEventListener("click", () => {
+      S.diagonal = !S.diagonal;
+      if (S.diagonal) {
+        S.refit = false;
+        S.coupled = false;
+        if (S.auto) autoLevel();
+        else if (S.m !== diagonalM(S.n)) {
+          transition = reduce
+            ? null
+            : { n: renderN(), m: renderM(), start: performance.now() };
+          S.m = diagonalM(S.n);
+        }
+      }
+      update();
+      recordCrumb(S.diagonal ? "Diagonal" : "Free axes");
       save();
     });
     el("refit").addEventListener("click", () => {
       S.refit = !S.refit;
       if (S.refit) {
         S.coupled = false;
+        S.diagonal = false;
         fit();
         autoLevel();
       }
@@ -2650,6 +2766,17 @@
       if (S.lens) el("tip").hidden = true;
       update();
       save();
+    });
+    el("lens-depth").addEventListener("change", () => {
+      S.lensDepth = clamp(Number(el("lens-depth").value) || 2, 1, 4);
+      requestDraw();
+      save();
+    });
+    el("lens-pin").addEventListener("click", () => {
+      pinLens();
+    });
+    el("plane").addEventListener("mouseleave", () => {
+      el("plane-status").textContent = nav.planeStatus || "";
     });
     canvas.addEventListener("pointerdown", (e) => {
       if (!ready) return;
@@ -2704,8 +2831,9 @@
           tspan = clamp((tb - ta) * ratio, 2, CUT * 1.2);
         S.tA = nav.pinch.t - ((mid.x - G.x) / G.w) * tspan;
         S.tB = S.tA + tspan;
-        if (S.coupled) {
-          const pspan = clamp((pb - pa) * ratio, 1, 400000 / PR);
+        if (S.coupled || S.diagonal) {
+          const factor = S.coupled ? ratio : Math.sqrt(ratio),
+            pspan = clamp((pb - pa) * factor, 1, 400000 / PR);
           S.pA = nav.pinch.p - ((G.y + G.h - mid.y) / G.h) * pspan;
           S.pB = S.pA + pspan;
         }
@@ -2861,9 +2989,31 @@
         el("auto").click();
         return;
       }
+      if (k === "l" && e.shiftKey) {
+        e.preventDefault();
+        S.lensDepth = (clamp(Math.round(S.lensDepth) || 2, 1, 4) % 4) + 1;
+        update();
+        save();
+        return;
+      }
       if (k === "l") {
         e.preventDefault();
         el("lens").click();
+        return;
+      }
+      if (k === "d") {
+        e.preventDefault();
+        el("diagonal").click();
+        return;
+      }
+      if (k === "enter" && (S.lens || nav.alt || nav.hold)) {
+        e.preventDefault();
+        pinLens();
+        return;
+      }
+      if (k === "," || k === ".") {
+        e.preventDefault();
+        stepAnchor(k === "," ? -1 : 1);
         return;
       }
       if (k === "f") {
@@ -2881,6 +3031,7 @@
         changeResolution(
           S.n + (e.shiftKey ? 0 : d),
           S.m + (e.shiftKey ? d : 0),
+          !e.shiftKey,
         );
         return;
       }
@@ -2968,7 +3119,7 @@
     ["pplus", 0, 1],
   ])
     el(id).addEventListener("click", () =>
-      changeResolution(S.n + dn, S.m + dm),
+      changeResolution(S.n + dn, S.m + dm, dm === 0),
     );
   for (const f of ["poc", "area", "untested"])
     el(f).addEventListener("change", () => {
@@ -3029,17 +3180,7 @@
     ["back", -1],
     ["next", 1],
   ])
-    el(id).addEventListener("click", () => {
-      S.anchor = clamp(
-        (S.anchor || activeCutoff()) + delta * stepT(),
-        stepT(),
-        Math.floor(CUT / stepT()) * stepT(),
-      );
-      hover = null;
-      el("tip").hidden = true;
-      update();
-      save();
-    });
+    el(id).addEventListener("click", () => stepAnchor(delta));
   bindRoot();
   bindEvidence();
   bindNavigation();

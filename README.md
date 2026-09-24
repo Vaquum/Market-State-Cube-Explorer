@@ -12,11 +12,11 @@ Open [localhost:8080](http://localhost:8080). The app ships with its snapshot an
 
 ## Explore
 
-- **Auto level** chooses resolutions from cell size in pixels. Lock a level, couple both zoom axes, or refit price when time changes.
-- **Lens** shows finer recorded cells inside a region while preserving the surrounding view. Hold Alt or hold on touch to inspect temporarily.
-- **Resolution plane** exposes pixel dimensions and data readiness. Breadcrumbs restore earlier exploration states.
+- **Auto level** chooses resolutions from cell size in pixels. Lock a level, couple both zoom axes, refit price when time changes, or use **Diagonal zoom**, which scales price by the square root of the time factor and keeps the price level on the measured diagonal.
+- **Lens** shows finer recorded cells inside a region while preserving the surrounding view, one to four levels finer (Shift+L). Hold Alt or hold on touch to inspect temporarily; Enter or **Pin lens** makes the lens rectangle and resolution the view.
+- **Resolution plane** maps every level of the lattice, marks the diagonal, and colours each level by readiness and pixel size. Breadcrumbs restore earlier exploration states and survive reloads.
 - **Volume, taker flow, density, delta and geometry** share one grid. Profiles include total/buy POCs and a composite 70% value area.
-- **Continuations** compare matching historical states with unconditional outcomes. Inspect individual cases, opposing outcomes and POC-barrier crossings; replay hides future trades.
+- **Continuations** compare matching historical states with unconditional outcomes over all price rows, whatever band is on screen. Inspect individual cases, opposing outcomes and POC-barrier crossings; replay hides future trades and steps with , and . keys.
 - **Select**, **Table**, and **Cube query** expose measures and the six-parameter query. Copy queries or portable `origo-cube:` view codes and restore them in the same app.
 
 The Controls disclosure lists mouse, keyboard and touch gestures. Click or focus the chart before using keyboard shortcuts.

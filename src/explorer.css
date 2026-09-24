@@ -1101,3 +1101,121 @@
     min-height: 44px;
   }
 }
+
+/* Resolution lattice map: every level, always visible, diagonal marked. */
+#origo-lens .ol-navigation {
+  align-items: flex-start;
+}
+#origo-lens .ol-plane-map {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  margin-left: auto;
+}
+#origo-lens .ol-plane-map .ol-plane-cap {
+  font-size: 10px;
+}
+#origo-lens .ol-plane {
+  display: grid !important;
+  grid-template-columns: 12px repeat(21, 11px);
+  gap: 1px;
+  margin: 0;
+  align-items: center;
+  justify-items: center;
+  max-width: none;
+}
+#origo-lens .ol-plane button {
+  width: 11px;
+  height: 11px;
+  min-height: 11px;
+  padding: 0;
+  border-radius: 2px;
+  border: 1px solid transparent;
+  background: var(--ol-line);
+  opacity: 0.55;
+  font-size: 0;
+  line-height: 0;
+}
+#origo-lens .ol-plane button::after {
+  display: none !important;
+}
+#origo-lens .ol-plane button.ol-plane-ready {
+  background: var(--ol-volume);
+  opacity: 0.85;
+}
+#origo-lens .ol-plane button.ol-plane-small {
+  background: var(--ol-volume);
+  opacity: 0.3;
+}
+#origo-lens .ol-plane button.ol-plane-large {
+  background: var(--ol-poc);
+  opacity: 0.6;
+}
+#origo-lens .ol-plane button.ol-plane-unavailable {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--ol-line),
+    var(--ol-line) 2px,
+    var(--ol-surface) 2px,
+    var(--ol-surface) 4px
+  );
+  opacity: 0.8;
+}
+#origo-lens .ol-plane button.ol-plane-loading {
+  background: var(--ol-evidence);
+  opacity: 0.5;
+}
+#origo-lens .ol-plane button.ol-plane-path {
+  border-color: var(--ol-ink);
+  opacity: 1;
+}
+#origo-lens .ol-plane button[aria-pressed="true"] {
+  background: var(--ol-ink);
+  border-color: var(--ol-ink);
+  opacity: 1;
+  transform: scale(1.35);
+  z-index: 1;
+}
+#origo-lens .ol-plane button:hover,
+#origo-lens .ol-plane button:focus-visible {
+  outline: 2px solid var(--ol-volume);
+  outline-offset: 1px;
+  opacity: 1;
+}
+#origo-lens .ol-plane span {
+  font-size: 8px;
+  line-height: 1;
+  color: var(--ol-muted);
+  text-align: center;
+}
+#origo-lens .ol-plane-key .ol-plane-path {
+  background: transparent;
+  border: 1px solid var(--ol-ink);
+}
+#origo-lens .ol-plane-status {
+  max-width: 250px;
+  min-height: 2.6em;
+  font-size: 10px;
+  line-height: 1.3;
+}
+#origo-lens #ol-lens-depth {
+  min-height: 29px;
+  font-size: 12px;
+}
+@media (pointer: coarse) {
+  #origo-lens .ol-plane {
+    display: grid !important;
+    grid-template-columns: 12px repeat(21, 14px);
+  }
+  #origo-lens .ol-plane button {
+    width: 14px;
+    height: 14px;
+    min-height: 14px;
+  }
+}
+@media (max-width: 760px) {
+  #origo-lens .ol-plane-map {
+    margin-left: 0;
+  }
+}

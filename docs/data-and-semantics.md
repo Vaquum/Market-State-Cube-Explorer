@@ -37,6 +37,8 @@ POC barriers are first crossings by column-end POCs over the selected horizon. I
 
 Measured over the full history from 2021-01-01 (n = 6..13 on the 2026-09-24 extraction), the median price range of a column grows with its duration as `log2(range / 125) = -1.06 + 0.486 n`, an exponent of 0.49, close to a square-root law. The diagonal is the lattice path `m = round(-1.06 + 0.486 n)`, along which one column is about one row tall. Diagonal zoom scales the time window by a factor and the price window by its square root, and the auto level keeps the price exponent on that path. The plane marks the path so a deliberate step off it is visible.
 
+The lattice the explorer can reach is `n = 0..20` (56.25 seconds to about 683 days per column) and `m = 0..9` (125 to 64,000 USDT per row); the plane shows all of it, and every stepper and clamp shares the same limits. In diagonal mode a time-only step (the bracket keys, the time steppers) keeps `m` on the path; an explicit level (a plane click, a price step, a pinned lens, an imported query) that changes the level to one off the path releases diagonal mode, and a step that clamps back to the current level changes nothing.
+
 ## Portable views
 
 The JSON query can be copied and reapplied. An `origo-cube:` code also preserves selected visual settings and replay context. It is a portable import code, not a hosted URL or browser permalink. State is saved only in the local browser; no telemetry or external storage is used.

@@ -3,7 +3,7 @@
 // credentials match over HTTPS. Without AUTH_USER and AUTH_PASS the Worker admits nobody.
 
 const CHALLENGE = 'Basic realm="Market State Cube", charset="UTF-8"';
-const TOKEN = /^[A-Za-z0-9+/]+={0,2}$/;
+const CREDENTIALS = /^basic +([A-Za-z0-9+/]+={0,2})$/i;
 
 const sha256 = (bytes) => crypto.subtle.digest("SHA-256", bytes);
 const utf8 = (text) => new TextEncoder().encode(text);
@@ -11,10 +11,9 @@ const decoded = (token) => Uint8Array.from(atob(token), (c) => c.charCodeAt(0));
 
 async function authorised(request, env) {
   if (!env.AUTH_USER || !env.AUTH_PASS) return false;
-  const header = request.headers.get("Authorization") || "";
-  const token = header.slice(6);
-  if (!header.startsWith("Basic ") || !TOKEN.test(token) || token.length % 4) return false;
-  const [supplied, expected] = await Promise.all([sha256(decoded(token)), sha256(utf8(`${env.AUTH_USER}:${env.AUTH_PASS}`))]);
+  const match = CREDENTIALS.exec(request.headers.get("Authorization") || "");
+  if (!match || match[1].length % 4) return false;
+  const [supplied, expected] = await Promise.all([sha256(decoded(match[1])), sha256(utf8(`${env.AUTH_USER}:${env.AUTH_PASS}`))]);
   return crypto.subtle.timingSafeEqual(supplied, expected);
 }
 

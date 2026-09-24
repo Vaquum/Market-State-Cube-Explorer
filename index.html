@@ -4391,10 +4391,10 @@
     S.tB = f.tbRaw;
     S.pA = Math.max(0, f.pa);
     S.pB = f.pb;
+    const changed = f.n !== S.n || f.m !== S.m;
     S.n = f.n;
     S.m = f.m;
-    if (S.diagonal && (f.n !== S.n || f.m !== S.m) && f.m !== diagonalM(f.n))
-      S.diagonal = false;
+    if (S.diagonal && changed && f.m !== diagonalM(f.n)) S.diagonal = false;
     S.auto = false;
     S.lens = false;
     S.window = "";

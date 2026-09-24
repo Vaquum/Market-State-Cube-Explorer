@@ -2767,9 +2767,13 @@
     el("lens-pin").addEventListener("click", () => {
       pinLens();
     });
-    el("plane").addEventListener("mouseleave", () => {
+    const leavePlane = () => {
       nav.planeHover = false;
       el("plane-status").textContent = nav.planeStatus || "";
+    };
+    el("plane").addEventListener("mouseleave", leavePlane);
+    el("plane").addEventListener("focusout", (e) => {
+      if (!el("plane").contains(e.relatedTarget)) leavePlane();
     });
     canvas.addEventListener("pointerdown", (e) => {
       if (!ready) return;

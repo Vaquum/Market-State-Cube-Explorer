@@ -67,12 +67,6 @@
 #origo-lens .ol-muted {
   color: var(--ol-muted);
 }
-#origo-lens .ol-label {
-  font-size: 11px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--ol-muted);
-}
 #origo-lens .ol-top {
   display: flex;
   align-items: center;
@@ -321,44 +315,6 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
-#origo-lens .ol-plane {
-  display: grid;
-  grid-template-columns: 18px repeat(9, minmax(0, 1fr));
-  gap: 1px;
-  margin: 8px 0 4px;
-  align-items: center;
-}
-#origo-lens .ol-plane button {
-  border-radius: 3px;
-  padding: 0;
-  min-height: 18px;
-  height: 18px;
-  font-size: 10px;
-  position: relative;
-}
-#origo-lens .ol-plane button:after {
-  content: "";
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--ol-muted);
-  display: block;
-  position: absolute;
-  top: 8px;
-  left: calc(50% - 1.5px);
-}
-#origo-lens .ol-plane button[aria-pressed="true"]:after {
-  background: var(--ol-bg);
-  width: 5px;
-  height: 5px;
-  top: 7px;
-  left: calc(50% - 2.5px);
-}
-#origo-lens .ol-plane span {
-  font-size: 10px;
-  color: var(--ol-muted);
-  text-align: center;
-}
 #origo-lens .ol-plane-cap {
   display: flex;
   justify-content: space-between;
@@ -403,11 +359,6 @@
   font-size: 11px;
   margin: 12px 0 0;
 }
-#origo-lens .ol-error {
-  padding: 15px;
-  color: var(--ol-sell);
-  font-size: 12px;
-}
 #origo-lens .ol-footer {
   border-top: 1px solid var(--ol-line);
   padding: 10px 20px;
@@ -438,9 +389,6 @@
 }
 #origo-lens [hidden] {
   display: none !important;
-}
-#origo-lens .ol-mobile-summary {
-  display: none;
 }
 @media (max-width: 760px) {
   #origo-lens .ol-workspace {
@@ -509,33 +457,20 @@
   #origo-lens .ol-context-scale .ol-rule {
     display: block;
   }
-  #origo-lens .ol-plane {
-    max-width: 240px;
-  }
   #origo-lens .ol-legend {
     max-width: 170px;
   }
   #origo-lens canvas#ol-canvas {
     height: 345px;
   }
-  #origo-lens .ol-gesture {
-    display: none;
-  }
 }
 @media (pointer: coarse) {
   #origo-lens button {
     min-height: 44px;
   }
-  #origo-lens .ol-plane button {
-    min-height: 24px;
-    height: 24px;
-  }
   #origo-lens .ol-step button {
     min-height: 44px;
     min-width: 38px;
-  }
-  #origo-lens .ol-plane {
-    display: none;
   }
 }
 #origo-lens .ol-loading {
@@ -544,9 +479,6 @@
   padding: 8px 18px;
   font-size: 12px;
   border-bottom: 1px solid var(--ol-line);
-}
-#origo-lens .ol-field {
-  position: relative;
 }
 #origo-lens canvas#ol-canvas {
   background:
@@ -613,8 +545,8 @@
   padding: 9px 18px;
   font-size: 12px;
 }
-#origo-lens .ol-query summary {
-  cursor: default;
+#origo-lens summary {
+  cursor: pointer;
 }
 #origo-lens .ol-query-mini {
   color: var(--ol-muted);
@@ -726,9 +658,6 @@
   }
 }
 @media (pointer: coarse) {
-  #origo-lens .ol-plane {
-    display: grid;
-  }
   #origo-lens .ol-query textarea {
     font-size: 16px;
   }
@@ -743,19 +672,6 @@
   }
 }
 
-#origo-lens .ol-plane {
-  max-width: none;
-}
-
-#origo-lens .ol-navigation {
-  display: flex;
-  align-items: center;
-  gap: 8px 18px;
-  flex-wrap: wrap;
-  padding: 8px 18px;
-  background: var(--ol-surface);
-  border-bottom: 1px solid var(--ol-line);
-}
 #origo-lens .ol-nav-controls {
   display: flex;
   align-items: center;
@@ -771,80 +687,6 @@
 #origo-lens #ol-pixel-state {
   font-size: 11px;
   margin-left: 7px;
-}
-#origo-lens .ol-plane-disclosure,
-#origo-lens .ol-nav-help {
-  font-size: 11px;
-  min-width: 0;
-}
-#origo-lens .ol-plane-disclosure summary,
-#origo-lens .ol-nav-help summary {
-  padding: 5px 0;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-plane-disclosure[open] {
-  flex-basis: 100%;
-}
-#origo-lens .ol-plane-panel {
-  width: min(100%, 520px);
-  padding: 7px 0 6px;
-}
-#origo-lens .ol-plane {
-  display: grid !important;
-  grid-template-columns: 64px repeat(5, minmax(0, 1fr));
-  gap: 3px;
-  margin: 7px 0;
-  align-items: stretch;
-}
-#origo-lens .ol-plane button {
-  position: relative;
-  height: auto;
-  min-height: 36px;
-  border-radius: 3px;
-  font-size: 11px;
-  padding: 3px;
-  background: var(--ol-panel);
-  border: 1px solid transparent;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-plane button::after {
-  display: none !important;
-}
-#origo-lens .ol-plane button.ol-plane-ready {
-  background: color-mix(in srgb, var(--ol-volume) 22%, var(--ol-surface));
-  color: var(--ol-ink);
-}
-#origo-lens .ol-plane button.ol-plane-small {
-  opacity: 0.62;
-}
-#origo-lens .ol-plane button.ol-plane-large {
-  background: color-mix(in srgb, var(--ol-poc) 16%, var(--ol-surface));
-  color: var(--ol-ink);
-}
-#origo-lens .ol-plane button.ol-plane-unavailable {
-  background: repeating-linear-gradient(
-    135deg,
-    var(--ol-surface),
-    var(--ol-surface) 4px,
-    var(--ol-line) 4px,
-    var(--ol-line) 5px
-  );
-  color: var(--ol-muted);
-}
-#origo-lens .ol-plane button[aria-pressed="true"] {
-  border-color: var(--ol-ink);
-  background: var(--ol-ink);
-  color: var(--ol-bg);
-  opacity: 1;
-}
-#origo-lens .ol-plane span {
-  font-size: 11px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  line-height: 1.3;
-  color: var(--ol-muted);
 }
 #origo-lens .ol-plane-key {
   display: flex;
@@ -864,42 +706,8 @@
   display: inline-block;
   background: var(--ol-panel);
 }
-#origo-lens .ol-plane-key .ol-plane-ready {
-  background: var(--ol-volume);
-}
-#origo-lens .ol-plane-key .ol-plane-small {
-  background: var(--ol-line);
-}
-#origo-lens .ol-plane-key .ol-plane-large {
-  background: var(--ol-poc);
-}
-#origo-lens .ol-plane-key .ol-plane-unavailable {
-  background: repeating-linear-gradient(
-    135deg,
-    var(--ol-surface),
-    var(--ol-surface) 2px,
-    var(--ol-muted) 2px,
-    var(--ol-muted) 3px
-  );
-}
-#origo-lens .ol-plane-status {
-  margin-top: 6px;
-  color: var(--ol-muted);
-  font-size: 11px;
-}
 #origo-lens .ol-nav-help[open] {
   flex-basis: 100%;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-breadcrumbs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 5px;
-  padding: 6px 18px;
-  min-height: 34px;
-  border-bottom: 1px solid var(--ol-line);
-  font-size: 11px;
   color: var(--ol-muted);
 }
 #origo-lens .ol-breadcrumbs button {
@@ -911,30 +719,10 @@
 #origo-lens .ol-breadcrumbs span {
   color: var(--ol-muted);
 }
-@media (pointer: coarse) {
-  #origo-lens .ol-nav-controls button,
-  #origo-lens .ol-plane button,
-  #origo-lens .ol-breadcrumbs button {
-    min-height: 44px;
-  }
-  #origo-lens .ol-plane-disclosure summary,
-  #origo-lens .ol-nav-help summary {
-    min-height: 44px;
-    padding: 11px 0;
-  }
-}
 @media (max-width: 480px) {
   #origo-lens .ol-navigation {
     padding: 8px 12px;
     gap: 4px 15px;
-  }
-  #origo-lens .ol-plane {
-    grid-template-columns: 47px repeat(5, minmax(0, 1fr));
-    gap: 2px;
-  }
-  #origo-lens .ol-plane button {
-    font-size: 11px;
-    padding: 2px 0;
   }
   #origo-lens .ol-breadcrumbs {
     padding: 6px 12px;
@@ -944,22 +732,9 @@
   }
 }
 
-#origo-lens .ol-plane button.ol-plane-loading {
-  background: var(--ol-panel);
-  color: var(--ol-muted);
-}
-#origo-lens .ol-plane-key .ol-plane-loading {
-  background: var(--ol-evidence);
-}
-
 #origo-lens .ol-breadcrumbs button[aria-current="step"] {
   background: var(--ol-panel);
   color: var(--ol-ink);
-}
-
-#origo-lens .ol-plane button {
-  white-space: normal;
-  overflow-wrap: anywhere;
 }
 
 #origo-lens .ol-evidence-tabs {
@@ -1102,17 +877,6 @@
   }
 }
 
-/* Resolution lattice map: every level, always visible, diagonal marked. */
-#origo-lens .ol-navigation {
-  align-items: flex-start;
-}
-#origo-lens .ol-plane-map {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  margin-left: auto;
-}
 #origo-lens .ol-plane-map .ol-plane-cap {
   font-size: 10px;
 }
@@ -1214,8 +978,66 @@
     min-height: 14px;
   }
 }
+
+/* Navigation: controls, breadcrumbs and help beside the resolution lattice. */
+#origo-lens .ol-navigation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 272px;
+  gap: 8px 24px;
+  align-items: stretch;
+  padding: 8px 18px;
+  background: var(--ol-surface);
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-nav-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+#origo-lens .ol-nav-help {
+  font-size: 11px;
+  min-width: 0;
+}
+#origo-lens .ol-nav-help summary {
+  padding: 4px 0;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-nav-help[open] {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 5px;
+  min-height: 24px;
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-plane-map {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 272px;
+  max-width: 100%;
+}
 @media (max-width: 760px) {
-  #origo-lens .ol-plane-map {
-    margin-left: 0;
+  #origo-lens .ol-navigation {
+    grid-template-columns: 1fr;
+  }
+  #origo-lens .ol-nav-main {
+    justify-content: flex-start;
+  }
+}
+@media (pointer: coarse) {
+  #origo-lens .ol-nav-controls button,
+  #origo-lens .ol-breadcrumbs button {
+    min-height: 44px;
+  }
+  #origo-lens .ol-nav-help summary {
+    min-height: 44px;
+    padding: 11px 0;
   }
 }

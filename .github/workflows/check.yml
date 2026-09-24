@@ -18,3 +18,5 @@ jobs:
       - run: python3 tools/build.py --check
       - run: node --check src/explorer.js
       - run: node --check src/state.js
+      - run: node --check worker.js
+      - run: npx --yes wrangler@4 deploy --dry-run --outdir /tmp/dry-run

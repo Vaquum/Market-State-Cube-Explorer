@@ -42,6 +42,8 @@ python3 tools/build.py
 python3 tools/build.py --check
 node --check src/explorer.js
 node --check src/state.js
+node --check worker.js
+npx wrangler@4 deploy --dry-run --outdir /tmp/dry-run
 ```
 
 Edit `src/`, then rebuild the committed `index.html`. The build uses Python's standard library and is deterministic; no installed Codex or Claude runtime is needed.
@@ -52,5 +54,24 @@ Edit `src/`, then rebuild the committed `index.html`. The build uses Python's st
 - `data/snapshot.json`: real recorded measures, compressed in three embedded blocks.
 - `vendor/`: pinned D3 7.9.0 and its license.
 - `tools/build.py`: assembles the portable page.
+
+## Deploy
+
+[cube.vaquum.fi](https://cube.vaquum.fi) is a Cloudflare Worker that serves the committed `index.html` as a static asset behind HTTP Basic Auth. `wrangler.toml` is the deploy contract: the Worker name, the custom domain and its DNS record come from it, and `.assetsignore` uploads nothing but `index.html`. `worker.js` runs before every request: plain HTTP is redirected to HTTPS, a request without matching credentials gets a `401` challenge, and without the two secrets below the Worker admits nobody. There is no workers.dev or preview URL.
+
+Cloudflare's Git integration deploys every push to `main`. One-time setup in the dashboard:
+
+1. **Workers & Pages → Create → Git-connected Worker**, connect `Vaquum/Market-State-Cube-Explorer`, root directory `/`, no build command, deploy command `npx wrangler deploy`.
+2. After the first deploy, open the Worker's **Settings → Variables and Secrets** and add the secrets `AUTH_USER` and `AUTH_PASS`. Until both exist every request answers `401`.
+
+The same secrets can be set from a logged-in shell with `npx wrangler@4 secret put AUTH_USER` and `npx wrangler@4 secret put AUTH_PASS`.
+
+Local check, with a git-ignored `.dev.vars` holding test values for `AUTH_USER` and `AUTH_PASS`:
+
+```sh
+npx wrangler@4 dev --local-protocol https
+```
+
+The local proxy rewrites the HTTPS redirect back to the dev protocol; in production it points at `https://cube.vaquum.fi`.
 
 This repository contains the visualization overlay. Server ingestion, live updates, corrections and Arrow delivery are separate work.

@@ -10,7 +10,7 @@
       </div>
     </div>
     <div class="ol-top-right">
-      RECORDED MARKET<br /><span id="ol-snapshot">24 Sep 2026 · UTC</span>
+      RECORDED MARKET<br /><span id="ol-snapshot"></span>
     </div>
   </header>
   <div class="ol-controls">
@@ -84,6 +84,7 @@
     </div>
   </div>
   <div class="ol-navigation">
+    <div class="ol-nav-main">
     <div class="ol-nav-controls">
       <button
         type="button"
@@ -136,6 +137,22 @@
         Pin lens</button
       ><span id="ol-pixel-state" class="ol-num ol-muted"></span>
     </div>
+    <nav
+      class="ol-breadcrumbs"
+      id="ol-breadcrumbs"
+      aria-label="Exploration path"
+    ></nav>
+    <details class="ol-nav-help">
+      <summary class="cursor-interaction">Controls</summary>
+      <div>
+        Drag: pan · wheel: time · Shift-wheel: price · pinch: zoom<br />Arrows:
+        pan · + / −: zoom · [ / ]: time level · Shift+[ / ]: price level<br />A:
+        auto · D: diagonal zoom · F: fit price · L / hold Alt: lens · Shift+L:
+        lens depth · Enter: pin lens · Esc: clear<br />, / . : step the replay
+        anchor · Touch: hold to inspect finer cells; lift to return
+      </div>
+    </details>
+    </div>
     <div class="ol-plane-map" id="ol-plane-map">
       <div class="ol-plane-cap">
         <span>Resolution plane · m price ↑ · n time →</span>
@@ -155,23 +172,7 @@
       </div>
       <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
     </div>
-    <details class="ol-nav-help">
-      <summary class="cursor-interaction">Controls</summary>
-      <div>
-        Drag: pan · wheel: time · Shift-wheel: price · pinch: zoom<br />Arrows:
-        pan · + / −: zoom · [ / ]: time level · Shift+[ / ]: price level<br />A:
-        auto · D: diagonal zoom · F: fit price · L / hold Alt: lens · Shift+L:
-        lens depth · Enter: pin lens · Esc: clear<br />, / . : step the replay
-        anchor · Touch: hold to inspect finer cells; lift to return
-      </div>
-    </details>
   </div>
-  <nav
-    class="ol-breadcrumbs"
-    id="ol-breadcrumbs"
-    aria-label="Exploration path"
-  ></nav>
-
   <div class="ol-layers">
     <div class="ol-modes" aria-label="Cell encoding">
       <button
@@ -252,8 +253,9 @@
         >
       </div>
       <canvas
-        id="ol-canvas" tabindex="0"
-        role="img"
+        id="ol-canvas"
+        tabindex="0"
+        role="application"
         aria-label="Time by price grid with real traded volume, point of control and linked volume profile"
       ></canvas>
       <div class="ol-tip" id="ol-tip" role="tooltip" hidden></div>
@@ -522,7 +524,7 @@
   </div>
   <details class="ol-query" id="ol-query-panel">
     <summary>
-      Cube query <span id="ol-query-mini" class="ol-num"></span>
+      Cube query <span id="ol-query-mini" class="ol-num ol-query-mini"></span>
     </summary>
     <div class="ol-query-body">
       <label for="ol-query-text"

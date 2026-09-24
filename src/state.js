@@ -1,20 +1,20 @@
 (() => {
   "use strict";
-  const storageKey = "market-state-cube-explorer:view:v3";
-  let widgetState = null;
+  const storageKey = "market-state-cube-explorer:view:v4";
+  let saved = null;
   try {
-    const saved = localStorage.getItem(storageKey);
-    if (saved !== null) widgetState = JSON.parse(saved);
+    const text = localStorage.getItem(storageKey);
+    if (text !== null) saved = JSON.parse(text);
   } catch (error) {
-    console.warn("Saved explorer state could not be restored.", error);
+    console.warn("Saved explorer view could not be restored.", error);
   }
   window.explorerState = {
-    get widgetState() {
-      return widgetState;
+    get saved() {
+      return saved;
     },
-    async setWidgetState(state) {
-      localStorage.setItem(storageKey, JSON.stringify(state));
-      widgetState = state;
+    save(view) {
+      localStorage.setItem(storageKey, JSON.stringify(view));
+      saved = view;
     },
   };
 })();

@@ -95,7 +95,12 @@
         minute: "2-digit",
         hour12: false,
       }),
-    iso = (b) => date(b).toISOString();
+    iso = (b) => date(b).toISOString(),
+    stamp = (b) => {
+      const s = iso(b);
+      return s.slice(0, 10) + " " + s.slice(11, s.endsWith(".000Z") ? 19 : 23);
+    },
+    usdt = (x) => x.toLocaleString("en-US", { maximumFractionDigits: 2 });
   async function unpack(block, id) {
     const bytes = Uint8Array.from(atob(block.gzip_base64), (c) =>
       c.charCodeAt(0),
@@ -494,7 +499,7 @@
     querySummary(query, b);
     el("legend-text").textContent = legendText(full);
     el("ramp").style.background = legendRamp();
-    const marks = marksReadout(query, b);
+    const marks = marksReadout(b);
     el("ray-count").textContent = S.untested
       ? marks.rayCount + " untested levels"
       : "";
@@ -528,7 +533,6 @@
   let referenceView = null,
     tablePage = 0,
     tableKey = "",
-    lastReadyNotice = "",
     copyFallbackActive = false;
   function renderN() {
     return Math.max(S.n, sources[S.dataset]?.n || 0);
@@ -645,35 +649,21 @@
     };
   }
   function save() {
-    if (window.explorerState?.setWidgetState)
-      window.explorerState
-        .setWidgetState({
-          modelContent: {
-            concept: "Origo market lens",
-            query: cubeQuery(),
-            renderedTimeResolutionSeconds: BASE * stepT(),
-            renderedPriceResolutionUSDT: PR * stepP(),
-            mode: S.mode,
-            replay: S.replay,
-            selection: S.selection,
-            realData: true,
-            cutoff: PACK.cutoff,
-          },
-          privateContent: {
-            version: 3,
-            ...S,
-            crumbs: nav.crumbs,
-            crumbIndex: nav.crumbIndex,
-          },
-        })
-        .catch(() => {
-          el("copy-status").textContent =
-            "View retained here; persistence unavailable.";
-        });
+    if (!window.explorerState) return;
+    try {
+      window.explorerState.save({
+        version: 4,
+        ...S,
+        crumbs: nav.crumbs,
+        crumbIndex: nav.crumbIndex,
+      });
+    } catch (error) {
+      el("copy-status").textContent =
+        "View retained here; persistence unavailable.";
+    }
   }
-  function restore(snapshot) {
-    const x = snapshot?.privateContent;
-    if (!x || x.version !== 3) return false;
+  function restore(x) {
+    if (!x || x.version !== 4) return false;
     for (const k of [
       "n",
       "m",
@@ -718,6 +708,7 @@
         -1,
         nav.crumbs.length - 1,
       );
+      renderCrumbs();
     }
     if (["volume", "flow", "geometry", "density", "delta"].includes(x.mode))
       S.mode = x.mode;
@@ -960,15 +951,16 @@
         ? "Selected rectangle"
         : "Visible rectangle";
     el("bounds").textContent =
-      `${iso(b[0]).replace("T", " ").replace("Z", "")} → ${iso(b[1]).replace("T", " ").replace("Z", "")} UTC · ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`;
-    for (const [id, v] of [
-      ["vol", query.v],
-      ["count", query.ct],
-      ["buyvol", query.bv],
-      ["buycount", query.bt],
+      `${stamp(b[0])} → ${stamp(b[1])} UTC · ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`;
+    for (const [id, v, exact] of [
+      ["vol", query.v, usdt(query.v) + " USDT"],
+      ["count", query.ct, integer(query.ct) + " trades"],
+      ["buyvol", query.bv, usdt(query.bv) + " USDT"],
+      ["buycount", query.bt, integer(query.bt) + " trades"],
     ]) {
       el(id).textContent = compact(v);
-      el(id).setAttribute("aria-label", String(v));
+      el(id).setAttribute("aria-label", exact);
+      el(id).title = exact;
     }
     el("poc-value").textContent =
       query.poc === null ? "—" : price((query.poc + 0.5) * stepP() * PR);
@@ -1044,15 +1036,15 @@
           c.r * stepP() < b[2] ||
           (c.r + 1) * stepP() > b[3];
       const values = [
-        iso(Math.max(c.c * stepT(), b[0])) +
+        stamp(Math.max(c.c * stepT(), b[0])) +
           " → " +
-          iso(Math.min((c.c + 1) * stepT(), b[1])),
+          stamp(Math.min((c.c + 1) * stepT(), b[1])),
         price(Math.max(c.r * stepP(), b[2]) * PR) +
           "–" +
           price(Math.min((c.r + 1) * stepP(), b[3]) * PR),
-        String(c.v),
+        usdt(c.v),
         integer(c.ct),
-        String(c.bv),
+        usdt(c.bv),
         integer(c.bt),
         [open ? "unfinished" : "complete", portion ? "portion" : ""]
           .filter(Boolean)
@@ -1093,7 +1085,7 @@
         p.t < src.b0 || p.t >= Math.min(src.b1, last.cut) || !inside;
     const open = !S.replay && c * stepT() < CUT && (c + 1) * stepT() > CUT;
     let rows = [
-      `${iso(c * stepT())} UTC`,
+      `${stamp(c * stepT())} UTC`,
       `${price(r * stepP() * PR)}–${price((r + 1) * stepP() * PR)} USDT`,
     ];
     if (unavailable)
@@ -1110,9 +1102,9 @@
       );
     else
       rows.push(
-        `${String(z.v)} USDT · ${integer(z.ct)} trades`,
-        `Buy ${String(z.bv)} USDT · ${integer(z.bt)} trades`,
-        `Δ ${(2 * z.bv - z.v).toLocaleString("en-US", { maximumFractionDigits: 2 })} USDT · ${((z.bv / z.v) * 100).toFixed(1)}% buy`,
+        `${usdt(z.v)} USDT · ${integer(z.ct)} trades`,
+        `Buy ${usdt(z.bv)} USDT · ${integer(z.bt)} trades`,
+        `Δ ${usdt(2 * z.bv - z.v)} USDT · ${((z.bv / z.v) * 100).toFixed(1)}% buy`,
         open ? "Unfinished cell" : "Completed source coverage",
       );
     if (renderN() > S.n || renderM() > S.m) rows.push("Coarser than requested");
@@ -1314,15 +1306,6 @@
     };
     return markState;
   }
-  function metricValue(z, mode = S.mode, b = bounds()) {
-    if (mode === "delta") return 2 * z.bv - z.v;
-    if (mode === "flow") return z.v ? z.bv / z.v : NaN;
-    if (mode === "density") {
-      const exposure = cellExposure(z, b);
-      return exposure.area > 0 ? z.v / exposure.area : 0;
-    }
-    return z.v;
-  }
   function legendText(full) {
     if (S.mode === "geometry") return "Occupied cells";
     if (S.mode === "flow") return "Buy share 0% · 50% · 100%";
@@ -1339,22 +1322,13 @@
         ? "var(--ol-line)"
         : "linear-gradient(to right,var(--ol-panel),var(--ol-volume))";
   }
-  function marksReadout(query, b) {
+  function marksReadout(b) {
     const va = markState.va,
       ps = stepP();
     return {
-      delta: 2 * query.bv - query.v,
       rayCount: markState.rays.length,
       vaLow: va ? Math.max(va.r0 * ps, b[2]) * PR : null,
       vaHigh: va ? Math.min(va.r1 * ps, b[3]) * PR : null,
-      vaShare: va?.share ?? null,
-      flowLegend:
-        "0% taker buy = all taker sell; 50% = equal buy and sell; 100% = all taker buy",
-      profileLegend:
-        "P: total-volume POC; B: taker-buy-volume POC; H/L: composite 70% value-area high/low",
-      densityDefinition:
-        "USDT volume divided by observed seconds and selected USDT price width",
-      rays: markState.rays,
     };
   }
   function fillCell(z, full, u) {
@@ -1386,7 +1360,7 @@
       ),
       hue = colors.volume;
     if (S.mode === "density") {
-      const density = measure?.density ?? metricValue(z, "density");
+      const density = measure.density;
       level =
         density > 0
           ? clamp(
@@ -2166,6 +2140,8 @@
     crumbIndex: -1,
     planeKey: "",
     planeStatus: "",
+    planeHover: false,
+    planeButtons: null,
     bound: false,
   };
   function stepAnchor(delta) {
@@ -2249,7 +2225,39 @@
     }
     return { status: "unavailable", source: shown?.id || S.dataset };
   }
-  function initPlane() {
+  function buildPlane() {
+    const frag = document.createDocumentFragment(),
+      label = (textContent) => {
+        const span = document.createElement("span");
+        span.textContent = textContent;
+        return span;
+      };
+    nav.planeButtons = [];
+    for (let m = M_MAX; m >= 0; m--) {
+      frag.append(label(String(m)));
+      for (let n = 0; n <= N_MAX; n++) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "cursor-interaction";
+        b.dataset.n = n;
+        b.dataset.m = m;
+        const show = () => {
+          nav.planeHover = true;
+          el("plane-status").textContent = b.title;
+        };
+        b.addEventListener("mouseenter", show);
+        b.addEventListener("focus", show);
+        b.addEventListener("click", () => changeResolution(n, m));
+        nav.planeButtons.push(b);
+        frag.append(b);
+      }
+    }
+    frag.append(label("n"));
+    for (let n = 0; n <= N_MAX; n++)
+      frag.append(label(n % 4 === 0 ? String(n) : ""));
+    el("plane").replaceChildren(frag);
+  }
+  function refreshPlane() {
     const g = navGeometry(),
       key = [
         S.n,
@@ -2266,52 +2274,36 @@
       ].join("|");
     if (key === nav.planeKey) return;
     nav.planeKey = key;
-    const frag = document.createDocumentFragment(),
-      label = (textContent) => {
-        const span = document.createElement("span");
-        span.textContent = textContent;
-        return span;
-      };
-    for (let m = M_MAX; m >= 0; m--) {
-      frag.append(label(String(m)));
-      for (let n = 0; n <= N_MAX; n++) {
-        const b = document.createElement("button"),
-          px = (2 ** n * g.w) / (S.tB - S.tA),
-          py = (2 ** m * g.h) / (S.pB - S.pA),
-          r = resolutionReadiness(n, m),
-          onPath = m === diagonalM(n),
-          kind =
-            r.status === "loading"
-              ? "loading"
-              : r.status !== "ready"
-                ? "unavailable"
-                : px < 6 || py < 6
-                  ? "small"
-                  : px > 32 || py > 32
-                    ? "large"
-                    : "ready",
-          text = `n ${n} · m ${m} · ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT · ${px.toFixed(1)} by ${py.toFixed(1)} px · ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}${onPath ? " · on the diagonal" : ""}`;
-        b.type = "button";
-        b.className =
+    if (!nav.planeButtons) buildPlane();
+    for (const b of nav.planeButtons) {
+      const n = Number(b.dataset.n),
+        m = Number(b.dataset.m),
+        px = (2 ** n * g.w) / (S.tB - S.tA),
+        py = (2 ** m * g.h) / (S.pB - S.pA),
+        r = resolutionReadiness(n, m),
+        onPath = m === diagonalM(n),
+        kind =
+          r.status === "loading"
+            ? "loading"
+            : r.status !== "ready"
+              ? "unavailable"
+              : px < 6 || py < 6
+                ? "small"
+                : px > 32 || py > 32
+                  ? "large"
+                  : "ready",
+        text = `n ${n} · m ${m} · ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT · ${px.toFixed(1)} by ${py.toFixed(1)} px · ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}${onPath ? " · on the diagonal" : ""}`,
+        className =
           "cursor-interaction ol-plane-" + kind + (onPath ? " ol-plane-path" : "");
-        b.dataset.n = n;
-        b.dataset.m = m;
-        b.setAttribute("aria-pressed", String(S.n === n && S.m === m));
-        b.setAttribute("aria-label", text);
+      if (b.className !== className) b.className = className;
+      const pressed = String(S.n === n && S.m === m);
+      if (b.getAttribute("aria-pressed") !== pressed)
+        b.setAttribute("aria-pressed", pressed);
+      if (b.title !== text) {
         b.title = text;
-        const show = () => {
-          el("plane-status").textContent = text;
-        };
-        b.addEventListener("mouseenter", show);
-        b.addEventListener("focus", show);
-        b.addEventListener("click", () => changeResolution(n, m));
-        frag.append(b);
+        b.setAttribute("aria-label", text);
       }
     }
-    frag.append(label("n"));
-    for (let n = 0; n <= N_MAX; n++)
-      frag.append(label(n % 4 === 0 ? String(n) : ""));
-    el("plane").replaceChildren(frag);
   }
   function changeResolution(n, m, timeOnly = false) {
     n = clamp(Math.round(n), 0, N_MAX);
@@ -2445,7 +2437,7 @@
       fmt = (x) => (x < 1 ? x.toFixed(1) : Math.round(x));
     el("pixel-state").textContent = `${fmt(px)} × ${fmt(py)} px / cell`;
     nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)`;
-    el("plane-status").textContent = nav.planeStatus;
+    if (!nav.planeHover) el("plane-status").textContent = nav.planeStatus;
     el("gesture").textContent = S.lens
       ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · L releases"
       : S.select
@@ -2455,7 +2447,7 @@
           : S.diagonal
             ? "Wheel / pinch: time ×k, price ×√k · Alt: lens"
             : "Wheel / pinch: time · Shift-wheel: price · Alt: lens";
-    initPlane();
+    refreshPlane();
   }
   function settleNavigation(label, refit = false) {
     confine();
@@ -2775,8 +2767,13 @@
     el("lens-pin").addEventListener("click", () => {
       pinLens();
     });
-    el("plane").addEventListener("mouseleave", () => {
+    const leavePlane = () => {
+      nav.planeHover = false;
       el("plane-status").textContent = nav.planeStatus || "";
+    };
+    el("plane").addEventListener("mouseleave", leavePlane);
+    el("plane").addEventListener("focusout", (e) => {
+      if (!el("plane").contains(e.relatedTarget)) leavePlane();
     });
     canvas.addEventListener("pointerdown", (e) => {
       if (!ready) return;
@@ -3006,7 +3003,7 @@
         el("diagonal").click();
         return;
       }
-      if (k === "enter" && (S.lens || nav.alt || nav.hold)) {
+      if (k === "enter" && e.target === canvas && (S.lens || nav.alt || nav.hold)) {
         e.preventDefault();
         pinLens();
         return;
@@ -3100,7 +3097,7 @@
   qsa("[data-window]").forEach((b) =>
     b.addEventListener("click", () => {
       setWindow(b.dataset.window);
-      recordCrumb(b.textContent);
+      recordCrumb(b.textContent.trim());
       update();
       save();
     }),
@@ -3186,13 +3183,20 @@
   bindNavigation();
   try {
     qsa("button,input,select").forEach((control) => (control.disabled = true));
+    el("snapshot").textContent =
+      date(CUT).toLocaleDateString("en-GB", {
+        timeZone: "UTC",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }) + " · UTC";
     getColors();
     sources.recent = await unpack(PACK.blocks.recent, "recent");
     loadState.recent = "ready";
     ready = true;
     geometry();
     setWindow("1");
-    restore(window.explorerState?.widgetState);
+    restore(window.explorerState?.saved);
     transition = null;
     qsa("button,input,select").forEach((control) => (control.disabled = false));
     recordCrumb(

@@ -101,6 +101,14 @@
         Coupled zoom</button
       ><button
         type="button"
+        id="ol-diagonal"
+        class="cursor-interaction"
+        aria-pressed="false"
+        title="Zoom time by k and price by the square root of k; the price level follows the measured diagonal"
+      >
+        Diagonal zoom</button
+      ><button
+        type="button"
         id="ol-refit"
         class="cursor-interaction"
         aria-pressed="true"
@@ -113,34 +121,48 @@
         aria-pressed="false"
       >
         Lens</button
+      ><select id="ol-lens-depth" aria-label="Lens depth in levels finer">
+        <option value="1">−1 level</option>
+        <option value="2" selected>−2 levels</option>
+        <option value="3">−3 levels</option>
+        <option value="4">−4 levels</option></select
+      ><button
+        type="button"
+        id="ol-lens-pin"
+        class="cursor-interaction"
+        hidden
+        title="Make the lens rectangle and resolution the view"
+      >
+        Pin lens</button
       ><span id="ol-pixel-state" class="ol-num ol-muted"></span>
     </div>
-    <details class="ol-plane-disclosure" id="ol-plane-disclosure">
-      <summary class="cursor-interaction">Resolution plane</summary>
-      <div class="ol-plane-panel">
-        <div class="ol-plane-cap"><span>Price ↑</span><span>Time →</span></div>
-        <div
-          class="ol-plane"
-          id="ol-plane"
-          aria-label="Time and price resolution plane; each button gives cell dimensions in pixels"
-        ></div>
-        <div class="ol-plane-key">
-          <span><i class="ol-plane-ready"></i>Ready · usable</span
-          ><span><i class="ol-plane-small"></i>Too small</span
-          ><span><i class="ol-plane-large"></i>Too large</span
-          ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
-          ><span><i class="ol-plane-loading"></i>… loading</span>
-        </div>
-        <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
+    <div class="ol-plane-map" id="ol-plane-map">
+      <div class="ol-plane-cap">
+        <span>Resolution plane · m price ↑ · n time →</span>
       </div>
-    </details>
+      <div
+        class="ol-plane"
+        id="ol-plane"
+        aria-label="Time and price resolution lattice; the outlined cells are the diagonal"
+      ></div>
+      <div class="ol-plane-key">
+        <span><i class="ol-plane-ready"></i>Ready · usable</span
+        ><span><i class="ol-plane-small"></i>Too small</span
+        ><span><i class="ol-plane-large"></i>Too large</span
+        ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
+        ><span><i class="ol-plane-loading"></i>… loading</span
+        ><span><i class="ol-plane-path"></i>Diagonal</span>
+      </div>
+      <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
+    </div>
     <details class="ol-nav-help">
       <summary class="cursor-interaction">Controls</summary>
       <div>
         Drag: pan · wheel: time · Shift-wheel: price · pinch: zoom<br />Arrows:
         pan · + / −: zoom · [ / ]: time level · Shift+[ / ]: price level<br />A:
-        auto · F: fit price · L / hold Alt: lens · Esc: clear<br />Touch: hold
-        to inspect finer cells; lift to return
+        auto · D: diagonal zoom · F: fit price · L / hold Alt: lens · Shift+L:
+        lens depth · Enter: pin lens · Esc: clear<br />, / . : step the replay
+        anchor · Touch: hold to inspect finer cells; lift to return
       </div>
     </details>
   </div>

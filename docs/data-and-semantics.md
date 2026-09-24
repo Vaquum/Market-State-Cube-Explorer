@@ -27,11 +27,15 @@ The seven-day block contains base cells. The 30-day archive and full-history ove
 
 ## Historical evidence
 
-For each displayed grid and price window, the engine uses every loaded source that can represent it. The finest complete source owns overlapping columns. A state combines POC direction, buy-share third and volume third. Thresholds use columns before the anchor; candidate outcomes end no later than the anchor. Missing contiguous POCs interrupt a case.
+For each displayed grid, the engine uses every loaded source that can represent it, over all price rows: the visible price window never conditions the historical population, so the same anchor gives the same base rates whichever band is on screen. The finest complete source owns overlapping columns. A state combines POC direction, buy-share third and volume third. Thresholds use columns before the anchor; candidate outcomes end no later than the anchor. Missing contiguous POCs interrupt a case.
 
 Unconditional and conditional distributions use the same qualifying history. Cases, price bounds, source provenance and sample sizes are visible. Matching samples below 30 retain counts but suppress percentages and cones. These descriptive distributions are not probability calibration, independent trials, or validation of a trading strategy.
 
 POC barriers are first crossings by column-end POCs over the selected horizon. Intracell trade ordering and true trade-price barrier first-touch cannot be recovered from this aggregated snapshot.
+
+## The diagonal through the resolution lattice
+
+Measured over the full history from 2021-01-01 (n = 6..13 on the 2026-09-24 extraction), the median price range of a column grows with its duration as `log2(range / 125) = -1.06 + 0.486 n`, an exponent of 0.49, close to a square-root law. The diagonal is the lattice path `m = round(-1.06 + 0.486 n)`, along which one column is about one row tall. Diagonal zoom scales the time window by a factor and the price window by its square root, and the auto level keeps the price exponent on that path. The plane marks the path so a deliberate step off it is visible.
 
 ## Portable views
 

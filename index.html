@@ -4173,16 +4173,19 @@
     el("plane").replaceChildren(frag);
   }
   function changeResolution(n, m, timeOnly = false) {
+    n = clamp(Math.round(n), 0, N_MAX);
+    m = clamp(Math.round(m), 0, M_MAX);
     if (S.diagonal) {
       if (timeOnly) m = diagonalM(n);
-      else if (m !== diagonalM(n)) S.diagonal = false;
+      else if ((n !== S.n || m !== S.m) && m !== diagonalM(n))
+        S.diagonal = false;
     }
     transition = reduce
       ? null
       : { n: renderN(), m: renderM(), start: performance.now() };
     S.auto = false;
-    S.n = clamp(n, 0, N_MAX);
-    S.m = clamp(m, 0, M_MAX);
+    S.n = n;
+    S.m = m;
     limits();
     hover = null;
     el("tip").hidden = true;
@@ -4390,7 +4393,8 @@
     S.pB = f.pb;
     S.n = f.n;
     S.m = f.m;
-    if (S.diagonal && f.m !== diagonalM(f.n)) S.diagonal = false;
+    if (S.diagonal && (f.n !== S.n || f.m !== S.m) && f.m !== diagonalM(f.n))
+      S.diagonal = false;
     S.auto = false;
     S.lens = false;
     S.window = "";

@@ -13,9 +13,9 @@
   // n = 6..13, measured on the 2026-09-24 extraction (exponent 0.49).
   const ISO_A = -1.06,
     ISO_B = 0.486,
-    PLANE_N = 20,
-    PLANE_M = 9;
-  const diagonalM = (n) => clamp(Math.round(ISO_A + ISO_B * n), 0, 12);
+    N_MAX = 20,
+    M_MAX = 9;
+  const diagonalM = (n) => clamp(Math.round(ISO_A + ISO_B * n), 0, M_MAX);
   const canvas = el("canvas"),
     ctx = canvas.getContext("2d"),
     reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -569,8 +569,8 @@
     return sources[S.dataset];
   }
   function limits() {
-    S.n = clamp(Math.round(S.n), 0, 22);
-    S.m = clamp(Math.round(S.m), 0, 12);
+    S.n = clamp(Math.round(S.n), 0, N_MAX);
+    S.m = clamp(Math.round(S.m), 0, M_MAX);
     S.horizon = [1, 2, 4, 8].includes(S.horizon) ? S.horizon : 1;
   }
   function requestedBounds() {
@@ -794,6 +794,7 @@
       S.auto = false;
       S.n = n;
       S.m = m;
+      if (S.diagonal && m !== diagonalM(n)) S.diagonal = false;
       S.selection = [
         Math.floor(a + 0.5),
         Math.floor(b + 0.5),
@@ -1146,9 +1147,9 @@
     el("tr").textContent = dur(BASE * 2 ** S.n);
     el("pr").textContent = price(PR * 2 ** S.m) + " USDT";
     el("tminus").disabled = S.n === 0;
-    el("tplus").disabled = S.n === 22;
+    el("tplus").disabled = S.n === N_MAX;
     el("pminus").disabled = S.m === 0;
-    el("pplus").disabled = S.m === 12;
+    el("pplus").disabled = S.m === M_MAX;
     qsa("[data-window]").forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.window === S.window)),
     );
@@ -2202,8 +2203,8 @@
   function autoLevel() {
     if (!S.auto || !(S.tB > S.tA) || !(S.pB > S.pA)) return false;
     const g = navGeometry(),
-      n = pixelLevel(S.n, S.tB - S.tA, g.w, 22),
-      m = S.diagonal ? diagonalM(n) : pixelLevel(S.m, S.pB - S.pA, g.h, 12),
+      n = pixelLevel(S.n, S.tB - S.tA, g.w, N_MAX),
+      m = S.diagonal ? diagonalM(n) : pixelLevel(S.m, S.pB - S.pA, g.h, M_MAX),
       changed = n !== S.n || m !== S.m;
     if (changed) {
       transition = reduce
@@ -2271,9 +2272,9 @@
         span.textContent = textContent;
         return span;
       };
-    for (let m = PLANE_M; m >= 0; m--) {
+    for (let m = M_MAX; m >= 0; m--) {
       frag.append(label(String(m)));
-      for (let n = 0; n <= PLANE_N; n++) {
+      for (let n = 0; n <= N_MAX; n++) {
         const b = document.createElement("button"),
           px = (2 ** n * g.w) / (S.tB - S.tA),
           py = (2 ** m * g.h) / (S.pB - S.pA),
@@ -2308,21 +2309,21 @@
       }
     }
     frag.append(label("n"));
-    for (let n = 0; n <= PLANE_N; n++)
+    for (let n = 0; n <= N_MAX; n++)
       frag.append(label(n % 4 === 0 ? String(n) : ""));
     el("plane").replaceChildren(frag);
   }
-  function changeResolution(n, m) {
-    if (S.diagonal && m !== diagonalM(n)) {
-      if (m === S.m) m = diagonalM(n);
-      else S.diagonal = false;
+  function changeResolution(n, m, timeOnly = false) {
+    if (S.diagonal) {
+      if (timeOnly) m = diagonalM(n);
+      else if (m !== diagonalM(n)) S.diagonal = false;
     }
     transition = reduce
       ? null
       : { n: renderN(), m: renderM(), start: performance.now() };
     S.auto = false;
-    S.n = clamp(n, 0, 22);
-    S.m = clamp(m, 0, 12);
+    S.n = clamp(n, 0, N_MAX);
+    S.m = clamp(m, 0, M_MAX);
     limits();
     hover = null;
     el("tip").hidden = true;
@@ -2530,6 +2531,7 @@
     S.pB = f.pb;
     S.n = f.n;
     S.m = f.m;
+    if (S.diagonal && f.m !== diagonalM(f.n)) S.diagonal = false;
     S.auto = false;
     S.lens = false;
     S.window = "";
@@ -3025,6 +3027,7 @@
         changeResolution(
           S.n + (e.shiftKey ? 0 : d),
           S.m + (e.shiftKey ? d : 0),
+          !e.shiftKey,
         );
         return;
       }
@@ -3112,7 +3115,7 @@
     ["pplus", 0, 1],
   ])
     el(id).addEventListener("click", () =>
-      changeResolution(S.n + dn, S.m + dm),
+      changeResolution(S.n + dn, S.m + dm, dm === 0),
     );
   for (const f of ["poc", "area", "untested"])
     el(f).addEventListener("change", () => {

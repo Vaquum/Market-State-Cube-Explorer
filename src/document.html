@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="description" content="Independent time and price grids for exploring recorded BTCUSDT spot trades.">
+    <title>Market State Cube Explorer</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { margin: 0; padding: 16px; background: light-dark(#f7f9f7, #0c110e); }
+      main { max-width: 1480px; margin: 0 auto; }
+      .cursor-interaction:not(:disabled) { cursor: pointer; }
+      __EXPLORER_STYLE__
+    </style>
+  </head>
+  <body>
+    <main>
+      __EXPLORER_VIEW__
+    </main>
+    <noscript>This explorer requires JavaScript to decode the recorded trades and draw the grid.</noscript>
+    <script src="vendor/d3.min.js"></script>
+    <script type="application/json" id="origo-lens-data">__EXPLORER_DATA__</script>
+    <script>__EXPLORER_STATE__</script>
+    <script>__EXPLORER_SCRIPT__</script>
+  </body>
+</html>

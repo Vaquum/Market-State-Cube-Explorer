@@ -1,0 +1,572 @@
+<div
+  id="origo-lens"
+  aria-label="Origo market lens with independent time and price geometry"
+>
+  <header class="ol-top">
+    <div>
+      <div class="ol-brand"><span>ORIGO</span>Market lens</div>
+      <div class="ol-market">
+        BTC / USDT <span aria-hidden="true">·</span> Binance spot
+      </div>
+    </div>
+    <div class="ol-top-right">
+      RECORDED MARKET<br /><span id="ol-snapshot">24 Sep 2026 · UTC</span>
+    </div>
+  </header>
+  <div class="ol-controls">
+    <div class="ol-windows" aria-label="Time window">
+      <button
+        type="button"
+        class="cursor-interaction"
+        data-window="1"
+        aria-pressed="true"
+      >
+        24 hours</button
+      ><button
+        type="button"
+        class="cursor-interaction"
+        data-window="7"
+        aria-pressed="false"
+      >
+        7 days</button
+      ><button
+        type="button"
+        class="cursor-interaction"
+        data-window="all"
+        aria-pressed="false"
+      >
+        All history
+      </button>
+    </div>
+    <div class="ol-resolutions">
+      <div class="ol-step">
+        <div class="ol-step-label">
+          <span>Time · <span id="ol-n">n 4</span></span
+          ><output id="ol-tr">15 min</output>
+        </div>
+        <button
+          type="button"
+          id="ol-tminus"
+          class="cursor-interaction"
+          aria-label="Finer time resolution"
+        >
+          −</button
+        ><button
+          type="button"
+          id="ol-tplus"
+          class="cursor-interaction"
+          aria-label="Coarser time resolution"
+        >
+          +
+        </button>
+      </div>
+      <div class="ol-step">
+        <div class="ol-step-label">
+          <span>Price · <span id="ol-m">m 0</span></span
+          ><output id="ol-pr">125 USDT</output>
+        </div>
+        <button
+          type="button"
+          id="ol-pminus"
+          class="cursor-interaction"
+          aria-label="Finer price resolution"
+        >
+          −</button
+        ><button
+          type="button"
+          id="ol-pplus"
+          class="cursor-interaction"
+          aria-label="Coarser price resolution"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="ol-navigation">
+    <div class="ol-nav-controls">
+      <button
+        type="button"
+        id="ol-auto"
+        class="cursor-interaction"
+        aria-pressed="true"
+      >
+        Auto level</button
+      ><button
+        type="button"
+        id="ol-coupled"
+        class="cursor-interaction"
+        aria-pressed="false"
+      >
+        Coupled zoom</button
+      ><button
+        type="button"
+        id="ol-refit"
+        class="cursor-interaction"
+        aria-pressed="true"
+      >
+        Refit price</button
+      ><button
+        type="button"
+        id="ol-lens"
+        class="cursor-interaction"
+        aria-pressed="false"
+      >
+        Lens</button
+      ><span id="ol-pixel-state" class="ol-num ol-muted"></span>
+    </div>
+    <details class="ol-plane-disclosure" id="ol-plane-disclosure">
+      <summary class="cursor-interaction">Resolution plane</summary>
+      <div class="ol-plane-panel">
+        <div class="ol-plane-cap"><span>Price ↑</span><span>Time →</span></div>
+        <div
+          class="ol-plane"
+          id="ol-plane"
+          aria-label="Time and price resolution plane; each button gives cell dimensions in pixels"
+        ></div>
+        <div class="ol-plane-key">
+          <span><i class="ol-plane-ready"></i>Ready · usable</span
+          ><span><i class="ol-plane-small"></i>Too small</span
+          ><span><i class="ol-plane-large"></i>Too large</span
+          ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
+          ><span><i class="ol-plane-loading"></i>… loading</span>
+        </div>
+        <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
+      </div>
+    </details>
+    <details class="ol-nav-help">
+      <summary class="cursor-interaction">Controls</summary>
+      <div>
+        Drag: pan · wheel: time · Shift-wheel: price · pinch: zoom<br />Arrows:
+        pan · + / −: zoom · [ / ]: time level · Shift+[ / ]: price level<br />A:
+        auto · F: fit price · L / hold Alt: lens · Esc: clear<br />Touch: hold
+        to inspect finer cells; lift to return
+      </div>
+    </details>
+  </div>
+  <nav
+    class="ol-breadcrumbs"
+    id="ol-breadcrumbs"
+    aria-label="Exploration path"
+  ></nav>
+
+  <div class="ol-layers">
+    <div class="ol-modes" aria-label="Cell encoding">
+      <button
+        type="button"
+        data-mode="volume"
+        class="cursor-interaction"
+        aria-pressed="true"
+      >
+        Volume</button
+      ><button
+        type="button"
+        data-mode="flow"
+        class="cursor-interaction"
+        aria-pressed="false"
+      >
+        Taker flow</button
+      ><button
+        type="button"
+        data-mode="density"
+        class="cursor-interaction"
+        aria-pressed="false"
+      >
+        Density</button
+      ><button
+        type="button"
+        data-mode="delta"
+        class="cursor-interaction"
+        aria-pressed="false"
+      >
+        Delta</button
+      ><button
+        type="button"
+        data-mode="geometry"
+        class="cursor-interaction"
+        aria-pressed="false"
+      >
+        Geometry
+      </button>
+    </div>
+    <div class="ol-marks">
+      <label><input type="checkbox" id="ol-poc" checked />POC</label
+      ><label><input type="checkbox" id="ol-area" />70% area</label
+      ><label><input type="checkbox" id="ol-untested" />Untested</label>
+    </div>
+    <div class="ol-actions">
+      <button
+        type="button"
+        id="ol-select"
+        class="cursor-interaction"
+        aria-pressed="false"
+      >
+        Select</button
+      ><button
+        type="button"
+        id="ol-table"
+        class="cursor-interaction"
+        aria-pressed="false"
+      >
+        Table</button
+      ><button type="button" id="ol-fit" class="cursor-interaction">
+        Fit price
+      </button>
+    </div>
+  </div>
+  <div id="ol-loading" class="ol-loading" role="status">
+    Loading recent base cells · geometry ready
+  </div>
+  <div class="ol-workspace" id="ol-workspace">
+    <section
+      class="ol-field"
+      aria-label="Market field and linked volume profile"
+    >
+      <div class="ol-field-head">
+        <span>PRICE · USDT</span
+        ><span class="ol-legend"
+          ><i class="ol-ramp" id="ol-ramp" aria-hidden="true"></i
+          ><span id="ol-legend-text">USDT per cell · log</span></span
+        >
+      </div>
+      <canvas
+        id="ol-canvas" tabindex="0"
+        role="img"
+        aria-label="Time by price grid with real traded volume, point of control and linked volume profile"
+      ></canvas>
+      <div class="ol-tip" id="ol-tip" role="tooltip" hidden></div>
+      <div class="ol-data-state" aria-label="Data states">
+        <span
+          ><i class="ol-data-key zero" aria-hidden="true"></i
+          ><span id="ol-data-zero">Zero trades</span></span
+        ><span
+          ><i class="ol-data-key unfinished" aria-hidden="true"></i
+          ><span id="ol-data-open">Unfinished</span></span
+        ><span
+          ><i class="ol-data-key unavailable" aria-hidden="true"></i>Unavailable
+          / hidden</span
+        ><span id="ol-data-coarse" hidden
+          ><i class="ol-data-key coarse" aria-hidden="true"></i>Coarser than
+          requested</span
+        >
+      </div>
+      <div
+        id="ol-resolution-state"
+        class="ol-resolution-state"
+        role="status"
+      ></div>
+      <div class="ol-mark-key">
+        <span>P · total POC</span><span>B · buy POC</span
+        ><span>H/L · composite 70%</span><span id="ol-ray-count"></span>
+      </div>
+      <div class="ol-chart-foot">
+        <span class="ol-gesture" id="ol-gesture"
+          >Drag to pan · wheel to zoom · click to anchor</span
+        >
+        <div class="ol-replay">
+          <button
+            type="button"
+            id="ol-replay"
+            class="cursor-interaction"
+            aria-pressed="false"
+          >
+            Replay</button
+          ><button
+            type="button"
+            id="ol-back"
+            class="cursor-interaction"
+            aria-label="Previous replay column"
+            hidden
+          >
+            ←</button
+          ><span id="ol-replay-at" class="ol-num" hidden></span
+          ><button
+            type="button"
+            id="ol-next"
+            class="cursor-interaction"
+            aria-label="Next replay column"
+            hidden
+          >
+            →
+          </button>
+        </div>
+      </div>
+    </section>
+    <aside class="ol-side">
+      <div class="ol-side-tabs">
+        <button
+          type="button"
+          id="ol-context-tab"
+          class="cursor-interaction"
+          aria-pressed="true"
+        >
+          Structure</button
+        ><button
+          type="button"
+          id="ol-evidence-tab"
+          class="cursor-interaction"
+          aria-pressed="false"
+        >
+          Continuations
+        </button>
+      </div>
+      <div class="ol-side-context" id="ol-context">
+        <div class="ol-context-summary">
+          <div class="ol-section-heading" id="ol-focus-title">
+            Visible rectangle
+          </div>
+          <div class="ol-bounds" id="ol-bounds"></div>
+          <button type="button" class="cursor-interaction" id="ol-clear" hidden>
+            Clear selection
+          </button>
+          <div class="ol-metrics">
+            <div class="ol-metric">
+              <label>USDT volume</label><strong id="ol-vol">—</strong>
+            </div>
+            <div class="ol-metric">
+              <label>Trades</label><strong id="ol-count">—</strong>
+            </div>
+            <div class="ol-metric">
+              <label>Taker-buy USDT</label><strong id="ol-buyvol">—</strong>
+            </div>
+            <div class="ol-metric">
+              <label>Taker-buy trades</label><strong id="ol-buycount">—</strong>
+            </div>
+          </div>
+          <div class="ol-rule"></div>
+          <div class="ol-row">
+            <span>POC centre</span><span id="ol-poc-value">—</span>
+          </div>
+          <div class="ol-row">
+            <span>Buy POC centre</span><span id="ol-buypoc-value">—</span>
+          </div>
+          <div class="ol-row">
+            <span>Signed taker volume</span><span id="ol-delta-value">—</span>
+          </div>
+          <div class="ol-row">
+            <span>Composite 70%</span><span id="ol-va-value">—</span>
+          </div>
+          <div class="ol-row">
+            <span>Buy share · volume</span><span id="ol-share">—</span>
+          </div>
+        </div>
+        <div class="ol-context-scale">
+          <div class="ol-rule"></div>
+          <div class="ol-row">
+            <span>Occupied cells</span><span id="ol-cells">—</span>
+          </div>
+          <div class="ol-row">
+            <span>Boundary portions</span><span id="ol-partials">—</span>
+          </div>
+          <div class="ol-row">
+            <span>Zero-trade cells</span><span id="ol-zero-count">—</span>
+          </div>
+          <div class="ol-row">
+            <span>Unfinished cells</span><span id="ol-open-count">—</span>
+          </div>
+        </div>
+      </div>
+      <div id="ol-evidence" hidden>
+        <div class="ol-section-heading">Historical continuations</div>
+        <div class="ol-bounds" id="ol-anchor-time"></div>
+        <div class="ol-evidence-tabs" aria-label="Continuation outcome">
+          <button
+            type="button"
+            class="cursor-interaction"
+            data-evidence-kind="poc"
+            aria-pressed="true"
+          >
+            Next POC
+          </button>
+          <button
+            type="button"
+            class="cursor-interaction"
+            data-evidence-kind="barrier"
+            aria-pressed="false"
+          >
+            POC barriers
+          </button>
+        </div>
+        <div class="ol-evidence-state" id="ol-state"></div>
+        <div class="ol-row">
+          <label for="ol-horizon">Horizon</label
+          ><select id="ol-horizon">
+            <option value="1">1 column</option>
+            <option value="2">2 columns</option>
+            <option value="4">4 columns</option>
+            <option value="8">8 columns</option>
+          </select>
+        </div>
+        <div class="ol-row" id="ol-barrier-control" hidden>
+          <label for="ol-barrier">Distance each side</label
+          ><select id="ol-barrier">
+            <option value="1">1 price row</option>
+            <option value="2">2 price rows</option>
+            <option value="4">4 price rows</option>
+          </select>
+        </div>
+        <div class="ol-evidence-probs">
+          <button
+            type="button"
+            class="ol-probability cursor-interaction"
+            data-case-direction="up"
+            aria-label="Inspect higher POC cases"
+          >
+            <span class="ol-row"
+              ><span id="ol-label-up">Higher POC</span
+              ><span id="ol-prob-up">—</span></span
+            ><span class="ol-track"><span id="ol-bar-up"></span></span
+            ><span class="ol-track ol-base-track"
+              ><span id="ol-base-up"></span></span
+            ><span class="ol-base-caption" id="ol-base-prob-up"
+              >All states —</span
+            >
+          </button>
+          <button
+            type="button"
+            class="ol-probability cursor-interaction"
+            data-case-direction="flat"
+            aria-label="Inspect unchanged POC cases"
+          >
+            <span class="ol-row"
+              ><span id="ol-label-flat">Same row</span
+              ><span id="ol-prob-flat">—</span></span
+            ><span class="ol-track"><span id="ol-bar-flat"></span></span
+            ><span class="ol-track ol-base-track"
+              ><span id="ol-base-flat"></span></span
+            ><span class="ol-base-caption" id="ol-base-prob-flat"
+              >All states —</span
+            >
+          </button>
+          <button
+            type="button"
+            class="ol-probability cursor-interaction"
+            data-case-direction="down"
+            aria-label="Inspect lower POC cases"
+          >
+            <span class="ol-row"
+              ><span id="ol-label-down">Lower POC</span
+              ><span id="ol-prob-down">—</span></span
+            ><span class="ol-track"><span id="ol-bar-down"></span></span
+            ><span class="ol-track ol-base-track"
+              ><span id="ol-base-down"></span></span
+            ><span class="ol-base-caption" id="ol-base-prob-down"
+              >All states —</span
+            >
+          </button>
+        </div>
+        <div class="ol-evidence-legend">
+          <span><i class="ol-match-key"></i>Matching states</span
+          ><span><i class="ol-all-key"></i>All states</span>
+        </div>
+        <div class="ol-rule"></div>
+        <div class="ol-row">
+          <span>Matching cases</span><span id="ol-case-n">—</span>
+        </div>
+        <div class="ol-row">
+          <span>All qualifying cases</span><span id="ol-case-all">—</span>
+        </div>
+        <div class="ol-row">
+          <span>Empirical spread</span><span>10–90% / 25–75%</span>
+        </div>
+        <div class="ol-evidence-note" id="ol-evidence-provenance"></div>
+        <div class="ol-evidence-note" id="ol-evidence-note"></div>
+        <details id="ol-cases" class="ol-cases">
+          <summary class="cursor-interaction">Inspect evidence</summary>
+          <div class="ol-row">
+            <label for="ol-case-filter">Cases</label
+            ><select id="ol-case-filter">
+              <option value="all">Matching states</option>
+              <option value="failure">Opposite / failed</option>
+              <option value="up">Higher / upper</option>
+              <option value="flat">Same / neither</option>
+              <option value="down">Lower / lower</option>
+              <option value="reference">All states</option>
+            </select>
+          </div>
+          <div class="ol-evidence-note" id="ol-case-definition"></div>
+          <div id="ol-case-list" class="ol-case-list"></div>
+          <div class="ol-case-pages">
+            <button type="button" id="ol-case-prev" class="cursor-interaction">
+              Previous</button
+            ><span id="ol-case-page" class="ol-num"></span
+            ><button type="button" id="ol-case-next" class="cursor-interaction">
+              Next
+            </button>
+          </div>
+        </details>
+      </div>
+    </aside>
+  </div>
+  <details class="ol-query" id="ol-query-panel">
+    <summary>
+      Cube query <span id="ol-query-mini" class="ol-num"></span>
+    </summary>
+    <div class="ol-query-body">
+      <label for="ol-query-text"
+        >Six parameters · requested base-cell bounds</label
+      ><textarea
+        id="ol-query-text"
+        rows="5"
+        readonly
+        aria-label="Copyable cube query"
+      ></textarea>
+      <div class="ol-query-actions">
+        <button type="button" id="ol-copy-query" class="cursor-interaction">
+          Copy query</button
+        ><button type="button" id="ol-copy-view" class="cursor-interaction">
+          Copy view code</button
+        ><button type="button" id="ol-import-toggle" class="cursor-interaction">
+          Restore view</button
+        ><span id="ol-copy-status" role="status"></span>
+      </div>
+      <div id="ol-import" hidden>
+        <label for="ol-import-text">Paste a cube query or view code</label
+        ><textarea id="ol-import-text" rows="3"></textarea
+        ><button type="button" id="ol-import-apply" class="cursor-interaction">
+          Apply view
+        </button>
+      </div>
+      <div id="ol-query-ready" class="ol-muted"></div>
+    </div>
+  </details>
+  <section
+    class="ol-table-section"
+    id="ol-table-section"
+    hidden
+    aria-label="Cell measures"
+  >
+    <div class="ol-table-head">
+      <span id="ol-table-caption"></span>
+      <div>
+        <button type="button" id="ol-table-back" class="cursor-interaction">
+          Previous</button
+        ><span id="ol-table-page"></span
+        ><button type="button" id="ol-table-next" class="cursor-interaction">
+          Next
+        </button>
+      </div>
+    </div>
+    <div class="ol-table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Time · UTC</th>
+            <th>Price · USDT</th>
+            <th>USDT volume</th>
+            <th>Trades</th>
+            <th>Buy USDT</th>
+            <th>Buy trades</th>
+            <th>State</th>
+          </tr>
+        </thead>
+        <tbody id="ol-table-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="ol-footer">
+    <span id="ol-scope">Real Binance trades · recorded snapshot</span
+    ><span id="ol-cutoff" class="ol-num"></span>
+  </footer>
+</div>

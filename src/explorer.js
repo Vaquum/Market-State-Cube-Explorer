@@ -664,10 +664,10 @@
       line(x, G.y, x, G.y + G.h, colors.evidence, 1, 0.65);
       ctx.setLineDash([]);
     }
+    // The crosshair's price line and the cell under the pointer; its time line
+    // runs through both panes (see crosshair).
     if (hover && inPlot(hover) && hover.t < cut) {
-      const x = Math.round(hover.x) + 0.5,
-        y = Math.round(hover.y) + 0.5;
-      line(x, G.y, x, G.y + G.h, colors.muted, 1, 0.6);
+      const y = Math.round(hover.y) + 0.5;
       line(G.x, y, G.x + G.w, y, colors.muted, 1, 0.6);
       const z = query.map.get(
         Math.floor(hover.t / ts) + "," + Math.floor(hover.p / ps),
@@ -727,11 +727,13 @@
       else requestDraw();
     }
   }
-  // The crosshair runs through both panes, with the pointer's price and time on
-  // the axes, rounded to what a pixel can tell apart.
+  // The crosshair's time line runs through both panes wherever the pointer is
+  // on either, so a bar lines up with its column of cells; the pointer's price
+  // and time show on the axes, rounded to what a pixel can tell apart.
   function crosshair(cut) {
     if (!hover || hover.t >= cut || !(inPlot(hover) || inActivity(hover))) return;
     const x = Math.round(hover.x) + 0.5;
+    line(x, G.y, x, G.y + G.h, colors.muted, 1, 0.6);
     line(x, G.ay, x, G.ay + G.ah, colors.muted, 1, 0.6);
     if (inPlot(hover)) {
       const perPx = ((S.pB - S.pA) * PR) / G.h,
@@ -1637,6 +1639,8 @@
       const r = Math.floor(p.p / ps),
         row = last.query.rows.find((x) => x.r === r);
       hover.row = row ? r : null;
+      // A profile row is no one cell: the Cells drawer shows none as hovered.
+      syncRowHover(null);
       if (!row) tipRows(tip, priceRow(r), "", [], "No trades at this price in view");
       else
         tipRows(
@@ -3161,8 +3165,9 @@
     shift: false,
     hold: false,
     holdTimer: 0,
-    wheelTimer: 0,
-    wheelTime: false,
+    zoomTimer: 0,
+    zoomTime: false,
+    zoomKey: "",
     planeKey: "",
     planeStatus: "",
     planeHover: false,
@@ -4005,15 +4010,19 @@
     if (S.auto) autoLevel();
     update();
   }
-  // A zoom gesture ends a moment after its last step, by wheel or held key:
-  // then the price range refits once, if time was zoomed, and the zoom is
-  // recorded.
+  // A zoom gesture ends a moment after its last step: the wheel's last tick,
+  // or the release of a zoom key, since a held key's first repeat can come
+  // later than the wheel's pause. Then the price range refits once, if time
+  // was zoomed, and the zoom is recorded. (A pinch ends when a finger lifts.)
+  function zoomStep(timeZoomed) {
+    nav.zoomTime = nav.zoomTime || timeZoomed;
+    clearTimeout(nav.zoomTimer);
+  }
   function endZoom(timeZoomed) {
-    nav.wheelTime = nav.wheelTime || timeZoomed;
-    clearTimeout(nav.wheelTimer);
-    nav.wheelTimer = setTimeout(() => {
-      if (nav.wheelTime) refitAfterGesture();
-      nav.wheelTime = false;
+    zoomStep(timeZoomed);
+    nav.zoomTimer = setTimeout(() => {
+      if (nav.zoomTime) refitAfterGesture();
+      nav.zoomTime = false;
       recordView("Zoom");
       save();
     }, 220);
@@ -4307,6 +4316,7 @@
           S.pB = S.pA + pspan;
         }
         S.window = "";
+        // The price range refits once, when a finger lifts (see finish).
         settleNavigation(null, false);
         return;
       }
@@ -4395,9 +4405,10 @@
     };
     canvas.addEventListener("pointerup", finish);
     canvas.addEventListener("pointercancel", (e) => {
+      // A cancelled pinch has already moved the view: it ends as a lifted one.
+      if (nav.pinch) return finish(e);
       clearTimeout(nav.holdTimer);
       nav.pointers.delete(e.pointerId);
-      nav.pinch = null;
       nav.hold = false;
       drag = null;
       requestDraw();
@@ -4501,7 +4512,9 @@
         changeResolution(S.n + bracket[0], S.m + bracket[1], !bracket[1]);
       else if (["+", "=", "-", "_"].includes(k)) {
         zoomNavigation(k === "-" || k === "_" ? 1.4 : 1 / 1.4, centre, shift);
-        endZoom(!shift);
+        // Held, the key zooms on until it comes up (see the keyup below).
+        zoomStep(!shift);
+        nav.zoomKey = e.code || e.key;
       } else if (k.startsWith("Arrow")) {
         const dt = (S.tB - S.tA) * 0.15,
           dp = (S.pB - S.pA) * 0.15,
@@ -4578,8 +4591,16 @@
         nav.shift = false;
         if (hover && !el("tip").hidden) tooltip(hover);
       }
+      if (nav.zoomKey && nav.zoomKey === (e.code || e.key)) {
+        nav.zoomKey = "";
+        endZoom(false);
+      }
     });
     window.addEventListener("blur", () => {
+      if (nav.zoomKey) {
+        nav.zoomKey = "";
+        endZoom(false);
+      }
       nav.alt = false;
       nav.shift = false;
       nav.hold = false;

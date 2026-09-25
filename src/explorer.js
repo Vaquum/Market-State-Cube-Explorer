@@ -4686,11 +4686,12 @@
       if (nav.zoomKeys.delete(id) && !nav.zoomKeys.size) endZoom(false);
     });
     window.addEventListener("blur", () => {
-      // Losing focus lets go of every key and pointer, and ends a zoom gesture.
-      const zooming = nav.zoomKeys.size > 0 || nav.pinch !== null;
+      // Losing focus lets go of every key and pointer, and ends a zoom gesture
+      // under the name of the input it cut short.
+      const label = nav.pinch ? "Pinch" : nav.zoomKeys.size ? "Zoom" : "";
       nav.zoomKeys.clear();
       nav.pinch = null;
-      if (zooming) endZoom(false);
+      if (label) endZoom(false, label);
       nav.pressed.clear();
       nav.alt = false;
       nav.shift = false;

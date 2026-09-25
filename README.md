@@ -57,7 +57,7 @@ Edit `src/`, then rebuild the committed `index.html`. The build uses Python's st
 
 ## Deploy
 
-[cube.vaquum.fi](https://cube.vaquum.fi) is a Cloudflare Worker that serves the committed `index.html` as a static asset behind HTTP Basic Auth. `wrangler.toml` is the deploy contract: the Worker name, the custom domain and its DNS record come from it, and `.assetsignore` uploads nothing but `index.html`. `worker.js` runs before every request: plain HTTP is redirected to HTTPS, a request without matching credentials gets a `401` challenge, and without the two secrets below the Worker admits nobody. There is no workers.dev or preview URL.
+[cube.vaquum.fi](https://cube.vaquum.fi) is a Cloudflare Worker that serves the committed `index.html` as a static asset behind HTTP Basic Auth. `wrangler.toml` is the deploy contract: the Worker name (`market-state-cube-explorer`, the Worker connected to this repository in the dashboard), the custom domain and its DNS record come from it, and `.assetsignore` uploads nothing but `index.html`. `worker.js` runs before every request: plain HTTP is redirected to HTTPS, a request without matching credentials gets a `401` challenge, and without the two secrets below the Worker admits nobody. There is no workers.dev or preview URL.
 
 Cloudflare's Git integration deploys every push to `main`. One-time setup in the dashboard:
 

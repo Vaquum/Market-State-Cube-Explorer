@@ -3227,6 +3227,7 @@
     zoomTime: false,
     // The zoom keys held: a key zoom lasts until the last of them comes up.
     zoomKeys: new Set(),
+    zoomLabel: "Zoom",
     // The keys whose presses the chart took, while they are held.
     pressed: new Set(),
     planeKey: "",
@@ -4044,9 +4045,9 @@
       save();
     }
   }
-  // A zoom leaves the price range alone while a gesture runs; refit mode fits
-  // it once the gesture ends (refitNow for a single step, such as a key).
-  function zoomNavigation(k, p, priceOnly = false, refitNow = false) {
+  // A zoom leaves the price range alone: refit mode fits it once, when the
+  // zoom gesture ends (see endZoom).
+  function zoomNavigation(k, p, priceOnly = false) {
     const tspan = S.tB - S.tA,
       pspan = S.pB - S.pA;
     if (!priceOnly || S.coupled) {
@@ -4064,7 +4065,7 @@
       S.pB = S.pA + span;
     }
     S.window = "";
-    settleNavigation(null, refitNow && !priceOnly);
+    settleNavigation(null, false);
     return p;
   }
   function refitAfterGesture() {
@@ -4073,23 +4074,25 @@
     if (S.auto) autoLevel();
     update();
   }
-  // A zoom gesture ends a moment after its last step: the wheel's last tick,
-  // or the release of the last zoom key held, since a held key's first repeat
-  // can come later than the wheel's pause. Then the price range refits once,
-  // if time was zoomed, and the zoom is recorded. (A pinch ends when a finger
-  // lifts.)
+  // A zoom gesture runs while any zoom input does: a held zoom key, a pinch
+  // or the wheel's ticks. It ends 220 ms after the last of them (a wheel tick,
+  // a key's release, a pinch's lift, a double-click), so inputs that follow
+  // one another closely make one gesture; a held key's first repeat can come
+  // later than that, so a key zooms on until it comes up. Then the price range
+  // refits once, if time was zoomed, and the zoom is recorded under the name
+  // of its last input.
   function zoomStep(timeZoomed) {
     nav.zoomTime = nav.zoomTime || timeZoomed;
     clearTimeout(nav.zoomTimer);
   }
-  function endZoom(timeZoomed) {
+  function endZoom(timeZoomed, label = "Zoom") {
     zoomStep(timeZoomed);
-    // While a zoom key is held the gesture goes on: its release ends it.
-    if (nav.zoomKeys.size) return;
+    nav.zoomLabel = label;
+    if (nav.zoomKeys.size || nav.pinch) return;
     nav.zoomTimer = setTimeout(() => {
       if (nav.zoomTime) refitAfterGesture();
       nav.zoomTime = false;
-      recordView("Zoom");
+      recordView(nav.zoomLabel);
       save();
     }, 220);
   }
@@ -4340,6 +4343,9 @@
           t: G.X.invert(mid.x),
           p: G.Y.invert(mid.y),
         };
+        // A pinch joins the zoom gesture: an end the wheel or a key had set
+        // waits for the fingers.
+        zoomStep(true);
         drag = null;
         return;
       }
@@ -4436,7 +4442,8 @@
           nav.pinch = null;
           drag = null;
           nav.hold = false;
-          settleNavigation("Pinch", true);
+          settleNavigation(null, false);
+          endZoom(true, "Pinch");
         }
         return;
       }
@@ -4510,10 +4517,10 @@
       if (!ready) return;
       const p = at(e);
       if (!inPlot(p)) return;
-      zoomNavigation(0.5, p, e.shiftKey, true);
+      zoomNavigation(0.5, p, e.shiftKey);
       if (!S.replay) S.anchor = null;
-      recordView("Drill");
-      save();
+      // A drill is a zoom gesture of one step.
+      endZoom(!e.shiftKey, "Drill");
     });
     // Keys work anywhere on the page except in text fields and lists, which
     // keep their own; the browser keeps its shortcuts, and Alt with an arrow is
@@ -4679,16 +4686,17 @@
       if (nav.zoomKeys.delete(id) && !nav.zoomKeys.size) endZoom(false);
     });
     window.addEventListener("blur", () => {
-      if (nav.zoomKeys.size) {
-        nav.zoomKeys.clear();
-        endZoom(false);
-      }
+      // Losing focus lets go of every key and pointer, and ends a zoom gesture
+      // under the name of the input it cut short.
+      const label = nav.pinch ? "Pinch" : nav.zoomKeys.size ? "Zoom" : "";
+      nav.zoomKeys.clear();
+      nav.pinch = null;
+      if (label) endZoom(false, label);
       nav.pressed.clear();
       nav.alt = false;
       nav.shift = false;
       nav.hold = false;
       drag = null;
-      nav.pinch = null;
       nav.pointers.clear();
       clearTimeout(nav.holdTimer);
       requestDraw();

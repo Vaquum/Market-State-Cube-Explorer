@@ -2231,7 +2231,7 @@
     }
     return { status: "unavailable", source: shown?.id || S.dataset };
   }
-  const tiles = { pending: null, timer: 0, tried: new Set() };
+  const tiles = { pending: null, timer: 0, skip: null };
   function tileSpec(n, m) {
     const step = 2 ** n,
       r = requestedBounds(),
@@ -2249,8 +2249,13 @@
     if (tiles.pending || resolutionReadiness(S.n, S.m).status !== "unavailable")
       return;
     const t = tileSpec(S.n, S.m);
-    if (!t || tiles.tried.has(t.id)) return;
-    tiles.tried.add(t.id);
+    if (!t) return;
+    // A failure skips only the re-check it triggers itself; the next navigation,
+    // level change or import asks the cube again.
+    if (t.id === tiles.skip) {
+      tiles.skip = null;
+      return;
+    }
     tiles.pending = t.id;
     PACK.blocks[t.id] = { n: t.n, m: t.m, b0: t.b0, b1: t.b1 };
     loadState[t.id] = "loading";
@@ -2270,7 +2275,8 @@
       el("loading").hidden = true;
     } catch (error) {
       delete PACK.blocks[t.id];
-      loadState[t.id] = "unavailable";
+      delete loadState[t.id];
+      tiles.skip = t.id;
       el("loading").textContent = `Cube tile unavailable: ${error.message}`;
       el("loading").setAttribute("role", "alert");
     }

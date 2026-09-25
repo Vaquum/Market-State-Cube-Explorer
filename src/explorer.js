@@ -101,7 +101,11 @@
       const s = iso(b);
       return s.slice(0, 10) + " " + s.slice(11, s.endsWith(".000Z") ? 19 : 23);
     },
-    usdt = (x) => x.toLocaleString("en-US", { maximumFractionDigits: 2 });
+    usdt = (x) =>
+      x.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
   async function unpack(block, id) {
     const bytes = Uint8Array.from(atob(block.gzip_base64), (c) =>
       c.charCodeAt(0),
@@ -335,11 +339,12 @@
       .domain([S.pA, S.pB])
       .range([G.y + G.h, G.y]);
   }
+  const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
   function text(s, x, y, color = colors.muted, align = "left", size = 11) {
     ctx.fillStyle = color;
     ctx.textAlign = align;
     ctx.textBaseline = "middle";
-    ctx.font = `${size}px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif`;
+    ctx.font = `${size}px ${FONT}`;
     ctx.fillText(s, x, y);
   }
   function line(x1, y1, x2, y2, color, width = 1, alpha = 1) {
@@ -364,6 +369,19 @@
     for (let p = Math.ceil(S.pA / dp) * dp; p <= S.pB; p += dp)
       line(G.x, G.Y(p), G.x + G.w, G.Y(p), colors.line, 0.6, design.grid);
   }
+  // Time labels follow the tick step rather than the visible span, so two
+  // adjacent labels never repeat; a tick at midnight UTC names its day.
+  function timeFormat(step) {
+    const day = 86400e3;
+    if (step < day) {
+      const dayLabel = d3.utcFormat("%d %b"),
+        clock = d3.utcFormat(step < 60e3 ? "%H:%M:%S" : "%H:%M");
+      return (d) => (+d % day === 0 ? dayLabel(d) : clock(d));
+    }
+    return d3.utcFormat(
+      step < 28 * day ? "%d %b" : step < 365 * day ? "%b %Y" : "%Y",
+    );
+  }
   function axes() {
     ctx.globalAlpha = 1;
     const pt = d3.ticks(
@@ -375,22 +393,22 @@
       text(price(p), G.x - 8, G.Y(p / PR), colors.muted, "right");
     const count = G.width < 400 ? 3 : G.width < 650 ? 4 : 5;
     const times = d3
-      .scaleUtc()
-      .domain([date(S.tA), date(S.tB)])
-      .ticks(count);
-    for (let i = 0; i < times.length; i++) {
-      const d = times[i],
-        b = (+d / 1000 - T0) / BASE,
-        x = G.X(b);
-      if (x < G.x + 7 || x > G.x + G.w - 7) continue;
-      const span = (S.tB - S.tA) * BASE,
-        fmt =
-          span > 120 * 86400
-            ? d3.utcFormat("%b %Y")
-            : span > 2 * 86400
-              ? d3.utcFormat("%d %b")
-              : d3.utcFormat("%H:%M");
-      text(fmt(d), x, G.y + G.h + 15, colors.muted, "center");
+        .scaleUtc()
+        .domain([date(S.tA), date(S.tB)])
+        .ticks(count),
+      fmt = timeFormat(
+        times.length > 1 ? times[1] - times[0] : (S.tB - S.tA) * BASE * 1000,
+      );
+    let previous = null;
+    for (const d of times) {
+      const b = (+d / 1000 - T0) / BASE,
+        x = G.X(b),
+        label = fmt(d);
+      // Nothing is labelled after the cutoff: that time has no trades yet.
+      if (b > CUT || x < G.x + 7 || x > G.x + G.w - 7 || label === previous)
+        continue;
+      text(label, x, G.y + G.h + 15, colors.muted, "center");
+      previous = label;
     }
     line(G.x, G.y + G.h, G.x + G.w, G.y + G.h, colors.line);
     text("TIME · UTC", G.x + G.w / 2, G.height - 7, colors.muted, "center", 10);
@@ -755,13 +773,29 @@
       el("copy-status").textContent = "Selected for copy · ⌘C / Ctrl+C";
     }
   }
-  function applyImportedView() {
+  // Pasted text as a query or view-code object; null when it is neither, so
+  // the parser's own error never reaches the status line.
+  function readImport(text) {
     try {
-      let raw = el("import-text").value.trim();
-      if (raw.startsWith("origo-cube:"))
-        raw = decodeURIComponent(raw.slice(11));
-      const obj = JSON.parse(raw),
-        q = obj.query || obj;
+      const obj = JSON.parse(
+        text.startsWith("origo-cube:")
+          ? decodeURIComponent(text.slice(11))
+          : text,
+      );
+      return obj && typeof obj === "object" ? obj : null;
+    } catch {
+      return null;
+    }
+  }
+  function applyImportedView() {
+    const obj = readImport(el("import-text").value.trim());
+    if (!obj) {
+      el("copy-status").textContent =
+        "That isn't a cube query or a view code. Paste the JSON from Copy query, or a view code (it starts with origo-cube:).";
+      return;
+    }
+    try {
+      const q = obj.query || obj;
       const n = Math.log2(Number(q.tR) / BASE),
         m = Math.log2(Number(q.pR) / PR),
         a = (Date.parse(q.t1) / 1000 - T0) / BASE,
@@ -847,9 +881,18 @@
     const src = displaySource(),
       cut = activeCutoff(),
       x0 = clamp(G.X(src.b0), G.x, G.x + G.w),
-      xc = clamp(G.X(Math.min(src.b1, cut)), G.x, G.x + G.w);
+      xe = clamp(G.X(Math.min(src.b1, cut)), G.x, G.x + G.w),
+      xc = clamp(G.X(cut), G.x, G.x + G.w);
     hatchRect(G.x, G.y, x0 - G.x, G.h, colors.line, 11, 0.6);
-    hatchRect(xc, G.y, G.x + G.w - xc, G.h, colors.line, 11, 0.45);
+    // Recorded time the source does not cover.
+    hatchRect(xe, G.y, xc - xe, G.h, colors.line, 11, 0.45);
+    // After the cutoff: hidden in replay, otherwise the future, left plain.
+    if (S.replay)
+      hatchRect(xc, G.y, G.x + G.w - xc, G.h, colors.line, 11, 0.45);
+    else {
+      ctx.fillStyle = colors.bg;
+      ctx.fillRect(xc, G.y, G.x + G.w - xc, G.h);
+    }
     if (x0 - G.x > 75)
       text(
         Object.values(loadState).includes("loading")
@@ -861,15 +904,10 @@
         "left",
         10,
       );
-    if (G.x + G.w - xc > 70)
-      text(
-        S.replay ? "FUTURE HIDDEN" : "UNAVAILABLE",
-        xc + 8,
-        G.y + G.h - 12,
-        colors.muted,
-        "left",
-        9,
-      );
+    if (xc - xe > 70)
+      text("UNAVAILABLE", xe + 8, G.y + G.h - 12, colors.muted, "left", 9);
+    if (S.replay && G.x + G.w - xc > 70)
+      text("FUTURE HIDDEN", xc + 8, G.y + G.h - 12, colors.muted, "left", 9);
     const r = requestedBounds();
     if (b[0] > r[0])
       hatchRect(
@@ -1093,9 +1131,11 @@
       rows.push(
         S.replay && p.t >= last.cut
           ? "Future hidden in replay"
-          : S.selection
-            ? "Outside selected coverage"
-            : "Unavailable at requested bounds",
+          : p.t >= CUT
+            ? "After the data cutoff"
+            : S.selection
+              ? "Outside selected coverage"
+              : "Unavailable at requested bounds",
       );
     else if (!z)
       rows.push(
@@ -1961,7 +2001,10 @@
               ? "Upper first"
               : c.first < 0
                 ? "Lower first"
-                : "Neither") + (c.firstAt ? " · " + c.firstAt + " cols" : "")
+                : "Neither") +
+              (c.firstAt
+                ? ` · ${c.firstAt} ${c.firstAt === 1 ? "column" : "columns"}`
+                : "")
           : c.delta > 0
             ? "Higher"
             : c.delta < 0
@@ -2300,6 +2343,12 @@
     update();
     tiles.quiet = false;
   }
+  // The plane status is a live region, so it is written only when its text
+  // changes; a rewrite with the same words would be announced again.
+  function setPlaneStatus(value) {
+    const node = el("plane-status");
+    if (node.textContent !== value) node.textContent = value;
+  }
   function buildPlane() {
     const frag = document.createDocumentFragment(),
       label = (textContent) => {
@@ -2318,7 +2367,7 @@
         b.dataset.m = m;
         const show = () => {
           nav.planeHover = true;
-          el("plane-status").textContent = b.title;
+          setPlaneStatus(b.title);
         };
         b.addEventListener("mouseenter", show);
         b.addEventListener("focus", show);
@@ -2331,6 +2380,27 @@
     for (let n = 0; n <= N_MAX; n++)
       frag.append(label(n % 4 === 0 ? String(n) : ""));
     el("plane").replaceChildren(frag);
+  }
+  // Cell size for the plane's hover text: whole pixels, or words at the extremes,
+  // per axis when the two disagree (a sliver can be taller than the view).
+  function cellPixels(px, py, g) {
+    const wide =
+        px >= g.w
+          ? "wider than the view"
+          : px < 1
+            ? "under 1 px wide"
+            : `${Math.round(px)} px wide`,
+      tall =
+        py >= g.h
+          ? "taller than the view"
+          : py < 1
+            ? "under 1 px tall"
+            : `${Math.round(py)} px tall`;
+    if (px >= 1 && px < g.w && py >= 1 && py < g.h)
+      return `${Math.round(px)} by ${Math.round(py)} px`;
+    if (px >= g.w && py >= g.h) return "cells larger than the view";
+    if (px < 1 && py < 1) return "cells under 1 px";
+    return `cells ${wide}, ${tall}`;
   }
   function refreshPlane() {
     const g = navGeometry(),
@@ -2367,7 +2437,7 @@
                 : px > 32 || py > 32
                   ? "large"
                   : "ready",
-        text = `n ${n} · m ${m} · ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT · ${px.toFixed(1)} by ${py.toFixed(1)} px · ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}${onPath ? " · on the diagonal" : ""}`,
+        text = `n ${n} · m ${m} · ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT · ${cellPixels(px, py, g)} · ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}${onPath ? " · on the diagonal" : ""}`,
         className =
           "cursor-interaction ol-plane-" + kind + (onPath ? " ol-plane-path" : "");
       if (b.className !== className) b.className = className;
@@ -2512,7 +2582,7 @@
       fmt = (x) => (x < 1 ? x.toFixed(1) : Math.round(x));
     el("pixel-state").textContent = `${fmt(px)} × ${fmt(py)} px / cell`;
     nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)`;
-    if (!nav.planeHover) el("plane-status").textContent = nav.planeStatus;
+    if (!nav.planeHover) setPlaneStatus(nav.planeStatus);
     el("gesture").textContent = S.lens
       ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · L releases"
       : S.select
@@ -2557,6 +2627,9 @@
     settleNavigation(null, !priceOnly);
     return p;
   }
+  // Room for the lens caption tab: up to three 15px lines. The lens leaves twice
+  // this free, so the tab fits above or below it wherever the lens goes.
+  const LENS_CAPTION = 8 + 3 * 15;
   function lensFrame() {
     if (!G.w) return null;
     const p =
@@ -2569,7 +2642,7 @@
               p: (S.pA + S.pB) / 2,
             },
       w = Math.min(230, G.w - 8),
-      h = Math.min(170, G.h - 8),
+      h = Math.min(170, G.h - 8 - 2 * LENS_CAPTION),
       x = clamp(p.x - w / 2, G.x + 4, G.x + G.w - w - 4),
       y = clamp(p.y - h / 2, G.y + 4, G.y + G.h - h - 4),
       ta = G.X.invert(x),
@@ -2762,23 +2835,44 @@
         }
       }
     }
-    if (localLegend) {
-      ctx.fillStyle = colors.surface;
-      ctx.globalAlpha = 0.94;
-      ctx.fillRect(x, y + h - 22, w, 22);
-      ctx.globalAlpha = 1;
-      text(localLegend, x + 7, y + h - 11, colors.muted, "left", 11);
-    }
-    ctx.fillStyle = colors.surface;
-    ctx.globalAlpha = 0.94;
-    ctx.fillRect(x, y, w, 40);
-    ctx.globalAlpha = 1;
-    text(label, x + 7, y + 12, colors.ink, "left", 11);
-    text(sub, x + 7, y + 28, colors.muted, "left", 10);
     ctx.restore();
     ctx.strokeStyle = colors.volume;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    lensCaption(x, y, h, [
+      [label, colors.ink],
+      [sub, colors.muted],
+      ...(localLegend ? [[localLegend, colors.muted]] : []),
+    ]);
+  }
+  // The caption sits on a tab outside the lens, so the lens shows only data:
+  // above it when there is room, otherwise below. The tab is sized to its text.
+  function lensCaption(x, y, lensHeight, lines) {
+    ctx.font = `11px ${FONT}`;
+    const room = G.w - 8,
+      fitted = lines.map(([s, color]) => [fitText(s, room - 14), color]),
+      w = Math.min(
+        room,
+        Math.ceil(Math.max(...fitted.map(([s]) => ctx.measureText(s).width))) +
+          14,
+      ),
+      h = 8 + 15 * fitted.length,
+      left = clamp(x, G.x + 4, G.x + G.w - w - 4),
+      top = y - h >= G.y + 4 ? y - h : y + lensHeight - 1;
+    ctx.fillStyle = colors.surface;
+    ctx.fillRect(left, top, w, h);
+    ctx.strokeStyle = colors.volume;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h);
+    fitted.forEach(([s, color], i) =>
+      text(s, left + 7, top + 11.5 + 15 * i, color, "left", 11),
+    );
+  }
+  function fitText(s, max) {
+    if (ctx.measureText(s).width <= max) return s;
+    while (s.length > 1 && ctx.measureText(s + "…").width > max)
+      s = s.slice(0, -1);
+    return s + "…";
   }
   function bindNavigation() {
     if (nav.bound) return;
@@ -2844,7 +2938,7 @@
     });
     const leavePlane = () => {
       nav.planeHover = false;
-      el("plane-status").textContent = nav.planeStatus || "";
+      setPlaneStatus(nav.planeStatus || "");
     };
     el("plane").addEventListener("mouseleave", leavePlane);
     el("plane").addEventListener("focusout", (e) => {

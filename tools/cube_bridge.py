@@ -398,7 +398,11 @@ class Explorer:
                     self.data_cutoff = built["data_cutoff"]
                 # A token built again moves to the end, so the oldest held pack is always first.
                 self.held.pop(built["state_token"], None)
-                self.held[built["state_token"]] = {"pins": pinned, "tiers": tiers, "cutoff": built["cutoffBase"], "pack": built}
+                self.held[built["state_token"]] = {
+                    "pins": pinned, "tiers": tiers, "cutoff": built["cutoffBase"],
+                    # The pack's state, without its payloads: sixteen packs stay small.
+                    "state": {key: built[key] for key in ("cutoff", "data_cutoff", "canonical_through", "state_token")},
+                }
                 while len(self.held) > PACKS_HELD:
                     del self.held[next(iter(self.held))]
                 self.packed_at = time.monotonic()
@@ -484,12 +488,12 @@ class Explorer:
             cells = merge(cells, extra, n, m)
             answer = merged_summary(cells, n, m, b0, top if opened else b1, r0, r1, summary, extent, cutoff)
         end = min(float(top if opened else b1), cutoff)
-        pack_state = held["pack"]
+        state = held["state"]
         answer.update(
-            data_cutoff=pack_state["data_cutoff"], canonical_through=pack_state["canonical_through"],
-            state_token=pack_state["state_token"],
+            data_cutoff=state["data_cutoff"], canonical_through=state["canonical_through"],
+            state_token=state["state_token"],
         )
-        return {"cutoff": pack_state["cutoff"], "block": block(n, m, float(b0), end, cells), "summary": answer}
+        return {"cutoff": state["cutoff"], "block": block(n, m, float(b0), end, cells), "summary": answer}
 
     def history(self, n: int, m: int, token: str) -> dict:
         """Each complete column's POC row, volume and taker-buy volume at level (n, m), for up
@@ -506,7 +510,7 @@ class Explorer:
         header = struct.pack("<4sBBHIII12x", b"MSCC", n, m, 0, start // step, end // step, len(cols["col"]))
         payload = header + b"".join(cols[key].tobytes() for key in ("col", "poc", "vol", "tbvol"))
         return {
-            "cutoff": held["pack"]["cutoff"],
+            "cutoff": held["state"]["cutoff"],
             "columns": {
                 "n": n, "m": m, "b0": start, "b1": end, "count": len(cols["col"]), "layout": "MSCC",
                 "gzip_base64": base64.b64encode(gzip.compress(payload, compresslevel=6)).decode(),

@@ -3455,9 +3455,11 @@
     DAY_COLOURS = ["day1", "day2", "day3", "day4"],
     DAYS_KEPT = 12,
     lineInfo = (key) => LINES.find((l) => l.key === key),
+    // A day by its UTC date, from the history's first day on.
     isDay = (key) =>
       typeof key === "string" &&
       /^\d{4}-\d{2}-\d{2}$/.test(key) &&
+      key >= "2021-01-01" &&
       new Date(key + "T00:00:00Z").toISOString().startsWith(key),
     dayStart = (key) => (Date.parse(key + "T00:00:00Z") / 1000 - T0) / BASE;
   // A line's name, in lists and its tooltip; its tag, on the chart. The
@@ -3632,8 +3634,16 @@
     const right = G.x + G.w - 6,
       pad = 5,
       height = 16,
-      // Below the Latest button when it shows at the plot's top right.
-      top0 = el("latest").hidden ? G.y + 2 : 16 + el("latest").offsetHeight + 4,
+      transport = el("transport"),
+      // Below the Latest button, and the replay's transport when it reaches the
+      // right edge, where the tags go.
+      top0 = Math.max(
+        G.y + 2,
+        el("latest").hidden ? 0 : 16 + el("latest").offsetHeight + 4,
+        transport.hidden || transport.offsetLeft + transport.offsetWidth < G.x + G.w - 140
+          ? 0
+          : transport.offsetTop + transport.offsetHeight + 4,
+      ),
       tags = shown
         .map((l) => {
           const y = G.Y((l.r.row + 0.5) * l.r.rowPrice),
@@ -6460,6 +6470,7 @@
       measured.clear();
       histories.clear();
       lineResults.clear();
+      lineLatest.clear();
     }
     // New data: reads the cube refused or failed are asked for again.
     cube.stale = false;

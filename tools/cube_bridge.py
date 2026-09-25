@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import base64
 import gzip
+import hashlib
 import json
 import re
 import shlex
@@ -78,12 +79,14 @@ def fetch(spec: dict) -> dict:
     import numpy as np
     from origo.query.market_state_reader import query, read_table
 
-    def tile(n: int, m: int, b0: float, b1: float) -> tuple[dict, dict]:
+    def tile(n: int, m: int, b0: float, b1: float) -> tuple[dict, dict, dict]:
         result = query(t1=edge(b0), t2=edge(b1), tR=BASE_SECONDS * 2**n, pR=BASE_PRICE * 2**m)
         cells = read_table(result.cells)
-        grid = json.loads(cells.schema.metadata[b"origo.market_state"])["grid"]
+        meta = json.loads(cells.schema.metadata[b"origo.market_state"])
+        grid = meta["grid"]
         if (grid["time_exponent"], grid["price_exponent"]) != (n, m):
             raise RuntimeError(f"Cube answered level {grid} for requested ({n}, {m}).")
+        pins = {pin[0]: tuple(pin[1:]) for pin in meta["pins"]}
         col = cells.column("time_index").to_numpy().astype(np.uint64)
         row = cells.column("price_index").to_numpy().astype(np.uint64)
         order = np.lexsort((row, col))
@@ -116,27 +119,38 @@ def fetch(spec: dict) -> dict:
             "data_cutoff": response["data_cutoff"],
             "state_token": response["state_token"],
         }
-        return block, response
+        return block, response, pins
 
     if "tile" in spec:
         t = spec["tile"]
-        block, response = tile(int(t["n"]), int(t["m"]), float(t["b0"]), float(t["b1"]))
+        block, response, _ = tile(int(t["n"]), int(t["m"]), float(t["b0"]), float(t["b1"]))
         return {"cutoff": response["data_cutoff"], "block": block}
-    # One empty query fixes the cutoff; every tier is then bounded to the same base edge, so
-    # the pack cannot mix cube states even though the cube advances between the queries.
-    state = dict(query(t1=edge(0), t2=edge(0.001)).response)
-    cutoff = int(base_units(state["data_cutoff"]))
-    blocks = {}
-    for tier in TIERS:
-        step = 2 ** tier["n"]
-        b1 = (cutoff // step) * step if tier.get("complete") else cutoff
-        b0 = 0 if "days" not in tier else (b1 - tier["days"] * DAY) // step * step
-        blocks[tier["id"]], _ = tile(tier["n"], tier["m"], b0, b1)
+    # The tiers are separate queries. One empty query fixes the cutoff and every tier is
+    # bounded to that base edge; the partitions the tiers share must then carry the same
+    # generation, revision and build id, or the cube changed under the pack and it is read
+    # again. The pack token digests the pins the whole pack read.
+    for _attempt in range(2):
+        state = dict(query(t1=edge(0), t2=edge(0.001)).response)
+        cutoff = int(base_units(state["data_cutoff"]))
+        blocks: dict[str, dict] = {}
+        pinned: dict[str, tuple] = {}
+        conflict = None
+        for tier in TIERS:
+            step = 2 ** tier["n"]
+            b1 = (cutoff // step) * step if tier.get("complete") else cutoff
+            b0 = 0 if "days" not in tier else (b1 - tier["days"] * DAY) // step * step
+            blocks[tier["id"]], _, pins = tile(tier["n"], tier["m"], b0, b1)
+            conflict = conflict or next((key for key, identity in pins.items() if pinned.setdefault(key, identity) != identity), None)
+        if conflict is None:
+            break
+    else:
+        raise RuntimeError(f"The cube changed while the pack was read (partition {conflict}); try again.")
+    digest = hashlib.sha256(json.dumps(sorted(pinned.items()), separators=(",", ":")).encode()).hexdigest()
     return {
         "source": SOURCE, "t0": T0, "base_seconds": BASE_SECONDS, "base_price": BASE_PRICE,
         "cutoff": edge(cutoff), "cutoffBase": cutoff, "data_cutoff": state["data_cutoff"],
-        "canonical_through": state["canonical_through"], "state_token": state["state_token"],
-        "snapshot": False, "live": True, "notes": NOTES, "blocks": blocks,
+        "canonical_through": state["canonical_through"], "state_token": digest,
+        "partitions": len(pinned), "snapshot": False, "live": True, "notes": NOTES, "blocks": blocks,
     }
 
 

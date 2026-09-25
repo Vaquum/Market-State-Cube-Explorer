@@ -33,7 +33,7 @@ python3 tools/cube_bridge.py serve --port 8080 \
   --remote "ssh 37.27.112.167 docker exec -i tdw-control-plane-market-state-1"
 ```
 
-The live pack holds the same three tiers as the snapshot, cut at the cube's data cutoff: the last seven days at base resolution, 30 completed days at 15 minutes, and the whole history at 64 hours × 1,000 USDT. It is rebuilt at most once a minute. When the requested level has no covering block, the page asks for one tile of the visible window, at most 4,096 columns wide, and the header reads **LIVE MARKET** with the cutoff minute. Every value comes from the cube; nothing is substituted when a request fails, and the status line says why.
+The live pack holds the same three tiers as the snapshot: the last seven days at base resolution, 30 completed days at 15 minutes, and the whole history at 64 hours × 1,000 USDT. Its cutoff is the last complete base column before the cube's data cutoff, fixed once per pack; every tier is bounded to it, the partitions the tiers share are checked to carry the same generation, revision and build id (the pack is read again once if the cube changed underneath), and the pack token digests every pin it read. It is rebuilt at most once a minute. When the requested level has no covering block, the page asks for one tile of the visible window, at most 4,096 columns wide, and the header reads **LIVE MARKET** with the cutoff minute. Every value comes from the cube; nothing is substituted when a request fails, and the status line says why.
 
 The committed `index.html` keeps the recorded snapshot, so the page also works from any static host, including the deployed Worker, and reads **RECORDED MARKET** there.
 

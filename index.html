@@ -6086,7 +6086,8 @@
     holdTimer: 0,
     zoomTimer: 0,
     zoomTime: false,
-    zoomKey: "",
+    // The zoom keys held: a key zoom lasts until the last of them comes up.
+    zoomKeys: new Set(),
     // The keys whose presses the chart took, while they are held.
     pressed: new Set(),
     planeKey: "",
@@ -6934,9 +6935,10 @@
     update();
   }
   // A zoom gesture ends a moment after its last step: the wheel's last tick,
-  // or the release of a zoom key, since a held key's first repeat can come
-  // later than the wheel's pause. Then the price range refits once, if time
-  // was zoomed, and the zoom is recorded. (A pinch ends when a finger lifts.)
+  // or the release of the last zoom key held, since a held key's first repeat
+  // can come later than the wheel's pause. Then the price range refits once,
+  // if time was zoomed, and the zoom is recorded. (A pinch ends when a finger
+  // lifts.)
   function zoomStep(timeZoomed) {
     nav.zoomTime = nav.zoomTime || timeZoomed;
     clearTimeout(nav.zoomTimer);
@@ -7450,9 +7452,10 @@
         changeResolution(S.n + bracket[0], S.m + bracket[1], !bracket[1]);
       else if (["+", "=", "-", "_"].includes(k)) {
         zoomNavigation(k === "-" || k === "_" ? 1.4 : 1 / 1.4, centre, shift);
-        // Held, the key zooms on until it comes up (see the keyup below).
+        // Held, zoom keys zoom on until the last of them comes up (see the
+        // keyup below).
         zoomStep(!shift);
-        nav.zoomKey = id;
+        nav.zoomKeys.add(id);
       } else if (k.startsWith("Arrow")) {
         const dt = (S.tB - S.tA) * 0.15,
           dp = (S.pB - S.pA) * 0.15,
@@ -7532,14 +7535,11 @@
       }
       const id = e.code || e.key;
       nav.pressed.delete(id);
-      if (nav.zoomKey && nav.zoomKey === id) {
-        nav.zoomKey = "";
-        endZoom(false);
-      }
+      if (nav.zoomKeys.delete(id) && !nav.zoomKeys.size) endZoom(false);
     });
     window.addEventListener("blur", () => {
-      if (nav.zoomKey) {
-        nav.zoomKey = "";
+      if (nav.zoomKeys.size) {
+        nav.zoomKeys.clear();
         endZoom(false);
       }
       nav.pressed.clear();

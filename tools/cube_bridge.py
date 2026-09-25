@@ -123,8 +123,8 @@ def fetch(spec: dict) -> dict:
 
     if "tile" in spec:
         t = spec["tile"]
-        block, response, _ = tile(int(t["n"]), int(t["m"]), float(t["b0"]), float(t["b1"]))
-        return {"cutoff": response["data_cutoff"], "block": block}
+        block, response, pins = tile(int(t["n"]), int(t["m"]), float(t["b0"]), float(t["b1"]))
+        return {"cutoff": response["data_cutoff"], "block": block, "pins": pins}
     # The tiers are separate queries. One empty query fixes the cutoff and every tier is
     # bounded to that base edge; the partitions the tiers share must then carry the same
     # generation, revision and build id, or the cube changed under the pack and it is read
@@ -151,10 +151,15 @@ def fetch(spec: dict) -> dict:
         "cutoff": edge(cutoff), "cutoffBase": cutoff, "data_cutoff": state["data_cutoff"],
         "canonical_through": state["canonical_through"], "state_token": digest,
         "partitions": len(pinned), "snapshot": False, "live": True, "notes": NOTES, "blocks": blocks,
+        "pins": pinned,
     }
 
 
 # ---------------------------------------------------------------- serve (runs anywhere)
+
+
+class CubeChanged(Exception):
+    """A tile read a partition at a different revision than the pack the page holds."""
 
 
 class Bridge:
@@ -162,6 +167,7 @@ class Bridge:
         self.page, self.remote = page, remote
         self.lock = threading.Lock()
         self.pack: dict | None = None
+        self.pins: dict[str, list] = {}
         self.packed_at = 0.0
 
     def run(self, spec: dict) -> dict:
@@ -181,10 +187,21 @@ class Bridge:
             if self.pack is None or time.monotonic() - self.packed_at > PACK_MAX_AGE_SECONDS:
                 started = time.monotonic()
                 self.pack = self.run({"pack": True})
+                self.pins = {key: list(identity) for key, identity in self.pack.pop("pins").items()}
                 self.packed_at = time.monotonic()
                 cells = sum(b["count"] for b in self.pack["blocks"].values())
                 print(f"pack built in {self.packed_at - started:.1f} s, cutoff {self.pack['cutoff']}, {cells} cells", flush=True)
             return self.pack
+
+    def tile(self, spec: dict) -> dict:
+        """One tile, refused when it read any pack partition at another revision."""
+        answer = self.run({"tile": spec})
+        pins = {key: list(identity) for key, identity in answer.pop("pins").items()}
+        with self.lock:
+            changed = [key for key, identity in pins.items() if key in self.pins and self.pins[key] != identity]
+        if changed:
+            raise CubeChanged(f"{len(changed)} partition(s) changed since the page loaded, first {changed[0]}")
+        return answer
 
     def html(self) -> bytes:
         text = self.page.read_text(encoding="utf-8")
@@ -214,6 +231,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(404, "text/plain", b"not found")
         except ValueError as error:
             self.reply(400, "application/json", json.dumps({"error": str(error)}).encode())
+        except CubeChanged as error:
+            self.reply(409, "application/json", json.dumps({"error": "cube_changed", "detail": str(error)}).encode())
         except Exception as error:  # the page reports the message; nothing is substituted for the data
             self.reply(502, "application/json", json.dumps({"error": f"{type(error).__name__}: {error}"}).encode())
 
@@ -233,7 +252,7 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("b0 and b1 must be base edges with b0 < b1")
         if (b1 - b0) / 2 ** int(n) > MAX_TILE_COLUMNS:
             raise ValueError(f"tile wider than {MAX_TILE_COLUMNS} columns")
-        return self.bridge.run({"tile": {"n": int(n), "m": int(m), "b0": b0, "b1": b1}})
+        return self.bridge.tile({"n": int(n), "m": int(m), "b0": b0, "b1": b1})
 
     def reply(self, status: int, kind: str, body: bytes) -> None:
         self.send_response(status)

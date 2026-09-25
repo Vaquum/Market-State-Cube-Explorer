@@ -3915,7 +3915,7 @@
     }
     return { status: "unavailable", source: shown?.id || S.dataset };
   }
-  const tiles = { pending: null, timer: 0, skip: null };
+  const tiles = { pending: null, timer: 0, skip: null, stale: false };
   function tileSpec(n, m) {
     const step = 2 ** n,
       r = requestedBounds(),
@@ -3930,7 +3930,11 @@
     tiles.timer = setTimeout(fetchTile, 250);
   }
   async function fetchTile() {
-    if (tiles.pending || resolutionReadiness(S.n, S.m).status !== "unavailable")
+    if (
+      tiles.pending ||
+      tiles.stale ||
+      resolutionReadiness(S.n, S.m).status !== "unavailable"
+    )
       return;
     const t = tileSpec(S.n, S.m);
     if (!t) return;
@@ -3952,6 +3956,11 @@
           `/cube/tile?n=${t.n}&m=${t.m}&b0=${t.b0}&b1=${t.b1}`,
         ),
         body = await response.json();
+      if (body.error === "cube_changed") {
+        // The cube holds another revision of history than this page; nothing is mixed.
+        tiles.stale = true;
+        throw Error("the cube changed since this page loaded; reload to continue");
+      }
       if (!response.ok) throw Error(body.error || response.statusText);
       PACK.blocks[t.id] = body.block;
       sources[t.id] = await unpack(body.block, t.id);

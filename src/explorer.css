@@ -527,7 +527,6 @@
   box-shadow: 0 var(--sp-1) var(--sp-3) var(--ol-shadow);
   font-size: var(--fs-s);
   line-height: 1.4;
-  pointer-events: none;
 }
 #origo-lens .ol-hint-head {
   display: flex;

@@ -544,7 +544,6 @@
   box-shadow: 0 var(--sp-1) var(--sp-3) var(--ol-shadow);
   font-size: var(--fs-s);
   line-height: 1.4;
-  pointer-events: none;
 }
 #origo-lens .ol-hint-head {
   display: flex;
@@ -5439,11 +5438,16 @@
       ["Days", ["7d", "30d"]],
       ["Years", ["1y", "ytd", "lastyear", "all"]],
     ]) {
-      const head = document.createElement("div");
+      // Each section is a group named by its caption.
+      const group = document.createElement("div"),
+        head = document.createElement("div");
+      group.setAttribute("role", "group");
       head.className = "ol-menu-cap";
-      head.setAttribute("aria-hidden", "true");
+      head.id = `ol-window-cap-${parts.length}`;
       head.textContent = cap;
-      parts.push(head);
+      group.setAttribute("aria-labelledby", head.id);
+      group.append(head);
+      parts.push(group);
       for (const key of keys) {
         const children = [svgIcon("check", "ol-icon ol-check"), windowOf(key).name],
           digit = WINDOW_KEYS.indexOf(key);
@@ -5458,7 +5462,7 @@
         if (digit >= 0) b.setAttribute("aria-keyshortcuts", String(digit));
         b.dataset.window = key;
         b.setAttribute("aria-checked", String(key === S.window));
-        parts.push(b);
+        group.append(b);
       }
     }
     el("window-menu").replaceChildren(...parts);
@@ -5517,9 +5521,18 @@
   // one has shown, the next shows at once. A hold that shows a label doesn't
   // press the control too.
   const HINT_DELAY = 1000,
-    hint = { timer: 0, target: null, hiddenAt: -Infinity, held: null, box: null, touch: false };
+    hint = {
+      timer: 0,
+      leave: 0,
+      target: null,
+      hiddenAt: -Infinity,
+      held: null,
+      box: null,
+      touch: false,
+    };
   function hideHint() {
     clearTimeout(hint.timer);
+    clearTimeout(hint.leave);
     if (hint.target) hint.hiddenAt = performance.now();
     if (hint.box) hint.box.hidden = true;
     hint.target = null;
@@ -5532,9 +5545,11 @@
     )
       return;
     if (!hint.box) {
+      // What the label says is each control's description already, so the
+      // label itself is for the eye only.
       hint.box = document.createElement("div");
       hint.box.className = "ol-hint";
-      hint.box.setAttribute("role", "tooltip");
+      hint.box.setAttribute("aria-hidden", "true");
       root.append(hint.box);
     }
     const box = hint.box,
@@ -5564,6 +5579,7 @@
   }
   function armHint(target) {
     clearTimeout(hint.timer);
+    clearTimeout(hint.leave);
     // A button whose list or popover is open needs no label over it.
     if (target.getAttribute("aria-expanded") === "true") return;
     if (hint.target || performance.now() - hint.hiddenAt < 600) showHint(target);
@@ -5605,10 +5621,25 @@
         armHint(t);
     });
     // A finger's label stays a moment after it lifts (see below), though
-    // lifting counts as leaving.
+    // lifting counts as leaving. The pointer may cross onto a label and rest
+    // there; the label goes a moment after the pointer leaves both.
+    const leaveSoon = () => {
+      clearTimeout(hint.leave);
+      hint.leave = setTimeout(hideHint, 150);
+    };
     root.addEventListener("pointerout", (e) => {
-      const t = hinted(e.target);
-      if (e.pointerType !== "touch" && t && !t.contains(e.relatedTarget)) hideHint();
+      if (e.pointerType === "touch") return;
+      const t = hinted(e.target),
+        onBox = hint.box?.contains(e.target);
+      if (t && !t.contains(e.relatedTarget) && !hint.box?.contains(e.relatedTarget))
+        // A label not shown yet is simply called off.
+        hint.target ? leaveSoon() : hideHint();
+      else if (onBox && !hint.box.contains(e.relatedTarget) && !hint.target?.contains(e.relatedTarget))
+        leaveSoon();
+    });
+    root.addEventListener("pointerover", (e) => {
+      if (hint.box?.contains(e.target) || hint.target?.contains(e.target))
+        clearTimeout(hint.leave);
     });
     // A finger held on a control shows its label, and the press that ends the
     // hold is dropped.

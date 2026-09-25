@@ -279,11 +279,15 @@
   transform: rotate(45deg);
 }
 
-/* Top bar: identity, then every control that shapes the view, in one row. */
+/* Top bar: one row. The market on the left; on the right the controls in
+   groups by task (the view, the pointer tools, replay, history, help), each
+   named with its key after a second's hover, focus or touch hold. Nothing in
+   the bar appears or goes as modes change, so no control ever moves. */
 #origo-lens .ol-bar {
   display: flex;
   align-items: center;
-  gap: var(--sp-2) var(--sp-4);
+  gap: var(--sp-1);
+  min-height: 48px;
   padding: var(--sp-2) var(--gutter);
   background: var(--ol-surface);
   border-bottom: 1px solid var(--ol-line);
@@ -292,43 +296,42 @@
   container-type: inline-size;
 }
 #origo-lens .ol-id {
-  flex: none;
-  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin-right: auto;
+  padding-right: var(--sp-4);
+  white-space: nowrap;
 }
-#origo-lens .ol-brand {
+#origo-lens .ol-pair {
   font-size: var(--fs-l);
   font-weight: 500;
-  white-space: nowrap;
 }
-#origo-lens .ol-org {
-  font-size: var(--fs-s);
-  font-weight: 400;
-  letter-spacing: 0.13em;
-  margin-right: var(--sp-2);
+#origo-lens .ol-venue {
   color: var(--ol-muted);
-}
-#origo-lens .ol-market {
-  font-size: var(--fs-s);
-  color: var(--ol-muted);
-  white-space: nowrap;
 }
 #origo-lens .ol-state-pill {
-  margin-left: var(--sp-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 20px;
   padding: 0 var(--sp-2);
   border: 1px solid var(--ol-line);
   border-radius: var(--r-l);
   font-size: var(--fs-s);
-  font-weight: 400;
   color: var(--ol-muted);
-  vertical-align: 1px;
+  font-variant-numeric: tabular-nums;
 }
 #origo-lens #ol-market {
   color: var(--ol-ink);
   font-weight: 500;
+  letter-spacing: 0.04em;
 }
-#origo-lens .ol-fresh {
-  font-variant-numeric: tabular-nums;
+#origo-lens .ol-snapshot:empty {
+  display: none;
 }
+#origo-lens .ol-snapshot::before,
 #origo-lens .ol-fresh::before {
   content: "· ";
 }
@@ -341,13 +344,9 @@
   font-weight: 500;
 }
 #origo-lens .ol-controls {
-  flex: 1;
-  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
-  gap: var(--sp-2);
+  gap: var(--sp-5);
 }
 #origo-lens .ol-sheet-head,
 #origo-lens .ol-sheet-toggle {
@@ -359,17 +358,54 @@
   gap: var(--sp-1);
   position: relative;
 }
-#origo-lens .ol-bar select {
-  min-height: var(--h-l);
+/* A thin rule between the groups, in the middle of the gap. */
+#origo-lens .ol-controls > :is(.ol-tools, .ol-replay, .ol-history, .ol-help)::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--sp-5) / -2);
+  top: 50%;
+  width: 1px;
+  height: 20px;
+  margin-top: -10px;
+  background: var(--ol-line);
 }
-#origo-lens .ol-cap,
-#origo-lens .ol-span {
-  font-size: var(--fs-s);
-  color: var(--ol-muted);
+/* Names live in the label bubbles here; the phone sheet shows them. */
+#origo-lens .ol-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
 }
-#origo-lens .ol-span {
-  padding: 0 var(--sp-1);
+/* A value to choose (the window, the resolution, the price axis): its icon,
+   its value and a caret, with no box until the pointer is over it. */
+#origo-lens button.ol-pick {
+  gap: 6px;
+  padding: 0 var(--sp-2);
+}
+#origo-lens .ol-pick .ol-caret {
+  width: 12px;
+  height: 12px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-pick[aria-expanded="true"] {
+  background: var(--ol-hover);
+}
+/* A view that no preset names shows its span, muted. */
+#origo-lens #ol-window[data-custom="true"] #ol-window-text {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-bar .ol-seg {
+  min-height: var(--h-l);
+}
+#origo-lens .ol-bar .ol-seg .ol-icon-button {
+  min-width: var(--h-m);
+}
+/* Held controls never select text or open the phone's callout. */
+#origo-lens [data-hint] {
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 #origo-lens .ol-res .ol-caret {
   color: var(--ol-muted);
@@ -388,36 +424,141 @@
 #origo-lens .ol-res[data-coarse="true"] .ol-res-coarse {
   display: inline-block;
 }
-/* Narrower bars keep one row: the snapshot's day goes first (the status bar
-   and the title keep it), then tools go icon-only and segments tighten, then
-   the replay date and back/forward give way (the history list keeps them).
-   Replay and the lens add controls, so they tighten too. */
-@container (max-width: 1480px) {
-  #origo-lens #ol-snapshot {
+/* Narrower bars keep one row: the venue goes first, then the snapshot's day
+   (the title and the status bar keep both), then the resolution's text (its
+   lock stays, and the drawer's bar names the level). */
+@container (max-width: 1000px) {
+  #origo-lens .ol-venue {
     display: none;
   }
 }
-@container (max-width: 1380px) {
-  #origo-lens .ol-tool-label,
-  #origo-lens .ol-cap {
+@container (max-width: 900px) {
+  #origo-lens .ol-snapshot {
     display: none;
   }
 }
-@container (max-width: 1400px) {
-  #origo-lens #ol-hist-back,
-  #origo-lens #ol-hist-fwd {
+@container (max-width: 820px) {
+  #origo-lens #ol-res-text {
     display: none;
   }
 }
-@media (min-width: 761px) {
-  #origo-lens[data-busy="true"] .ol-tool-label,
-  #origo-lens[data-busy="true"] .ol-cap,
-  #origo-lens[data-busy="true"] .ol-span {
-    display: none;
-  }
-  #origo-lens[data-busy="true"] .ol-bar .ol-seg button {
-    padding: 0 var(--sp-1);
-  }
+
+/* Menus: a list of choices under their button; the chosen one is checked. */
+#origo-lens .ol-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 212px;
+  padding: var(--sp-1);
+}
+#origo-lens .ol-menu[hidden] {
+  display: none;
+}
+#origo-lens .ol-menu-cap {
+  padding: var(--sp-2) var(--sp-2) 2px 28px;
+  font-size: var(--fs-s);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-menu-cap:first-child {
+  padding-top: 2px;
+}
+#origo-lens .ol-menu-rule {
+  height: 1px;
+  margin: var(--sp-1) 0;
+  background: var(--ol-line);
+}
+#origo-lens button.ol-item {
+  justify-content: flex-start;
+  width: 100%;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2) 0 var(--sp-1);
+  text-align: left;
+}
+#origo-lens .ol-item .ol-check {
+  visibility: hidden;
+}
+#origo-lens .ol-item[aria-checked="true"] .ol-check {
+  visibility: visible;
+}
+#origo-lens .ol-item[aria-checked="true"] {
+  font-weight: 500;
+}
+#origo-lens .ol-item-note {
+  color: var(--ol-muted);
+  font-weight: 400;
+}
+#origo-lens .ol-item kbd,
+#origo-lens .ol-hint kbd {
+  min-width: 18px;
+  padding: 0 4px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-s);
+  line-height: 16px;
+  text-align: center;
+  border: 1px solid var(--ol-line);
+  border-radius: var(--r-s);
+}
+#origo-lens .ol-item kbd {
+  margin-left: auto;
+  color: var(--ol-muted);
+  font-weight: 400;
+}
+/* The price axis's choices say what each does, under its name. */
+#origo-lens .ol-follow-menu {
+  width: 300px;
+}
+#origo-lens .ol-follow-menu button.ol-item {
+  align-items: flex-start;
+  min-height: 0;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+#origo-lens .ol-follow-menu .ol-item > .ol-icon {
+  margin-top: 1px;
+}
+#origo-lens .ol-follow-menu .ol-item[aria-checked="true"] {
+  background: var(--ol-on);
+}
+#origo-lens .ol-item-text {
+  display: flex;
+  flex-direction: column;
+  white-space: normal;
+  line-height: 1.35;
+}
+#origo-lens .ol-item-desc {
+  font-size: var(--fs-s);
+  font-weight: 400;
+  color: var(--ol-muted);
+}
+
+/* The label bubble: a control's name and key, and what it does. */
+#origo-lens .ol-hint {
+  position: fixed;
+  z-index: 60;
+  max-width: 280px;
+  padding: 6px var(--sp-2);
+  background: var(--ol-ink);
+  color: var(--ol-bg);
+  border-radius: var(--r-m);
+  box-shadow: 0 var(--sp-1) var(--sp-3) var(--ol-shadow);
+  font-size: var(--fs-s);
+  line-height: 1.4;
+  pointer-events: none;
+}
+#origo-lens .ol-hint-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 500;
+}
+#origo-lens .ol-hint kbd {
+  border-color: color-mix(in srgb, var(--ol-bg) 45%, transparent);
+  font-weight: 400;
+}
+#origo-lens .ol-hint-desc {
+  margin-top: 2px;
+  opacity: 0.8;
 }
 
 /* Popovers: anchored under their button, above the workspace. */
@@ -772,9 +913,10 @@
 #origo-lens .ol-tip-note {
   margin-top: var(--sp-1);
 }
-/* The replay transport, at the top of the plot on the replay line; placed by
-   the page. */
-#origo-lens .ol-transport {
+/* The replay transport, at the top of the plot on the replay line, and the
+   lens's own controls at its top left while the lens is the tool; both placed
+   by the page, so the top bar never changes as modes do. */
+#origo-lens :is(.ol-transport, .ol-lensbar) {
   position: absolute;
   top: calc(var(--sp-3) + var(--sp-2));
   z-index: 3;
@@ -791,9 +933,16 @@
   border-radius: var(--r-m);
   box-shadow: 0 1px var(--sp-1) var(--ol-shadow);
 }
-#origo-lens .ol-transport select {
+#origo-lens .ol-lensbar {
+  padding-left: var(--sp-2);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-lensbar button {
+  color: var(--ol-ink);
+}
+#origo-lens :is(.ol-transport, .ol-lensbar) select {
   min-height: var(--h-s);
-  padding: 0 var(--sp-4) 0 var(--sp-1);
+  padding: 0 var(--sp-5) 0 var(--sp-1);
   font-size: var(--fs-s);
   background-color: transparent;
   border-color: transparent;
@@ -1454,16 +1603,37 @@
   #origo-lens .ol-group {
     flex-wrap: wrap;
   }
-  #origo-lens .ol-tool-label,
-  #origo-lens .ol-cap {
+  /* The sheet has room for names: each control shows its own. */
+  #origo-lens .ol-controls .ol-label {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
+  #origo-lens .ol-controls .ol-icon-button {
+    gap: var(--sp-2);
+    padding: 0 var(--sp-3) 0 var(--sp-2);
+  }
+  #origo-lens .ol-controls > .ol-group::before {
+    display: none;
+  }
+  #origo-lens .ol-controls #ol-res-text {
     display: inline;
   }
-  #origo-lens .ol-pop {
+  #origo-lens .ol-controls .ol-pop {
     position: static;
     flex-basis: 100%;
     width: auto;
     margin-top: var(--sp-2);
     box-shadow: none;
+  }
+  /* The window stays in the bar: its list opens under it, from the right. */
+  #origo-lens #ol-window-menu {
+    left: auto;
+    right: 0;
+    max-height: 70vh;
+    overflow: auto;
   }
   #origo-lens .ol-main {
     display: block;
@@ -1556,28 +1726,58 @@
 >
   <header class="ol-bar">
     <div class="ol-id">
-      <div class="ol-brand" title="Market State Cube Explorer">
-        <span class="ol-org">ORIGO</span>Cube Explorer<span
-          class="ol-state-pill"
-          id="ol-state-pill"
-          data-state="live"
-          ><span id="ol-market">RECORDED</span> <span id="ol-snapshot"></span
-          ><span id="ol-fresh" class="ol-fresh" hidden></span
-        ></span>
-      </div>
-      <div class="ol-market">
-        BTC / USDT <span aria-hidden="true">·</span> Binance spot
-      </div>
+      <span class="ol-pair">BTC / USDT</span
+      ><span class="ol-venue">Binance spot</span
+      ><span class="ol-state-pill" id="ol-state-pill" data-state="live"
+        ><span id="ol-market">RECORDED</span
+        ><span id="ol-snapshot" class="ol-snapshot"></span
+        ><span id="ol-fresh" class="ol-fresh" hidden></span
+      ></span>
+    </div>
+    <div class="ol-group ol-window-group">
+      <button
+        type="button"
+        id="ol-window"
+        class="ol-pick ol-l cursor-interaction"
+        aria-haspopup="menu"
+        aria-expanded="false"
+        aria-controls="ol-window-menu"
+        aria-label="Time window"
+        aria-keyshortcuts="W"
+        data-keys="W"
+        data-hint="Or 1–9 and 0 for the presets in order"
+      >
+        <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="5.5" />
+          <path d="M8 5v3l2 1.5" />
+        </svg>
+        <span id="ol-window-text" class="ol-num">24h</span>
+        <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+        </svg>
+      </button>
+      <div
+        class="ol-pop ol-menu"
+        id="ol-window-menu"
+        role="menu"
+        aria-label="Time window"
+        hidden
+      ></div>
     </div>
     <button
       type="button"
       id="ol-sheet-toggle"
-      class="ol-sheet-toggle ol-action ol-l cursor-interaction"
+      class="ol-sheet-toggle ol-icon-button ol-l cursor-interaction"
       aria-expanded="false"
       aria-controls="ol-controls"
-      title="Show the controls"
+      aria-label="Controls"
+      data-hint=""
     >
-      Controls
+      <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2.5 5h2M7.5 5h6M2.5 11h6M11.5 11h2" />
+        <circle cx="6" cy="5" r="1.5" />
+        <circle cx="10" cy="11" r="1.5" />
+      </svg>
     </button>
     <div class="ol-controls" id="ol-controls">
       <div class="ol-sheet-head">
@@ -1587,241 +1787,199 @@
           id="ol-sheet-close"
           class="ol-icon-button cursor-interaction"
           aria-label="Close controls"
-          title="Close the controls (Esc)"
+          data-keys="Esc"
+          data-hint=""
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
             <path d="m4 4 8 8M12 4l-8 8" />
           </svg>
         </button>
       </div>
-      <div class="ol-group ol-range" role="group" aria-label="Time window">
-        <div class="ol-seg">
+      <div class="ol-group ol-view-group" role="group" aria-label="View">
+        <div class="ol-group ol-res-group">
           <button
             type="button"
-            class="cursor-interaction"
-            data-window="1"
-            aria-pressed="true"
-            title="The last 24 hours (1)"
+            id="ol-res"
+            class="ol-pick ol-res ol-l cursor-interaction"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="ol-res-pop"
+            aria-label="Resolution"
+            aria-keyshortcuts="A"
+            data-keys="A"
+            data-hint=""
+            data-auto="true"
           >
-            24h</button
-          ><button
-            type="button"
-            class="cursor-interaction"
-            data-window="7"
-            aria-pressed="false"
-            title="The last 7 days (2)"
-          >
-            7d</button
-          ><button
-            type="button"
-            class="cursor-interaction"
-            data-window="all"
-            aria-pressed="false"
-            title="All history from 2021 (3)"
-          >
-            All
+            <svg class="ol-icon ol-lock-open" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
+              <path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7" />
+            </svg>
+            <svg class="ol-icon ol-lock-shut" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
+              <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+            </svg>
+            <span id="ol-res-text" class="ol-num">15 min × 125</span
+            ><i class="ol-res-coarse" aria-hidden="true"></i>
+            <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+            </svg>
           </button>
-        </div>
-        <output
-          id="ol-span"
-          class="ol-span ol-num"
-          title="The time span in view"
-          hidden
-        ></output>
-      </div>
-      <div class="ol-group ol-res-group">
-        <button
-          type="button"
-          id="ol-res"
-          class="ol-res ol-action ol-l cursor-interaction"
-          aria-haspopup="dialog"
-          aria-expanded="false"
-          aria-controls="ol-res-pop"
-          data-auto="true"
-        >
-          <svg class="ol-icon ol-lock-open" viewBox="0 0 16 16" aria-hidden="true">
-            <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
-            <path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7" />
-          </svg>
-          <svg class="ol-icon ol-lock-shut" viewBox="0 0 16 16" aria-hidden="true">
-            <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
-            <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-          </svg>
-          <span id="ol-res-text" class="ol-num">15 min × 125 USDT</span
-          ><i class="ol-res-coarse" aria-hidden="true"></i>
-          <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
-          </svg>
-        </button>
-        <div
-          class="ol-pop ol-res-pop"
-          id="ol-res-pop"
-          role="dialog"
-          aria-label="Resolution"
-          hidden
-        >
-          <div class="ol-pop-head">
-            <span>Resolution</span
-            ><button
-              type="button"
-              id="ol-auto"
-              class="ol-action ol-toggle cursor-interaction"
-              aria-pressed="true"
-              title="Choose the level from the cell size on screen (A)"
-            >
-              Auto level
-            </button>
-          </div>
-          <div class="ol-step">
-            <div class="ol-step-label">
-              <span>Time · <span id="ol-n">n 4</span></span
-              ><output id="ol-tr">15 min</output>
-            </div>
-            <button
-              type="button"
-              id="ol-tminus"
-              class="ol-action cursor-interaction"
-              aria-label="Finer time resolution"
-              title="Finer time cells ( [ )"
-            >
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="3" y="3" width="4" height="4" />
-                <rect x="9" y="3" width="4" height="4" />
-                <rect x="3" y="9" width="4" height="4" />
-                <rect x="9" y="9" width="4" height="4" />
-              </svg></button
-            ><button
-              type="button"
-              id="ol-tplus"
-              class="ol-action cursor-interaction"
-              aria-label="Coarser time resolution"
-              title="Coarser time cells ( ] )"
-            >
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="3" y="3" width="10" height="10" rx="1" />
-              </svg>
-            </button>
-          </div>
-          <div class="ol-step">
-            <div class="ol-step-label">
-              <span>Price · <span id="ol-m">m 0</span></span
-              ><output id="ol-pr">125 USDT</output>
-            </div>
-            <button
-              type="button"
-              id="ol-pminus"
-              class="ol-action cursor-interaction"
-              aria-label="Finer price resolution"
-              title="Finer price cells ( { )"
-            >
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="3" y="3" width="4" height="4" />
-                <rect x="9" y="3" width="4" height="4" />
-                <rect x="3" y="9" width="4" height="4" />
-                <rect x="9" y="9" width="4" height="4" />
-              </svg></button
-            ><button
-              type="button"
-              id="ol-pplus"
-              class="ol-action cursor-interaction"
-              aria-label="Coarser price resolution"
-              title="Coarser price cells ( } )"
-            >
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="3" y="3" width="10" height="10" rx="1" />
-              </svg>
-            </button>
-          </div>
-          <div class="ol-plane-cap">Resolution plane · m price ↑ · n time →</div>
           <div
-            class="ol-plane"
-            id="ol-plane"
-            role="group"
-            aria-label="Time and price resolution lattice; arrow keys move, Enter chooses; the outlined cells are the diagonal"
-          ></div>
-          <div class="ol-plane-key">
-            <span><i class="ol-plane-ready"></i>Ready · usable</span
-            ><span><i class="ol-plane-small"></i>Too small</span
-            ><span><i class="ol-plane-large"></i>Too large</span
-            ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
-            ><span><i class="ol-plane-loading"></i>Loading</span
-            ><span><i class="ol-plane-path"></i>Diagonal</span>
+            class="ol-pop ol-res-pop"
+            id="ol-res-pop"
+            role="dialog"
+            aria-label="Resolution"
+            hidden
+          >
+            <div class="ol-pop-head">
+              <span>Resolution</span
+              ><button
+                type="button"
+                id="ol-auto"
+                class="ol-action ol-toggle cursor-interaction"
+                aria-pressed="true"
+                data-keys="A"
+                data-hint="Choose the level from the cell size on screen"
+              >
+                Auto level
+              </button>
+            </div>
+            <div class="ol-step">
+              <div class="ol-step-label">
+                <span>Time · <span id="ol-n">n 4</span></span
+                ><output id="ol-tr">15 min</output>
+              </div>
+              <button
+                type="button"
+                id="ol-tminus"
+                class="ol-action cursor-interaction"
+                aria-label="Finer time cells"
+                data-keys="["
+                data-hint=""
+              >
+                <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="3" y="3" width="4" height="4" />
+                  <rect x="9" y="3" width="4" height="4" />
+                  <rect x="3" y="9" width="4" height="4" />
+                  <rect x="9" y="9" width="4" height="4" />
+                </svg></button
+              ><button
+                type="button"
+                id="ol-tplus"
+                class="ol-action cursor-interaction"
+                aria-label="Coarser time cells"
+                data-keys="]"
+                data-hint=""
+              >
+                <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="3" y="3" width="10" height="10" rx="1" />
+                </svg>
+              </button>
+            </div>
+            <div class="ol-step">
+              <div class="ol-step-label">
+                <span>Price · <span id="ol-m">m 0</span></span
+                ><output id="ol-pr">125 USDT</output>
+              </div>
+              <button
+                type="button"
+                id="ol-pminus"
+                class="ol-action cursor-interaction"
+                aria-label="Finer price cells"
+                data-keys="{"
+                data-hint=""
+              >
+                <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="3" y="3" width="4" height="4" />
+                  <rect x="9" y="3" width="4" height="4" />
+                  <rect x="3" y="9" width="4" height="4" />
+                  <rect x="9" y="9" width="4" height="4" />
+                </svg></button
+              ><button
+                type="button"
+                id="ol-pplus"
+                class="ol-action cursor-interaction"
+                aria-label="Coarser price cells"
+                data-keys="}"
+                data-hint=""
+              >
+                <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="3" y="3" width="10" height="10" rx="1" />
+                </svg>
+              </button>
+            </div>
+            <div class="ol-plane-cap">Resolution plane · m price ↑ · n time →</div>
+            <div
+              class="ol-plane"
+              id="ol-plane"
+              role="group"
+              aria-label="Time and price resolution lattice; arrow keys move, Enter chooses; the outlined cells are the diagonal"
+            ></div>
+            <div class="ol-plane-key">
+              <span><i class="ol-plane-ready"></i>Ready · usable</span
+              ><span><i class="ol-plane-small"></i>Too small</span
+              ><span><i class="ol-plane-large"></i>Too large</span
+              ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
+              ><span><i class="ol-plane-loading"></i>Loading</span
+              ><span><i class="ol-plane-path"></i>Diagonal</span>
+            </div>
+            <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
           </div>
-          <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
         </div>
-      </div>
-      <div class="ol-group ol-follow" role="group" aria-label="Price follows zoom">
-        <span class="ol-cap">Price</span>
-        <div class="ol-seg">
+        <div class="ol-group ol-follow-group">
           <button
             type="button"
-            id="ol-free"
-            class="cursor-interaction"
-            data-follow="free"
-            aria-pressed="false"
-            title="Zooming time leaves the price range alone"
+            id="ol-follow"
+            class="ol-pick ol-l cursor-interaction"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="ol-follow-menu"
+            aria-label="Price axis"
+            data-hint=""
           >
-            Free</button
-          ><button
-            type="button"
-            id="ol-refit"
-            class="cursor-interaction"
-            data-follow="refit"
-            aria-pressed="true"
-            title="Zooming time refits the price range to the visible trades"
-          >
-            Refit</button
-          ><button
-            type="button"
-            id="ol-coupled"
-            class="cursor-interaction"
-            data-follow="coupled"
-            aria-pressed="false"
-            title="Zooming time zooms price by the same factor"
-          >
-            Coupled</button
-          ><button
-            type="button"
-            id="ol-diagonal"
-            class="cursor-interaction"
-            data-follow="diagonal"
-            aria-pressed="false"
-            title="Zooming time by k zooms price by the square root of k; the price level follows the measured diagonal (D)"
-          >
-            Diagonal
+            <svg id="ol-follow-icon" class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"></svg>
+            <span class="ol-label" id="ol-follow-label">Price axis</span>
+            <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+            </svg>
           </button>
+          <div
+            class="ol-pop ol-menu ol-follow-menu"
+            id="ol-follow-menu"
+            role="menu"
+            aria-label="Price axis"
+            hidden
+          ></div>
         </div>
-        <button
-          type="button"
-          id="ol-fit"
-          class="ol-action ol-l cursor-interaction"
-          title="Fit the price range to the visible trades once (F)"
-        >
-          Fit now
-        </button>
       </div>
       <div class="ol-group ol-tools" role="group" aria-label="Pointer tool">
         <div class="ol-seg">
           <button
             type="button"
             id="ol-pan"
-            class="cursor-interaction"
+            class="ol-icon-button cursor-interaction"
             data-tool="pan"
             aria-pressed="true"
-            title="Pan: drag to move, click to anchor (V)"
+            aria-label="Pan"
+            aria-keyshortcuts="V"
+            data-keys="V"
+            data-hint="Drag to move the view; click a column to anchor"
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path
                 d="M8 2v12M2 8h12M8 2 6.3 3.7M8 2l1.7 1.7M8 14l-1.7-1.7M8 14l1.7-1.7M2 8l1.7-1.7M2 8l1.7 1.7M14 8l-1.7-1.7M14 8l-1.7 1.7"
               /></svg
-            ><span class="ol-tool-label">Pan</span></button
+            ><span class="ol-label">Pan</span></button
           ><button
             type="button"
             id="ol-select"
-            class="cursor-interaction"
+            class="ol-icon-button cursor-interaction"
             data-tool="select"
             aria-pressed="false"
-            title="Select: drag a rectangle on base-cell edges (S)"
+            aria-label="Select"
+            aria-keyshortcuts="S"
+            data-keys="S"
+            data-hint="Drag a rectangle to measure it; click to clear it"
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <rect
@@ -1832,49 +1990,40 @@
                 rx="1"
                 stroke-dasharray="2 1.6"
               /></svg
-            ><span class="ol-tool-label">Select</span></button
+            ><span class="ol-label">Select</span></button
           ><button
             type="button"
             id="ol-lens"
-            class="cursor-interaction"
+            class="ol-icon-button cursor-interaction"
             data-tool="lens"
             aria-pressed="false"
-            title="Lens: finer cells inside a region (L; hold Alt to peek)"
+            aria-label="Lens"
+            aria-keyshortcuts="L"
+            data-keys="L"
+            data-hint="Finer cells inside a region; hold Alt to peek"
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <circle cx="7" cy="7" r="4.2" />
               <path d="m10.2 10.2 3.3 3.3" /></svg
-            ><span class="ol-tool-label">Lens</span>
+            ><span class="ol-label">Lens</span>
           </button>
         </div>
-        <select
-          id="ol-lens-depth"
-          aria-label="Lens depth in levels finer"
-          title="Lens depth (Shift+L)"
-        >
-          <option value="1">−1 level</option>
-          <option value="2" selected>−2 levels</option>
-          <option value="3">−3 levels</option>
-          <option value="4">−4 levels</option></select
-        ><button
-          type="button"
-          id="ol-lens-pin"
-          class="ol-solid ol-l cursor-interaction"
-          hidden
-          title="Make the lens rectangle and resolution the view (Enter)"
-        >
-          Pin lens
-        </button>
       </div>
       <div class="ol-group ol-replay">
         <button
           type="button"
           id="ol-replay"
-          class="ol-action ol-toggle ol-l cursor-interaction"
+          class="ol-icon-button ol-toggle ol-l cursor-interaction"
           aria-pressed="false"
-          title="Replay: hide the trades after an anchor (R); its controls sit on the chart"
+          aria-label="Replay"
+          aria-keyshortcuts="R"
+          data-keys="R"
+          data-hint="Hide the trades after an anchor; its controls sit on the chart"
         >
-          Replay
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 3v10" />
+            <path d="M7 4.8v6.4l5-3.2z" /></svg
+          ><span class="ol-label">Replay</span>
         </button>
       </div>
       <div class="ol-group ol-history" role="group" aria-label="History">
@@ -1883,17 +2032,21 @@
           id="ol-hist-back"
           class="ol-icon-button ol-l cursor-interaction"
           aria-label="Back"
+          data-hint=""
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M10 3.5 5.5 8l4.5 4.5" /></svg></button
+            <path d="M10 3.5 5.5 8l4.5 4.5" /></svg
+          ><span class="ol-label">Back</span></button
         ><button
           type="button"
           id="ol-hist-fwd"
           class="ol-icon-button ol-l cursor-interaction"
           aria-label="Forward"
+          data-hint=""
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="m6 3.5 4.5 4.5L6 12.5" /></svg></button
+            <path d="m6 3.5 4.5 4.5L6 12.5" /></svg
+          ><span class="ol-label">Forward</span></button
         ><button
           type="button"
           id="ol-hist"
@@ -1902,12 +2055,13 @@
           aria-expanded="false"
           aria-controls="ol-hist-pop"
           aria-label="Views and history"
-          title="Views and history (H)"
+          aria-keyshortcuts="H"
+          data-keys="H"
+          data-hint="Save this view, open a saved one, or go back to an earlier place"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="5.5" />
-            <path d="M8 5v3l2 1.5" />
-          </svg>
+            <path d="M4.5 2.5h7v11L8 11l-3.5 2.5z" /></svg
+          ><span class="ol-label">Views and history</span>
         </button>
         <div
           class="ol-pop ol-pop-end ol-views-pop"
@@ -1963,9 +2117,13 @@
           aria-haspopup="dialog"
           aria-controls="ol-keys"
           aria-label="Keyboard shortcuts"
-          title="Keyboard shortcuts (?)"
+          data-keys="?"
+          data-hint=""
         >
-          ?
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="1.5" y="4" width="13" height="8" rx="1.5" />
+            <path d="M4.2 6.8h.01M6.7 6.8h.01M9.3 6.8h.01M11.8 6.8h.01M5 9.3h6" /></svg
+          ><span class="ol-label">Keyboard shortcuts</span>
         </button>
       </div>
     </div>
@@ -2045,7 +2203,8 @@
             id="ol-back"
             class="ol-icon-button ol-s cursor-interaction"
             aria-label="Previous column"
-            title="Previous column ( , )"
+            data-keys=","
+            data-hint=""
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M10 3.5 5.5 8l4.5 4.5" />
@@ -2056,7 +2215,8 @@
             class="ol-icon-button ol-s cursor-interaction"
             aria-label="Play"
             aria-pressed="false"
-            title="Play (Space)"
+            data-keys="Space"
+            data-hint=""
           >
             <svg class="ol-icon ol-play-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M5 3.5v9l7.5-4.5z" />
@@ -2068,12 +2228,17 @@
             id="ol-next"
             class="ol-icon-button ol-s cursor-interaction"
             aria-label="Next column"
-            title="Next column ( . )"
+            data-keys="."
+            data-hint=""
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="m6 3.5 4.5 4.5L6 12.5" />
             </svg></button
-          ><select id="ol-speed" aria-label="Replay speed" title="Columns a second while playing">
+          ><select
+            id="ol-speed"
+            aria-label="Replay speed"
+            data-hint="Columns a second while playing"
+          >
             <option value="0.5">½×</option>
             <option value="1" selected>1×</option>
             <option value="2">2×</option>
@@ -2083,9 +2248,42 @@
             type="button"
             id="ol-replay-now"
             class="ol-s cursor-interaction"
-            title="End replay at the latest data (End)"
+            aria-label="Now"
+            data-keys="End"
+            data-hint="End replay at the latest data"
           >
             Now
+          </button>
+        </div>
+        <div
+          class="ol-lensbar"
+          id="ol-lensbar"
+          role="group"
+          aria-label="Lens"
+          hidden
+        >
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.2" />
+            <path d="m10.2 10.2 3.3 3.3" /></svg
+          ><select
+            id="ol-lens-depth"
+            aria-label="Lens depth"
+            data-keys="Shift+L"
+            data-hint="How many levels finer the lens shows"
+          >
+            <option value="1">1 level finer</option>
+            <option value="2" selected>2 levels finer</option>
+            <option value="3">3 levels finer</option>
+            <option value="4">4 levels finer</option></select
+          ><button
+            type="button"
+            id="ol-lens-pin"
+            class="ol-s cursor-interaction"
+            aria-label="Pin lens"
+            data-keys="Enter"
+            data-hint="Make the lens region and its finer cells the view"
+          >
+            Pin
           </button>
         </div>
         <button
@@ -2699,8 +2897,16 @@
               <dd>Hold <kbd>Shift</kbd></dd>
             </div>
             <div>
-              <dt>Last 24 hours, 7 days, all</dt>
-              <dd><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dd>
+              <dt>Time window: 15 min, 30 min, 1 h, 4 h, 12 h, 24 h, 7 d, 30 d, 1 y</dt>
+              <dd><kbd>1</kbd> … <kbd>9</kbd></dd>
+            </div>
+            <div>
+              <dt>All history</dt>
+              <dd><kbd>0</kbd></dd>
+            </div>
+            <div>
+              <dt>Every window, this year and last year too</dt>
+              <dd><kbd>W</kbd></dd>
             </div>
           </dl>
         </section>
@@ -2745,7 +2951,7 @@
               <dd><kbd>Enter</kbd></dd>
             </div>
             <div>
-              <dt>Close, leave the lens, clear the selection</dt>
+              <dt>Close; clear the selection; then back to pan</dt>
               <dd><kbd>Esc</kbd></dd>
             </div>
           </dl>
@@ -2926,7 +3132,7 @@
   const design = { gap: 1 },
     S = {
       dataset: "recent",
-      window: "1",
+      window: "24h",
       n: 4,
       m: 0,
       mode: "volume",
@@ -3055,6 +3261,21 @@
         : [`${dayOf(x)} ${clock(x)} →`, `${dayOf(y)} ${clock(y)}`];
     },
     range = (a, b) => rangeParts(a, b).join(" ");
+  // A span in its largest unit, to a tenth below ten: "45 s", "6.7 min",
+  // "12 h", "3.5 d", "1.2 y".
+  const spanText = (s) => {
+    const [v, unit] =
+      s < 60
+        ? [s, "s"]
+        : s < 3600
+          ? [s / 60, "min"]
+          : s < DAY
+            ? [s / 3600, "h"]
+            : s < 365 * DAY
+              ? [s / DAY, "d"]
+              : [s / (365 * DAY), "y"];
+    return `${+v.toFixed(v < 10 ? 1 : 0)} ${unit}`;
+  };
   // Elapsed time for the live state, in its largest unit: "8 s", "6 min", "2 h".
   const elapsed = (ms) => {
       const s = Math.max(0, Math.round(ms / 1000));
@@ -3471,15 +3692,28 @@
       const right = G.x + G.w - 8;
       labelsTaken.push([right - el("latest").offsetWidth, 16, right, 16 + el("latest").offsetHeight]);
     }
+    // The lens's controls sit at the plot's top left while it is the tool.
+    let lensRight = 0;
+    if (S.lens) {
+      const bar = el("lensbar");
+      bar.style.left = G.x + 4 + "px";
+      lensRight = G.x + 4 + bar.offsetWidth;
+      labelsTaken.push([G.x + 4, 16, lensRight, 20 + bar.offsetHeight]);
+    }
     if (S.replay) {
       // The transport stays inside the plot: where one row is too wide for it
-      // (a phone's touch targets), it wraps onto a second.
+      // (a phone's touch targets), it wraps onto a second. It keeps clear of
+      // the lens's controls, beside them or else under them.
       const bar = el("transport");
       bar.style.maxWidth = Math.max(0, G.w - 8) + "px";
       const w = bar.offsetWidth,
-        left = clamp(G.X(cut) - w / 2, G.x + 4, G.x + G.w - w - 4);
+        beside = lensRight ? lensRight + 8 : G.x + 4,
+        room = beside <= G.x + G.w - w - 4,
+        top = room ? 20 : 26 + el("lensbar").offsetHeight,
+        left = clamp(G.X(cut) - w / 2, room ? beside : G.x + 4, G.x + G.w - w - 4);
       bar.style.left = left + "px";
-      labelsTaken.push([left, 16, left + w, 20 + bar.offsetHeight]);
+      bar.style.top = top + "px";
+      labelsTaken.push([left, top - 4, left + w, top + bar.offsetHeight]);
     }
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, G.width, G.height);
@@ -3529,6 +3763,15 @@
         G.X(b[1]) - G.X(b[0]),
         G.Y(b[2]) - G.Y(b[3]),
       );
+      // While a selection is dragged the rectangle under the pointer shows
+      // too, dashed; the solid outline is the cells it takes in.
+      if (S.select && drag?.moved) {
+        const [ta, tb, pa, pb] = S.selection;
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(G.X(ta), G.Y(pb), G.X(tb) - G.X(ta), G.Y(pa) - G.Y(pb));
+        ctx.setLineDash([]);
+      }
     }
     const xc = G.X(cut);
     if (xc >= G.x && xc <= G.x + G.w) {
@@ -3799,20 +4042,36 @@
     S.pA = Math.max(0, low - pad);
     S.pB = high + pad;
   }
-  // A window ends at the cutoff, with a tenth of its length to spare after it.
-  function windowRange(w) {
-    S.tA = w === "all" ? 0 : Math.max(0, CUT - (Number(w) * 86400) / BASE);
-    S.tB = CUT + (CUT - S.tA) * 0.105;
+  // A window ends at the cutoff, with a tenth of its length to spare after it;
+  // this year starts on its first day, and last year is the whole calendar
+  // year before the cutoff's.
+  function windowRange(key) {
+    const yearStart = (y) => Math.max(0, (Date.UTC(y, 0, 1) / 1000 - T0) / BASE);
+    if (key === "lastyear") {
+      S.tA = yearStart(CUT_YEAR - 1);
+      S.tB = Math.max(S.tA + 1, yearStart(CUT_YEAR));
+      return;
+    }
+    S.tA =
+      key === "all"
+        ? 0
+        : key === "ytd"
+          ? yearStart(CUT_YEAR)
+          : Math.max(0, CUT - windowOf(key).span);
+    S.tB = Math.max(S.tA + 1, CUT + (CUT - S.tA) * 0.105);
   }
-  function setWindow(w) {
-    S.window = w;
+  function setWindow(key) {
+    const w = windowOf(key);
+    S.window = key;
     S.selection = null;
     S.anchor = null;
     S.replay = false;
-    windowRange(w);
+    windowRange(key);
     chooseSource();
-    S.n = w === "all" ? 14 : w === "7" ? 6 : 4;
-    S.m = w === "all" ? 3 : 0;
+    // The window's own level, for about a hundred columns; auto level then
+    // fits it to the screen.
+    S.n = w.n;
+    S.m = w.m;
     fit();
     limits();
     if (S.auto && G.w) autoLevel();
@@ -3924,11 +4183,74 @@
 
   // A view in the address: the window or the rectangle, the level when it is
   // locked, and each display setting that differs from its default. Times are
-  // UTC and prices USDT. A window (24h, 7d, All) is relative: it opens on the
-  // latest data wherever the cutoff has moved; a rectangle opens where it was.
-  const WINDOWS = { 1: "24h", 7: "7d", all: "all" },
-    WINDOW_LABELS = { 1: "Last 24 hours", 7: "Last 7 days", all: "All history" },
+  // UTC and prices USDT. A window is relative: it opens on the latest data
+  // wherever the cutoff has moved; a rectangle opens where it was.
+  // The time windows, in order: each one's key in the address, its name on
+  // the bar and in the list, how lists name it, its length and its level.
+  const HOUR = 3600 / BASE,
+    DAYS = DAY / BASE,
+    WINDOWS = [
+      { key: "15m", short: "15m", name: "15 minutes", label: "Last 15 minutes", span: HOUR / 4, n: 0, m: 0 },
+      { key: "30m", short: "30m", name: "30 minutes", label: "Last 30 minutes", span: HOUR / 2, n: 0, m: 0 },
+      { key: "1h", short: "1h", name: "1 hour", label: "Last hour", span: HOUR, n: 0, m: 0 },
+      { key: "4h", short: "4h", name: "4 hours", label: "Last 4 hours", span: 4 * HOUR, n: 1, m: 0 },
+      { key: "12h", short: "12h", name: "12 hours", label: "Last 12 hours", span: 12 * HOUR, n: 3, m: 0 },
+      { key: "24h", short: "24h", name: "24 hours", label: "Last 24 hours", span: DAYS, n: 4, m: 0 },
+      { key: "7d", short: "7d", name: "7 days", label: "Last 7 days", span: 7 * DAYS, n: 6, m: 0 },
+      { key: "30d", short: "30d", name: "30 days", label: "Last 30 days", span: 30 * DAYS, n: 8, m: 1 },
+      { key: "1y", short: "1y", name: "1 year", label: "Last 12 months", span: 365 * DAYS, n: 12, m: 3 },
+      { key: "ytd", name: "This year", n: 12, m: 3 },
+      { key: "lastyear", name: "Last year", n: 12, m: 3 },
+      { key: "all", short: "All", name: "All history", label: "All history", n: 14, m: 3 },
+    ],
+    // The number keys choose the windows in order, and 0 all history.
+    WINDOW_KEYS = ["all", "15m", "30m", "1h", "4h", "12h", "24h", "7d", "30d", "1y"],
+    windowOf = (key) => WINDOWS.find((w) => w.key === key),
+    // Views and history stored before these windows name 24 hours and 7 days
+    // "1" and "7".
+    windowKey = (key) =>
+      key === "1" ? "24h" : key === "7" ? "7d" : windowOf(key) ? key : "",
+    // The bar names the calendar windows by their year, and lists too.
+    windowShort = (key) =>
+      key === "ytd"
+        ? String(CUT_YEAR)
+        : key === "lastyear"
+          ? String(CUT_YEAR - 1)
+          : windowOf(key).short,
+    windowLabel = (key) =>
+      key === "ytd"
+        ? `${CUT_YEAR} so far`
+        : key === "lastyear"
+          ? String(CUT_YEAR - 1)
+          : windowOf(key).label,
     FOLLOWS = ["free", "refit", "coupled", "diagonal"],
+    // How the price range follows a time zoom: each mode's name, what it does
+    // and its key, for the bar's price axis menu.
+    FOLLOW_INFO = {
+      free: { name: "Free", desc: "Zooming time leaves the price range alone" },
+      refit: {
+        name: "Refit",
+        desc: "Zooming time refits the price range to the visible trades",
+      },
+      coupled: { name: "Coupled", desc: "Zooming time zooms price by the same factor" },
+      diagonal: {
+        name: "Diagonal",
+        desc: "Zooming time by k zooms price by √k, and the price level follows the measured diagonal",
+        keys: "D",
+      },
+    },
+    // Icons the page builds, 16 units square, drawn with the icon stroke.
+    ICONS = {
+      check: '<path d="m3.5 8.5 3 3 6-7"/>',
+      free:
+        '<path d="M3.5 2.5v11"/><path d="M6.5 8h7M6.5 8l1.8-1.8M6.5 8l1.8 1.8M13.5 8l-1.8-1.8M13.5 8l-1.8 1.8"/>',
+      refit:
+        '<path d="M5.5 3h-2v10h2M10.5 3h2v10h-2"/><path d="M8 5v6M8 5 6.6 6.4M8 5l1.4 1.4M8 11l-1.4-1.4M8 11l1.4-1.4"/>',
+      coupled:
+        '<rect x="3" y="3" width="10" height="10" rx="1"/><path d="M6 10l4-4M10 6H7.5M10 6v2.5"/>',
+      diagonal: '<path d="M3 13h3v-3h3V7h3V4"/>',
+      fit: '<path d="M3 5.5V3h2.5M10.5 3H13v2.5M13 10.5V13h-2.5M5.5 13H3v-2.5"/>',
+    },
     MODES = ["volume", "flow", "delta", "geometry"],
     MODE_NAMES = {
       volume: "Volume",
@@ -3936,6 +4258,14 @@
       delta: "Delta",
       geometry: "Geometry",
     };
+  function svgIcon(name, className = "ol-icon") {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", className);
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = ICONS[name];
+    return svg;
+  }
   // "2026-09-24T10:00Z", with seconds and milliseconds only when set.
   const stamp = (b) =>
       date(b).toISOString().replace(".000Z", "Z").replace(/:00Z$/, "Z"),
@@ -3943,7 +4273,7 @@
   function viewParams() {
     const out = [],
       add = (k, v) => out.push(k + "=" + v);
-    if (S.window) add("w", WINDOWS[S.window]);
+    if (S.window) add("w", S.window);
     else {
       add("t", stamp(S.tA) + "~" + stamp(S.tB));
       add("p", usd(S.pA) + "~" + usd(S.pB));
@@ -3988,7 +4318,7 @@
       level = /^(\d+),(\d+)$/.exec(q.get("r") || ""),
       [selT, selP = ""] = String(q.get("sel") ?? "").split(",");
     return checkView({
-      window: Object.keys(WINDOWS).find((k) => WINDOWS[k] === q.get("w")),
+      window: windowKey(q.get("w")),
       ...Object.fromEntries(
         [...pair(q.get("t"), time), ...pair(q.get("p"), rows)].map((v, i) => [
           ["tA", "tB", "pA", "pB"][i],
@@ -4019,7 +4349,7 @@
   // cutoff, a selection outside its history.
   function checkView(v) {
     const ok = (...x) => x.every(Number.isFinite),
-      w = Object.hasOwn(WINDOWS, v.window) ? v.window : "";
+      w = windowKey(v.window);
     if (
       !w &&
       !(
@@ -4644,8 +4974,14 @@
     el("tplus").disabled = S.n === N_MAX;
     el("pminus").disabled = S.m === 0;
     el("pplus").disabled = S.m === M_MAX;
-    qsa("[data-window]").forEach((b) =>
-      b.setAttribute("aria-pressed", String(b.dataset.window === S.window)),
+    // The window: its name on the bar, or the span in view when no preset
+    // names it, and its check in the list.
+    el("window-text").textContent = S.window
+      ? windowShort(S.window)
+      : spanText((S.tB - S.tA) * BASE);
+    el("window").dataset.custom = String(!S.window);
+    qsa("#ol-window-menu [data-window]").forEach((b) =>
+      b.setAttribute("aria-checked", String(b.dataset.window === S.window)),
     );
     qsa("[data-mode]").forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)),
@@ -4654,28 +4990,38 @@
     el("key-poc").hidden = el("key-bpoc").hidden = !S.poc;
     el("key-area").hidden = !S.area;
     const coarse = renderN() > S.n || renderM() > S.m;
-    el("res-text").textContent =
-      `${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)} USDT`;
+    // The level on the bar leaves the unit to the popover: "15 min × 125".
+    el("res-text").textContent = `${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)}`;
     el("res").dataset.auto = String(S.auto);
     el("res").dataset.coarse = String(coarse);
-    el("res").title =
-      (S.auto ? "Auto level (A)" : "Level locked; A for auto") +
-      (coarse
-        ? ` · showing ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT, the finest recorded here`
-        : "") +
-      " · [ and ] step time cells, { and } price cells";
-    el("span").hidden = Boolean(S.window);
-    el("span").textContent = dur((S.tB - S.tA) * BASE);
-    qsa("[data-follow]").forEach((b) =>
-      b.setAttribute("aria-pressed", String(b.dataset.follow === followMode())),
+    el("res").setAttribute(
+      "aria-label",
+      `Resolution: ${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)} USDT${S.auto ? ", auto" : ", locked"}`,
     );
+    el("res").dataset.hint =
+      (S.auto ? "Auto level; A locks it" : "Locked; A for auto level") +
+      (coarse
+        ? `. Showing ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT, the finest recorded here`
+        : "") +
+      ". [ ] time cells, { } price cells";
+    // The price axis: its mode's icon on the bar, its check in the list.
+    const follow = followMode();
+    qsa("#ol-follow-menu [data-follow]").forEach((b) =>
+      b.setAttribute("aria-checked", String(b.dataset.follow === follow)),
+    );
+    if (el("follow").dataset.mode !== follow) {
+      el("follow").dataset.mode = follow;
+      el("follow-icon").innerHTML = ICONS[follow];
+      el("follow").setAttribute("aria-label", `Price axis: ${FOLLOW_INFO[follow].name}`);
+      el("follow-label").textContent = `Price axis: ${FOLLOW_INFO[follow].name}`;
+      el("follow").dataset.hint = FOLLOW_INFO[follow].desc;
+      el("follow").dataset.keys = FOLLOW_INFO[follow].keys || "";
+    }
     qsa("[data-tool]").forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.tool === tool())),
     );
-    el("lens-depth").hidden = !S.lens;
+    el("lensbar").hidden = !S.lens;
     setCursor();
-    // Replay and the lens add controls to the bar; its labels make room.
-    root.dataset.busy = String(S.replay || S.lens);
     el("clear").hidden = !S.selection;
     for (const t of ["context", "evidence"]) {
       el(t + "-tab").setAttribute("aria-pressed", String(S.tab === t));
@@ -4808,10 +5154,11 @@
     );
     save();
   }
+  // A tool stays chosen until another is: Select for as many rectangles as
+  // wanted, the lens until it is left.
   function setTool(next) {
     S.select = next === "select";
     S.lens = next === "lens";
-    if (S.select) S.tab = "context";
     if (S.lens) el("tip").hidden = true;
     update();
     save();
@@ -5005,7 +5352,274 @@
     el("sheet-toggle").setAttribute("aria-expanded", String(open));
     if (!open) closePop();
   }
+  // Menus: a button's list of choices. The arrows move through them, Home and
+  // End jump to the ends, Tab leaves, Escape closes back to the button, and a
+  // choice closes the list.
+  const menuItems = (menu) => [...menu.querySelectorAll('[role^="menuitem"]')];
+  function focusMenuItem(menu, i) {
+    const items = menuItems(menu);
+    items[((i % items.length) + items.length) % items.length]?.focus();
+  }
+  function checkedItem(menu) {
+    return Math.max(
+      0,
+      menuItems(menu).findIndex((b) => b.getAttribute("aria-checked") === "true"),
+    );
+  }
+  function bindMenu(buttonId, menuId, build) {
+    const button = el(buttonId),
+      menu = el(menuId);
+    build();
+    bindPop(buttonId, menuId, () => {
+      hideHint();
+      build();
+      focusMenuItem(menu, checkedItem(menu));
+    });
+    button.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      e.preventDefault();
+      if (menu.hidden) button.click();
+      focusMenuItem(menu, e.key === "ArrowUp" ? -1 : checkedItem(menu));
+    });
+    menu.addEventListener("keydown", (e) => {
+      const i = menuItems(menu).indexOf(document.activeElement);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        focusMenuItem(menu, i + (e.key === "ArrowDown" ? 1 : -1));
+      } else if (e.key === "Home" || e.key === "End") {
+        e.preventDefault();
+        focusMenuItem(menu, e.key === "Home" ? 0 : -1);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closePop(true);
+      } else if (e.key === "Tab") closePop();
+    });
+  }
+  function openMenu(buttonId) {
+    const button = el(buttonId),
+      menu = el(button.getAttribute("aria-controls").slice(3));
+    if (menu.hidden) button.click();
+    else focusMenuItem(menu, checkedItem(menu));
+  }
+  function menuItem(role, children, onChoose) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ol-item cursor-interaction";
+    b.setAttribute("role", role);
+    b.append(...children);
+    b.addEventListener("click", () => {
+      closePop(true);
+      onChoose();
+    });
+    return b;
+  }
+  // A key shown beside a name; the name's element states it to assistive
+  // technology (aria-keyshortcuts).
+  function keyCap(text) {
+    const kbd = document.createElement("kbd");
+    kbd.textContent = text;
+    kbd.setAttribute("aria-hidden", "true");
+    return kbd;
+  }
+  // The windows, by length: minutes and hours, days, then years, each with
+  // its number key; the calendar years show which year they are.
+  function buildWindowMenu() {
+    const parts = [];
+    for (const [cap, keys] of [
+      ["Minutes and hours", ["15m", "30m", "1h", "4h", "12h", "24h"]],
+      ["Days", ["7d", "30d"]],
+      ["Years", ["1y", "ytd", "lastyear", "all"]],
+    ]) {
+      const head = document.createElement("div");
+      head.className = "ol-menu-cap";
+      head.setAttribute("aria-hidden", "true");
+      head.textContent = cap;
+      parts.push(head);
+      for (const key of keys) {
+        const children = [svgIcon("check", "ol-icon ol-check"), windowOf(key).name],
+          digit = WINDOW_KEYS.indexOf(key);
+        if (key === "ytd" || key === "lastyear") {
+          const note = document.createElement("span");
+          note.className = "ol-item-note";
+          note.textContent = windowShort(key);
+          children.push(note);
+        }
+        if (digit >= 0) children.push(keyCap(String(digit)));
+        const b = menuItem("menuitemradio", children, () => chooseWindow(key));
+        if (digit >= 0) b.setAttribute("aria-keyshortcuts", String(digit));
+        b.dataset.window = key;
+        b.setAttribute("aria-checked", String(key === S.window));
+        parts.push(b);
+      }
+    }
+    el("window-menu").replaceChildren(...parts);
+  }
+  // The price axis: how its range follows a time zoom, each mode with what it
+  // does, and a fit of the range once.
+  function buildFollowMenu() {
+    const follow = followMode(),
+      parts = FOLLOWS.map((mode) => {
+        const info = FOLLOW_INFO[mode],
+          text = document.createElement("span"),
+          desc = document.createElement("span");
+        text.className = "ol-item-text";
+        desc.className = "ol-item-desc";
+        desc.textContent = info.desc;
+        text.append(info.name, desc);
+        const b = menuItem(
+          "menuitemradio",
+          [svgIcon(mode), text, ...(info.keys ? [keyCap(info.keys)] : [])],
+          () => setFollow(mode),
+        );
+        if (info.keys) b.setAttribute("aria-keyshortcuts", info.keys);
+        b.dataset.follow = mode;
+        b.setAttribute("aria-checked", String(mode === follow));
+        return b;
+      }),
+      rule = document.createElement("div"),
+      text = document.createElement("span"),
+      desc = document.createElement("span");
+    rule.className = "ol-menu-rule";
+    rule.setAttribute("role", "separator");
+    text.className = "ol-item-text";
+    desc.className = "ol-item-desc";
+    desc.textContent = "Once, to the trades in view";
+    text.append("Fit the price range", desc);
+    const fitItem = menuItem("menuitem", [svgIcon("fit"), text, keyCap("F")], () =>
+      fitPrice("Fit price"),
+    );
+    fitItem.setAttribute("aria-keyshortcuts", "F");
+    parts.push(rule, fitItem);
+    el("follow-menu").replaceChildren(...parts);
+  }
+
+  // Labels: a control's name and key, and what it does, a second after the
+  // pointer rests on it, a finger holds it or the keyboard reaches it; once
+  // one has shown, the next shows at once. A hold that shows a label doesn't
+  // press the control too.
+  const HINT_DELAY = 1000,
+    hint = { timer: 0, target: null, hiddenAt: -Infinity, held: null, box: null, touch: false };
+  function hideHint() {
+    clearTimeout(hint.timer);
+    if (hint.target) hint.hiddenAt = performance.now();
+    if (hint.box) hint.box.hidden = true;
+    hint.target = null;
+  }
+  function showHint(target) {
+    if (!target.isConnected || target.closest("[hidden]")) return;
+    if (!hint.box) {
+      hint.box = document.createElement("div");
+      hint.box.className = "ol-hint";
+      hint.box.setAttribute("role", "tooltip");
+      root.append(hint.box);
+    }
+    const box = hint.box,
+      head = document.createElement("div"),
+      parts = [head],
+      keys = target.dataset.keys,
+      desc = target.dataset.hint;
+    head.className = "ol-hint-head";
+    head.append(target.getAttribute("aria-label") || target.textContent.trim());
+    if (keys) head.append(keyCap(keys));
+    if (desc) {
+      const line = document.createElement("div");
+      line.className = "ol-hint-desc";
+      line.textContent = desc;
+      parts.push(line);
+    }
+    box.replaceChildren(...parts);
+    box.hidden = false;
+    // Under the control, or over it when there is no room below.
+    const r = target.getBoundingClientRect(),
+      w = box.offsetWidth,
+      h = box.offsetHeight,
+      below = r.bottom + 6;
+    box.style.left = clamp(r.left + r.width / 2 - w / 2, 4, innerWidth - w - 4) + "px";
+    box.style.top = (below + h > innerHeight - 4 ? r.top - 6 - h : below) + "px";
+    hint.target = target;
+  }
+  function armHint(target) {
+    clearTimeout(hint.timer);
+    if (hint.target || performance.now() - hint.hiddenAt < 600) showHint(target);
+    else hint.timer = setTimeout(() => showHint(target), HINT_DELAY);
+  }
+  function bindHints() {
+    const hinted = (node) => (node instanceof Element ? node.closest("[data-hint]") : null);
+    root.addEventListener("pointerover", (e) => {
+      const t = hinted(e.target);
+      if (e.pointerType !== "touch" && t && t !== hint.target && !t.contains(e.relatedTarget))
+        armHint(t);
+    });
+    // A finger's label stays a moment after it lifts (see below), though
+    // lifting counts as leaving.
+    root.addEventListener("pointerout", (e) => {
+      const t = hinted(e.target);
+      if (e.pointerType !== "touch" && t && !t.contains(e.relatedTarget)) hideHint();
+    });
+    // A finger held on a control shows its label, and the press that ends the
+    // hold is dropped.
+    root.addEventListener(
+      "pointerdown",
+      (e) => {
+        hideHint();
+        hint.held = null;
+        hint.touch = e.pointerType === "touch";
+        const t = hinted(e.target);
+        if (t && hint.touch)
+          hint.timer = setTimeout(() => {
+            showHint(t);
+            hint.held = t;
+          }, HINT_DELAY);
+      },
+      true,
+    );
+    for (const type of ["pointerup", "pointercancel"])
+      root.addEventListener(
+        type,
+        () => {
+          clearTimeout(hint.timer);
+          if (hint.held) hint.timer = setTimeout(hideHint, 1500);
+        },
+        true,
+      );
+    root.addEventListener(
+      "click",
+      (e) => {
+        const held = hint.held;
+        hint.held = null;
+        if (held && held.contains(e.target)) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+      },
+      true,
+    );
+    // A touch hold on a control shows its label, not the phone's menu.
+    root.addEventListener("contextmenu", (e) => {
+      if (hint.touch && hinted(e.target)) e.preventDefault();
+    });
+    root.addEventListener("focusin", (e) => {
+      const t = hinted(e.target);
+      if (t && t.matches(":focus-visible")) armHint(t);
+    });
+    root.addEventListener("focusout", (e) => {
+      if (!hint.target?.contains(e.relatedTarget)) hideHint();
+    });
+    addEventListener("scroll", hideHint, true);
+    addEventListener("resize", hideHint);
+    addEventListener("blur", hideHint);
+    document.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.key === "Escape") hideHint();
+      },
+      true,
+    );
+  }
   function bindTopBar() {
+    bindHints();
+    bindMenu("window", "window-menu", buildWindowMenu);
+    bindMenu("follow", "follow-menu", buildFollowMenu);
     bindPop("res", "res-pop", () => {
       nav.planeKey = "";
       refreshPlane();
@@ -5035,8 +5649,6 @@
       setSheet(root.dataset.sheet !== "open"),
     );
     el("sheet-close").addEventListener("click", () => setSheet(false));
-    for (const button of qsa("[data-follow]"))
-      button.addEventListener("click", () => setFollow(button.dataset.follow));
     for (const button of qsa("[data-tool]"))
       button.addEventListener("click", () => setTool(button.dataset.tool));
     el("hist-back").addEventListener("click", () => history.back());
@@ -6120,7 +6732,6 @@
     player.timer = on ? setInterval(playStep, 1000 / Number(el("speed").value)) : 0;
     el("play").setAttribute("aria-pressed", String(on));
     el("play").setAttribute("aria-label", on ? "Pause" : "Play");
-    el("play").title = (on ? "Pause" : "Play") + " (Space)";
   }
   function playStep() {
     const end = Math.floor(CUT / stepT()) * stepT();
@@ -6612,8 +7223,8 @@
     minute = (b) => (Math.round((b * BASE) / 60) * 60) / BASE,
     listRange = (a, b) => range(minute(a), minute(b));
   function entryPlace(x) {
-    return x.window
-      ? WINDOW_LABELS[x.window]
+    return windowKey(x.window)
+      ? windowLabel(windowKey(x.window))
       : listRange(x.tA, Math.min(x.tB, x.cut));
   }
   // Back, Forward and the list: each entry names its range and level.
@@ -6622,11 +7233,10 @@
       forward = hist.entries[hist.index + 1];
     el("hist-back").disabled = !back;
     el("hist-fwd").disabled = !forward;
-    el("hist-back").title =
-      (back ? `Back to ${entryPlace(back)}` : "Back") + ` (${KEYS.back})`;
-    el("hist-fwd").title =
-      (forward ? `Forward to ${entryPlace(forward)}` : "Forward") +
-      ` (${KEYS.forward})`;
+    el("hist-back").dataset.hint = back ? `To ${entryPlace(back)}` : "";
+    el("hist-back").dataset.keys = KEYS.back;
+    el("hist-fwd").dataset.hint = forward ? `To ${entryPlace(forward)}` : "";
+    el("hist-fwd").dataset.keys = KEYS.forward;
     if (el("hist-pop").hidden) return;
     const frag = document.createDocumentFragment();
     for (let i = hist.entries.length - 1; i >= 0; i--) {
@@ -6728,7 +7338,7 @@
   const atCutoff = () => !S.replay && S.tA < CUT && S.tB >= CUT;
   function viewPlace() {
     return S.window
-      ? WINDOW_LABELS[S.window]
+      ? windowLabel(S.window)
       : atCutoff()
         ? `Last ${dur((CUT - S.tA) * BASE)}`
         : listRange(S.tA, Math.min(S.tB, CUT));
@@ -6816,8 +7426,8 @@
   }
   function viewDetail(x) {
     return [
-      x.window
-        ? WINDOW_LABELS[x.window]
+      windowKey(x.window)
+        ? windowLabel(windowKey(x.window))
         : x.live
           ? `Last ${dur((x.span - x.lead) * BASE)}`
           : listRange(x.tA, Math.min(x.tB, x.cut)),
@@ -6874,7 +7484,6 @@
   function updateNavigation() {
     el("auto").setAttribute("aria-pressed", String(S.auto));
     el("lens-depth").value = String(clamp(Math.round(S.lensDepth) || 2, 1, 4));
-    el("lens-pin").hidden = !S.lens;
     const g = navGeometry(),
       px = (stepT() * g.w) / (S.tB - S.tA),
       py = (stepP() * g.h) / (S.pB - S.pA),
@@ -6886,7 +7495,7 @@
     el("gesture").textContent = S.lens
       ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · V: pan"
       : S.select
-        ? "Drag a rectangle on base-cell edges · then back to pan"
+        ? "Drag a rectangle to measure it · click to clear it · Esc: back to pan"
         : S.coupled
           ? "Wheel / pinch: time + price · Alt: lens"
           : S.diagonal
@@ -7313,8 +7922,13 @@
         return;
       }
       const p = at(e),
-        held = drag.lens || nav.hold;
-      if (!held && !drag.moved && inPlot(p) && p.t < activeCutoff()) {
+        held = drag.lens || nav.hold,
+        click = !held && !drag.moved,
+        // A click with Select clears the selection; with Pan it anchors the
+        // column clicked, for the continuations.
+        cleared = click && S.select && S.selection !== null;
+      if (click && S.select) S.selection = null;
+      else if (click && inPlot(p) && p.t < activeCutoff()) {
         S.anchor = (Math.floor(p.t / stepT()) + 1) * stepT();
         S.tab = "evidence";
       }
@@ -7324,9 +7938,11 @@
           ? S.select
             ? "Selection"
             : "Pan"
-          : "Anchor";
-      // A finished selection hands the pointer back to Pan; the selection stays.
-      if (!held && drag.moved && S.select) S.select = false;
+          : S.select
+            ? cleared
+              ? "Selection cleared"
+              : null
+            : "Anchor";
       drag = null;
       nav.hold = false;
       setCursor(p);
@@ -7447,16 +8063,16 @@
         shift = e.shiftKey,
         // The digit typed, or on layouts that type another character there (AZERTY)
         // the digit key; a keypad with NumLock off types End and the arrows instead.
-        digit = /^[1-3]$/.test(e.key)
+        digit = /^[0-9]$/.test(e.key)
           ? e.key
-          : !shift && /^Digit[1-3]$/.test(e.code)
+          : !shift && /^Digit[0-9]$/.test(e.code)
             ? e.code.slice(-1)
             : null,
         centre = { t: (S.tA + S.tB) / 2, p: (S.pA + S.pB) / 2 };
       // A held key repeats like a gesture: the continuations wait for it to end.
       if (e.repeat) gestureAt = performance.now();
       if (e.key === "?") openKeys();
-      else if (digit) chooseWindow(["1", "7", "all"][digit - 1]);
+      else if (digit) chooseWindow(WINDOW_KEYS[digit]);
       else if (bracket)
         changeResolution(S.n + bracket[0], S.m + bracket[1], !bracket[1]);
       else if (["+", "=", "-", "_"].includes(k)) {
@@ -7528,6 +8144,7 @@
         save();
       } else if (k === "t") openDrawer(S.drawer, !S.drawerOpen);
       else if (k === "h") el("hist").click();
+      else if (k === "w") openMenu("window");
       else return;
       e.preventDefault();
       nav.pressed.add(id);
@@ -7566,6 +8183,7 @@
 
   // Commands shared by the controls and their keys.
   function chooseWindow(w) {
+    if (pop.open?.panel === el("window-menu")) closePop(true);
     setWindow(w);
     recordView("Window");
     update();
@@ -7616,7 +8234,8 @@
     S.window = "";
     settleNavigation("Latest", true);
   }
-  // Escape closes what is open first, then leaves the lens and clears the selection.
+  // Escape closes what is open first, then clears the selection, then goes
+  // back to Pan from Select or the lens.
   function escapeKey() {
     if (closePop(true)) return;
     if (root.dataset.sheet === "open") {
@@ -7624,18 +8243,16 @@
       el("sheet-toggle").focus();
       return;
     }
-    const selected = S.selection !== null;
-    S.lens = false;
     nav.hold = false;
     nav.alt = false;
-    S.selection = null;
-    update();
-    if (selected) recordView("Selection cleared");
-    save();
+    if (S.selection) {
+      S.selection = null;
+      update();
+      recordView("Selection cleared");
+      save();
+    } else if (S.select || S.lens) setTool("pan");
+    else update();
   }
-  qsa("[data-window]").forEach((b) =>
-    b.addEventListener("click", () => chooseWindow(b.dataset.window)),
-  );
   qsa("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => setMode(b.dataset.mode)),
   );
@@ -7660,7 +8277,6 @@
     update();
     save();
   });
-  el("fit").addEventListener("click", () => fitPrice("Fit price"));
   el("latest").addEventListener("click", jumpLatest);
   for (const tab of ["context", "evidence"])
     el(tab + "-tab").addEventListener("click", () => {
@@ -7943,7 +8559,7 @@
     loadState.recent = "ready";
     ready = true;
     geometry();
-    setWindow("1");
+    setWindow("24h");
     // The address names the view; without one the page opens on the view this
     // browser showed last. The workspace is this browser's either way.
     const linked = readView(location.hash),

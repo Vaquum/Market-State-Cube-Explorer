@@ -65,7 +65,7 @@
   const design = { gap: 1 },
     S = {
       dataset: "recent",
-      window: "1",
+      window: "24h",
       n: 4,
       m: 0,
       mode: "volume",
@@ -194,6 +194,21 @@
         : [`${dayOf(x)} ${clock(x)} →`, `${dayOf(y)} ${clock(y)}`];
     },
     range = (a, b) => rangeParts(a, b).join(" ");
+  // A span in its largest unit, to a tenth below ten: "45 s", "6.7 min",
+  // "12 h", "3.5 d", "1.2 y".
+  const spanText = (s) => {
+    const [v, unit] =
+      s < 60
+        ? [s, "s"]
+        : s < 3600
+          ? [s / 60, "min"]
+          : s < DAY
+            ? [s / 3600, "h"]
+            : s < 365 * DAY
+              ? [s / DAY, "d"]
+              : [s / (365 * DAY), "y"];
+    return `${+v.toFixed(v < 10 ? 1 : 0)} ${unit}`;
+  };
   // Elapsed time for the live state, in its largest unit: "8 s", "6 min", "2 h".
   const elapsed = (ms) => {
       const s = Math.max(0, Math.round(ms / 1000));
@@ -610,15 +625,28 @@
       const right = G.x + G.w - 8;
       labelsTaken.push([right - el("latest").offsetWidth, 16, right, 16 + el("latest").offsetHeight]);
     }
+    // The lens's controls sit at the plot's top left while it is the tool.
+    let lensRight = 0;
+    if (S.lens) {
+      const bar = el("lensbar");
+      bar.style.left = G.x + 4 + "px";
+      lensRight = G.x + 4 + bar.offsetWidth;
+      labelsTaken.push([G.x + 4, 16, lensRight, 20 + bar.offsetHeight]);
+    }
     if (S.replay) {
       // The transport stays inside the plot: where one row is too wide for it
-      // (a phone's touch targets), it wraps onto a second.
+      // (a phone's touch targets), it wraps onto a second. It keeps clear of
+      // the lens's controls, beside them or else under them.
       const bar = el("transport");
       bar.style.maxWidth = Math.max(0, G.w - 8) + "px";
       const w = bar.offsetWidth,
-        left = clamp(G.X(cut) - w / 2, G.x + 4, G.x + G.w - w - 4);
+        beside = lensRight ? lensRight + 8 : G.x + 4,
+        room = beside <= G.x + G.w - w - 4,
+        top = room ? 20 : 26 + el("lensbar").offsetHeight,
+        left = clamp(G.X(cut) - w / 2, room ? beside : G.x + 4, G.x + G.w - w - 4);
       bar.style.left = left + "px";
-      labelsTaken.push([left, 16, left + w, 20 + bar.offsetHeight]);
+      bar.style.top = top + "px";
+      labelsTaken.push([left, top - 4, left + w, top + bar.offsetHeight]);
     }
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, G.width, G.height);
@@ -668,6 +696,15 @@
         G.X(b[1]) - G.X(b[0]),
         G.Y(b[2]) - G.Y(b[3]),
       );
+      // While a selection is dragged the rectangle under the pointer shows
+      // too, dashed; the solid outline is the cells it takes in.
+      if (S.select && drag?.moved) {
+        const [ta, tb, pa, pb] = S.selection;
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(G.X(ta), G.Y(pb), G.X(tb) - G.X(ta), G.Y(pa) - G.Y(pb));
+        ctx.setLineDash([]);
+      }
     }
     const xc = G.X(cut);
     if (xc >= G.x && xc <= G.x + G.w) {
@@ -938,20 +975,36 @@
     S.pA = Math.max(0, low - pad);
     S.pB = high + pad;
   }
-  // A window ends at the cutoff, with a tenth of its length to spare after it.
-  function windowRange(w) {
-    S.tA = w === "all" ? 0 : Math.max(0, CUT - (Number(w) * 86400) / BASE);
-    S.tB = CUT + (CUT - S.tA) * 0.105;
+  // A window ends at the cutoff, with a tenth of its length to spare after it;
+  // this year starts on its first day, and last year is the whole calendar
+  // year before the cutoff's.
+  function windowRange(key) {
+    const yearStart = (y) => Math.max(0, (Date.UTC(y, 0, 1) / 1000 - T0) / BASE);
+    if (key === "lastyear") {
+      S.tA = yearStart(CUT_YEAR - 1);
+      S.tB = Math.max(S.tA + 1, yearStart(CUT_YEAR));
+      return;
+    }
+    S.tA =
+      key === "all"
+        ? 0
+        : key === "ytd"
+          ? yearStart(CUT_YEAR)
+          : Math.max(0, CUT - windowOf(key).span);
+    S.tB = Math.max(S.tA + 1, CUT + (CUT - S.tA) * 0.105);
   }
-  function setWindow(w) {
-    S.window = w;
+  function setWindow(key) {
+    const w = windowOf(key);
+    S.window = key;
     S.selection = null;
     S.anchor = null;
     S.replay = false;
-    windowRange(w);
+    windowRange(key);
     chooseSource();
-    S.n = w === "all" ? 14 : w === "7" ? 6 : 4;
-    S.m = w === "all" ? 3 : 0;
+    // The window's own level, for about a hundred columns; auto level then
+    // fits it to the screen.
+    S.n = w.n;
+    S.m = w.m;
     fit();
     limits();
     if (S.auto && G.w) autoLevel();
@@ -1063,11 +1116,74 @@
 
   // A view in the address: the window or the rectangle, the level when it is
   // locked, and each display setting that differs from its default. Times are
-  // UTC and prices USDT. A window (24h, 7d, All) is relative: it opens on the
-  // latest data wherever the cutoff has moved; a rectangle opens where it was.
-  const WINDOWS = { 1: "24h", 7: "7d", all: "all" },
-    WINDOW_LABELS = { 1: "Last 24 hours", 7: "Last 7 days", all: "All history" },
+  // UTC and prices USDT. A window is relative: it opens on the latest data
+  // wherever the cutoff has moved; a rectangle opens where it was.
+  // The time windows, in order: each one's key in the address, its name on
+  // the bar and in the list, how lists name it, its length and its level.
+  const HOUR = 3600 / BASE,
+    DAYS = DAY / BASE,
+    WINDOWS = [
+      { key: "15m", short: "15m", name: "15 minutes", label: "Last 15 minutes", span: HOUR / 4, n: 0, m: 0 },
+      { key: "30m", short: "30m", name: "30 minutes", label: "Last 30 minutes", span: HOUR / 2, n: 0, m: 0 },
+      { key: "1h", short: "1h", name: "1 hour", label: "Last hour", span: HOUR, n: 0, m: 0 },
+      { key: "4h", short: "4h", name: "4 hours", label: "Last 4 hours", span: 4 * HOUR, n: 1, m: 0 },
+      { key: "12h", short: "12h", name: "12 hours", label: "Last 12 hours", span: 12 * HOUR, n: 3, m: 0 },
+      { key: "24h", short: "24h", name: "24 hours", label: "Last 24 hours", span: DAYS, n: 4, m: 0 },
+      { key: "7d", short: "7d", name: "7 days", label: "Last 7 days", span: 7 * DAYS, n: 6, m: 0 },
+      { key: "30d", short: "30d", name: "30 days", label: "Last 30 days", span: 30 * DAYS, n: 8, m: 1 },
+      { key: "1y", short: "1y", name: "1 year", label: "Last 12 months", span: 365 * DAYS, n: 12, m: 3 },
+      { key: "ytd", name: "This year", n: 12, m: 3 },
+      { key: "lastyear", name: "Last year", n: 12, m: 3 },
+      { key: "all", short: "All", name: "All history", label: "All history", n: 14, m: 3 },
+    ],
+    // The number keys choose the windows in order, and 0 all history.
+    WINDOW_KEYS = ["all", "15m", "30m", "1h", "4h", "12h", "24h", "7d", "30d", "1y"],
+    windowOf = (key) => WINDOWS.find((w) => w.key === key),
+    // Views and history stored before these windows name 24 hours and 7 days
+    // "1" and "7".
+    windowKey = (key) =>
+      key === "1" ? "24h" : key === "7" ? "7d" : windowOf(key) ? key : "",
+    // The bar names the calendar windows by their year, and lists too.
+    windowShort = (key) =>
+      key === "ytd"
+        ? String(CUT_YEAR)
+        : key === "lastyear"
+          ? String(CUT_YEAR - 1)
+          : windowOf(key).short,
+    windowLabel = (key) =>
+      key === "ytd"
+        ? `${CUT_YEAR} so far`
+        : key === "lastyear"
+          ? String(CUT_YEAR - 1)
+          : windowOf(key).label,
     FOLLOWS = ["free", "refit", "coupled", "diagonal"],
+    // How the price range follows a time zoom: each mode's name, what it does
+    // and its key, for the bar's price axis menu.
+    FOLLOW_INFO = {
+      free: { name: "Free", desc: "Zooming time leaves the price range alone" },
+      refit: {
+        name: "Refit",
+        desc: "Zooming time refits the price range to the visible trades",
+      },
+      coupled: { name: "Coupled", desc: "Zooming time zooms price by the same factor" },
+      diagonal: {
+        name: "Diagonal",
+        desc: "Zooming time by k zooms price by √k, and the price level follows the measured diagonal",
+        keys: "D",
+      },
+    },
+    // Icons the page builds, 16 units square, drawn with the icon stroke.
+    ICONS = {
+      check: '<path d="m3.5 8.5 3 3 6-7"/>',
+      free:
+        '<path d="M3.5 2.5v11"/><path d="M6.5 8h7M6.5 8l1.8-1.8M6.5 8l1.8 1.8M13.5 8l-1.8-1.8M13.5 8l-1.8 1.8"/>',
+      refit:
+        '<path d="M5.5 3h-2v10h2M10.5 3h2v10h-2"/><path d="M8 5v6M8 5 6.6 6.4M8 5l1.4 1.4M8 11l-1.4-1.4M8 11l1.4-1.4"/>',
+      coupled:
+        '<rect x="3" y="3" width="10" height="10" rx="1"/><path d="M6 10l4-4M10 6H7.5M10 6v2.5"/>',
+      diagonal: '<path d="M3 13h3v-3h3V7h3V4"/>',
+      fit: '<path d="M3 5.5V3h2.5M10.5 3H13v2.5M13 10.5V13h-2.5M5.5 13H3v-2.5"/>',
+    },
     MODES = ["volume", "flow", "delta", "geometry"],
     MODE_NAMES = {
       volume: "Volume",
@@ -1075,6 +1191,14 @@
       delta: "Delta",
       geometry: "Geometry",
     };
+  function svgIcon(name, className = "ol-icon") {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", className);
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = ICONS[name];
+    return svg;
+  }
   // "2026-09-24T10:00Z", with seconds and milliseconds only when set.
   const stamp = (b) =>
       date(b).toISOString().replace(".000Z", "Z").replace(/:00Z$/, "Z"),
@@ -1082,7 +1206,7 @@
   function viewParams() {
     const out = [],
       add = (k, v) => out.push(k + "=" + v);
-    if (S.window) add("w", WINDOWS[S.window]);
+    if (S.window) add("w", S.window);
     else {
       add("t", stamp(S.tA) + "~" + stamp(S.tB));
       add("p", usd(S.pA) + "~" + usd(S.pB));
@@ -1127,7 +1251,7 @@
       level = /^(\d+),(\d+)$/.exec(q.get("r") || ""),
       [selT, selP = ""] = String(q.get("sel") ?? "").split(",");
     return checkView({
-      window: Object.keys(WINDOWS).find((k) => WINDOWS[k] === q.get("w")),
+      window: windowKey(q.get("w")),
       ...Object.fromEntries(
         [...pair(q.get("t"), time), ...pair(q.get("p"), rows)].map((v, i) => [
           ["tA", "tB", "pA", "pB"][i],
@@ -1158,7 +1282,7 @@
   // cutoff, a selection outside its history.
   function checkView(v) {
     const ok = (...x) => x.every(Number.isFinite),
-      w = Object.hasOwn(WINDOWS, v.window) ? v.window : "";
+      w = windowKey(v.window);
     if (
       !w &&
       !(
@@ -1783,8 +1907,14 @@
     el("tplus").disabled = S.n === N_MAX;
     el("pminus").disabled = S.m === 0;
     el("pplus").disabled = S.m === M_MAX;
-    qsa("[data-window]").forEach((b) =>
-      b.setAttribute("aria-pressed", String(b.dataset.window === S.window)),
+    // The window: its name on the bar, or the span in view when no preset
+    // names it, and its check in the list.
+    el("window-text").textContent = S.window
+      ? windowShort(S.window)
+      : spanText((S.tB - S.tA) * BASE);
+    el("window").dataset.custom = String(!S.window);
+    qsa("#ol-window-menu [data-window]").forEach((b) =>
+      b.setAttribute("aria-checked", String(b.dataset.window === S.window)),
     );
     qsa("[data-mode]").forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)),
@@ -1793,28 +1923,38 @@
     el("key-poc").hidden = el("key-bpoc").hidden = !S.poc;
     el("key-area").hidden = !S.area;
     const coarse = renderN() > S.n || renderM() > S.m;
-    el("res-text").textContent =
-      `${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)} USDT`;
+    // The level on the bar leaves the unit to the popover: "15 min × 125".
+    el("res-text").textContent = `${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)}`;
     el("res").dataset.auto = String(S.auto);
     el("res").dataset.coarse = String(coarse);
-    el("res").title =
-      (S.auto ? "Auto level (A)" : "Level locked; A for auto") +
-      (coarse
-        ? ` · showing ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT, the finest recorded here`
-        : "") +
-      " · [ and ] step time cells, { and } price cells";
-    el("span").hidden = Boolean(S.window);
-    el("span").textContent = dur((S.tB - S.tA) * BASE);
-    qsa("[data-follow]").forEach((b) =>
-      b.setAttribute("aria-pressed", String(b.dataset.follow === followMode())),
+    el("res").setAttribute(
+      "aria-label",
+      `Resolution: ${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)} USDT${S.auto ? ", auto" : ", locked"}`,
     );
+    el("res").dataset.hint =
+      (S.auto ? "Auto level; A locks it" : "Locked; A for auto level") +
+      (coarse
+        ? `. Showing ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT, the finest recorded here`
+        : "") +
+      ". [ ] time cells, { } price cells";
+    // The price axis: its mode's icon on the bar, its check in the list.
+    const follow = followMode();
+    qsa("#ol-follow-menu [data-follow]").forEach((b) =>
+      b.setAttribute("aria-checked", String(b.dataset.follow === follow)),
+    );
+    if (el("follow").dataset.mode !== follow) {
+      el("follow").dataset.mode = follow;
+      el("follow-icon").innerHTML = ICONS[follow];
+      el("follow").setAttribute("aria-label", `Price axis: ${FOLLOW_INFO[follow].name}`);
+      el("follow-label").textContent = `Price axis: ${FOLLOW_INFO[follow].name}`;
+      el("follow").dataset.hint = FOLLOW_INFO[follow].desc;
+      el("follow").dataset.keys = FOLLOW_INFO[follow].keys || "";
+    }
     qsa("[data-tool]").forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.tool === tool())),
     );
-    el("lens-depth").hidden = !S.lens;
+    el("lensbar").hidden = !S.lens;
     setCursor();
-    // Replay and the lens add controls to the bar; its labels make room.
-    root.dataset.busy = String(S.replay || S.lens);
     el("clear").hidden = !S.selection;
     for (const t of ["context", "evidence"]) {
       el(t + "-tab").setAttribute("aria-pressed", String(S.tab === t));
@@ -1947,10 +2087,11 @@
     );
     save();
   }
+  // A tool stays chosen until another is: Select for as many rectangles as
+  // wanted, the lens until it is left.
   function setTool(next) {
     S.select = next === "select";
     S.lens = next === "lens";
-    if (S.select) S.tab = "context";
     if (S.lens) el("tip").hidden = true;
     update();
     save();
@@ -2144,7 +2285,274 @@
     el("sheet-toggle").setAttribute("aria-expanded", String(open));
     if (!open) closePop();
   }
+  // Menus: a button's list of choices. The arrows move through them, Home and
+  // End jump to the ends, Tab leaves, Escape closes back to the button, and a
+  // choice closes the list.
+  const menuItems = (menu) => [...menu.querySelectorAll('[role^="menuitem"]')];
+  function focusMenuItem(menu, i) {
+    const items = menuItems(menu);
+    items[((i % items.length) + items.length) % items.length]?.focus();
+  }
+  function checkedItem(menu) {
+    return Math.max(
+      0,
+      menuItems(menu).findIndex((b) => b.getAttribute("aria-checked") === "true"),
+    );
+  }
+  function bindMenu(buttonId, menuId, build) {
+    const button = el(buttonId),
+      menu = el(menuId);
+    build();
+    bindPop(buttonId, menuId, () => {
+      hideHint();
+      build();
+      focusMenuItem(menu, checkedItem(menu));
+    });
+    button.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      e.preventDefault();
+      if (menu.hidden) button.click();
+      focusMenuItem(menu, e.key === "ArrowUp" ? -1 : checkedItem(menu));
+    });
+    menu.addEventListener("keydown", (e) => {
+      const i = menuItems(menu).indexOf(document.activeElement);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        focusMenuItem(menu, i + (e.key === "ArrowDown" ? 1 : -1));
+      } else if (e.key === "Home" || e.key === "End") {
+        e.preventDefault();
+        focusMenuItem(menu, e.key === "Home" ? 0 : -1);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closePop(true);
+      } else if (e.key === "Tab") closePop();
+    });
+  }
+  function openMenu(buttonId) {
+    const button = el(buttonId),
+      menu = el(button.getAttribute("aria-controls").slice(3));
+    if (menu.hidden) button.click();
+    else focusMenuItem(menu, checkedItem(menu));
+  }
+  function menuItem(role, children, onChoose) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ol-item cursor-interaction";
+    b.setAttribute("role", role);
+    b.append(...children);
+    b.addEventListener("click", () => {
+      closePop(true);
+      onChoose();
+    });
+    return b;
+  }
+  // A key shown beside a name; the name's element states it to assistive
+  // technology (aria-keyshortcuts).
+  function keyCap(text) {
+    const kbd = document.createElement("kbd");
+    kbd.textContent = text;
+    kbd.setAttribute("aria-hidden", "true");
+    return kbd;
+  }
+  // The windows, by length: minutes and hours, days, then years, each with
+  // its number key; the calendar years show which year they are.
+  function buildWindowMenu() {
+    const parts = [];
+    for (const [cap, keys] of [
+      ["Minutes and hours", ["15m", "30m", "1h", "4h", "12h", "24h"]],
+      ["Days", ["7d", "30d"]],
+      ["Years", ["1y", "ytd", "lastyear", "all"]],
+    ]) {
+      const head = document.createElement("div");
+      head.className = "ol-menu-cap";
+      head.setAttribute("aria-hidden", "true");
+      head.textContent = cap;
+      parts.push(head);
+      for (const key of keys) {
+        const children = [svgIcon("check", "ol-icon ol-check"), windowOf(key).name],
+          digit = WINDOW_KEYS.indexOf(key);
+        if (key === "ytd" || key === "lastyear") {
+          const note = document.createElement("span");
+          note.className = "ol-item-note";
+          note.textContent = windowShort(key);
+          children.push(note);
+        }
+        if (digit >= 0) children.push(keyCap(String(digit)));
+        const b = menuItem("menuitemradio", children, () => chooseWindow(key));
+        if (digit >= 0) b.setAttribute("aria-keyshortcuts", String(digit));
+        b.dataset.window = key;
+        b.setAttribute("aria-checked", String(key === S.window));
+        parts.push(b);
+      }
+    }
+    el("window-menu").replaceChildren(...parts);
+  }
+  // The price axis: how its range follows a time zoom, each mode with what it
+  // does, and a fit of the range once.
+  function buildFollowMenu() {
+    const follow = followMode(),
+      parts = FOLLOWS.map((mode) => {
+        const info = FOLLOW_INFO[mode],
+          text = document.createElement("span"),
+          desc = document.createElement("span");
+        text.className = "ol-item-text";
+        desc.className = "ol-item-desc";
+        desc.textContent = info.desc;
+        text.append(info.name, desc);
+        const b = menuItem(
+          "menuitemradio",
+          [svgIcon(mode), text, ...(info.keys ? [keyCap(info.keys)] : [])],
+          () => setFollow(mode),
+        );
+        if (info.keys) b.setAttribute("aria-keyshortcuts", info.keys);
+        b.dataset.follow = mode;
+        b.setAttribute("aria-checked", String(mode === follow));
+        return b;
+      }),
+      rule = document.createElement("div"),
+      text = document.createElement("span"),
+      desc = document.createElement("span");
+    rule.className = "ol-menu-rule";
+    rule.setAttribute("role", "separator");
+    text.className = "ol-item-text";
+    desc.className = "ol-item-desc";
+    desc.textContent = "Once, to the trades in view";
+    text.append("Fit the price range", desc);
+    const fitItem = menuItem("menuitem", [svgIcon("fit"), text, keyCap("F")], () =>
+      fitPrice("Fit price"),
+    );
+    fitItem.setAttribute("aria-keyshortcuts", "F");
+    parts.push(rule, fitItem);
+    el("follow-menu").replaceChildren(...parts);
+  }
+
+  // Labels: a control's name and key, and what it does, a second after the
+  // pointer rests on it, a finger holds it or the keyboard reaches it; once
+  // one has shown, the next shows at once. A hold that shows a label doesn't
+  // press the control too.
+  const HINT_DELAY = 1000,
+    hint = { timer: 0, target: null, hiddenAt: -Infinity, held: null, box: null, touch: false };
+  function hideHint() {
+    clearTimeout(hint.timer);
+    if (hint.target) hint.hiddenAt = performance.now();
+    if (hint.box) hint.box.hidden = true;
+    hint.target = null;
+  }
+  function showHint(target) {
+    if (!target.isConnected || target.closest("[hidden]")) return;
+    if (!hint.box) {
+      hint.box = document.createElement("div");
+      hint.box.className = "ol-hint";
+      hint.box.setAttribute("role", "tooltip");
+      root.append(hint.box);
+    }
+    const box = hint.box,
+      head = document.createElement("div"),
+      parts = [head],
+      keys = target.dataset.keys,
+      desc = target.dataset.hint;
+    head.className = "ol-hint-head";
+    head.append(target.getAttribute("aria-label") || target.textContent.trim());
+    if (keys) head.append(keyCap(keys));
+    if (desc) {
+      const line = document.createElement("div");
+      line.className = "ol-hint-desc";
+      line.textContent = desc;
+      parts.push(line);
+    }
+    box.replaceChildren(...parts);
+    box.hidden = false;
+    // Under the control, or over it when there is no room below.
+    const r = target.getBoundingClientRect(),
+      w = box.offsetWidth,
+      h = box.offsetHeight,
+      below = r.bottom + 6;
+    box.style.left = clamp(r.left + r.width / 2 - w / 2, 4, innerWidth - w - 4) + "px";
+    box.style.top = (below + h > innerHeight - 4 ? r.top - 6 - h : below) + "px";
+    hint.target = target;
+  }
+  function armHint(target) {
+    clearTimeout(hint.timer);
+    if (hint.target || performance.now() - hint.hiddenAt < 600) showHint(target);
+    else hint.timer = setTimeout(() => showHint(target), HINT_DELAY);
+  }
+  function bindHints() {
+    const hinted = (node) => (node instanceof Element ? node.closest("[data-hint]") : null);
+    root.addEventListener("pointerover", (e) => {
+      const t = hinted(e.target);
+      if (e.pointerType !== "touch" && t && t !== hint.target && !t.contains(e.relatedTarget))
+        armHint(t);
+    });
+    // A finger's label stays a moment after it lifts (see below), though
+    // lifting counts as leaving.
+    root.addEventListener("pointerout", (e) => {
+      const t = hinted(e.target);
+      if (e.pointerType !== "touch" && t && !t.contains(e.relatedTarget)) hideHint();
+    });
+    // A finger held on a control shows its label, and the press that ends the
+    // hold is dropped.
+    root.addEventListener(
+      "pointerdown",
+      (e) => {
+        hideHint();
+        hint.held = null;
+        hint.touch = e.pointerType === "touch";
+        const t = hinted(e.target);
+        if (t && hint.touch)
+          hint.timer = setTimeout(() => {
+            showHint(t);
+            hint.held = t;
+          }, HINT_DELAY);
+      },
+      true,
+    );
+    for (const type of ["pointerup", "pointercancel"])
+      root.addEventListener(
+        type,
+        () => {
+          clearTimeout(hint.timer);
+          if (hint.held) hint.timer = setTimeout(hideHint, 1500);
+        },
+        true,
+      );
+    root.addEventListener(
+      "click",
+      (e) => {
+        const held = hint.held;
+        hint.held = null;
+        if (held && held.contains(e.target)) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+      },
+      true,
+    );
+    // A touch hold on a control shows its label, not the phone's menu.
+    root.addEventListener("contextmenu", (e) => {
+      if (hint.touch && hinted(e.target)) e.preventDefault();
+    });
+    root.addEventListener("focusin", (e) => {
+      const t = hinted(e.target);
+      if (t && t.matches(":focus-visible")) armHint(t);
+    });
+    root.addEventListener("focusout", (e) => {
+      if (!hint.target?.contains(e.relatedTarget)) hideHint();
+    });
+    addEventListener("scroll", hideHint, true);
+    addEventListener("resize", hideHint);
+    addEventListener("blur", hideHint);
+    document.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.key === "Escape") hideHint();
+      },
+      true,
+    );
+  }
   function bindTopBar() {
+    bindHints();
+    bindMenu("window", "window-menu", buildWindowMenu);
+    bindMenu("follow", "follow-menu", buildFollowMenu);
     bindPop("res", "res-pop", () => {
       nav.planeKey = "";
       refreshPlane();
@@ -2174,8 +2582,6 @@
       setSheet(root.dataset.sheet !== "open"),
     );
     el("sheet-close").addEventListener("click", () => setSheet(false));
-    for (const button of qsa("[data-follow]"))
-      button.addEventListener("click", () => setFollow(button.dataset.follow));
     for (const button of qsa("[data-tool]"))
       button.addEventListener("click", () => setTool(button.dataset.tool));
     el("hist-back").addEventListener("click", () => history.back());
@@ -3259,7 +3665,6 @@
     player.timer = on ? setInterval(playStep, 1000 / Number(el("speed").value)) : 0;
     el("play").setAttribute("aria-pressed", String(on));
     el("play").setAttribute("aria-label", on ? "Pause" : "Play");
-    el("play").title = (on ? "Pause" : "Play") + " (Space)";
   }
   function playStep() {
     const end = Math.floor(CUT / stepT()) * stepT();
@@ -3751,8 +4156,8 @@
     minute = (b) => (Math.round((b * BASE) / 60) * 60) / BASE,
     listRange = (a, b) => range(minute(a), minute(b));
   function entryPlace(x) {
-    return x.window
-      ? WINDOW_LABELS[x.window]
+    return windowKey(x.window)
+      ? windowLabel(windowKey(x.window))
       : listRange(x.tA, Math.min(x.tB, x.cut));
   }
   // Back, Forward and the list: each entry names its range and level.
@@ -3761,11 +4166,10 @@
       forward = hist.entries[hist.index + 1];
     el("hist-back").disabled = !back;
     el("hist-fwd").disabled = !forward;
-    el("hist-back").title =
-      (back ? `Back to ${entryPlace(back)}` : "Back") + ` (${KEYS.back})`;
-    el("hist-fwd").title =
-      (forward ? `Forward to ${entryPlace(forward)}` : "Forward") +
-      ` (${KEYS.forward})`;
+    el("hist-back").dataset.hint = back ? `To ${entryPlace(back)}` : "";
+    el("hist-back").dataset.keys = KEYS.back;
+    el("hist-fwd").dataset.hint = forward ? `To ${entryPlace(forward)}` : "";
+    el("hist-fwd").dataset.keys = KEYS.forward;
     if (el("hist-pop").hidden) return;
     const frag = document.createDocumentFragment();
     for (let i = hist.entries.length - 1; i >= 0; i--) {
@@ -3867,7 +4271,7 @@
   const atCutoff = () => !S.replay && S.tA < CUT && S.tB >= CUT;
   function viewPlace() {
     return S.window
-      ? WINDOW_LABELS[S.window]
+      ? windowLabel(S.window)
       : atCutoff()
         ? `Last ${dur((CUT - S.tA) * BASE)}`
         : listRange(S.tA, Math.min(S.tB, CUT));
@@ -3955,8 +4359,8 @@
   }
   function viewDetail(x) {
     return [
-      x.window
-        ? WINDOW_LABELS[x.window]
+      windowKey(x.window)
+        ? windowLabel(windowKey(x.window))
         : x.live
           ? `Last ${dur((x.span - x.lead) * BASE)}`
           : listRange(x.tA, Math.min(x.tB, x.cut)),
@@ -4013,7 +4417,6 @@
   function updateNavigation() {
     el("auto").setAttribute("aria-pressed", String(S.auto));
     el("lens-depth").value = String(clamp(Math.round(S.lensDepth) || 2, 1, 4));
-    el("lens-pin").hidden = !S.lens;
     const g = navGeometry(),
       px = (stepT() * g.w) / (S.tB - S.tA),
       py = (stepP() * g.h) / (S.pB - S.pA),
@@ -4025,7 +4428,7 @@
     el("gesture").textContent = S.lens
       ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · V: pan"
       : S.select
-        ? "Drag a rectangle on base-cell edges · then back to pan"
+        ? "Drag a rectangle to measure it · click to clear it · Esc: back to pan"
         : S.coupled
           ? "Wheel / pinch: time + price · Alt: lens"
           : S.diagonal
@@ -4452,8 +4855,13 @@
         return;
       }
       const p = at(e),
-        held = drag.lens || nav.hold;
-      if (!held && !drag.moved && inPlot(p) && p.t < activeCutoff()) {
+        held = drag.lens || nav.hold,
+        click = !held && !drag.moved,
+        // A click with Select clears the selection; with Pan it anchors the
+        // column clicked, for the continuations.
+        cleared = click && S.select && S.selection !== null;
+      if (click && S.select) S.selection = null;
+      else if (click && inPlot(p) && p.t < activeCutoff()) {
         S.anchor = (Math.floor(p.t / stepT()) + 1) * stepT();
         S.tab = "evidence";
       }
@@ -4463,9 +4871,11 @@
           ? S.select
             ? "Selection"
             : "Pan"
-          : "Anchor";
-      // A finished selection hands the pointer back to Pan; the selection stays.
-      if (!held && drag.moved && S.select) S.select = false;
+          : S.select
+            ? cleared
+              ? "Selection cleared"
+              : null
+            : "Anchor";
       drag = null;
       nav.hold = false;
       setCursor(p);
@@ -4586,16 +4996,16 @@
         shift = e.shiftKey,
         // The digit typed, or on layouts that type another character there (AZERTY)
         // the digit key; a keypad with NumLock off types End and the arrows instead.
-        digit = /^[1-3]$/.test(e.key)
+        digit = /^[0-9]$/.test(e.key)
           ? e.key
-          : !shift && /^Digit[1-3]$/.test(e.code)
+          : !shift && /^Digit[0-9]$/.test(e.code)
             ? e.code.slice(-1)
             : null,
         centre = { t: (S.tA + S.tB) / 2, p: (S.pA + S.pB) / 2 };
       // A held key repeats like a gesture: the continuations wait for it to end.
       if (e.repeat) gestureAt = performance.now();
       if (e.key === "?") openKeys();
-      else if (digit) chooseWindow(["1", "7", "all"][digit - 1]);
+      else if (digit) chooseWindow(WINDOW_KEYS[digit]);
       else if (bracket)
         changeResolution(S.n + bracket[0], S.m + bracket[1], !bracket[1]);
       else if (["+", "=", "-", "_"].includes(k)) {
@@ -4667,6 +5077,7 @@
         save();
       } else if (k === "t") openDrawer(S.drawer, !S.drawerOpen);
       else if (k === "h") el("hist").click();
+      else if (k === "w") openMenu("window");
       else return;
       e.preventDefault();
       nav.pressed.add(id);
@@ -4705,6 +5116,7 @@
 
   // Commands shared by the controls and their keys.
   function chooseWindow(w) {
+    if (pop.open?.panel === el("window-menu")) closePop(true);
     setWindow(w);
     recordView("Window");
     update();
@@ -4755,7 +5167,8 @@
     S.window = "";
     settleNavigation("Latest", true);
   }
-  // Escape closes what is open first, then leaves the lens and clears the selection.
+  // Escape closes what is open first, then clears the selection, then goes
+  // back to Pan from Select or the lens.
   function escapeKey() {
     if (closePop(true)) return;
     if (root.dataset.sheet === "open") {
@@ -4763,18 +5176,16 @@
       el("sheet-toggle").focus();
       return;
     }
-    const selected = S.selection !== null;
-    S.lens = false;
     nav.hold = false;
     nav.alt = false;
-    S.selection = null;
-    update();
-    if (selected) recordView("Selection cleared");
-    save();
+    if (S.selection) {
+      S.selection = null;
+      update();
+      recordView("Selection cleared");
+      save();
+    } else if (S.select || S.lens) setTool("pan");
+    else update();
   }
-  qsa("[data-window]").forEach((b) =>
-    b.addEventListener("click", () => chooseWindow(b.dataset.window)),
-  );
   qsa("[data-mode]").forEach((b) =>
     b.addEventListener("click", () => setMode(b.dataset.mode)),
   );
@@ -4799,7 +5210,6 @@
     update();
     save();
   });
-  el("fit").addEventListener("click", () => fitPrice("Fit price"));
   el("latest").addEventListener("click", jumpLatest);
   for (const tab of ["context", "evidence"])
     el(tab + "-tab").addEventListener("click", () => {
@@ -5082,7 +5492,7 @@
     loadState.recent = "ready";
     ready = true;
     geometry();
-    setWindow("1");
+    setWindow("24h");
     // The address names the view; without one the page opens on the view this
     // browser showed last. The workspace is this browser's either way.
     const linked = readView(location.hash),

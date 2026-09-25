@@ -12,18 +12,19 @@ Open [localhost:8080](http://localhost:8080). The app ships with its snapshot an
 
 ## Explore
 
-The explorer fills the window. One bar across the top holds the controls, the chart takes the rest, the inspector sits on the right and the drawer under the chart.
+The explorer fills the window. One bar across the top names the market and its state on the left, and holds the controls on the right; the chart takes the rest, the inspector sits on the right and the drawer under the chart. The controls are icons in groups by task: the view (time window, resolution, price axis), the pointer tools, replay, history and help. Rest the pointer on one for a second, or hold it on a touch screen, and a label names it with its key and says what it does; once one label has shown, the next shows at once. On a phone the window stays in the bar and the rest opens in a sheet, named.
 
-- **Resolution** is the button showing the current cell size, such as `15 min × 125 USDT`. A padlock shows whether auto level is on (A); in auto, the level follows the cell size on screen. The button opens the **resolution plane**, which maps every level of the lattice, marks the diagonal, and colours each level by readiness and pixel size. Arrow keys move through the plane, and Enter chooses a level.
-- **Price** sets how the price range follows a time zoom:
+- **Time window** chooses what the chart spans: 15 or 30 minutes, 1, 4, 12 or 24 hours, 7 or 30 days, a year, this year, last year or all history. Each ends at the latest data, except last year, which is the whole calendar year before this one. The number keys 1 to 9 choose them in order and 0 all history; W opens the list. A view no window names shows its span there instead.
+- **Resolution** is the button showing the current cell size, such as `15 min × 125`. A padlock shows whether auto level is on (A); in auto, the level follows the cell size on screen. The button opens the **resolution plane**, which maps every level of the lattice, marks the diagonal, and colours each level by readiness and pixel size. Arrow keys move through the plane, and Enter chooses a level.
+- **Price axis** sets how the price range follows a time zoom; its icon shows the mode:
   - **Free** leaves it alone.
   - **Refit** fits it to the visible trades.
   - **Coupled** zooms it by the same factor.
   - **Diagonal** zooms it by the square root of the time factor and keeps the price level on the measured diagonal (D).
 
-  **Fit now** fits the price range once (F).
-- **Pan, Select and Lens** are the pointer tools (V, S, L). A finished selection hands the pointer back to Pan.
-  - **Lens** shows finer recorded cells inside a region while preserving the surrounding view, one to four levels finer (Shift+L). Hold Alt, or hold on touch, to inspect temporarily. Enter or **Pin lens** makes the lens rectangle and resolution the view.
+  Its list also fits the price range once (F).
+- **Pan, Select and Lens** are the pointer tools (V, S, L), and each stays chosen until another is. With Pan, a drag moves the view and a click anchors a column. With Select, each drag measures a new rectangle and a click clears it. Esc clears the selection, and a second Esc goes back to Pan.
+  - **Lens** shows finer recorded cells inside a region while preserving the surrounding view, one to four levels finer (Shift+L). Its depth and **Pin** sit on the chart while it is the tool. Hold Alt, or hold on touch, to inspect temporarily. Enter or **Pin** makes the lens rectangle and resolution the view.
 - **Reading the chart:** gridlines and ticks sit on cell edges at every level. The crosshair reads the price and time on the axes. The tooltip gives a cell's span and measures, exact while Shift is held, and over the price profile a row's. Each column's volume, or its signed taker volume, runs in a pane under the prices.
 - **Volume, taker flow, delta and geometry** share one grid. Volume shades an edge cell or the open column at its full-cell rate, so it compares with whole cells. Taker flow diverges from an even share to buy and sell, paler where less traded. Profiles include total and buy POCs and a composite 70% value area.
 - **Continuations** compare matching historical states with unconditional outcomes over all price rows, whatever band is on screen. Each outcome opens its cases in the drawer, including opposing outcomes and POC-barrier crossings. **Replay** hides the trades after an anchor and nothing else. Its transport on the chart steps the anchor (`,` and `.`), plays it at ½× to 4× (Space) and returns to now (End).
@@ -31,7 +32,7 @@ The explorer fills the window. One bar across the top holds the controls, the ch
   - **Cells:** the measures of every occupied cell, sortable and linked to the chart on hover.
   - **Cases:** the historical cases, each date a jump into replay.
   - **Query:** the six-parameter query. Copy queries or portable `origo-cube:` view codes, and restore them in the same app.
-- **The address holds the view**: its window or rectangle, the level when it is locked, the encoding, overlays and replay. Copy it to share or bookmark a view; each tab keeps its own. A window (24h, 7d, All) is relative and opens on the latest data; any other view opens where it was.
+- **The address holds the view**: its window or rectangle, the level when it is locked, the encoding, overlays and replay. Copy it to share or bookmark a view; each tab keeps its own. A window is relative and opens on the latest data (last year on the year before the latest data's); any other view opens where it was.
 - **History:** every move is an entry in the browser's history, so Back and Forward (the browser's, ⌘[ and ⌘] or Alt+← and Alt+→, or the bar's arrows) walk it, and steps of one kind in quick succession count as one. Back returns to a place and leaves the encoding and overlays as they are. The history list names each entry's range and level, and survives a reload.
 - **Views** (H) keeps named views in this browser for every tab: name the current view and save it (Shift+S). A view saved while it shows the latest data opens on the latest data, with the same span and the price range fitted again; any other opens where it was.
 - **Layout:** the inspector and the drawer resize and collapse, and the page remembers how you left them.

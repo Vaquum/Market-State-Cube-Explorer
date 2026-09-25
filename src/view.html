@@ -35,6 +35,7 @@
           id="ol-sheet-close"
           class="ol-icon-button cursor-interaction"
           aria-label="Close controls"
+          title="Close the controls (Esc)"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
             <path d="m4 4 8 8M12 4l-8 8" />
@@ -401,6 +402,7 @@
               autocomplete="off"
               aria-label="Name for this view"
               placeholder="Name this view"
+              title="Name this view and press Enter to save it (Shift+S)"
             /><button
               type="submit"
               class="ol-solid ol-s cursor-interaction"
@@ -612,37 +614,37 @@
               <thead>
                 <tr>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="time">
+                    <button type="button" class="cursor-interaction" data-sort="time" title="Sort by time; again to reverse">
                       Time · UTC
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="price">
+                    <button type="button" class="cursor-interaction" data-sort="price" title="Sort by price; again to reverse">
                       Price · USDT
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="volume">
+                    <button type="button" class="cursor-interaction" data-sort="volume" title="Sort by USDT volume; again to reverse">
                       USDT volume
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="trades">
+                    <button type="button" class="cursor-interaction" data-sort="trades" title="Sort by trades; again to reverse">
                       Trades
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="buyvol">
+                    <button type="button" class="cursor-interaction" data-sort="buyvol" title="Sort by buy USDT; again to reverse">
                       Buy USDT
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="buytrades">
+                    <button type="button" class="cursor-interaction" data-sort="buytrades" title="Sort by buy trades; again to reverse">
                       Buy trades
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="state">
+                    <button type="button" class="cursor-interaction" data-sort="state" title="Sort by state; again to reverse">
                       State
                     </button>
                   </th>
@@ -692,32 +694,32 @@
               <thead>
                 <tr>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="date">
+                    <button type="button" class="cursor-interaction" data-case-sort="date" title="Sort by date; again to reverse">
                       Date · UTC
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="outcome">
+                    <button type="button" class="cursor-interaction" data-case-sort="outcome" title="Sort by outcome; again to reverse">
                       Outcome
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="change">
+                    <button type="button" class="cursor-interaction" data-case-sort="change" title="Sort by change; again to reverse">
                       Change · USDT
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="poc">
+                    <button type="button" class="cursor-interaction" data-case-sort="poc" title="Sort by POC; again to reverse">
                       POC
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="excursion">
+                    <button type="button" class="cursor-interaction" data-case-sort="excursion" title="Sort by excursion; again to reverse">
                       Excursion · USDT
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="buy">
+                    <button type="button" class="cursor-interaction" data-case-sort="buy" title="Sort by buy share; again to reverse">
                       Buy share
                     </button>
                   </th>
@@ -965,6 +967,7 @@
               type="button"
               class="ol-probability cursor-interaction"
               data-case-direction="up"
+              title="List these cases in the drawer"
               aria-label="Inspect higher POC cases"
             >
               <span class="ol-outcome"
@@ -981,6 +984,7 @@
               type="button"
               class="ol-probability cursor-interaction"
               data-case-direction="flat"
+              title="List these cases in the drawer"
               aria-label="Inspect unchanged POC cases"
             >
               <span class="ol-outcome"
@@ -997,6 +1001,7 @@
               type="button"
               class="ol-probability cursor-interaction"
               data-case-direction="down"
+              title="List these cases in the drawer"
               aria-label="Inspect lower POC cases"
             >
               <span class="ol-outcome"

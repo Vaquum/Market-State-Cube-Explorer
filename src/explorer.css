@@ -10,6 +10,8 @@
   --ol-sell: light-dark(#b3624b, #d89777);
   --ol-poc: light-dark(#a87823, #dfb967);
   --ol-evidence: light-dark(#7664a9, #b4a1df);
+  --side-w: 312px;
+  --drawer-h: 260px;
   background: var(--ol-bg);
   color: var(--ol-ink);
   font:
@@ -17,8 +19,11 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  border: 1px solid var(--ol-line);
-  border-radius: 12px;
+  /* The whole window: the bar on top, the workspace below it. */
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 #origo-lens * {
@@ -26,7 +31,8 @@
 }
 #origo-lens button,
 #origo-lens select,
-#origo-lens input {
+#origo-lens input,
+#origo-lens textarea {
   font: inherit;
   color: inherit;
 }
@@ -51,7 +57,10 @@
 }
 #origo-lens button:focus-visible,
 #origo-lens select:focus-visible,
-#origo-lens input:focus-visible {
+#origo-lens input:focus-visible,
+#origo-lens textarea:focus-visible,
+#origo-lens summary:focus-visible,
+#origo-lens .ol-grip:focus-visible {
   outline: 2px solid var(--ol-volume);
   outline-offset: 2px;
 }
@@ -61,76 +70,271 @@
   border-radius: 4px;
   padding: 4px 6px;
 }
+#origo-lens summary {
+  cursor: pointer;
+}
 #origo-lens .ol-num {
   font-variant-numeric: tabular-nums;
 }
 #origo-lens .ol-muted {
   color: var(--ol-muted);
 }
-#origo-lens .ol-top {
+#origo-lens [hidden] {
+  display: none !important;
+}
+#origo-lens .ol-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Shared controls: segmented groups, outline actions, icon buttons, toggles. */
+#origo-lens .ol-seg {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  background: var(--ol-panel);
+  padding: 2px;
+  border-radius: 6px;
+}
+#origo-lens .ol-seg button {
+  font-size: 12px;
+  min-height: 28px;
+  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+#origo-lens .ol-action {
+  font-size: 12px;
+  min-height: 29px;
+  padding: 4px 9px;
+  border-color: var(--ol-line);
+}
+#origo-lens .ol-icon-button {
+  min-height: 29px;
+  min-width: 29px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 500;
+}
+#origo-lens .ol-toggle {
+  font-size: 12px;
+  min-height: 28px;
+  padding: 3px 10px;
+  border-color: var(--ol-line);
+}
+
+/* Top bar: identity, then every control that shapes the view, in one row. */
+#origo-lens .ol-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  flex-wrap: wrap;
-  padding: 18px 22px 15px;
+  gap: 8px 16px;
+  padding: 6px 12px;
+  min-height: 48px;
+  background: var(--ol-surface);
   border-bottom: 1px solid var(--ol-line);
+  position: relative;
+  z-index: 20;
+  container-type: inline-size;
+}
+#origo-lens .ol-id {
+  flex: none;
+  line-height: 1.25;
 }
 #origo-lens .ol-brand {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 500;
-  letter-spacing: -0.4px;
+  letter-spacing: -0.3px;
 }
-#origo-lens .ol-brand span {
-  font-size: 11px;
+#origo-lens .ol-brand {
+  white-space: nowrap;
+}
+#origo-lens .ol-org {
+  font-size: 10px;
   letter-spacing: 0.13em;
-  margin-right: 12px;
+  margin-right: 8px;
   color: var(--ol-muted);
 }
 #origo-lens .ol-market {
-  font-size: 12px;
-  color: var(--ol-muted);
-  margin-top: 3px;
-}
-#origo-lens .ol-top-right {
   font-size: 11px;
-  letter-spacing: 0.02em;
-  text-align: right;
   color: var(--ol-muted);
+  white-space: nowrap;
+}
+#origo-lens .ol-state-pill {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--ol-line);
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--ol-muted);
+  vertical-align: 2px;
+}
+#origo-lens #ol-market {
+  color: var(--ol-ink);
+  font-weight: 500;
 }
 #origo-lens .ol-controls {
-  padding: 11px 18px;
+  flex: 1;
+  min-width: 0;
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 10px;
+}
+#origo-lens .ol-sheet-head,
+#origo-lens .ol-sheet-toggle {
+  display: none;
+}
+#origo-lens .ol-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+#origo-lens .ol-cap {
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-span {
+  font-size: 11px;
+  color: var(--ol-muted);
+  white-space: nowrap;
+}
+#origo-lens .ol-res {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  border-color: var(--ol-line);
+  min-height: 32px;
+}
+#origo-lens .ol-res .ol-caret {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-res[data-auto="true"] .ol-lock-shut,
+#origo-lens .ol-res[data-auto="false"] .ol-lock-open {
+  display: none;
+}
+#origo-lens .ol-res-coarse {
+  display: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ol-poc);
+}
+#origo-lens .ol-res[data-coarse="true"] .ol-res-coarse {
+  display: inline-block;
+}
+#origo-lens #ol-lens-depth {
+  min-height: 29px;
+  font-size: 12px;
+}
+#origo-lens .ol-replay #ol-replay-at {
+  font-size: 11px;
+  color: var(--ol-muted);
+  white-space: nowrap;
+}
+/* Narrower bars keep one row: tools go icon-only, then segments tighten, then
+   the replay date and back/forward give way (the history list keeps them).
+   Replay and the lens add controls, so they go icon-only as well. */
+@container (max-width: 1380px) {
+  #origo-lens .ol-tool-label,
+  #origo-lens .ol-cap {
+    display: none;
+  }
+}
+@container (max-width: 1400px) {
+  #origo-lens .ol-bar .ol-seg button {
+    padding: 3px 7px;
+  }
+  #origo-lens .ol-res {
+    padding: 5px 7px;
+  }
+  #origo-lens #ol-replay-at,
+  #origo-lens #ol-hist-back,
+  #origo-lens #ol-hist-fwd,
+  #origo-lens #ol-snapshot {
+    display: none;
+  }
+}
+@media (min-width: 761px) {
+  #origo-lens[data-busy="true"] .ol-tool-label,
+  #origo-lens[data-busy="true"] .ol-cap {
+    display: none;
+  }
+  #origo-lens[data-busy="true"] .ol-bar .ol-seg button {
+    padding: 3px 7px;
+  }
+}
+
+/* Popovers: anchored under their button, above the workspace. */
+#origo-lens .ol-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  background: var(--ol-surface);
+  color: var(--ol-ink);
+  border: 1px solid var(--ol-line);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px #0003;
+  padding: 10px 12px;
+  font-size: 11px;
+  white-space: normal;
+}
+#origo-lens .ol-pop-end {
+  left: auto;
+  right: 0;
+}
+#origo-lens .ol-pop-head {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  background: var(--ol-surface);
-  border-bottom: 1px solid var(--ol-line);
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 500;
 }
-#origo-lens .ol-windows {
-  display: flex;
-  gap: 2px;
-  flex-wrap: wrap;
+#origo-lens .ol-res-pop {
+  width: 296px;
 }
-#origo-lens .ol-resolutions {
-  display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
+#origo-lens .ol-help-pop {
+  width: 360px;
+  color: var(--ol-muted);
+  line-height: 1.6;
+}
+#origo-lens #ol-hist-pop {
+  min-width: 220px;
 }
 #origo-lens .ol-step {
   display: flex;
   align-items: center;
   gap: 5px;
+  margin-bottom: 6px;
 }
 #origo-lens .ol-step button {
   border-color: var(--ol-line);
   width: 29px;
   padding: 2px;
   min-height: 29px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 #origo-lens .ol-step-label {
-  min-width: 92px;
+  flex: 1;
 }
 #origo-lens .ol-step-label output {
   font-weight: 500;
@@ -142,748 +346,10 @@
   font-size: 11px;
   color: var(--ol-muted);
 }
-#origo-lens .ol-layers {
-  padding: 9px 18px;
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--ol-line);
-}
-#origo-lens .ol-modes,
-#origo-lens .ol-marks,
-#origo-lens .ol-actions {
-  display: flex;
-  gap: 3px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-#origo-lens .ol-modes {
-  background: var(--ol-panel);
-  padding: 2px;
-  border-radius: 6px;
-}
-#origo-lens .ol-modes button {
-  font-size: 12px;
-  min-height: 28px;
-  padding: 3px 10px;
-}
-#origo-lens .ol-marks label {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  font-size: 12px;
-  padding: 4px;
-}
-#origo-lens input[type="checkbox"] {
-  accent-color: var(--ol-volume);
-  margin: 0;
-  width: 13px;
-  height: 13px;
-}
-#origo-lens .ol-actions button {
-  font-size: 12px;
-  border-color: var(--ol-line);
-  min-height: 29px;
-}
-#origo-lens .ol-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 234px;
-}
-#origo-lens .ol-field {
-  min-width: 0;
-  padding: 12px 10px 0;
-  position: relative;
-}
-#origo-lens .ol-field-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 9px 5px;
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-field-head > span:first-child {
-  white-space: nowrap;
-}
-#origo-lens .ol-legend {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-#origo-lens .ol-ramp {
-  width: 50px;
-  height: 5px;
-  background: linear-gradient(to right, var(--ol-panel), var(--ol-volume));
-  border-radius: 1px;
-  flex-shrink: 0;
-}
-#origo-lens canvas#ol-canvas {
-  display: block;
-  width: 100%;
-  height: 428px;
-  touch-action: none;
-}
-#origo-lens .ol-chart-foot {
-  display: flex;
-  gap: 8px;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  padding: 9px 10px 12px;
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-chart-foot button {
-  padding: 3px 8px;
-  min-height: 27px;
-  border-color: var(--ol-line);
-  font-size: 11px;
-}
-#origo-lens .ol-replay {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-#origo-lens .ol-side {
-  padding: 14px 16px;
-  border-left: 1px solid var(--ol-line);
-  background: var(--ol-surface);
-  min-width: 0;
-}
-#origo-lens .ol-side-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 16px;
-}
-#origo-lens .ol-side-tabs button {
-  font-size: 12px;
-  padding: 4px 9px;
-  min-height: 29px;
-}
-#origo-lens .ol-section-heading {
-  font-weight: 500;
-  font-size: 13px;
-  margin-bottom: 5px;
-}
-#origo-lens .ol-bounds {
-  font-size: 11px;
-  color: var(--ol-muted);
-  font-variant-numeric: tabular-nums;
-  margin-bottom: 14px;
-  overflow-wrap: anywhere;
-}
-#origo-lens .ol-metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 15px 8px;
-}
-#origo-lens .ol-metric label {
-  display: block;
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-metric strong {
-  font-size: 16px;
-  font-weight: 500;
-  letter-spacing: -0.4px;
-  display: block;
-  font-variant-numeric: tabular-nums;
-}
-#origo-lens .ol-rule {
-  height: 1px;
-  background: var(--ol-line);
-  margin: 17px 0;
-}
-#origo-lens .ol-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 6px 0;
-  font-size: 11px;
-}
-#origo-lens .ol-row > span:first-child {
-  color: var(--ol-muted);
-}
-#origo-lens .ol-row > span:last-child {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
 #origo-lens .ol-plane-cap {
-  display: flex;
-  justify-content: space-between;
   color: var(--ol-muted);
-  font-size: 11px;
-}
-#origo-lens .ol-evidence-state {
-  font-size: 12px;
-  line-height: 1.5;
-  margin: 8px 0 14px;
-}
-#origo-lens .ol-probability {
-  margin: 11px 0;
-}
-#origo-lens .ol-probability .ol-row {
-  font-size: 12px;
-  margin-bottom: 5px;
-}
-#origo-lens .ol-track {
-  height: 5px;
-  background: var(--ol-panel);
-  position: relative;
-  border-radius: 1px;
-}
-#origo-lens .ol-track span {
-  display: block;
-  height: 5px;
-  background: var(--ol-evidence);
-  border-radius: 1px;
-  width: 0;
-}
-#origo-lens .ol-track i {
-  position: absolute;
-  height: 9px;
-  width: 1px;
-  background: var(--ol-muted);
-  top: -2px;
-  left: 0;
-}
-#origo-lens .ol-evidence-note {
-  color: var(--ol-muted);
-  font-size: 11px;
-  margin: 12px 0 0;
-}
-#origo-lens .ol-footer {
-  border-top: 1px solid var(--ol-line);
-  padding: 10px 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  color: var(--ol-muted);
-  font-size: 11px;
-}
-#origo-lens .ol-tip {
-  position: absolute;
-  pointer-events: none;
-  z-index: 4;
-  background: var(--ol-surface);
-  color: var(--ol-ink);
-  border: 1px solid var(--ol-line);
-  box-shadow: 0 5px 20px #0002;
-  padding: 9px 12px;
-  border-radius: 6px;
-  max-width: 235px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-#origo-lens .ol-tip div {
-  margin: 2px 0;
-}
-#origo-lens [hidden] {
-  display: none !important;
-}
-@media (max-width: 760px) {
-  #origo-lens .ol-workspace {
-    grid-template-columns: 1fr;
-  }
-  #origo-lens .ol-side {
-    border-left: 0;
-    border-top: 1px solid var(--ol-line);
-  }
-  #origo-lens .ol-side-context {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 20px;
-  }
-  #origo-lens .ol-context-summary {
-    grid-column: 1;
-  }
-  #origo-lens .ol-context-scale {
-    grid-column: 2;
-    grid-row: 1;
-  }
-  #origo-lens .ol-context-scale .ol-rule {
-    display: none;
-  }
-  #origo-lens .ol-top {
-    padding: 15px;
-  }
-  #origo-lens .ol-controls,
-  #origo-lens .ol-layers {
-    padding: 10px 13px;
-  }
-  #origo-lens canvas#ol-canvas {
-    height: 375px;
-  }
-  #origo-lens .ol-top-right {
-    display: none;
-  }
-  #origo-lens .ol-resolutions {
-    gap: 18px;
-  }
-  #origo-lens .ol-marks {
-    gap: 1px;
-  }
-  #origo-lens .ol-evidence-probs {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 12px;
-  }
-}
-@media (max-width: 440px) {
-  #origo-lens .ol-resolutions {
-    gap: 10px;
-  }
-  #origo-lens .ol-step-label {
-    min-width: 78px;
-  }
-  #origo-lens .ol-step {
-    gap: 3px;
-  }
-  #origo-lens .ol-step button {
-    width: 25px;
-  }
-  #origo-lens .ol-side-context {
-    display: block;
-  }
-  #origo-lens .ol-context-scale .ol-rule {
-    display: block;
-  }
-  #origo-lens .ol-legend {
-    max-width: 170px;
-  }
-  #origo-lens canvas#ol-canvas {
-    height: 345px;
-  }
-}
-@media (pointer: coarse) {
-  #origo-lens button {
-    min-height: 44px;
-  }
-  #origo-lens .ol-step button {
-    min-height: 44px;
-    min-width: 38px;
-  }
-}
-#origo-lens .ol-loading {
-  background: var(--ol-panel);
-  color: var(--ol-muted);
-  padding: 8px 18px;
-  font-size: 12px;
-  border-bottom: 1px solid var(--ol-line);
-}
-#origo-lens canvas#ol-canvas {
-  background:
-    repeating-linear-gradient(
-      0deg,
-      transparent 0 23px,
-      var(--ol-line) 23px 24px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent 0 23px,
-      var(--ol-line) 23px 24px
-    );
-}
-#origo-lens .ol-data-state {
-  display: flex;
-  gap: 6px 16px;
-  flex-wrap: wrap;
-  padding: 6px 9px;
-  font-size: 11px;
-  color: var(--ol-muted);
-  min-height: 28px;
-}
-#origo-lens .ol-data-state span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-#origo-lens .ol-data-key {
-  display: inline-block;
-  width: 11px;
-  height: 11px;
-  background: var(--ol-panel);
-}
-#origo-lens .ol-data-key.zero {
-  background: transparent;
-  border: 1px solid var(--ol-line);
-}
-#origo-lens .ol-data-key.unfinished {
-  background: repeating-linear-gradient(
-    45deg,
-    var(--ol-poc) 0 1px,
-    transparent 1px 4px
-  );
-}
-#origo-lens .ol-data-key.unavailable {
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--ol-line) 0 1px,
-    transparent 1px 4px
-  );
-}
-#origo-lens .ol-data-key.coarse {
-  background: var(--ol-panel);
-  border-left: 3px solid var(--ol-poc);
-}
-#origo-lens .ol-resolution-state {
-  padding: 4px 10px;
-  color: var(--ol-muted);
-  font-size: 11px;
-}
-#origo-lens .ol-query {
-  border-top: 1px solid var(--ol-line);
-  padding: 9px 18px;
-  font-size: 12px;
-}
-#origo-lens summary {
-  cursor: pointer;
-}
-#origo-lens .ol-query-mini {
-  color: var(--ol-muted);
-}
-#origo-lens .ol-query-body {
-  padding-top: 10px;
-  display: grid;
-  gap: 8px;
-}
-#origo-lens .ol-query textarea {
-  width: 100%;
-  min-height: 70px;
-  resize: vertical;
-  background: var(--ol-surface);
-  border: 1px solid var(--ol-line);
-  border-radius: 5px;
-  padding: 10px;
-  font:
-    11px/1.6 ui-monospace,
-    SFMono-Regular,
-    monospace;
-  color: var(--ol-ink);
-}
-#origo-lens .ol-query-actions {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-#origo-lens .ol-query-actions button,
-#origo-lens #ol-import-apply {
-  border-color: var(--ol-line);
-  font-size: 12px;
-}
-#origo-lens #ol-copy-status {
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens #ol-query-ready {
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-#origo-lens .ol-table-section {
-  padding: 12px 18px;
-  border-top: 1px solid var(--ol-line);
-}
-#origo-lens .ol-table-head {
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  align-items: center;
-  font-size: 12px;
-}
-#origo-lens .ol-table-head button {
-  font-size: 11px;
-}
-#origo-lens .ol-table-scroll {
-  overflow-x: auto;
-}
-#origo-lens table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-#origo-lens th {
-  text-align: right;
-  font-weight: 500;
-  color: var(--ol-muted);
-  white-space: nowrap;
-}
-#origo-lens td {
-  text-align: right;
-  white-space: nowrap;
-}
-#origo-lens td:first-child,
-#origo-lens th:first-child {
-  text-align: left;
-}
-#origo-lens td,
-#origo-lens th {
-  padding: 8px 9px;
-  border-bottom: 1px solid var(--ol-line);
-}
-#origo-lens .ol-mark-key {
-  display: flex;
-  gap: 4px 14px;
-  flex-wrap: wrap;
-  color: var(--ol-muted);
-  font-size: 11px;
-  padding: 4px 9px;
-}
-#origo-lens .ol-mark-key span {
-  white-space: nowrap;
-}
-@media (max-width: 440px) {
-  #origo-lens .ol-gesture {
-    display: block;
-  }
-  #origo-lens .ol-data-state {
-    gap: 5px 10px;
-  }
-  #origo-lens .ol-modes {
-    flex-wrap: nowrap;
-    gap: 2px;
-    max-width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  #origo-lens .ol-modes button {
-    flex: none;
-    padding: 3px 5px;
-  }
-  /* The switcher may scroll here, which would clip an outside focus ring. */
-  #origo-lens .ol-modes button:focus-visible {
-    outline-offset: -2px;
-  }
-  #origo-lens .ol-query-mini {
-    display: block;
-  }
-}
-@media (pointer: coarse) {
-  #origo-lens .ol-query textarea {
-    font-size: 16px;
-  }
-  #origo-lens .ol-marks label {
-    min-height: 44px;
-    padding: 8px;
-  }
-  #origo-lens .ol-actions button,
-  #origo-lens .ol-modes button,
-  #origo-lens .ol-side-tabs button {
-    min-height: 44px;
-  }
-}
-
-#origo-lens .ol-nav-controls {
-  display: flex;
-  align-items: center;
-  gap: 3px 5px;
-  flex-wrap: wrap;
-}
-#origo-lens .ol-nav-controls button {
-  font-size: 11px;
-  padding: 4px 7px;
-  min-height: 29px;
-  border-color: var(--ol-line);
-}
-#origo-lens #ol-pixel-state {
-  font-size: 11px;
-  margin-left: 7px;
-}
-#origo-lens .ol-plane-key {
-  display: flex;
-  gap: 6px 12px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-plane-key span {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-#origo-lens .ol-plane-key i {
-  width: 9px;
-  height: 9px;
-  display: inline-block;
-  background: var(--ol-panel);
-}
-#origo-lens .ol-nav-help[open] {
-  flex-basis: 100%;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-breadcrumbs button {
-  font-size: 11px;
-  padding: 2px 6px;
-  min-height: 24px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-breadcrumbs span {
-  color: var(--ol-muted);
-}
-@media (max-width: 480px) {
-  #origo-lens .ol-context-scale {
-    display: block !important;
-  }
-}
-
-#origo-lens .ol-breadcrumbs button[aria-current="step"] {
-  background: var(--ol-panel);
-  color: var(--ol-ink);
-}
-
-#origo-lens .ol-evidence-tabs {
-  display: flex;
-  gap: 3px;
-  flex-wrap: wrap;
-  background: var(--ol-panel);
-  padding: 2px;
-  border-radius: 6px;
-}
-#origo-lens .ol-evidence-tabs button {
-  font-size: 12px;
-  min-height: 30px;
-  padding: 4px 8px;
-  flex: 1;
-}
-#origo-lens .ol-evidence-probs .ol-probability {
-  display: block;
-  width: 100%;
-  white-space: normal;
-  text-align: left;
-  padding: 6px 0;
-  margin: 3px 0;
-}
-#origo-lens .ol-probability .ol-row {
-  display: flex;
-  margin: 0 0 4px;
-}
-#origo-lens .ol-probability .ol-track {
-  display: block;
-  height: 5px;
-}
-#origo-lens .ol-probability .ol-base-track {
-  margin-top: 3px;
-  height: 3px;
-  background: transparent;
-}
-#origo-lens .ol-probability .ol-base-track span {
-  background: var(--ol-muted);
-  height: 3px;
-  opacity: 0.6;
-}
-#origo-lens .ol-base-caption {
-  display: block;
-  font-size: 11px;
-  text-align: right;
-  color: var(--ol-muted);
-  margin-top: 2px;
-}
-#origo-lens .ol-evidence-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-evidence-legend span {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-}
-#origo-lens .ol-evidence-legend i {
-  display: inline-block;
-  width: 15px;
-  height: 4px;
-  background: var(--ol-evidence);
-}
-#origo-lens .ol-evidence-legend .ol-all-key {
-  background: var(--ol-muted);
-}
-#origo-lens .ol-cases {
-  margin-top: 14px;
-  border-top: 1px solid var(--ol-line);
-  padding-top: 9px;
-}
-#origo-lens .ol-cases summary {
-  font-weight: 500;
-  padding: 4px 0;
-}
-#origo-lens .ol-case-list {
-  margin-top: 10px;
-}
-#origo-lens .ol-case-row {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--ol-line);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-#origo-lens .ol-case-row button {
-  display: block;
-  text-align: left;
-  white-space: normal;
-  width: 100%;
-  padding: 3px 0;
-  min-height: 26px;
-  color: var(--ol-ink);
-}
-#origo-lens .ol-case-row .ol-case-result {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  margin: 3px 0;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-case-pages {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 4px;
-  margin-top: 9px;
-  font-size: 11px;
-}
-#origo-lens .ol-case-pages button {
-  font-size: 11px;
-  padding: 3px 5px;
-}
-@media (max-width: 760px) {
-  #origo-lens .ol-evidence-probs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  #origo-lens .ol-case-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 18px;
-  }
-}
-@media (max-width: 440px) {
-  #origo-lens .ol-evidence-probs {
-    display: block;
-  }
-  #origo-lens .ol-case-list {
-    display: block;
-  }
-}
-@media (pointer: coarse) {
-  #origo-lens .ol-evidence-tabs button,
-  #origo-lens .ol-case-row button,
-  #origo-lens .ol-case-pages button {
-    min-height: 44px;
-  }
-}
-
-#origo-lens .ol-plane-map .ol-plane-cap {
   font-size: 10px;
+  margin: 8px 0 4px;
 }
 #origo-lens .ol-plane {
   display: grid !important;
@@ -906,9 +372,6 @@
   opacity: 0.55;
   font-size: 0;
   line-height: 0;
-}
-#origo-lens .ol-plane button::after {
-  display: none !important;
 }
 #origo-lens .ol-plane button.ol-plane-ready,
 #origo-lens .ol-plane-key i.ol-plane-ready {
@@ -964,89 +427,810 @@
   color: var(--ol-muted);
   text-align: center;
 }
+#origo-lens .ol-plane-key {
+  display: flex;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-plane-key span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+#origo-lens .ol-plane-key i {
+  width: 9px;
+  height: 9px;
+  display: inline-block;
+  background: var(--ol-panel);
+}
 #origo-lens .ol-plane-key .ol-plane-path {
   background: transparent;
   border: 1px solid var(--ol-ink);
 }
 #origo-lens .ol-plane-status {
-  max-width: 250px;
   min-height: 2.6em;
+  margin-top: 6px;
   font-size: 10px;
   line-height: 1.3;
 }
-#origo-lens #ol-lens-depth {
-  min-height: 29px;
-  font-size: 12px;
-}
-/* Navigation: controls, breadcrumbs and help beside the resolution lattice. */
-#origo-lens .ol-navigation {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 24px;
-  align-items: stretch;
-  padding: 8px 18px;
-  background: var(--ol-surface);
-  border-bottom: 1px solid var(--ol-line);
-}
-#origo-lens .ol-nav-main {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-  min-width: 0;
-}
-#origo-lens .ol-nav-help {
-  font-size: 11px;
-  min-width: 0;
-}
-#origo-lens .ol-nav-help summary {
-  padding: 4px 0;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-nav-help[open] {
-  color: var(--ol-muted);
-}
 #origo-lens .ol-breadcrumbs {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+}
+#origo-lens .ol-breadcrumbs button {
+  font-size: 11px;
+  padding: 2px 8px;
+  min-height: 26px;
+  text-align: left;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-breadcrumbs button[aria-current="step"] {
+  background: var(--ol-panel);
+  color: var(--ol-ink);
+}
+
+/* Workspace: the chart column, a resize grip and the inspector. */
+#origo-lens .ol-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6px var(--side-w);
+  min-height: 0;
+}
+#origo-lens .ol-main[data-side="closed"] {
+  grid-template-columns: minmax(0, 1fr) 0 44px;
+}
+#origo-lens .ol-chart {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+#origo-lens .ol-loading {
+  background: var(--ol-panel);
+  color: var(--ol-muted);
+  padding: 5px 12px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-chart-head {
+  display: flex;
   align-items: center;
-  gap: 2px 5px;
-  min-height: 24px;
+  gap: 6px 16px;
+  flex-wrap: wrap;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-marks {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#origo-lens .ol-marks label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px;
+}
+#origo-lens input[type="checkbox"] {
+  accent-color: var(--ol-volume);
+  margin: 0;
+  width: 13px;
+  height: 13px;
+}
+#origo-lens .ol-legend {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-size: 11px;
   color: var(--ol-muted);
 }
-#origo-lens .ol-plane-map {
+#origo-lens .ol-ramp {
+  width: 50px;
+  height: 5px;
+  background: linear-gradient(to right, var(--ol-panel), var(--ol-volume));
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+#origo-lens .ol-plot {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 220px;
+}
+#origo-lens canvas#ol-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+#origo-lens .ol-tip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 4;
+  background: var(--ol-surface);
+  color: var(--ol-ink);
+  border: 1px solid var(--ol-line);
+  box-shadow: 0 5px 20px #0002;
+  padding: 9px 12px;
+  border-radius: 6px;
+  max-width: 235px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-tip div {
+  margin: 2px 0;
+}
+
+/* Drawer: cells, cases and the query, under the chart; the chart gives up height. */
+#origo-lens .ol-drawer {
+  flex: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  width: 272px;
-  max-width: 100%;
+  border-top: 1px solid var(--ol-line);
+  background: var(--ol-surface);
+  position: relative;
 }
+#origo-lens .ol-drawer-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 8px 3px 12px;
+  min-height: 36px;
+}
+#origo-lens .ol-drawer-tabs {
+  display: flex;
+  gap: 2px;
+}
+#origo-lens .ol-drawer-tabs button {
+  font-size: 12px;
+  min-height: 28px;
+  padding: 3px 10px;
+}
+#origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-tabs button {
+  background: transparent;
+  color: inherit;
+}
+#origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-tabs button:hover {
+  background: var(--ol-panel);
+}
+#origo-lens .ol-query-mini {
+  color: var(--ol-muted);
+  margin-left: 6px;
+}
+#origo-lens .ol-drawer-tabs button[aria-selected="true"] .ol-query-mini {
+  color: inherit;
+  opacity: 0.75;
+}
+#origo-lens .ol-drawer-space {
+  flex: 1;
+}
+#origo-lens #ol-drawer-toggle .ol-icon {
+  transition: transform 0.15s;
+}
+#origo-lens .ol-drawer[data-open="true"] #ol-drawer-toggle .ol-icon {
+  transform: rotate(180deg);
+}
+#origo-lens .ol-drawer-body {
+  height: var(--drawer-h);
+  overflow: auto;
+  border-top: 1px solid var(--ol-line);
+}
+#origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-body,
+#origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-grip {
+  display: none;
+}
+#origo-lens .ol-panel {
+  padding: 0 12px 10px;
+}
+#origo-lens .ol-panel-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 0;
+  font-size: 12px;
+}
+#origo-lens .ol-panel-head > .ol-muted {
+  font-size: 11px;
+  flex: 1;
+  min-width: 160px;
+}
+#origo-lens .ol-pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 11px;
+}
+#origo-lens .ol-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ol-surface);
+  text-align: right;
+  font-weight: 500;
+  color: var(--ol-muted);
+  white-space: nowrap;
+  padding: 0;
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-table th button {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 9px;
+  border-radius: 0;
+  text-align: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-table th[aria-sort] button {
+  color: var(--ol-ink);
+}
+#origo-lens .ol-table th[aria-sort="ascending"] button::after {
+  content: " ↑";
+}
+#origo-lens .ol-table th[aria-sort="descending"] button::after {
+  content: " ↓";
+}
+#origo-lens .ol-table td {
+  text-align: right;
+  white-space: nowrap;
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-table td:first-child,
+#origo-lens .ol-table th:first-child {
+  text-align: left;
+}
+#origo-lens .ol-table tbody tr:hover,
+#origo-lens .ol-table tbody tr.is-hover {
+  background: var(--ol-panel);
+}
+#origo-lens .ol-cases-table td button {
+  min-height: 24px;
+  padding: 1px 6px;
+  margin-left: -6px;
+  font-size: 11px;
+  color: var(--ol-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--ol-line);
+  text-underline-offset: 3px;
+}
+#origo-lens .ol-query-body {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  font-size: 12px;
+}
+#origo-lens .ol-query-body textarea {
+  width: 100%;
+  min-height: 70px;
+  resize: vertical;
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-line);
+  border-radius: 5px;
+  padding: 10px;
+  font:
+    11px/1.6 ui-monospace,
+    SFMono-Regular,
+    monospace;
+  color: var(--ol-ink);
+}
+#origo-lens .ol-query-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+#origo-lens #ol-copy-status {
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens #ol-import {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+#origo-lens #ol-query-ready {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* Resize grips between the chart and its drawer and inspector. */
+#origo-lens .ol-grip {
+  background: transparent;
+  touch-action: none;
+  position: relative;
+}
+#origo-lens .ol-grip::after {
+  content: "";
+  position: absolute;
+  background: var(--ol-line);
+}
+#origo-lens .ol-grip:hover::after,
+#origo-lens .ol-grip[data-active="true"]::after {
+  background: var(--ol-volume);
+}
+#origo-lens .ol-side-grip {
+  cursor: col-resize;
+}
+#origo-lens .ol-side-grip::after {
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 1px;
+}
+#origo-lens .ol-side-grip:hover::after,
+#origo-lens .ol-side-grip[data-active="true"]::after {
+  left: 4px;
+  width: 3px;
+}
+#origo-lens .ol-main[data-side="closed"] .ol-side-grip {
+  visibility: hidden;
+}
+#origo-lens .ol-drawer-grip {
+  height: 6px;
+  margin-top: -4px;
+  cursor: row-resize;
+}
+#origo-lens .ol-drawer-grip::after {
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 0;
+}
+#origo-lens .ol-drawer-grip:hover::after,
+#origo-lens .ol-drawer-grip[data-active="true"]::after {
+  top: 2px;
+  height: 3px;
+}
+
+/* Status bar: the key and the readouts, one line under the chart. */
+#origo-lens .ol-status {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px 16px;
+  min-height: 28px;
+  padding: 3px 12px;
+  border-top: 1px solid var(--ol-line);
+  font-size: 11px;
+  color: var(--ol-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  container-type: inline-size;
+}
+/* The gesture hint is the first thing to go; the ? help has it in full. */
+@container (max-width: 1249px) {
+  #origo-lens .ol-gesture {
+    display: none;
+  }
+}
+#origo-lens .ol-status-keys {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px 12px;
+}
+#origo-lens .ol-status-keys > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+#origo-lens .ol-gesture {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#origo-lens .ol-status-meta {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+}
+#origo-lens .ol-data-key {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  background: var(--ol-panel);
+}
+#origo-lens .ol-data-key.zero {
+  background: transparent;
+  border: 1px solid var(--ol-line);
+}
+#origo-lens .ol-data-key.unfinished {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--ol-poc) 0 1px,
+    transparent 1px 4px
+  );
+}
+#origo-lens .ol-data-key.unavailable {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--ol-line) 0 1px,
+    transparent 1px 4px
+  );
+}
+#origo-lens .ol-data-key.coarse {
+  background: var(--ol-panel);
+  border-left: 3px solid var(--ol-poc);
+}
+
+/* Inspector: its own scroll, so the chart stays in view. */
+#origo-lens .ol-side {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ol-surface);
+  border-left: 1px solid var(--ol-line);
+}
+#origo-lens .ol-side-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens #ol-side-toggle .ol-icon {
+  transition: transform 0.15s;
+}
+#origo-lens .ol-main[data-side="closed"] #ol-side-toggle .ol-icon {
+  transform: rotate(180deg);
+}
+#origo-lens .ol-main[data-side="closed"] .ol-side-seg,
+#origo-lens .ol-main[data-side="closed"] .ol-side-body {
+  display: none;
+}
+#origo-lens .ol-main[data-side="closed"] .ol-side-tabs {
+  padding: 8px 6px;
+  justify-content: center;
+  border-bottom: 0;
+}
+#origo-lens .ol-side-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 16px 18px;
+}
+#origo-lens .ol-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 29px;
+  margin-bottom: 2px;
+}
+#origo-lens .ol-section-heading {
+  font-weight: 500;
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+#origo-lens .ol-section-row .ol-section-heading {
+  margin-bottom: 0;
+}
+#origo-lens .ol-bounds {
+  font-size: 11px;
+  color: var(--ol-muted);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 14px;
+}
+#origo-lens .ol-bounds span {
+  white-space: nowrap;
+}
+#origo-lens .ol-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px 8px;
+}
+#origo-lens .ol-metric label {
+  display: block;
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-metric strong {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.4px;
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-rule {
+  height: 1px;
+  background: var(--ol-line);
+  margin: 17px 0;
+}
+#origo-lens .ol-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 11px;
+}
+#origo-lens .ol-row > span:first-child {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-row > span:last-child {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+#origo-lens .ol-diag {
+  margin-top: 16px;
+  border-top: 1px solid var(--ol-line);
+  padding-top: 8px;
+  font-size: 11px;
+}
+#origo-lens .ol-diag summary {
+  color: var(--ol-muted);
+  padding: 4px 0;
+}
+#origo-lens .ol-evidence-state {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 8px 0 12px;
+}
+#origo-lens .ol-evidence-tabs button {
+  flex: 1;
+  min-height: 30px;
+  padding: 4px 8px;
+}
+#origo-lens .ol-outcome-head,
+#origo-lens .ol-outcome {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px 44px 38px;
+  gap: 6px;
+  align-items: baseline;
+}
+#origo-lens .ol-outcome-head {
+  margin-top: 12px;
+  font-size: 10px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-outcome-head span:not(:first-child),
+#origo-lens .ol-outcome span:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-evidence-probs .ol-probability {
+  display: block;
+  width: 100%;
+  white-space: normal;
+  text-align: left;
+  padding: 7px 6px 8px;
+  margin: 2px -6px;
+  width: calc(100% + 12px);
+  border-radius: 5px;
+}
+#origo-lens .ol-probability .ol-outcome {
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+#origo-lens .ol-probability .ol-outcome > span:first-child::after {
+  content: " ›";
+  color: var(--ol-muted);
+}
+#origo-lens .ol-track {
+  display: block;
+  height: 5px;
+  background: var(--ol-panel);
+  position: relative;
+  border-radius: 1px;
+}
+#origo-lens .ol-track span {
+  display: block;
+  height: 5px;
+  background: var(--ol-evidence);
+  border-radius: 1px;
+  width: 0;
+}
+#origo-lens .ol-probability .ol-base-track {
+  margin-top: 2px;
+  height: 3px;
+  background: transparent;
+}
+#origo-lens .ol-probability .ol-base-track span {
+  background: var(--ol-muted);
+  height: 3px;
+  opacity: 0.6;
+}
+#origo-lens .ol-evidence-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-evidence-legend span {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+#origo-lens .ol-evidence-legend i {
+  display: inline-block;
+  width: 15px;
+  height: 4px;
+  background: var(--ol-evidence);
+}
+#origo-lens .ol-evidence-legend .ol-all-key {
+  background: var(--ol-muted);
+}
+#origo-lens .ol-evidence-brief {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 12px 0 10px;
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-evidence-more {
+  width: min(300px, 80vw);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-evidence-note {
+  color: var(--ol-muted);
+  font-size: 11px;
+  margin: 0 0 8px;
+}
+#origo-lens .ol-evidence-note:last-child {
+  margin-bottom: 0;
+}
+
+/* Phones: the chart first, the controls in a sheet, the page scrolls. */
 @media (max-width: 760px) {
-  #origo-lens .ol-navigation {
-    grid-template-columns: minmax(0, 1fr);
+  #origo-lens {
+    display: block;
+    height: auto;
+    overflow: visible;
   }
-  #origo-lens .ol-nav-main {
-    justify-content: flex-start;
+  #origo-lens .ol-bar {
+    position: sticky;
+    top: 0;
+    justify-content: space-between;
+  }
+  #origo-lens .ol-sheet-toggle {
+    display: inline-flex;
+    align-items: center;
+    border-color: var(--ol-line);
+    font-size: 12px;
+  }
+  #origo-lens .ol-controls {
+    display: none;
+  }
+  #origo-lens[data-sheet="open"] .ol-controls {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    max-height: 78vh;
+    overflow: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 12px 16px 20px;
+    background: var(--ol-surface);
+    border-top: 1px solid var(--ol-line);
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -12px 40px #0004;
+  }
+  #origo-lens[data-sheet="open"] .ol-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 500;
+  }
+  #origo-lens .ol-group {
+    flex-wrap: wrap;
+  }
+  #origo-lens .ol-tool-label,
+  #origo-lens .ol-cap {
+    display: inline;
+  }
+  #origo-lens .ol-pop {
+    position: static;
+    width: auto;
+    margin-top: 6px;
+    box-shadow: none;
+    flex-basis: 100%;
+  }
+  #origo-lens .ol-main {
+    display: block;
+  }
+  #origo-lens .ol-plot {
+    flex: none;
+    height: min(64vh, 480px);
+  }
+  #origo-lens .ol-side-grip,
+  #origo-lens .ol-drawer-grip,
+  #origo-lens #ol-side-toggle {
+    display: none;
+  }
+  #origo-lens .ol-side {
+    border-left: 0;
+    border-top: 1px solid var(--ol-line);
+  }
+  #origo-lens .ol-side-body {
+    overflow: visible;
+  }
+  #origo-lens .ol-drawer-body {
+    height: auto;
+    max-height: 70vh;
+  }
+  #origo-lens .ol-status {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+  #origo-lens .ol-status-keys {
+    flex-wrap: wrap;
+  }
+  #origo-lens .ol-status-meta {
+    margin-left: 0;
+    flex-wrap: wrap;
   }
 }
-@media (max-width: 480px) {
-  #origo-lens .ol-navigation {
-    padding: 8px 12px;
-    gap: 4px 15px;
+@media (max-width: 440px) {
+  #origo-lens .ol-legend {
+    margin-left: 0;
+  }
+  #origo-lens .ol-modes {
+    flex-wrap: nowrap;
+    gap: 2px;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  #origo-lens .ol-modes button {
+    flex: none;
+    padding: 3px 5px;
+  }
+  /* The switcher may scroll here, which would clip an outside focus ring. */
+  #origo-lens .ol-modes button:focus-visible {
+    outline-offset: -2px;
   }
 }
 @media (pointer: coarse) {
-  #origo-lens .ol-nav-controls button,
-  #origo-lens .ol-breadcrumbs button {
+  #origo-lens button {
     min-height: 44px;
   }
-  #origo-lens .ol-nav-help summary {
+  #origo-lens .ol-step button {
     min-height: 44px;
-    padding: 11px 0;
+    min-width: 38px;
   }
-  /* Wider column, not wider cells: the plane's cells scale to fit it. */
-  #origo-lens .ol-plane-map {
-    width: 327px;
+  #origo-lens .ol-marks label {
+    min-height: 44px;
+    padding: 8px;
+  }
+  #origo-lens .ol-query-body textarea {
+    font-size: 16px;
+  }
+  /* Wider popover, not wider cells: the plane's cells scale to fit it. */
+  #origo-lens .ol-res-pop {
+    width: 351px;
+  }
+  #origo-lens .ol-plane button {
+    min-height: 0;
   }
 }

@@ -8,8 +8,10 @@
     <title>Market State Cube Explorer</title>
     <style>
       :root { color-scheme: light dark; }
-      body { margin: 0; padding: 16px; background: light-dark(#f7f9f7, #0c110e); }
-      main { max-width: 1480px; margin: 0 auto; }
+      html, body { height: 100%; }
+      body { margin: 0; background: light-dark(#f7f9f7, #101713); }
+      /* The app fills the window; its panels scroll, the page does not. Phones scroll. */
+      @media (min-width: 761px) { body { overflow: hidden; } }
       .cursor-interaction:not(:disabled) { cursor: pointer; }
       #origo-lens {
   --ol-bg: light-dark(#f7f9f7, #101713);
@@ -23,6 +25,8 @@
   --ol-sell: light-dark(#b3624b, #d89777);
   --ol-poc: light-dark(#a87823, #dfb967);
   --ol-evidence: light-dark(#7664a9, #b4a1df);
+  --side-w: 312px;
+  --drawer-h: 260px;
   background: var(--ol-bg);
   color: var(--ol-ink);
   font:
@@ -30,8 +34,11 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  border: 1px solid var(--ol-line);
-  border-radius: 12px;
+  /* The whole window: the bar on top, the workspace below it. */
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 #origo-lens * {
@@ -39,7 +46,8 @@
 }
 #origo-lens button,
 #origo-lens select,
-#origo-lens input {
+#origo-lens input,
+#origo-lens textarea {
   font: inherit;
   color: inherit;
 }
@@ -64,7 +72,10 @@
 }
 #origo-lens button:focus-visible,
 #origo-lens select:focus-visible,
-#origo-lens input:focus-visible {
+#origo-lens input:focus-visible,
+#origo-lens textarea:focus-visible,
+#origo-lens summary:focus-visible,
+#origo-lens .ol-grip:focus-visible {
   outline: 2px solid var(--ol-volume);
   outline-offset: 2px;
 }
@@ -74,76 +85,271 @@
   border-radius: 4px;
   padding: 4px 6px;
 }
+#origo-lens summary {
+  cursor: pointer;
+}
 #origo-lens .ol-num {
   font-variant-numeric: tabular-nums;
 }
 #origo-lens .ol-muted {
   color: var(--ol-muted);
 }
-#origo-lens .ol-top {
+#origo-lens [hidden] {
+  display: none !important;
+}
+#origo-lens .ol-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Shared controls: segmented groups, outline actions, icon buttons, toggles. */
+#origo-lens .ol-seg {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  background: var(--ol-panel);
+  padding: 2px;
+  border-radius: 6px;
+}
+#origo-lens .ol-seg button {
+  font-size: 12px;
+  min-height: 28px;
+  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+#origo-lens .ol-action {
+  font-size: 12px;
+  min-height: 29px;
+  padding: 4px 9px;
+  border-color: var(--ol-line);
+}
+#origo-lens .ol-icon-button {
+  min-height: 29px;
+  min-width: 29px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 500;
+}
+#origo-lens .ol-toggle {
+  font-size: 12px;
+  min-height: 28px;
+  padding: 3px 10px;
+  border-color: var(--ol-line);
+}
+
+/* Top bar: identity, then every control that shapes the view, in one row. */
+#origo-lens .ol-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  flex-wrap: wrap;
-  padding: 18px 22px 15px;
+  gap: 8px 16px;
+  padding: 6px 12px;
+  min-height: 48px;
+  background: var(--ol-surface);
   border-bottom: 1px solid var(--ol-line);
+  position: relative;
+  z-index: 20;
+  container-type: inline-size;
+}
+#origo-lens .ol-id {
+  flex: none;
+  line-height: 1.25;
 }
 #origo-lens .ol-brand {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 500;
-  letter-spacing: -0.4px;
+  letter-spacing: -0.3px;
 }
-#origo-lens .ol-brand span {
-  font-size: 11px;
+#origo-lens .ol-brand {
+  white-space: nowrap;
+}
+#origo-lens .ol-org {
+  font-size: 10px;
   letter-spacing: 0.13em;
-  margin-right: 12px;
+  margin-right: 8px;
   color: var(--ol-muted);
 }
 #origo-lens .ol-market {
-  font-size: 12px;
-  color: var(--ol-muted);
-  margin-top: 3px;
-}
-#origo-lens .ol-top-right {
   font-size: 11px;
-  letter-spacing: 0.02em;
-  text-align: right;
   color: var(--ol-muted);
+  white-space: nowrap;
+}
+#origo-lens .ol-state-pill {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--ol-line);
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--ol-muted);
+  vertical-align: 2px;
+}
+#origo-lens #ol-market {
+  color: var(--ol-ink);
+  font-weight: 500;
 }
 #origo-lens .ol-controls {
-  padding: 11px 18px;
+  flex: 1;
+  min-width: 0;
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 10px;
+}
+#origo-lens .ol-sheet-head,
+#origo-lens .ol-sheet-toggle {
+  display: none;
+}
+#origo-lens .ol-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+#origo-lens .ol-cap {
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-span {
+  font-size: 11px;
+  color: var(--ol-muted);
+  white-space: nowrap;
+}
+#origo-lens .ol-res {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  border-color: var(--ol-line);
+  min-height: 32px;
+}
+#origo-lens .ol-res .ol-caret {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-res[data-auto="true"] .ol-lock-shut,
+#origo-lens .ol-res[data-auto="false"] .ol-lock-open {
+  display: none;
+}
+#origo-lens .ol-res-coarse {
+  display: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ol-poc);
+}
+#origo-lens .ol-res[data-coarse="true"] .ol-res-coarse {
+  display: inline-block;
+}
+#origo-lens #ol-lens-depth {
+  min-height: 29px;
+  font-size: 12px;
+}
+#origo-lens .ol-replay #ol-replay-at {
+  font-size: 11px;
+  color: var(--ol-muted);
+  white-space: nowrap;
+}
+/* Narrower bars keep one row: tools go icon-only, then segments tighten, then
+   the replay date and back/forward give way (the history list keeps them).
+   Replay and the lens add controls, so they go icon-only as well. */
+@container (max-width: 1380px) {
+  #origo-lens .ol-tool-label,
+  #origo-lens .ol-cap {
+    display: none;
+  }
+}
+@container (max-width: 1400px) {
+  #origo-lens .ol-bar .ol-seg button {
+    padding: 3px 7px;
+  }
+  #origo-lens .ol-res {
+    padding: 5px 7px;
+  }
+  #origo-lens #ol-replay-at,
+  #origo-lens #ol-hist-back,
+  #origo-lens #ol-hist-fwd,
+  #origo-lens #ol-snapshot {
+    display: none;
+  }
+}
+@media (min-width: 761px) {
+  #origo-lens[data-busy="true"] .ol-tool-label,
+  #origo-lens[data-busy="true"] .ol-cap {
+    display: none;
+  }
+  #origo-lens[data-busy="true"] .ol-bar .ol-seg button {
+    padding: 3px 7px;
+  }
+}
+
+/* Popovers: anchored under their button, above the workspace. */
+#origo-lens .ol-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  background: var(--ol-surface);
+  color: var(--ol-ink);
+  border: 1px solid var(--ol-line);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px #0003;
+  padding: 10px 12px;
+  font-size: 11px;
+  white-space: normal;
+}
+#origo-lens .ol-pop-end {
+  left: auto;
+  right: 0;
+}
+#origo-lens .ol-pop-head {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  background: var(--ol-surface);
-  border-bottom: 1px solid var(--ol-line);
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 500;
 }
-#origo-lens .ol-windows {
-  display: flex;
-  gap: 2px;
-  flex-wrap: wrap;
+#origo-lens .ol-res-pop {
+  width: 296px;
 }
-#origo-lens .ol-resolutions {
-  display: flex;
-  gap: 20px;
-  flex-wrap: wrap;
+#origo-lens .ol-help-pop {
+  width: 360px;
+  color: var(--ol-muted);
+  line-height: 1.6;
+}
+#origo-lens #ol-hist-pop {
+  min-width: 220px;
 }
 #origo-lens .ol-step {
   display: flex;
   align-items: center;
   gap: 5px;
+  margin-bottom: 6px;
 }
 #origo-lens .ol-step button {
   border-color: var(--ol-line);
   width: 29px;
   padding: 2px;
   min-height: 29px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 #origo-lens .ol-step-label {
-  min-width: 92px;
+  flex: 1;
 }
 #origo-lens .ol-step-label output {
   font-weight: 500;
@@ -155,748 +361,10 @@
   font-size: 11px;
   color: var(--ol-muted);
 }
-#origo-lens .ol-layers {
-  padding: 9px 18px;
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--ol-line);
-}
-#origo-lens .ol-modes,
-#origo-lens .ol-marks,
-#origo-lens .ol-actions {
-  display: flex;
-  gap: 3px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-#origo-lens .ol-modes {
-  background: var(--ol-panel);
-  padding: 2px;
-  border-radius: 6px;
-}
-#origo-lens .ol-modes button {
-  font-size: 12px;
-  min-height: 28px;
-  padding: 3px 10px;
-}
-#origo-lens .ol-marks label {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  font-size: 12px;
-  padding: 4px;
-}
-#origo-lens input[type="checkbox"] {
-  accent-color: var(--ol-volume);
-  margin: 0;
-  width: 13px;
-  height: 13px;
-}
-#origo-lens .ol-actions button {
-  font-size: 12px;
-  border-color: var(--ol-line);
-  min-height: 29px;
-}
-#origo-lens .ol-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 234px;
-}
-#origo-lens .ol-field {
-  min-width: 0;
-  padding: 12px 10px 0;
-  position: relative;
-}
-#origo-lens .ol-field-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 9px 5px;
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-field-head > span:first-child {
-  white-space: nowrap;
-}
-#origo-lens .ol-legend {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-#origo-lens .ol-ramp {
-  width: 50px;
-  height: 5px;
-  background: linear-gradient(to right, var(--ol-panel), var(--ol-volume));
-  border-radius: 1px;
-  flex-shrink: 0;
-}
-#origo-lens canvas#ol-canvas {
-  display: block;
-  width: 100%;
-  height: 428px;
-  touch-action: none;
-}
-#origo-lens .ol-chart-foot {
-  display: flex;
-  gap: 8px;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  padding: 9px 10px 12px;
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-chart-foot button {
-  padding: 3px 8px;
-  min-height: 27px;
-  border-color: var(--ol-line);
-  font-size: 11px;
-}
-#origo-lens .ol-replay {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-#origo-lens .ol-side {
-  padding: 14px 16px;
-  border-left: 1px solid var(--ol-line);
-  background: var(--ol-surface);
-  min-width: 0;
-}
-#origo-lens .ol-side-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 16px;
-}
-#origo-lens .ol-side-tabs button {
-  font-size: 12px;
-  padding: 4px 9px;
-  min-height: 29px;
-}
-#origo-lens .ol-section-heading {
-  font-weight: 500;
-  font-size: 13px;
-  margin-bottom: 5px;
-}
-#origo-lens .ol-bounds {
-  font-size: 11px;
-  color: var(--ol-muted);
-  font-variant-numeric: tabular-nums;
-  margin-bottom: 14px;
-  overflow-wrap: anywhere;
-}
-#origo-lens .ol-metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 15px 8px;
-}
-#origo-lens .ol-metric label {
-  display: block;
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-metric strong {
-  font-size: 16px;
-  font-weight: 500;
-  letter-spacing: -0.4px;
-  display: block;
-  font-variant-numeric: tabular-nums;
-}
-#origo-lens .ol-rule {
-  height: 1px;
-  background: var(--ol-line);
-  margin: 17px 0;
-}
-#origo-lens .ol-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 6px 0;
-  font-size: 11px;
-}
-#origo-lens .ol-row > span:first-child {
-  color: var(--ol-muted);
-}
-#origo-lens .ol-row > span:last-child {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
 #origo-lens .ol-plane-cap {
-  display: flex;
-  justify-content: space-between;
   color: var(--ol-muted);
-  font-size: 11px;
-}
-#origo-lens .ol-evidence-state {
-  font-size: 12px;
-  line-height: 1.5;
-  margin: 8px 0 14px;
-}
-#origo-lens .ol-probability {
-  margin: 11px 0;
-}
-#origo-lens .ol-probability .ol-row {
-  font-size: 12px;
-  margin-bottom: 5px;
-}
-#origo-lens .ol-track {
-  height: 5px;
-  background: var(--ol-panel);
-  position: relative;
-  border-radius: 1px;
-}
-#origo-lens .ol-track span {
-  display: block;
-  height: 5px;
-  background: var(--ol-evidence);
-  border-radius: 1px;
-  width: 0;
-}
-#origo-lens .ol-track i {
-  position: absolute;
-  height: 9px;
-  width: 1px;
-  background: var(--ol-muted);
-  top: -2px;
-  left: 0;
-}
-#origo-lens .ol-evidence-note {
-  color: var(--ol-muted);
-  font-size: 11px;
-  margin: 12px 0 0;
-}
-#origo-lens .ol-footer {
-  border-top: 1px solid var(--ol-line);
-  padding: 10px 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  color: var(--ol-muted);
-  font-size: 11px;
-}
-#origo-lens .ol-tip {
-  position: absolute;
-  pointer-events: none;
-  z-index: 4;
-  background: var(--ol-surface);
-  color: var(--ol-ink);
-  border: 1px solid var(--ol-line);
-  box-shadow: 0 5px 20px #0002;
-  padding: 9px 12px;
-  border-radius: 6px;
-  max-width: 235px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-#origo-lens .ol-tip div {
-  margin: 2px 0;
-}
-#origo-lens [hidden] {
-  display: none !important;
-}
-@media (max-width: 760px) {
-  #origo-lens .ol-workspace {
-    grid-template-columns: 1fr;
-  }
-  #origo-lens .ol-side {
-    border-left: 0;
-    border-top: 1px solid var(--ol-line);
-  }
-  #origo-lens .ol-side-context {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 20px;
-  }
-  #origo-lens .ol-context-summary {
-    grid-column: 1;
-  }
-  #origo-lens .ol-context-scale {
-    grid-column: 2;
-    grid-row: 1;
-  }
-  #origo-lens .ol-context-scale .ol-rule {
-    display: none;
-  }
-  #origo-lens .ol-top {
-    padding: 15px;
-  }
-  #origo-lens .ol-controls,
-  #origo-lens .ol-layers {
-    padding: 10px 13px;
-  }
-  #origo-lens canvas#ol-canvas {
-    height: 375px;
-  }
-  #origo-lens .ol-top-right {
-    display: none;
-  }
-  #origo-lens .ol-resolutions {
-    gap: 18px;
-  }
-  #origo-lens .ol-marks {
-    gap: 1px;
-  }
-  #origo-lens .ol-evidence-probs {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 12px;
-  }
-}
-@media (max-width: 440px) {
-  #origo-lens .ol-resolutions {
-    gap: 10px;
-  }
-  #origo-lens .ol-step-label {
-    min-width: 78px;
-  }
-  #origo-lens .ol-step {
-    gap: 3px;
-  }
-  #origo-lens .ol-step button {
-    width: 25px;
-  }
-  #origo-lens .ol-side-context {
-    display: block;
-  }
-  #origo-lens .ol-context-scale .ol-rule {
-    display: block;
-  }
-  #origo-lens .ol-legend {
-    max-width: 170px;
-  }
-  #origo-lens canvas#ol-canvas {
-    height: 345px;
-  }
-}
-@media (pointer: coarse) {
-  #origo-lens button {
-    min-height: 44px;
-  }
-  #origo-lens .ol-step button {
-    min-height: 44px;
-    min-width: 38px;
-  }
-}
-#origo-lens .ol-loading {
-  background: var(--ol-panel);
-  color: var(--ol-muted);
-  padding: 8px 18px;
-  font-size: 12px;
-  border-bottom: 1px solid var(--ol-line);
-}
-#origo-lens canvas#ol-canvas {
-  background:
-    repeating-linear-gradient(
-      0deg,
-      transparent 0 23px,
-      var(--ol-line) 23px 24px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      transparent 0 23px,
-      var(--ol-line) 23px 24px
-    );
-}
-#origo-lens .ol-data-state {
-  display: flex;
-  gap: 6px 16px;
-  flex-wrap: wrap;
-  padding: 6px 9px;
-  font-size: 11px;
-  color: var(--ol-muted);
-  min-height: 28px;
-}
-#origo-lens .ol-data-state span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-#origo-lens .ol-data-key {
-  display: inline-block;
-  width: 11px;
-  height: 11px;
-  background: var(--ol-panel);
-}
-#origo-lens .ol-data-key.zero {
-  background: transparent;
-  border: 1px solid var(--ol-line);
-}
-#origo-lens .ol-data-key.unfinished {
-  background: repeating-linear-gradient(
-    45deg,
-    var(--ol-poc) 0 1px,
-    transparent 1px 4px
-  );
-}
-#origo-lens .ol-data-key.unavailable {
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--ol-line) 0 1px,
-    transparent 1px 4px
-  );
-}
-#origo-lens .ol-data-key.coarse {
-  background: var(--ol-panel);
-  border-left: 3px solid var(--ol-poc);
-}
-#origo-lens .ol-resolution-state {
-  padding: 4px 10px;
-  color: var(--ol-muted);
-  font-size: 11px;
-}
-#origo-lens .ol-query {
-  border-top: 1px solid var(--ol-line);
-  padding: 9px 18px;
-  font-size: 12px;
-}
-#origo-lens summary {
-  cursor: pointer;
-}
-#origo-lens .ol-query-mini {
-  color: var(--ol-muted);
-}
-#origo-lens .ol-query-body {
-  padding-top: 10px;
-  display: grid;
-  gap: 8px;
-}
-#origo-lens .ol-query textarea {
-  width: 100%;
-  min-height: 70px;
-  resize: vertical;
-  background: var(--ol-surface);
-  border: 1px solid var(--ol-line);
-  border-radius: 5px;
-  padding: 10px;
-  font:
-    11px/1.6 ui-monospace,
-    SFMono-Regular,
-    monospace;
-  color: var(--ol-ink);
-}
-#origo-lens .ol-query-actions {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-#origo-lens .ol-query-actions button,
-#origo-lens #ol-import-apply {
-  border-color: var(--ol-line);
-  font-size: 12px;
-}
-#origo-lens #ol-copy-status {
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens #ol-query-ready {
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-#origo-lens .ol-table-section {
-  padding: 12px 18px;
-  border-top: 1px solid var(--ol-line);
-}
-#origo-lens .ol-table-head {
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  align-items: center;
-  font-size: 12px;
-}
-#origo-lens .ol-table-head button {
-  font-size: 11px;
-}
-#origo-lens .ol-table-scroll {
-  overflow-x: auto;
-}
-#origo-lens table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-#origo-lens th {
-  text-align: right;
-  font-weight: 500;
-  color: var(--ol-muted);
-  white-space: nowrap;
-}
-#origo-lens td {
-  text-align: right;
-  white-space: nowrap;
-}
-#origo-lens td:first-child,
-#origo-lens th:first-child {
-  text-align: left;
-}
-#origo-lens td,
-#origo-lens th {
-  padding: 8px 9px;
-  border-bottom: 1px solid var(--ol-line);
-}
-#origo-lens .ol-mark-key {
-  display: flex;
-  gap: 4px 14px;
-  flex-wrap: wrap;
-  color: var(--ol-muted);
-  font-size: 11px;
-  padding: 4px 9px;
-}
-#origo-lens .ol-mark-key span {
-  white-space: nowrap;
-}
-@media (max-width: 440px) {
-  #origo-lens .ol-gesture {
-    display: block;
-  }
-  #origo-lens .ol-data-state {
-    gap: 5px 10px;
-  }
-  #origo-lens .ol-modes {
-    flex-wrap: nowrap;
-    gap: 2px;
-    max-width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  #origo-lens .ol-modes button {
-    flex: none;
-    padding: 3px 5px;
-  }
-  /* The switcher may scroll here, which would clip an outside focus ring. */
-  #origo-lens .ol-modes button:focus-visible {
-    outline-offset: -2px;
-  }
-  #origo-lens .ol-query-mini {
-    display: block;
-  }
-}
-@media (pointer: coarse) {
-  #origo-lens .ol-query textarea {
-    font-size: 16px;
-  }
-  #origo-lens .ol-marks label {
-    min-height: 44px;
-    padding: 8px;
-  }
-  #origo-lens .ol-actions button,
-  #origo-lens .ol-modes button,
-  #origo-lens .ol-side-tabs button {
-    min-height: 44px;
-  }
-}
-
-#origo-lens .ol-nav-controls {
-  display: flex;
-  align-items: center;
-  gap: 3px 5px;
-  flex-wrap: wrap;
-}
-#origo-lens .ol-nav-controls button {
-  font-size: 11px;
-  padding: 4px 7px;
-  min-height: 29px;
-  border-color: var(--ol-line);
-}
-#origo-lens #ol-pixel-state {
-  font-size: 11px;
-  margin-left: 7px;
-}
-#origo-lens .ol-plane-key {
-  display: flex;
-  gap: 6px 12px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-plane-key span {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-#origo-lens .ol-plane-key i {
-  width: 9px;
-  height: 9px;
-  display: inline-block;
-  background: var(--ol-panel);
-}
-#origo-lens .ol-nav-help[open] {
-  flex-basis: 100%;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-breadcrumbs button {
-  font-size: 11px;
-  padding: 2px 6px;
-  min-height: 24px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-breadcrumbs span {
-  color: var(--ol-muted);
-}
-@media (max-width: 480px) {
-  #origo-lens .ol-context-scale {
-    display: block !important;
-  }
-}
-
-#origo-lens .ol-breadcrumbs button[aria-current="step"] {
-  background: var(--ol-panel);
-  color: var(--ol-ink);
-}
-
-#origo-lens .ol-evidence-tabs {
-  display: flex;
-  gap: 3px;
-  flex-wrap: wrap;
-  background: var(--ol-panel);
-  padding: 2px;
-  border-radius: 6px;
-}
-#origo-lens .ol-evidence-tabs button {
-  font-size: 12px;
-  min-height: 30px;
-  padding: 4px 8px;
-  flex: 1;
-}
-#origo-lens .ol-evidence-probs .ol-probability {
-  display: block;
-  width: 100%;
-  white-space: normal;
-  text-align: left;
-  padding: 6px 0;
-  margin: 3px 0;
-}
-#origo-lens .ol-probability .ol-row {
-  display: flex;
-  margin: 0 0 4px;
-}
-#origo-lens .ol-probability .ol-track {
-  display: block;
-  height: 5px;
-}
-#origo-lens .ol-probability .ol-base-track {
-  margin-top: 3px;
-  height: 3px;
-  background: transparent;
-}
-#origo-lens .ol-probability .ol-base-track span {
-  background: var(--ol-muted);
-  height: 3px;
-  opacity: 0.6;
-}
-#origo-lens .ol-base-caption {
-  display: block;
-  font-size: 11px;
-  text-align: right;
-  color: var(--ol-muted);
-  margin-top: 2px;
-}
-#origo-lens .ol-evidence-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  font-size: 11px;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-evidence-legend span {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-}
-#origo-lens .ol-evidence-legend i {
-  display: inline-block;
-  width: 15px;
-  height: 4px;
-  background: var(--ol-evidence);
-}
-#origo-lens .ol-evidence-legend .ol-all-key {
-  background: var(--ol-muted);
-}
-#origo-lens .ol-cases {
-  margin-top: 14px;
-  border-top: 1px solid var(--ol-line);
-  padding-top: 9px;
-}
-#origo-lens .ol-cases summary {
-  font-weight: 500;
-  padding: 4px 0;
-}
-#origo-lens .ol-case-list {
-  margin-top: 10px;
-}
-#origo-lens .ol-case-row {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--ol-line);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-#origo-lens .ol-case-row button {
-  display: block;
-  text-align: left;
-  white-space: normal;
-  width: 100%;
-  padding: 3px 0;
-  min-height: 26px;
-  color: var(--ol-ink);
-}
-#origo-lens .ol-case-row .ol-case-result {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  margin: 3px 0;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-case-pages {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 4px;
-  margin-top: 9px;
-  font-size: 11px;
-}
-#origo-lens .ol-case-pages button {
-  font-size: 11px;
-  padding: 3px 5px;
-}
-@media (max-width: 760px) {
-  #origo-lens .ol-evidence-probs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  #origo-lens .ol-case-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 18px;
-  }
-}
-@media (max-width: 440px) {
-  #origo-lens .ol-evidence-probs {
-    display: block;
-  }
-  #origo-lens .ol-case-list {
-    display: block;
-  }
-}
-@media (pointer: coarse) {
-  #origo-lens .ol-evidence-tabs button,
-  #origo-lens .ol-case-row button,
-  #origo-lens .ol-case-pages button {
-    min-height: 44px;
-  }
-}
-
-#origo-lens .ol-plane-map .ol-plane-cap {
   font-size: 10px;
+  margin: 8px 0 4px;
 }
 #origo-lens .ol-plane {
   display: grid !important;
@@ -919,9 +387,6 @@
   opacity: 0.55;
   font-size: 0;
   line-height: 0;
-}
-#origo-lens .ol-plane button::after {
-  display: none !important;
 }
 #origo-lens .ol-plane button.ol-plane-ready,
 #origo-lens .ol-plane-key i.ol-plane-ready {
@@ -977,90 +442,811 @@
   color: var(--ol-muted);
   text-align: center;
 }
+#origo-lens .ol-plane-key {
+  display: flex;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-plane-key span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+#origo-lens .ol-plane-key i {
+  width: 9px;
+  height: 9px;
+  display: inline-block;
+  background: var(--ol-panel);
+}
 #origo-lens .ol-plane-key .ol-plane-path {
   background: transparent;
   border: 1px solid var(--ol-ink);
 }
 #origo-lens .ol-plane-status {
-  max-width: 250px;
   min-height: 2.6em;
+  margin-top: 6px;
   font-size: 10px;
   line-height: 1.3;
 }
-#origo-lens #ol-lens-depth {
-  min-height: 29px;
-  font-size: 12px;
-}
-/* Navigation: controls, breadcrumbs and help beside the resolution lattice. */
-#origo-lens .ol-navigation {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 24px;
-  align-items: stretch;
-  padding: 8px 18px;
-  background: var(--ol-surface);
-  border-bottom: 1px solid var(--ol-line);
-}
-#origo-lens .ol-nav-main {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-  min-width: 0;
-}
-#origo-lens .ol-nav-help {
-  font-size: 11px;
-  min-width: 0;
-}
-#origo-lens .ol-nav-help summary {
-  padding: 4px 0;
-  color: var(--ol-muted);
-}
-#origo-lens .ol-nav-help[open] {
-  color: var(--ol-muted);
-}
 #origo-lens .ol-breadcrumbs {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+}
+#origo-lens .ol-breadcrumbs button {
+  font-size: 11px;
+  padding: 2px 8px;
+  min-height: 26px;
+  text-align: left;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-breadcrumbs button[aria-current="step"] {
+  background: var(--ol-panel);
+  color: var(--ol-ink);
+}
+
+/* Workspace: the chart column, a resize grip and the inspector. */
+#origo-lens .ol-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6px var(--side-w);
+  min-height: 0;
+}
+#origo-lens .ol-main[data-side="closed"] {
+  grid-template-columns: minmax(0, 1fr) 0 44px;
+}
+#origo-lens .ol-chart {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+#origo-lens .ol-loading {
+  background: var(--ol-panel);
+  color: var(--ol-muted);
+  padding: 5px 12px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-chart-head {
+  display: flex;
   align-items: center;
-  gap: 2px 5px;
-  min-height: 24px;
+  gap: 6px 16px;
+  flex-wrap: wrap;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-marks {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#origo-lens .ol-marks label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px;
+}
+#origo-lens input[type="checkbox"] {
+  accent-color: var(--ol-volume);
+  margin: 0;
+  width: 13px;
+  height: 13px;
+}
+#origo-lens .ol-legend {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-size: 11px;
   color: var(--ol-muted);
 }
-#origo-lens .ol-plane-map {
+#origo-lens .ol-ramp {
+  width: 50px;
+  height: 5px;
+  background: linear-gradient(to right, var(--ol-panel), var(--ol-volume));
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+#origo-lens .ol-plot {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 220px;
+}
+#origo-lens canvas#ol-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+#origo-lens .ol-tip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 4;
+  background: var(--ol-surface);
+  color: var(--ol-ink);
+  border: 1px solid var(--ol-line);
+  box-shadow: 0 5px 20px #0002;
+  padding: 9px 12px;
+  border-radius: 6px;
+  max-width: 235px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-tip div {
+  margin: 2px 0;
+}
+
+/* Drawer: cells, cases and the query, under the chart; the chart gives up height. */
+#origo-lens .ol-drawer {
+  flex: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  width: 272px;
-  max-width: 100%;
+  border-top: 1px solid var(--ol-line);
+  background: var(--ol-surface);
+  position: relative;
 }
+#origo-lens .ol-drawer-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 8px 3px 12px;
+  min-height: 36px;
+}
+#origo-lens .ol-drawer-tabs {
+  display: flex;
+  gap: 2px;
+}
+#origo-lens .ol-drawer-tabs button {
+  font-size: 12px;
+  min-height: 28px;
+  padding: 3px 10px;
+}
+#origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-tabs button {
+  background: transparent;
+  color: inherit;
+}
+#origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-tabs button:hover {
+  background: var(--ol-panel);
+}
+#origo-lens .ol-query-mini {
+  color: var(--ol-muted);
+  margin-left: 6px;
+}
+#origo-lens .ol-drawer-tabs button[aria-selected="true"] .ol-query-mini {
+  color: inherit;
+  opacity: 0.75;
+}
+#origo-lens .ol-drawer-space {
+  flex: 1;
+}
+#origo-lens #ol-drawer-toggle .ol-icon {
+  transition: transform 0.15s;
+}
+#origo-lens .ol-drawer[data-open="true"] #ol-drawer-toggle .ol-icon {
+  transform: rotate(180deg);
+}
+#origo-lens .ol-drawer-body {
+  height: var(--drawer-h);
+  overflow: auto;
+  border-top: 1px solid var(--ol-line);
+}
+#origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-body,
+#origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-grip {
+  display: none;
+}
+#origo-lens .ol-panel {
+  padding: 0 12px 10px;
+}
+#origo-lens .ol-panel-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 0;
+  font-size: 12px;
+}
+#origo-lens .ol-panel-head > .ol-muted {
+  font-size: 11px;
+  flex: 1;
+  min-width: 160px;
+}
+#origo-lens .ol-pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 11px;
+}
+#origo-lens .ol-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ol-surface);
+  text-align: right;
+  font-weight: 500;
+  color: var(--ol-muted);
+  white-space: nowrap;
+  padding: 0;
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-table th button {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 9px;
+  border-radius: 0;
+  text-align: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-table th[aria-sort] button {
+  color: var(--ol-ink);
+}
+#origo-lens .ol-table th[aria-sort="ascending"] button::after {
+  content: " ↑";
+}
+#origo-lens .ol-table th[aria-sort="descending"] button::after {
+  content: " ↓";
+}
+#origo-lens .ol-table td {
+  text-align: right;
+  white-space: nowrap;
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-table td:first-child,
+#origo-lens .ol-table th:first-child {
+  text-align: left;
+}
+#origo-lens .ol-table tbody tr:hover,
+#origo-lens .ol-table tbody tr.is-hover {
+  background: var(--ol-panel);
+}
+#origo-lens .ol-cases-table td button {
+  min-height: 24px;
+  padding: 1px 6px;
+  margin-left: -6px;
+  font-size: 11px;
+  color: var(--ol-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--ol-line);
+  text-underline-offset: 3px;
+}
+#origo-lens .ol-query-body {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  font-size: 12px;
+}
+#origo-lens .ol-query-body textarea {
+  width: 100%;
+  min-height: 70px;
+  resize: vertical;
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-line);
+  border-radius: 5px;
+  padding: 10px;
+  font:
+    11px/1.6 ui-monospace,
+    SFMono-Regular,
+    monospace;
+  color: var(--ol-ink);
+}
+#origo-lens .ol-query-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+#origo-lens #ol-copy-status {
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens #ol-import {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+#origo-lens #ol-query-ready {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* Resize grips between the chart and its drawer and inspector. */
+#origo-lens .ol-grip {
+  background: transparent;
+  touch-action: none;
+  position: relative;
+}
+#origo-lens .ol-grip::after {
+  content: "";
+  position: absolute;
+  background: var(--ol-line);
+}
+#origo-lens .ol-grip:hover::after,
+#origo-lens .ol-grip[data-active="true"]::after {
+  background: var(--ol-volume);
+}
+#origo-lens .ol-side-grip {
+  cursor: col-resize;
+}
+#origo-lens .ol-side-grip::after {
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 1px;
+}
+#origo-lens .ol-side-grip:hover::after,
+#origo-lens .ol-side-grip[data-active="true"]::after {
+  left: 4px;
+  width: 3px;
+}
+#origo-lens .ol-main[data-side="closed"] .ol-side-grip {
+  visibility: hidden;
+}
+#origo-lens .ol-drawer-grip {
+  height: 6px;
+  margin-top: -4px;
+  cursor: row-resize;
+}
+#origo-lens .ol-drawer-grip::after {
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 0;
+}
+#origo-lens .ol-drawer-grip:hover::after,
+#origo-lens .ol-drawer-grip[data-active="true"]::after {
+  top: 2px;
+  height: 3px;
+}
+
+/* Status bar: the key and the readouts, one line under the chart. */
+#origo-lens .ol-status {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px 16px;
+  min-height: 28px;
+  padding: 3px 12px;
+  border-top: 1px solid var(--ol-line);
+  font-size: 11px;
+  color: var(--ol-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  container-type: inline-size;
+}
+/* The gesture hint is the first thing to go; the ? help has it in full. */
+@container (max-width: 1249px) {
+  #origo-lens .ol-gesture {
+    display: none;
+  }
+}
+#origo-lens .ol-status-keys {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px 12px;
+}
+#origo-lens .ol-status-keys > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+#origo-lens .ol-gesture {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#origo-lens .ol-status-meta {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+}
+#origo-lens .ol-data-key {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  background: var(--ol-panel);
+}
+#origo-lens .ol-data-key.zero {
+  background: transparent;
+  border: 1px solid var(--ol-line);
+}
+#origo-lens .ol-data-key.unfinished {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--ol-poc) 0 1px,
+    transparent 1px 4px
+  );
+}
+#origo-lens .ol-data-key.unavailable {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--ol-line) 0 1px,
+    transparent 1px 4px
+  );
+}
+#origo-lens .ol-data-key.coarse {
+  background: var(--ol-panel);
+  border-left: 3px solid var(--ol-poc);
+}
+
+/* Inspector: its own scroll, so the chart stays in view. */
+#origo-lens .ol-side {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ol-surface);
+  border-left: 1px solid var(--ol-line);
+}
+#origo-lens .ol-side-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens #ol-side-toggle .ol-icon {
+  transition: transform 0.15s;
+}
+#origo-lens .ol-main[data-side="closed"] #ol-side-toggle .ol-icon {
+  transform: rotate(180deg);
+}
+#origo-lens .ol-main[data-side="closed"] .ol-side-seg,
+#origo-lens .ol-main[data-side="closed"] .ol-side-body {
+  display: none;
+}
+#origo-lens .ol-main[data-side="closed"] .ol-side-tabs {
+  padding: 8px 6px;
+  justify-content: center;
+  border-bottom: 0;
+}
+#origo-lens .ol-side-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 16px 18px;
+}
+#origo-lens .ol-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 29px;
+  margin-bottom: 2px;
+}
+#origo-lens .ol-section-heading {
+  font-weight: 500;
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+#origo-lens .ol-section-row .ol-section-heading {
+  margin-bottom: 0;
+}
+#origo-lens .ol-bounds {
+  font-size: 11px;
+  color: var(--ol-muted);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 14px;
+}
+#origo-lens .ol-bounds span {
+  white-space: nowrap;
+}
+#origo-lens .ol-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px 8px;
+}
+#origo-lens .ol-metric label {
+  display: block;
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-metric strong {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.4px;
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-rule {
+  height: 1px;
+  background: var(--ol-line);
+  margin: 17px 0;
+}
+#origo-lens .ol-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 11px;
+}
+#origo-lens .ol-row > span:first-child {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-row > span:last-child {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+#origo-lens .ol-diag {
+  margin-top: 16px;
+  border-top: 1px solid var(--ol-line);
+  padding-top: 8px;
+  font-size: 11px;
+}
+#origo-lens .ol-diag summary {
+  color: var(--ol-muted);
+  padding: 4px 0;
+}
+#origo-lens .ol-evidence-state {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 8px 0 12px;
+}
+#origo-lens .ol-evidence-tabs button {
+  flex: 1;
+  min-height: 30px;
+  padding: 4px 8px;
+}
+#origo-lens .ol-outcome-head,
+#origo-lens .ol-outcome {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px 44px 38px;
+  gap: 6px;
+  align-items: baseline;
+}
+#origo-lens .ol-outcome-head {
+  margin-top: 12px;
+  font-size: 10px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-outcome-head span:not(:first-child),
+#origo-lens .ol-outcome span:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-evidence-probs .ol-probability {
+  display: block;
+  width: 100%;
+  white-space: normal;
+  text-align: left;
+  padding: 7px 6px 8px;
+  margin: 2px -6px;
+  width: calc(100% + 12px);
+  border-radius: 5px;
+}
+#origo-lens .ol-probability .ol-outcome {
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+#origo-lens .ol-probability .ol-outcome > span:first-child::after {
+  content: " ›";
+  color: var(--ol-muted);
+}
+#origo-lens .ol-track {
+  display: block;
+  height: 5px;
+  background: var(--ol-panel);
+  position: relative;
+  border-radius: 1px;
+}
+#origo-lens .ol-track span {
+  display: block;
+  height: 5px;
+  background: var(--ol-evidence);
+  border-radius: 1px;
+  width: 0;
+}
+#origo-lens .ol-probability .ol-base-track {
+  margin-top: 2px;
+  height: 3px;
+  background: transparent;
+}
+#origo-lens .ol-probability .ol-base-track span {
+  background: var(--ol-muted);
+  height: 3px;
+  opacity: 0.6;
+}
+#origo-lens .ol-evidence-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-evidence-legend span {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+#origo-lens .ol-evidence-legend i {
+  display: inline-block;
+  width: 15px;
+  height: 4px;
+  background: var(--ol-evidence);
+}
+#origo-lens .ol-evidence-legend .ol-all-key {
+  background: var(--ol-muted);
+}
+#origo-lens .ol-evidence-brief {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 12px 0 10px;
+  font-size: 11px;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-evidence-more {
+  width: min(300px, 80vw);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-evidence-note {
+  color: var(--ol-muted);
+  font-size: 11px;
+  margin: 0 0 8px;
+}
+#origo-lens .ol-evidence-note:last-child {
+  margin-bottom: 0;
+}
+
+/* Phones: the chart first, the controls in a sheet, the page scrolls. */
 @media (max-width: 760px) {
-  #origo-lens .ol-navigation {
-    grid-template-columns: minmax(0, 1fr);
+  #origo-lens {
+    display: block;
+    height: auto;
+    overflow: visible;
   }
-  #origo-lens .ol-nav-main {
-    justify-content: flex-start;
+  #origo-lens .ol-bar {
+    position: sticky;
+    top: 0;
+    justify-content: space-between;
+  }
+  #origo-lens .ol-sheet-toggle {
+    display: inline-flex;
+    align-items: center;
+    border-color: var(--ol-line);
+    font-size: 12px;
+  }
+  #origo-lens .ol-controls {
+    display: none;
+  }
+  #origo-lens[data-sheet="open"] .ol-controls {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    max-height: 78vh;
+    overflow: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 12px 16px 20px;
+    background: var(--ol-surface);
+    border-top: 1px solid var(--ol-line);
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -12px 40px #0004;
+  }
+  #origo-lens[data-sheet="open"] .ol-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 500;
+  }
+  #origo-lens .ol-group {
+    flex-wrap: wrap;
+  }
+  #origo-lens .ol-tool-label,
+  #origo-lens .ol-cap {
+    display: inline;
+  }
+  #origo-lens .ol-pop {
+    position: static;
+    width: auto;
+    margin-top: 6px;
+    box-shadow: none;
+    flex-basis: 100%;
+  }
+  #origo-lens .ol-main {
+    display: block;
+  }
+  #origo-lens .ol-plot {
+    flex: none;
+    height: min(64vh, 480px);
+  }
+  #origo-lens .ol-side-grip,
+  #origo-lens .ol-drawer-grip,
+  #origo-lens #ol-side-toggle {
+    display: none;
+  }
+  #origo-lens .ol-side {
+    border-left: 0;
+    border-top: 1px solid var(--ol-line);
+  }
+  #origo-lens .ol-side-body {
+    overflow: visible;
+  }
+  #origo-lens .ol-drawer-body {
+    height: auto;
+    max-height: 70vh;
+  }
+  #origo-lens .ol-status {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+  #origo-lens .ol-status-keys {
+    flex-wrap: wrap;
+  }
+  #origo-lens .ol-status-meta {
+    margin-left: 0;
+    flex-wrap: wrap;
   }
 }
-@media (max-width: 480px) {
-  #origo-lens .ol-navigation {
-    padding: 8px 12px;
-    gap: 4px 15px;
+@media (max-width: 440px) {
+  #origo-lens .ol-legend {
+    margin-left: 0;
+  }
+  #origo-lens .ol-modes {
+    flex-wrap: nowrap;
+    gap: 2px;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  #origo-lens .ol-modes button {
+    flex: none;
+    padding: 3px 5px;
+  }
+  /* The switcher may scroll here, which would clip an outside focus ring. */
+  #origo-lens .ol-modes button:focus-visible {
+    outline-offset: -2px;
   }
 }
 @media (pointer: coarse) {
-  #origo-lens .ol-nav-controls button,
-  #origo-lens .ol-breadcrumbs button {
+  #origo-lens button {
     min-height: 44px;
   }
-  #origo-lens .ol-nav-help summary {
+  #origo-lens .ol-step button {
     min-height: 44px;
-    padding: 11px 0;
+    min-width: 38px;
   }
-  /* Wider column, not wider cells: the plane's cells scale to fit it. */
-  #origo-lens .ol-plane-map {
-    width: 327px;
+  #origo-lens .ol-marks label {
+    min-height: 44px;
+    padding: 8px;
+  }
+  #origo-lens .ol-query-body textarea {
+    font-size: 16px;
+  }
+  /* Wider popover, not wider cells: the plane's cells scale to fit it. */
+  #origo-lens .ol-res-pop {
+    width: 351px;
+  }
+  #origo-lens .ol-plane button {
+    min-height: 0;
   }
 }
 
@@ -1072,345 +1258,813 @@
   id="origo-lens"
   aria-label="Origo market lens with independent time and price geometry"
 >
-  <header class="ol-top">
-    <div>
-      <div class="ol-brand"><span>ORIGO</span>Market lens</div>
+  <header class="ol-bar">
+    <div class="ol-id">
+      <div class="ol-brand">
+        <span class="ol-org">ORIGO</span>Market lens<span class="ol-state-pill"
+          ><span id="ol-market">RECORDED</span> <span id="ol-snapshot"></span
+        ></span>
+      </div>
       <div class="ol-market">
         BTC / USDT <span aria-hidden="true">·</span> Binance spot
       </div>
     </div>
-    <div class="ol-top-right">
-      <span id="ol-market">RECORDED MARKET</span><br /><span
-        id="ol-snapshot"
-      ></span>
-    </div>
-  </header>
-  <div class="ol-controls">
-    <div class="ol-windows" aria-label="Time window">
-      <button
-        type="button"
-        class="cursor-interaction"
-        data-window="1"
-        aria-pressed="true"
-      >
-        24 hours</button
-      ><button
-        type="button"
-        class="cursor-interaction"
-        data-window="7"
-        aria-pressed="false"
-      >
-        7 days</button
-      ><button
-        type="button"
-        class="cursor-interaction"
-        data-window="all"
-        aria-pressed="false"
-      >
-        All history
-      </button>
-    </div>
-    <div class="ol-resolutions">
-      <div class="ol-step">
-        <div class="ol-step-label">
-          <span>Time · <span id="ol-n">n 4</span></span
-          ><output id="ol-tr">15 min</output>
-        </div>
-        <button
-          type="button"
-          id="ol-tminus"
-          class="cursor-interaction"
-          aria-label="Finer time resolution"
-        >
-          −</button
-        ><button
-          type="button"
-          id="ol-tplus"
-          class="cursor-interaction"
-          aria-label="Coarser time resolution"
-        >
-          +
-        </button>
-      </div>
-      <div class="ol-step">
-        <div class="ol-step-label">
-          <span>Price · <span id="ol-m">m 0</span></span
-          ><output id="ol-pr">125 USDT</output>
-        </div>
-        <button
-          type="button"
-          id="ol-pminus"
-          class="cursor-interaction"
-          aria-label="Finer price resolution"
-        >
-          −</button
-        ><button
-          type="button"
-          id="ol-pplus"
-          class="cursor-interaction"
-          aria-label="Coarser price resolution"
-        >
-          +
-        </button>
-      </div>
-    </div>
-  </div>
-  <div class="ol-navigation">
-    <div class="ol-nav-main">
-    <div class="ol-nav-controls">
-      <button
-        type="button"
-        id="ol-auto"
-        class="cursor-interaction"
-        aria-pressed="true"
-      >
-        Auto level</button
-      ><button
-        type="button"
-        id="ol-coupled"
-        class="cursor-interaction"
-        aria-pressed="false"
-      >
-        Coupled zoom</button
-      ><button
-        type="button"
-        id="ol-diagonal"
-        class="cursor-interaction"
-        aria-pressed="false"
-        title="Zoom time by k and price by the square root of k; the price level follows the measured diagonal"
-      >
-        Diagonal zoom</button
-      ><button
-        type="button"
-        id="ol-refit"
-        class="cursor-interaction"
-        aria-pressed="true"
-      >
-        Refit price</button
-      ><button
-        type="button"
-        id="ol-lens"
-        class="cursor-interaction"
-        aria-pressed="false"
-      >
-        Lens</button
-      ><select id="ol-lens-depth" aria-label="Lens depth in levels finer">
-        <option value="1">−1 level</option>
-        <option value="2" selected>−2 levels</option>
-        <option value="3">−3 levels</option>
-        <option value="4">−4 levels</option></select
-      ><button
-        type="button"
-        id="ol-lens-pin"
-        class="cursor-interaction"
-        hidden
-        title="Make the lens rectangle and resolution the view"
-      >
-        Pin lens</button
-      ><span id="ol-pixel-state" class="ol-num ol-muted"></span>
-    </div>
-    <nav
-      class="ol-breadcrumbs"
-      id="ol-breadcrumbs"
-      aria-label="Exploration path"
-    ></nav>
-    <details class="ol-nav-help">
-      <summary class="cursor-interaction">Controls</summary>
-      <div>
-        Drag: pan · wheel: time · Shift-wheel: price · pinch: zoom<br />Arrows:
-        pan · + / −: zoom · [ / ]: time level · Shift+[ / ]: price level<br />A:
-        auto · D: diagonal zoom · F: fit price · L / hold Alt: lens · Shift+L:
-        lens depth · Enter: pin lens · Esc: clear<br />, / . : step the replay
-        anchor · Touch: hold to inspect finer cells; lift to return
-      </div>
-    </details>
-    </div>
-    <div class="ol-plane-map" id="ol-plane-map">
-      <div class="ol-plane-cap">
-        <span>Resolution plane · m price ↑ · n time →</span>
-      </div>
-      <div
-        class="ol-plane"
-        id="ol-plane"
-        aria-label="Time and price resolution lattice; the outlined cells are the diagonal"
-      ></div>
-      <div class="ol-plane-key">
-        <span><i class="ol-plane-ready"></i>Ready · usable</span
-        ><span><i class="ol-plane-small"></i>Too small</span
-        ><span><i class="ol-plane-large"></i>Too large</span
-        ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
-        ><span><i class="ol-plane-loading"></i>… loading</span
-        ><span><i class="ol-plane-path"></i>Diagonal</span>
-      </div>
-      <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
-    </div>
-  </div>
-  <div class="ol-layers">
-    <div class="ol-modes" aria-label="Cell encoding">
-      <button
-        type="button"
-        data-mode="volume"
-        class="cursor-interaction"
-        aria-pressed="true"
-      >
-        Volume</button
-      ><button
-        type="button"
-        data-mode="flow"
-        class="cursor-interaction"
-        aria-pressed="false"
-      >
-        Taker flow</button
-      ><button
-        type="button"
-        data-mode="density"
-        class="cursor-interaction"
-        aria-pressed="false"
-      >
-        Density</button
-      ><button
-        type="button"
-        data-mode="delta"
-        class="cursor-interaction"
-        aria-pressed="false"
-      >
-        Delta</button
-      ><button
-        type="button"
-        data-mode="geometry"
-        class="cursor-interaction"
-        aria-pressed="false"
-      >
-        Geometry
-      </button>
-    </div>
-    <div class="ol-marks">
-      <label><input type="checkbox" id="ol-poc" checked />POC</label
-      ><label><input type="checkbox" id="ol-area" />70% area</label
-      ><label><input type="checkbox" id="ol-untested" />Untested</label>
-    </div>
-    <div class="ol-actions">
-      <button
-        type="button"
-        id="ol-select"
-        class="cursor-interaction"
-        aria-pressed="false"
-      >
-        Select</button
-      ><button
-        type="button"
-        id="ol-table"
-        class="cursor-interaction"
-        aria-pressed="false"
-      >
-        Table</button
-      ><button type="button" id="ol-fit" class="cursor-interaction">
-        Fit price
-      </button>
-    </div>
-  </div>
-  <div id="ol-loading" class="ol-loading" role="status">
-    Loading recent base cells · geometry ready
-  </div>
-  <div class="ol-workspace" id="ol-workspace">
-    <section
-      class="ol-field"
-      aria-label="Market field and linked volume profile"
+    <button
+      type="button"
+      id="ol-sheet-toggle"
+      class="ol-sheet-toggle cursor-interaction"
+      aria-expanded="false"
+      aria-controls="ol-controls"
     >
-      <div class="ol-field-head">
-        <span>PRICE · USDT</span
-        ><span class="ol-legend"
-          ><i class="ol-ramp" id="ol-ramp" aria-hidden="true"></i
-          ><span id="ol-legend-text">USDT per cell · log</span></span
+      Controls
+    </button>
+    <div class="ol-controls" id="ol-controls">
+      <div class="ol-sheet-head">
+        <span>Controls</span
+        ><button
+          type="button"
+          id="ol-sheet-close"
+          class="cursor-interaction"
+          aria-label="Close controls"
         >
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m4 4 8 8M12 4l-8 8" />
+          </svg>
+        </button>
       </div>
-      <canvas
-        id="ol-canvas"
-        tabindex="0"
-        role="application"
-        aria-label="Time by price grid with real traded volume, point of control and linked volume profile"
-      ></canvas>
-      <div class="ol-tip" id="ol-tip" role="tooltip" hidden></div>
-      <div class="ol-data-state" aria-label="Data states">
-        <span
-          ><i class="ol-data-key zero" aria-hidden="true"></i
-          ><span id="ol-data-zero">Zero trades</span></span
-        ><span
-          ><i class="ol-data-key unfinished" aria-hidden="true"></i
-          ><span id="ol-data-open">Unfinished</span></span
-        ><span
-          ><i class="ol-data-key unavailable" aria-hidden="true"></i>Unavailable
-          / hidden</span
-        ><span id="ol-data-coarse" hidden
-          ><i class="ol-data-key coarse" aria-hidden="true"></i>Coarser than
-          requested</span
-        >
-      </div>
-      <div id="ol-resolution-state" class="ol-resolution-state"></div>
-      <div class="ol-mark-key">
-        <span>P · total POC</span><span>B · buy POC</span
-        ><span>H/L · composite 70%</span><span id="ol-ray-count"></span>
-      </div>
-      <div class="ol-chart-foot">
-        <span class="ol-gesture" id="ol-gesture"
-          >Drag to pan · wheel to zoom · click to anchor</span
-        >
-        <div class="ol-replay">
+      <div class="ol-group ol-range" role="group" aria-label="Time window">
+        <div class="ol-seg">
           <button
             type="button"
-            id="ol-replay"
+            class="cursor-interaction"
+            data-window="1"
+            aria-pressed="true"
+            title="The last 24 hours"
+          >
+            24h</button
+          ><button
+            type="button"
+            class="cursor-interaction"
+            data-window="7"
+            aria-pressed="false"
+            title="The last 7 days"
+          >
+            7d</button
+          ><button
+            type="button"
+            class="cursor-interaction"
+            data-window="all"
+            aria-pressed="false"
+            title="All history from 2021"
+          >
+            All
+          </button>
+        </div>
+        <output id="ol-span" class="ol-span ol-num" hidden></output>
+      </div>
+      <div class="ol-group ol-res-group">
+        <button
+          type="button"
+          id="ol-res"
+          class="ol-res cursor-interaction"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="ol-res-pop"
+          data-auto="true"
+        >
+          <svg class="ol-icon ol-lock-open" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
+            <path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7" />
+          </svg>
+          <svg class="ol-icon ol-lock-shut" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
+            <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+          </svg>
+          <span id="ol-res-text" class="ol-num">15 min × 125 USDT</span
+          ><i class="ol-res-coarse" aria-hidden="true"></i>
+          <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+          </svg>
+        </button>
+        <div
+          class="ol-pop ol-res-pop"
+          id="ol-res-pop"
+          role="dialog"
+          aria-label="Resolution"
+          hidden
+        >
+          <div class="ol-pop-head">
+            <span>Resolution</span
+            ><button
+              type="button"
+              id="ol-auto"
+              class="ol-toggle cursor-interaction"
+              aria-pressed="true"
+              title="Choose the level from the cell size on screen (A)"
+            >
+              Auto level
+            </button>
+          </div>
+          <div class="ol-step">
+            <div class="ol-step-label">
+              <span>Time · <span id="ol-n">n 4</span></span
+              ><output id="ol-tr">15 min</output>
+            </div>
+            <button
+              type="button"
+              id="ol-tminus"
+              class="cursor-interaction"
+              aria-label="Finer time resolution"
+              title="Finer time cells ( [ )"
+            >
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="3" y="3" width="4" height="4" />
+                <rect x="9" y="3" width="4" height="4" />
+                <rect x="3" y="9" width="4" height="4" />
+                <rect x="9" y="9" width="4" height="4" />
+              </svg></button
+            ><button
+              type="button"
+              id="ol-tplus"
+              class="cursor-interaction"
+              aria-label="Coarser time resolution"
+              title="Coarser time cells ( ] )"
+            >
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="3" y="3" width="10" height="10" rx="1" />
+              </svg>
+            </button>
+          </div>
+          <div class="ol-step">
+            <div class="ol-step-label">
+              <span>Price · <span id="ol-m">m 0</span></span
+              ><output id="ol-pr">125 USDT</output>
+            </div>
+            <button
+              type="button"
+              id="ol-pminus"
+              class="cursor-interaction"
+              aria-label="Finer price resolution"
+              title="Finer price cells (Shift+[ )"
+            >
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="3" y="3" width="4" height="4" />
+                <rect x="9" y="3" width="4" height="4" />
+                <rect x="3" y="9" width="4" height="4" />
+                <rect x="9" y="9" width="4" height="4" />
+              </svg></button
+            ><button
+              type="button"
+              id="ol-pplus"
+              class="cursor-interaction"
+              aria-label="Coarser price resolution"
+              title="Coarser price cells (Shift+] )"
+            >
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="3" y="3" width="10" height="10" rx="1" />
+              </svg>
+            </button>
+          </div>
+          <div class="ol-plane-cap">Resolution plane · m price ↑ · n time →</div>
+          <div
+            class="ol-plane"
+            id="ol-plane"
+            role="group"
+            aria-label="Time and price resolution lattice; arrow keys move, Enter chooses; the outlined cells are the diagonal"
+          ></div>
+          <div class="ol-plane-key">
+            <span><i class="ol-plane-ready"></i>Ready · usable</span
+            ><span><i class="ol-plane-small"></i>Too small</span
+            ><span><i class="ol-plane-large"></i>Too large</span
+            ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
+            ><span><i class="ol-plane-loading"></i>… loading</span
+            ><span><i class="ol-plane-path"></i>Diagonal</span>
+          </div>
+          <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
+        </div>
+      </div>
+      <div class="ol-group ol-follow" role="group" aria-label="Price follows zoom">
+        <span class="ol-cap">Price</span>
+        <div class="ol-seg">
+          <button
+            type="button"
+            id="ol-free"
+            class="cursor-interaction"
+            data-follow="free"
+            aria-pressed="false"
+            title="Zooming time leaves the price range alone"
+          >
+            Free</button
+          ><button
+            type="button"
+            id="ol-refit"
+            class="cursor-interaction"
+            data-follow="refit"
+            aria-pressed="true"
+            title="Zooming time refits the price range to the visible trades"
+          >
+            Refit</button
+          ><button
+            type="button"
+            id="ol-coupled"
+            class="cursor-interaction"
+            data-follow="coupled"
+            aria-pressed="false"
+            title="Zooming time zooms price by the same factor"
+          >
+            Coupled</button
+          ><button
+            type="button"
+            id="ol-diagonal"
+            class="cursor-interaction"
+            data-follow="diagonal"
+            aria-pressed="false"
+            title="Zoom time by k and price by the square root of k; the price level follows the measured diagonal (D)"
+          >
+            Diagonal
+          </button>
+        </div>
+        <button
+          type="button"
+          id="ol-fit"
+          class="ol-action cursor-interaction"
+          title="Fit the price range to the visible trades once (F)"
+        >
+          Fit now
+        </button>
+      </div>
+      <div class="ol-group ol-tools" role="group" aria-label="Pointer tool">
+        <div class="ol-seg">
+          <button
+            type="button"
+            id="ol-pan"
+            class="cursor-interaction"
+            data-tool="pan"
+            aria-pressed="true"
+            title="Pan: drag to move, click to anchor (V)"
+          >
+            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M8 2v12M2 8h12M8 2 6.3 3.7M8 2l1.7 1.7M8 14l-1.7-1.7M8 14l1.7-1.7M2 8l1.7-1.7M2 8l1.7 1.7M14 8l-1.7-1.7M14 8l-1.7 1.7"
+              /></svg
+            ><span class="ol-tool-label">Pan</span></button
+          ><button
+            type="button"
+            id="ol-select"
+            class="cursor-interaction"
+            data-tool="select"
+            aria-pressed="false"
+            title="Select: drag a rectangle on base-cell edges (S)"
+          >
+            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <rect
+                x="2.5"
+                y="3.5"
+                width="11"
+                height="9"
+                rx="1"
+                stroke-dasharray="2 1.6"
+              /></svg
+            ><span class="ol-tool-label">Select</span></button
+          ><button
+            type="button"
+            id="ol-lens"
+            class="cursor-interaction"
+            data-tool="lens"
+            aria-pressed="false"
+            title="Lens: finer cells inside a region (L; hold Alt to peek)"
+          >
+            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.2" />
+              <path d="m10.2 10.2 3.3 3.3" /></svg
+            ><span class="ol-tool-label">Lens</span>
+          </button>
+        </div>
+        <select
+          id="ol-lens-depth"
+          aria-label="Lens depth in levels finer"
+          title="Lens depth (Shift+L)"
+        >
+          <option value="1">−1 level</option>
+          <option value="2" selected>−2 levels</option>
+          <option value="3">−3 levels</option>
+          <option value="4">−4 levels</option></select
+        ><button
+          type="button"
+          id="ol-lens-pin"
+          class="ol-action cursor-interaction"
+          hidden
+          title="Make the lens rectangle and resolution the view (Enter)"
+        >
+          Pin lens
+        </button>
+      </div>
+      <div class="ol-group ol-replay">
+        <button
+          type="button"
+          id="ol-replay"
+          class="ol-action cursor-interaction"
+          aria-pressed="false"
+          title="Replay: hide trades after an anchor and step it with , and ."
+        >
+          Replay</button
+        ><button
+          type="button"
+          id="ol-back"
+          class="ol-action cursor-interaction"
+          aria-label="Previous replay column"
+          hidden
+        >
+          ←</button
+        ><span id="ol-replay-at" class="ol-num" hidden></span
+        ><button
+          type="button"
+          id="ol-next"
+          class="ol-action cursor-interaction"
+          aria-label="Next replay column"
+          hidden
+        >
+          →
+        </button>
+      </div>
+      <div class="ol-group ol-history" role="group" aria-label="History">
+        <button
+          type="button"
+          id="ol-hist-back"
+          class="ol-icon-button cursor-interaction"
+          aria-label="Back"
+        >
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M10 3.5 5.5 8l4.5 4.5" /></svg></button
+        ><button
+          type="button"
+          id="ol-hist-fwd"
+          class="ol-icon-button cursor-interaction"
+          aria-label="Forward"
+        >
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m6 3.5 4.5 4.5L6 12.5" /></svg></button
+        ><button
+          type="button"
+          id="ol-hist"
+          class="ol-icon-button cursor-interaction"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="ol-hist-pop"
+          aria-label="History"
+          title="History"
+        >
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="5.5" />
+            <path d="M8 5v3l2 1.5" />
+          </svg>
+        </button>
+        <div
+          class="ol-pop ol-pop-end"
+          id="ol-hist-pop"
+          role="dialog"
+          aria-label="History"
+          hidden
+        >
+          <div class="ol-pop-head"><span>History</span></div>
+          <nav
+            class="ol-breadcrumbs"
+            id="ol-breadcrumbs"
+            aria-label="Exploration path"
+          ></nav>
+        </div>
+      </div>
+      <div class="ol-group ol-help">
+        <button
+          type="button"
+          id="ol-help"
+          class="ol-icon-button cursor-interaction"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="ol-help-pop"
+          aria-label="Controls and keys"
+          title="Controls and keys"
+        >
+          ?
+        </button>
+        <div
+          class="ol-pop ol-pop-end ol-help-pop"
+          id="ol-help-pop"
+          role="dialog"
+          aria-label="Controls and keys"
+          hidden
+        >
+          <div class="ol-pop-head"><span>Controls and keys</span></div>
+          <div>
+            Drag: pan · wheel: time · Shift-wheel: price · pinch: zoom<br />Arrows:
+            pan · + / −: zoom · [ / ]: time level · Shift+[ / ]: price level<br />V:
+            pan · S: select · L / hold Alt: lens · Shift+L: lens depth · Enter: pin
+            lens<br />A: auto level · D: diagonal zoom · F: fit price · Esc: clear<br />,
+            / . : step the replay anchor · Touch: hold to inspect finer cells; lift
+            to return<br />Click or focus the chart before using keys.
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+  <div class="ol-main" id="ol-main">
+    <section class="ol-chart" aria-label="Market field and linked volume profile">
+      <div id="ol-loading" class="ol-loading" role="status">
+        Loading recent base cells · geometry ready
+      </div>
+      <div class="ol-chart-head">
+        <div class="ol-seg ol-modes" role="group" aria-label="Cell encoding">
+          <button
+            type="button"
+            data-mode="volume"
+            class="cursor-interaction"
+            aria-pressed="true"
+          >
+            Volume</button
+          ><button
+            type="button"
+            data-mode="flow"
             class="cursor-interaction"
             aria-pressed="false"
           >
-            Replay</button
+            Taker flow</button
           ><button
             type="button"
-            id="ol-back"
+            data-mode="density"
             class="cursor-interaction"
-            aria-label="Previous replay column"
-            hidden
+            aria-pressed="false"
           >
-            ←</button
-          ><span id="ol-replay-at" class="ol-num" hidden></span
+            Density</button
           ><button
             type="button"
-            id="ol-next"
+            data-mode="delta"
             class="cursor-interaction"
-            aria-label="Next replay column"
-            hidden
+            aria-pressed="false"
           >
-            →
+            Delta</button
+          ><button
+            type="button"
+            data-mode="geometry"
+            class="cursor-interaction"
+            aria-pressed="false"
+          >
+            Geometry
           </button>
         </div>
+        <div class="ol-marks" role="group" aria-label="Overlays">
+          <label><input type="checkbox" id="ol-poc" checked />POC</label
+          ><label><input type="checkbox" id="ol-area" />70% area</label
+          ><label><input type="checkbox" id="ol-untested" />Untested</label>
+        </div>
+        <span class="ol-legend"
+          ><i class="ol-ramp" id="ol-ramp" aria-hidden="true"></i
+          ><span id="ol-legend-text" class="ol-num">USDT per cell · log</span></span
+        >
       </div>
+      <div class="ol-plot">
+        <canvas
+          id="ol-canvas"
+          tabindex="0"
+          role="application"
+          aria-label="Time by price grid with real traded volume, point of control and linked volume profile"
+        ></canvas>
+        <div class="ol-tip" id="ol-tip" role="tooltip" hidden></div>
+      </div>
+      <div class="ol-drawer" id="ol-drawer">
+        <div
+          class="ol-grip ol-drawer-grip"
+          id="ol-drawer-grip"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize the drawer"
+          tabindex="0"
+        ></div>
+        <div class="ol-drawer-bar">
+          <div class="ol-drawer-tabs" role="tablist" aria-label="Details">
+            <button
+              type="button"
+              role="tab"
+              id="ol-tab-cells"
+              class="cursor-interaction"
+              data-drawer="cells"
+              aria-controls="ol-panel-cells"
+              aria-selected="true"
+            >
+              Cells</button
+            ><button
+              type="button"
+              role="tab"
+              id="ol-tab-cases"
+              class="cursor-interaction"
+              data-drawer="cases"
+              aria-controls="ol-panel-cases"
+              aria-selected="false"
+            >
+              Cases</button
+            ><button
+              type="button"
+              role="tab"
+              id="ol-tab-query"
+              class="cursor-interaction"
+              data-drawer="query"
+              aria-controls="ol-panel-query"
+              aria-selected="false"
+            >
+              Query<span id="ol-query-mini" class="ol-num ol-query-mini"></span>
+            </button>
+          </div>
+          <span class="ol-drawer-space"></span>
+          <button
+            type="button"
+            id="ol-drawer-toggle"
+            class="ol-icon-button cursor-interaction"
+            aria-expanded="false"
+            aria-controls="ol-drawer-body"
+            aria-label="Open the drawer"
+          >
+            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4.5 9.5 3.5-3.5 3.5 3.5" />
+            </svg>
+          </button>
+        </div>
+        <div class="ol-drawer-body" id="ol-drawer-body">
+          <div
+            class="ol-panel"
+            id="ol-panel-cells"
+            role="tabpanel"
+            aria-labelledby="ol-tab-cells"
+          >
+            <div class="ol-panel-head">
+              <span id="ol-table-caption" class="ol-muted"></span>
+              <div class="ol-pager">
+                <button
+                  type="button"
+                  id="ol-table-back"
+                  class="ol-action cursor-interaction"
+                >
+                  Previous</button
+                ><span id="ol-table-page" class="ol-num"></span
+                ><button
+                  type="button"
+                  id="ol-table-next"
+                  class="ol-action cursor-interaction"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+            <table class="ol-table">
+              <thead>
+                <tr>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-sort="time">
+                      Time · UTC
+                    </button>
+                  </th>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-sort="price">
+                      Price · USDT
+                    </button>
+                  </th>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-sort="volume">
+                      USDT volume
+                    </button>
+                  </th>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-sort="trades">
+                      Trades
+                    </button>
+                  </th>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-sort="buyvol">
+                      Buy USDT
+                    </button>
+                  </th>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-sort="buytrades">
+                      Buy trades
+                    </button>
+                  </th>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-sort="state">
+                      State
+                    </button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="ol-table-body"></tbody>
+            </table>
+          </div>
+          <div
+            class="ol-panel"
+            id="ol-panel-cases"
+            role="tabpanel"
+            aria-labelledby="ol-tab-cases"
+            hidden
+          >
+            <div class="ol-panel-head">
+              <label for="ol-case-filter">Cases</label
+              ><select id="ol-case-filter">
+                <option value="all">Matching states</option>
+                <option value="failure">Opposite / failed</option>
+                <option value="up">Higher / upper</option>
+                <option value="flat">Same / neither</option>
+                <option value="down">Lower / lower</option>
+                <option value="reference">All states</option>
+              </select>
+              <span class="ol-muted" id="ol-case-definition"></span>
+              <div class="ol-pager">
+                <button
+                  type="button"
+                  id="ol-case-prev"
+                  class="ol-action cursor-interaction"
+                >
+                  Previous</button
+                ><span id="ol-case-page" class="ol-num"></span
+                ><button
+                  type="button"
+                  id="ol-case-next"
+                  class="ol-action cursor-interaction"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+            <table class="ol-table ol-cases-table">
+              <thead>
+                <tr>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-case-sort="date">
+                      Date · UTC
+                    </button>
+                  </th>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-case-sort="outcome">
+                      Outcome
+                    </button>
+                  </th>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-case-sort="change">
+                      Change · USDT
+                    </button>
+                  </th>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-case-sort="poc">
+                      POC
+                    </button>
+                  </th>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-case-sort="excursion">
+                      Excursion · USDT
+                    </button>
+                  </th>
+                  <th>
+                    <button type="button" class="cursor-interaction" data-case-sort="buy">
+                      Buy share
+                    </button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="ol-case-list"></tbody>
+            </table>
+          </div>
+          <div
+            class="ol-panel ol-query-body"
+            id="ol-panel-query"
+            role="tabpanel"
+            aria-labelledby="ol-tab-query"
+            hidden
+          >
+            <label for="ol-query-text"
+              >Six parameters · requested base-cell bounds</label
+            ><textarea
+              id="ol-query-text"
+              rows="5"
+              readonly
+              aria-label="Copyable cube query"
+            ></textarea>
+            <div class="ol-query-actions">
+              <button
+                type="button"
+                id="ol-copy-query"
+                class="ol-action cursor-interaction"
+              >
+                Copy query</button
+              ><button
+                type="button"
+                id="ol-copy-view"
+                class="ol-action cursor-interaction"
+              >
+                Copy view code</button
+              ><button
+                type="button"
+                id="ol-import-toggle"
+                class="ol-action cursor-interaction"
+              >
+                Restore view</button
+              ><span id="ol-copy-status" role="status"></span>
+            </div>
+            <div id="ol-import" hidden>
+              <label for="ol-import-text">Paste a cube query or view code</label
+              ><textarea id="ol-import-text" rows="3"></textarea
+              ><button
+                type="button"
+                id="ol-import-apply"
+                class="ol-action cursor-interaction"
+              >
+                Apply view
+              </button>
+            </div>
+            <div id="ol-query-ready" class="ol-muted"></div>
+          </div>
+        </div>
+      </div>
+      <footer class="ol-status">
+        <div class="ol-status-keys" aria-label="Key">
+          <span id="ol-key-zero"
+            ><i class="ol-data-key zero" aria-hidden="true"></i>Zero trades</span
+          ><span id="ol-key-open"
+            ><i class="ol-data-key unfinished" aria-hidden="true"></i
+            >Unfinished</span
+          ><span id="ol-key-unavailable"
+            ><i class="ol-data-key unavailable" aria-hidden="true"></i
+            >Unavailable / hidden</span
+          ><span id="ol-data-coarse" hidden
+            ><i class="ol-data-key coarse" aria-hidden="true"></i>Coarser than
+            requested</span
+          ><span id="ol-key-poc">P · total POC</span
+          ><span id="ol-key-bpoc">B · buy POC</span
+          ><span id="ol-key-area" hidden>H/L · composite 70%</span
+          ><span id="ol-ray-count" hidden></span>
+        </div>
+        <span class="ol-gesture" id="ol-gesture"
+          >Drag to pan · wheel to zoom · click to anchor</span
+        >
+        <div class="ol-status-meta ol-num">
+          <span id="ol-pixel-state"></span><span id="ol-scope"
+            >Real Binance trades · recorded snapshot</span
+          ><span id="ol-cutoff"></span>
+        </div>
+      </footer>
     </section>
-    <aside class="ol-side">
+    <div
+      class="ol-grip ol-side-grip"
+      id="ol-side-grip"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the inspector"
+      tabindex="0"
+    ></div>
+    <aside class="ol-side" id="ol-side" aria-label="Inspector">
       <div class="ol-side-tabs">
+        <div class="ol-seg ol-side-seg">
+          <button
+            type="button"
+            id="ol-context-tab"
+            class="cursor-interaction"
+            aria-pressed="true"
+          >
+            Structure</button
+          ><button
+            type="button"
+            id="ol-evidence-tab"
+            class="cursor-interaction"
+            aria-pressed="false"
+          >
+            Continuations
+          </button>
+        </div>
         <button
           type="button"
-          id="ol-context-tab"
-          class="cursor-interaction"
-          aria-pressed="true"
+          id="ol-side-toggle"
+          class="ol-icon-button cursor-interaction"
+          aria-expanded="true"
+          aria-controls="ol-side-body"
+          aria-label="Collapse the inspector"
+          title="Collapse the inspector"
         >
-          Structure</button
-        ><button
-          type="button"
-          id="ol-evidence-tab"
-          class="cursor-interaction"
-          aria-pressed="false"
-        >
-          Continuations
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m6 3.5 4.5 4.5L6 12.5" />
+          </svg>
         </button>
       </div>
-      <div class="ol-side-context" id="ol-context">
-        <div class="ol-context-summary">
-          <div class="ol-section-heading" id="ol-focus-title">
-            Visible rectangle
+      <div class="ol-side-body" id="ol-side-body">
+        <div class="ol-side-context" id="ol-context">
+          <div class="ol-section-row">
+            <div class="ol-section-heading" id="ol-focus-title">
+              Visible rectangle
+            </div>
+            <button
+              type="button"
+              class="ol-action cursor-interaction"
+              id="ol-clear"
+              hidden
+            >
+              Clear selection
+            </button>
           </div>
           <div class="ol-bounds" id="ol-bounds"></div>
-          <button type="button" class="cursor-interaction" id="ol-clear" hidden>
-            Clear selection
-          </button>
           <div class="ol-metrics">
             <div class="ol-metric">
               <label>USDT volume</label><strong id="ol-vol">—</strong>
@@ -1441,226 +2095,165 @@
           <div class="ol-row">
             <span>Buy share · volume</span><span id="ol-share">—</span>
           </div>
+          <details class="ol-diag">
+            <summary class="cursor-interaction">Cell counts</summary>
+            <div class="ol-row">
+              <span>Occupied cells</span><span id="ol-cells">—</span>
+            </div>
+            <div class="ol-row">
+              <span>Boundary portions</span><span id="ol-partials">—</span>
+            </div>
+            <div class="ol-row">
+              <span>Zero-trade cells</span><span id="ol-zero-count">—</span>
+            </div>
+            <div class="ol-row">
+              <span>Unfinished cells</span><span id="ol-open-count">—</span>
+            </div>
+          </details>
         </div>
-        <div class="ol-context-scale">
-          <div class="ol-rule"></div>
-          <div class="ol-row">
-            <span>Occupied cells</span><span id="ol-cells">—</span>
-          </div>
-          <div class="ol-row">
-            <span>Boundary portions</span><span id="ol-partials">—</span>
-          </div>
-          <div class="ol-row">
-            <span>Zero-trade cells</span><span id="ol-zero-count">—</span>
-          </div>
-          <div class="ol-row">
-            <span>Unfinished cells</span><span id="ol-open-count">—</span>
-          </div>
-        </div>
-      </div>
-      <div id="ol-evidence" hidden>
-        <div class="ol-section-heading">Historical continuations</div>
-        <div class="ol-bounds" id="ol-anchor-time"></div>
-        <div class="ol-evidence-tabs" aria-label="Continuation outcome">
-          <button
-            type="button"
-            class="cursor-interaction"
-            data-evidence-kind="poc"
-            aria-pressed="true"
-          >
-            Next POC
-          </button>
-          <button
-            type="button"
-            class="cursor-interaction"
-            data-evidence-kind="barrier"
-            aria-pressed="false"
-          >
-            POC barriers
-          </button>
-        </div>
-        <div class="ol-evidence-state" id="ol-state"></div>
-        <div class="ol-row">
-          <label for="ol-horizon">Horizon</label
-          ><select id="ol-horizon">
-            <option value="1">1 column</option>
-            <option value="2">2 columns</option>
-            <option value="4">4 columns</option>
-            <option value="8">8 columns</option>
-          </select>
-        </div>
-        <div class="ol-row" id="ol-barrier-control" hidden>
-          <label for="ol-barrier">Distance each side</label
-          ><select id="ol-barrier">
-            <option value="1">1 price row</option>
-            <option value="2">2 price rows</option>
-            <option value="4">4 price rows</option>
-          </select>
-        </div>
-        <div class="ol-evidence-probs">
-          <button
-            type="button"
-            class="ol-probability cursor-interaction"
-            data-case-direction="up"
-            aria-label="Inspect higher POC cases"
-          >
-            <span class="ol-row"
-              ><span id="ol-label-up">Higher POC</span
-              ><span id="ol-prob-up">—</span></span
-            ><span class="ol-track"><span id="ol-bar-up"></span></span
-            ><span class="ol-track ol-base-track"
-              ><span id="ol-base-up"></span></span
-            ><span class="ol-base-caption" id="ol-base-prob-up"
-              >All states —</span
+        <div id="ol-evidence" hidden>
+          <div class="ol-section-heading">Historical continuations</div>
+          <div class="ol-bounds" id="ol-anchor-time"></div>
+          <div class="ol-seg ol-evidence-tabs" aria-label="Continuation outcome">
+            <button
+              type="button"
+              class="cursor-interaction"
+              data-evidence-kind="poc"
+              aria-pressed="true"
             >
-          </button>
-          <button
-            type="button"
-            class="ol-probability cursor-interaction"
-            data-case-direction="flat"
-            aria-label="Inspect unchanged POC cases"
-          >
-            <span class="ol-row"
-              ><span id="ol-label-flat">Same row</span
-              ><span id="ol-prob-flat">—</span></span
-            ><span class="ol-track"><span id="ol-bar-flat"></span></span
-            ><span class="ol-track ol-base-track"
-              ><span id="ol-base-flat"></span></span
-            ><span class="ol-base-caption" id="ol-base-prob-flat"
-              >All states —</span
+              Next POC</button
+            ><button
+              type="button"
+              class="cursor-interaction"
+              data-evidence-kind="barrier"
+              aria-pressed="false"
             >
-          </button>
-          <button
-            type="button"
-            class="ol-probability cursor-interaction"
-            data-case-direction="down"
-            aria-label="Inspect lower POC cases"
-          >
-            <span class="ol-row"
-              ><span id="ol-label-down">Lower POC</span
-              ><span id="ol-prob-down">—</span></span
-            ><span class="ol-track"><span id="ol-bar-down"></span></span
-            ><span class="ol-track ol-base-track"
-              ><span id="ol-base-down"></span></span
-            ><span class="ol-base-caption" id="ol-base-prob-down"
-              >All states —</span
-            >
-          </button>
-        </div>
-        <div class="ol-evidence-legend">
-          <span><i class="ol-match-key"></i>Matching states</span
-          ><span><i class="ol-all-key"></i>All states</span>
-        </div>
-        <div class="ol-rule"></div>
-        <div class="ol-row">
-          <span>Matching cases</span><span id="ol-case-n">—</span>
-        </div>
-        <div class="ol-row">
-          <span>All qualifying cases</span><span id="ol-case-all">—</span>
-        </div>
-        <div class="ol-row">
-          <span>Empirical spread</span><span>10–90% / 25–75%</span>
-        </div>
-        <div class="ol-evidence-note" id="ol-evidence-provenance"></div>
-        <div class="ol-evidence-note" id="ol-evidence-note"></div>
-        <details id="ol-cases" class="ol-cases">
-          <summary class="cursor-interaction">Inspect evidence</summary>
-          <div class="ol-row">
-            <label for="ol-case-filter">Cases</label
-            ><select id="ol-case-filter">
-              <option value="all">Matching states</option>
-              <option value="failure">Opposite / failed</option>
-              <option value="up">Higher / upper</option>
-              <option value="flat">Same / neither</option>
-              <option value="down">Lower / lower</option>
-              <option value="reference">All states</option>
-            </select>
-          </div>
-          <div class="ol-evidence-note" id="ol-case-definition"></div>
-          <div id="ol-case-list" class="ol-case-list"></div>
-          <div class="ol-case-pages">
-            <button type="button" id="ol-case-prev" class="cursor-interaction">
-              Previous</button
-            ><span id="ol-case-page" class="ol-num"></span
-            ><button type="button" id="ol-case-next" class="cursor-interaction">
-              Next
+              POC barriers
             </button>
           </div>
-        </details>
+          <div class="ol-evidence-state" id="ol-state"></div>
+          <div class="ol-row">
+            <label for="ol-horizon">Horizon</label
+            ><select id="ol-horizon">
+              <option value="1">1 column</option>
+              <option value="2">2 columns</option>
+              <option value="4">4 columns</option>
+              <option value="8">8 columns</option>
+            </select>
+          </div>
+          <div class="ol-row" id="ol-barrier-control" hidden>
+            <label for="ol-barrier">Distance each side</label
+            ><select id="ol-barrier">
+              <option value="1">1 price row</option>
+              <option value="2">2 price rows</option>
+              <option value="4">4 price rows</option>
+            </select>
+          </div>
+          <div class="ol-outcome-head" aria-hidden="true">
+            <span>Outcome</span><span>Matching</span><span>All</span
+            ><span>Diff</span>
+          </div>
+          <div class="ol-evidence-probs">
+            <button
+              type="button"
+              class="ol-probability cursor-interaction"
+              data-case-direction="up"
+              aria-label="Inspect higher POC cases"
+            >
+              <span class="ol-outcome"
+                ><span id="ol-label-up">Higher POC</span
+                ><span id="ol-prob-up">—</span
+                ><span id="ol-base-prob-up" class="ol-muted">—</span
+                ><span id="ol-diff-up" class="ol-muted">—</span></span
+              ><span class="ol-track"><span id="ol-bar-up"></span></span
+              ><span class="ol-track ol-base-track"
+                ><span id="ol-base-up"></span
+              ></span>
+            </button>
+            <button
+              type="button"
+              class="ol-probability cursor-interaction"
+              data-case-direction="flat"
+              aria-label="Inspect unchanged POC cases"
+            >
+              <span class="ol-outcome"
+                ><span id="ol-label-flat">Same row</span
+                ><span id="ol-prob-flat">—</span
+                ><span id="ol-base-prob-flat" class="ol-muted">—</span
+                ><span id="ol-diff-flat" class="ol-muted">—</span></span
+              ><span class="ol-track"><span id="ol-bar-flat"></span></span
+              ><span class="ol-track ol-base-track"
+                ><span id="ol-base-flat"></span
+              ></span>
+            </button>
+            <button
+              type="button"
+              class="ol-probability cursor-interaction"
+              data-case-direction="down"
+              aria-label="Inspect lower POC cases"
+            >
+              <span class="ol-outcome"
+                ><span id="ol-label-down">Lower POC</span
+                ><span id="ol-prob-down">—</span
+                ><span id="ol-base-prob-down" class="ol-muted">—</span
+                ><span id="ol-diff-down" class="ol-muted">—</span></span
+              ><span class="ol-track"><span id="ol-bar-down"></span></span
+              ><span class="ol-track ol-base-track"
+                ><span id="ol-base-down"></span
+              ></span>
+            </button>
+          </div>
+          <div class="ol-evidence-legend">
+            <span><i class="ol-match-key"></i>Matching states</span
+            ><span><i class="ol-all-key"></i>All states</span
+            ><span>Cones: 10–90% and 25–75% of outcomes</span>
+          </div>
+          <div class="ol-rule"></div>
+          <div class="ol-row">
+            <span>Matching cases</span><span id="ol-case-n">—</span>
+          </div>
+          <div class="ol-row">
+            <span>All qualifying cases</span><span id="ol-case-all">—</span>
+          </div>
+          <div class="ol-evidence-brief">
+            <span id="ol-evidence-brief"></span
+            ><button
+              type="button"
+              id="ol-evidence-info"
+              class="ol-icon-button cursor-interaction"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="ol-evidence-more"
+              aria-label="About this evidence"
+              title="About this evidence"
+            >
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <circle cx="8" cy="8" r="6" />
+                <path d="M8 7.3V11M8 5v.01" />
+              </svg>
+            </button>
+            <div
+              class="ol-pop ol-pop-end ol-evidence-more"
+              id="ol-evidence-more"
+              role="dialog"
+              aria-label="About this evidence"
+              hidden
+            >
+              <div class="ol-evidence-note" id="ol-evidence-provenance"></div>
+              <div class="ol-evidence-note" id="ol-evidence-note"></div>
+            </div>
+          </div>
+          <button
+            type="button"
+            id="ol-open-cases"
+            class="ol-action cursor-interaction"
+          >
+            Inspect cases
+          </button>
+        </div>
       </div>
     </aside>
   </div>
-  <details class="ol-query" id="ol-query-panel">
-    <summary>
-      Cube query <span id="ol-query-mini" class="ol-num ol-query-mini"></span>
-    </summary>
-    <div class="ol-query-body">
-      <label for="ol-query-text"
-        >Six parameters · requested base-cell bounds</label
-      ><textarea
-        id="ol-query-text"
-        rows="5"
-        readonly
-        aria-label="Copyable cube query"
-      ></textarea>
-      <div class="ol-query-actions">
-        <button type="button" id="ol-copy-query" class="cursor-interaction">
-          Copy query</button
-        ><button type="button" id="ol-copy-view" class="cursor-interaction">
-          Copy view code</button
-        ><button type="button" id="ol-import-toggle" class="cursor-interaction">
-          Restore view</button
-        ><span id="ol-copy-status" role="status"></span>
-      </div>
-      <div id="ol-import" hidden>
-        <label for="ol-import-text">Paste a cube query or view code</label
-        ><textarea id="ol-import-text" rows="3"></textarea
-        ><button type="button" id="ol-import-apply" class="cursor-interaction">
-          Apply view
-        </button>
-      </div>
-      <div id="ol-query-ready" class="ol-muted"></div>
-    </div>
-  </details>
-  <section
-    class="ol-table-section"
-    id="ol-table-section"
-    hidden
-    aria-label="Cell measures"
-  >
-    <div class="ol-table-head">
-      <span id="ol-table-caption"></span>
-      <div>
-        <button type="button" id="ol-table-back" class="cursor-interaction">
-          Previous</button
-        ><span id="ol-table-page"></span
-        ><button type="button" id="ol-table-next" class="cursor-interaction">
-          Next
-        </button>
-      </div>
-    </div>
-    <div class="ol-table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>Time · UTC</th>
-            <th>Price · USDT</th>
-            <th>USDT volume</th>
-            <th>Trades</th>
-            <th>Buy USDT</th>
-            <th>Buy trades</th>
-            <th>State</th>
-          </tr>
-        </thead>
-        <tbody id="ol-table-body"></tbody>
-      </table>
-    </div>
-  </section>
-
-  <footer class="ol-footer">
-    <span id="ol-scope">Real Binance trades · recorded snapshot</span
-    ><span id="ol-cutoff" class="ol-num"></span>
-  </footer>
 </div>
 
     </main>
@@ -1707,6 +2300,17 @@
     M_MAX = 9,
     TILE_COLUMNS = 4096;
   const diagonalM = (n) => clamp(Math.round(ISO_A + ISO_B * n), 0, M_MAX);
+  // Sortable columns of the drawer's cells and cases tables.
+  const CELL_SORTS = [
+      "time",
+      "price",
+      "volume",
+      "trades",
+      "buyvol",
+      "buytrades",
+      "state",
+    ],
+    CASE_SORTS = ["date", "outcome", "change", "poc", "excursion", "buy"];
   const canvas = el("canvas"),
     ctx = canvas.getContext("2d"),
     reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -1734,18 +2338,29 @@
       coupled: false,
       refit: true,
       lens: false,
-      table: false,
       diagonal: false,
       lensDepth: 2,
       evidenceKind: "poc",
       barrier: 1,
       caseFilter: "all",
       casePage: 0,
+      // Workspace layout: the inspector and the drawer under the chart.
+      sideOpen: true,
+      sideWidth: 312,
+      drawer: "cells",
+      drawerOpen: false,
+      drawerHeight: 260,
+      cellSort: "time",
+      cellDir: -1,
+      caseSort: "date",
+      caseDir: -1,
     };
   let sources = {},
     G = {},
     colors = {},
     hover = null,
+    tableHover = null,
+    coverageGap = false,
     drag = null,
     transition = null,
     last = null,
@@ -2081,6 +2696,7 @@
     );
     for (const p of pt)
       text(price(p), G.x - 8, G.Y(p / PR), colors.muted, "right");
+    text("USDT", G.x - 8, G.y - 5, colors.muted, "right", 9);
     const count = G.width < 400 ? 3 : G.width < 650 ? 4 : 5;
     const times = d3
         .scaleUtc()
@@ -2153,7 +2769,8 @@
       const ev = calcEvidence();
       drawCone(ev);
       evidenceUI(ev);
-    }
+    } else if (S.drawerOpen && S.drawer === "cases")
+      evidenceCases(calcEvidence());
     if (S.selection) {
       ctx.strokeStyle = colors.volume;
       ctx.lineWidth = 1.5;
@@ -2200,6 +2817,18 @@
         );
       }
     }
+    // The cell of the table row under the pointer, outlined on the chart.
+    if (tableHover) {
+      const { c, r } = tableHover;
+      ctx.strokeStyle = colors.ink;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        G.X(c * ts) - 1,
+        G.Y((r + 1) * ps) - 1,
+        G.X((c + 1) * ts) - G.X(c * ts) + 2,
+        G.Y(r * ps) - G.Y((r + 1) * ps) + 2,
+      );
+    }
     drawResolutionLens();
     ctx.restore();
     axes();
@@ -2209,9 +2838,8 @@
     el("legend-text").textContent = legendText(full);
     el("ramp").style.background = legendRamp();
     const marks = marksReadout(b);
-    el("ray-count").textContent = S.untested
-      ? marks.rayCount + " untested levels"
-      : "";
+    el("ray-count").textContent = marks.rayCount + " untested levels";
+    el("ray-count").hidden = !S.untested;
     el("va-value").textContent =
       marks.vaLow === null
         ? "—"
@@ -2396,9 +3024,23 @@
       "diagonal",
       "refit",
       "lens",
-      "table",
+      "sideOpen",
+      "drawerOpen",
     ])
       if (typeof x[k] === "boolean") S[k] = x[k];
+    // A view saved before the drawer kept its table open as `table`.
+    if (x.table === true && typeof x.drawerOpen !== "boolean") {
+      S.drawerOpen = true;
+      S.drawer = "cells";
+    }
+    if (Number.isFinite(x.sideWidth)) S.sideWidth = clamp(x.sideWidth, 260, 560);
+    if (Number.isFinite(x.drawerHeight))
+      S.drawerHeight = clamp(x.drawerHeight, 120, 900);
+    if (["cells", "cases", "query"].includes(x.drawer)) S.drawer = x.drawer;
+    if (CELL_SORTS.includes(x.cellSort)) S.cellSort = x.cellSort;
+    if (CASE_SORTS.includes(x.caseSort)) S.caseSort = x.caseSort;
+    if (x.cellDir === 1 || x.cellDir === -1) S.cellDir = x.cellDir;
+    if (x.caseDir === 1 || x.caseDir === -1) S.caseDir = x.caseDir;
     if (Array.isArray(x.crumbs)) {
       nav.crumbs = x.crumbs
         .filter(
@@ -2457,7 +3099,9 @@
     } catch (error) {
       copyFallbackActive = true;
       el("query-text").value = textToCopy;
-      el("query-panel").open = true;
+      S.drawer = "query";
+      S.drawerOpen = true;
+      applyPanels();
       el("query-text").focus();
       el("query-text").select();
       el("copy-status").textContent = "Selected for copy · ⌘C / Ctrl+C";
@@ -2599,6 +3243,12 @@
     if (S.replay && G.x + G.w - xc > 70)
       text("FUTURE HIDDEN", xc + 8, G.y + G.h - 12, colors.muted, "left", 9);
     const r = requestedBounds();
+    // The status bar keys "Unavailable / hidden" only while such a region shows.
+    coverageGap =
+      x0 - G.x > 1 ||
+      xc - xe > 1 ||
+      (S.replay && G.x + G.w - xc > 1) ||
+      b.some((x, i) => x !== r[i]);
     if (b[0] > r[0])
       hatchRect(
         Math.max(G.x, G.X(r[0])),
@@ -2679,8 +3329,18 @@
       : S.selection
         ? "Selected rectangle"
         : "Visible rectangle";
-    el("bounds").textContent =
-      `${stamp(b[0])} → ${stamp(b[1])} UTC · ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`;
+    // Each date and the price range stay whole; lines break only between them.
+    el("bounds").replaceChildren(
+      ...[
+        `${stamp(b[0])} →`,
+        `${stamp(b[1])} UTC`,
+        `· ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`,
+      ].flatMap((part, i) => {
+        const span = document.createElement("span");
+        span.textContent = part;
+        return i ? [" ", span] : [span];
+      }),
+    );
     for (const [id, v, exact] of [
       ["vol", query.v, usdt(query.v) + " USDT"],
       ["count", query.ct, integer(query.ct) + " trades"],
@@ -2735,35 +3395,72 @@
       zero = Math.max(0, total - query.cells.length - openRows + unfinished);
     el("open-count").textContent = integer(openRows);
     el("zero-count").textContent = integer(zero);
-    el("data-zero").textContent = `${integer(zero)} completed zero-trade`;
-    el("data-open").textContent = `${integer(openRows)} unfinished`;
+    // The key names each state; its count lives with the cell counts.
+    el("key-zero").hidden = zero === 0;
+    el("key-open").hidden = openRows === 0;
+    el("key-unavailable").hidden = !coverageGap;
     el("data-coarse").hidden = !(renderN() > S.n || renderM() > S.m);
-    el("resolution-state").textContent =
-      renderN() > S.n || renderM() > S.m
-        ? `Requested ${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)} · rendered ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT`
-        : `${((G.w * stepT()) / (S.tB - S.tA)).toFixed(1)} × ${((G.h * stepP()) / (S.pB - S.pA)).toFixed(1)} px per cell · n ${renderN()} / m ${renderM()}`;
     queryUI(b);
-    renderTable(query, b);
+    renderCells(query, b);
   }
-  function renderTable(query, b) {
-    if (!S.table) return;
-    const key = [S.n, S.m, b.join(","), S.mode].join("|");
+  // The drawer's cells table: sortable, a hundred rows a page, and linked to
+  // the chart both ways through the cell under the pointer. It is rebuilt a
+  // moment after the view settles, so panning never waits on it.
+  const CELLS_PAGE = 100;
+  let cellRows = new Map(),
+    hoverRow = null,
+    cellsTimer = 0;
+  function cellState(c, b) {
+    const open = !S.replay && (c.c + 1) * stepT() > CUT,
+      portion =
+        c.c * stepT() < b[0] ||
+        (c.c + 1) * stepT() > b[1] ||
+        c.r * stepP() < b[2] ||
+        (c.r + 1) * stepP() > b[3];
+    return [open ? "unfinished" : "complete", portion ? "portion" : ""]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  function renderCells(query, b) {
+    if (!(S.drawerOpen && S.drawer === "cells")) return;
+    clearTimeout(cellsTimer);
+    cellsTimer = setTimeout(() => buildCells(query, b), 80);
+  }
+  function buildCells(query, b) {
+    const key = [S.n, S.m, b.join(","), S.cellSort, S.cellDir].join("|");
     if (key !== tableKey) {
       tablePage = 0;
       tableKey = key;
     }
-    const cells = query.cells.slice().sort((a, b) => b.c - a.c || a.r - b.r),
-      pages = Math.max(1, Math.ceil(cells.length / 10));
+    const value = {
+        time: (c) => c.c,
+        price: (c) => c.r,
+        volume: (c) => c.v,
+        trades: (c) => c.ct,
+        buyvol: (c) => c.bv,
+        buytrades: (c) => c.bt,
+        state: (c) => cellState(c, b),
+      }[S.cellSort],
+      cells = query.cells
+        .slice()
+        .sort(
+          (x, y) =>
+            (value(x) < value(y) ? -1 : value(x) > value(y) ? 1 : 0) *
+              S.cellDir ||
+            y.c - x.c ||
+            x.r - y.r,
+        ),
+      pages = Math.max(1, Math.ceil(cells.length / CELLS_PAGE));
     tablePage = clamp(tablePage, 0, pages - 1);
     const frag = document.createDocumentFragment();
-    for (const c of cells.slice(tablePage * 10, tablePage * 10 + 10)) {
-      const tr = document.createElement("tr"),
-        open = !S.replay && (c.c + 1) * stepT() > CUT,
-        portion =
-          c.c * stepT() < b[0] ||
-          (c.c + 1) * stepT() > b[1] ||
-          c.r * stepP() < b[2] ||
-          (c.r + 1) * stepP() > b[3];
+    cellRows = new Map();
+    for (const c of cells.slice(
+      tablePage * CELLS_PAGE,
+      (tablePage + 1) * CELLS_PAGE,
+    )) {
+      const tr = document.createElement("tr");
+      tr.dataset.c = c.c;
+      tr.dataset.r = c.r;
       const values = [
         stamp(Math.max(c.c * stepT(), b[0])) +
           " → " +
@@ -2775,29 +3472,44 @@
         integer(c.ct),
         usdt(c.bv),
         integer(c.bt),
-        [open ? "unfinished" : "complete", portion ? "portion" : ""]
-          .filter(Boolean)
-          .join(" · "),
+        cellState(c, b),
       ];
-      for (const value of values) {
+      for (const v of values) {
         const td = document.createElement("td");
-        td.textContent = value;
+        td.textContent = v;
         tr.append(td);
       }
+      cellRows.set(c.c + "," + c.r, tr);
       frag.append(tr);
     }
     el("table-body").replaceChildren(frag);
+    hoverRow = null;
     el("table-caption").textContent =
-      `${integer(cells.length)} occupied cells · newest first · zero cells omitted`;
+      `${integer(cells.length)} occupied cells in view · zero cells omitted`;
     el("table-page").textContent = `${tablePage + 1} / ${pages}`;
     el("table-back").disabled = tablePage === 0;
     el("table-next").disabled = tablePage === pages - 1;
+    for (const button of qsa("[data-sort]")) {
+      const th = button.parentElement;
+      if (button.dataset.sort === S.cellSort)
+        th.setAttribute("aria-sort", S.cellDir > 0 ? "ascending" : "descending");
+      else th.removeAttribute("aria-sort");
+    }
+  }
+  // Outline the table row of the cell under the chart pointer.
+  function syncRowHover(key) {
+    const tr = key ? cellRows.get(key) || null : null;
+    if (tr === hoverRow) return;
+    hoverRow?.classList.remove("is-hover");
+    tr?.classList.add("is-hover");
+    hoverRow = tr;
   }
   function tooltip(p) {
     hover = p;
     const tip = el("tip");
     if (!last || !inPlot(p)) {
       tip.hidden = true;
+      syncRowHover(null);
       requestDraw();
       return;
     }
@@ -2847,17 +3559,14 @@
       }),
     );
     tip.hidden = false;
-    const field = root.querySelector(".ol-field"),
-      fr = field.getBoundingClientRect(),
-      cr = canvas.getBoundingClientRect(),
-      tw = tip.offsetWidth;
-    tip.style.left = clamp(p.x + 17, 4, fr.width - tw - 5) + "px";
+    syncRowHover(z ? c + "," + r : null);
+    // The tip shares the canvas box: above the pointer, or below it at the top.
+    const tw = tip.offsetWidth,
+      th = tip.offsetHeight,
+      above = p.y - th - 12;
+    tip.style.left = clamp(p.x + 17, 4, G.width - tw - 5) + "px";
     tip.style.top =
-      clamp(
-        p.y + cr.top - fr.top - tip.offsetHeight - 12,
-        30,
-        fr.height - tip.offsetHeight - 5,
-      ) + "px";
+      clamp(above >= 4 ? above : p.y + 18, 4, G.height - th - 5) + "px";
     requestDraw();
   }
   function update() {
@@ -2880,7 +3589,29 @@
       b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)),
     );
     for (const f of ["poc", "area", "untested"]) el(f).checked = S[f];
-    el("select").setAttribute("aria-pressed", String(S.select));
+    el("key-poc").hidden = el("key-bpoc").hidden = !S.poc;
+    el("key-area").hidden = !S.area;
+    const coarse = renderN() > S.n || renderM() > S.m;
+    el("res-text").textContent =
+      `${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)} USDT`;
+    el("res").dataset.auto = String(S.auto);
+    el("res").dataset.coarse = String(coarse);
+    el("res").title =
+      (S.auto ? "Auto level" : "Level locked") +
+      (coarse
+        ? ` · showing ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT, the finest recorded here`
+        : "");
+    el("span").hidden = Boolean(S.window);
+    el("span").textContent = dur((S.tB - S.tA) * BASE);
+    qsa("[data-follow]").forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset.follow === followMode())),
+    );
+    qsa("[data-tool]").forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset.tool === tool())),
+    );
+    el("lens-depth").hidden = !S.lens;
+    // Replay and the lens add controls to the bar; its labels make room.
+    root.dataset.busy = String(S.replay || S.lens);
     el("clear").hidden = !S.selection;
     for (const t of ["context", "evidence"]) {
       el(t + "-tab").setAttribute("aria-pressed", String(S.tab === t));
@@ -2893,8 +3624,7 @@
     el("scope").textContent =
       `${Object.keys(sources).length}/${Object.keys(PACK.blocks).length} ${PACK.live ? "live cube" : "recorded"} blocks ready · ${dateShort(displaySource().b0)} onward`;
     el("cutoff").textContent = "Cutoff " + iso(CUT);
-    el("table").setAttribute("aria-pressed", String(S.table));
-    el("table-section").hidden = !S.table;
+    applyPanels();
     updateNavigation();
     requestDraw();
     requestTile();
@@ -2934,19 +3664,301 @@
       el("import").hidden = !el("import").hidden;
     });
     el("import-apply").addEventListener("click", applyImportedView);
-    el("table").addEventListener("click", () => {
-      S.table = !S.table;
-      update();
-      save();
-    });
     for (const [id, d] of [
       ["table-back", -1],
       ["table-next", 1],
     ])
       el(id).addEventListener("click", () => {
         tablePage += d;
-        requestDraw();
+        if (last) buildCells(last.query, last.b);
       });
+    for (const button of qsa("[data-sort]"))
+      button.addEventListener("click", () => {
+        const key = button.dataset.sort;
+        if (S.cellSort === key) S.cellDir = -S.cellDir;
+        else {
+          S.cellSort = key;
+          S.cellDir = key === "state" ? 1 : -1;
+        }
+        if (last) buildCells(last.query, last.b);
+        save();
+      });
+    // A table row and its cell on the chart light up together.
+    el("table-body").addEventListener("pointerover", (e) => {
+      const tr = e.target.closest("tr");
+      if (!tr) return;
+      tableHover = { c: Number(tr.dataset.c), r: Number(tr.dataset.r) };
+      requestDraw();
+    });
+    el("table-body").addEventListener("pointerleave", () => {
+      tableHover = null;
+      requestDraw();
+    });
+    bindPanels();
+    bindTopBar();
+  }
+
+  function followMode() {
+    return S.diagonal
+      ? "diagonal"
+      : S.coupled
+        ? "coupled"
+        : S.refit
+          ? "refit"
+          : "free";
+  }
+  function tool() {
+    return S.lens ? "lens" : S.select ? "select" : "pan";
+  }
+  // How the price range follows a time zoom: one of four, never two at once.
+  function setFollow(mode) {
+    const was = followMode();
+    if (mode === was) return;
+    S.refit = mode === "refit";
+    S.coupled = mode === "coupled";
+    S.diagonal = mode === "diagonal";
+    if (mode === "refit") {
+      fit();
+      autoLevel();
+    }
+    if (mode === "diagonal") {
+      if (S.auto) autoLevel();
+      else if (S.m !== diagonalM(S.n)) {
+        transition = reduce
+          ? null
+          : { n: renderN(), m: renderM(), start: performance.now() };
+        S.m = diagonalM(S.n);
+      }
+    }
+    update();
+    recordCrumb(
+      { free: "Free axes", refit: "Refit", coupled: "Coupled", diagonal: "Diagonal" }[
+        mode
+      ],
+    );
+    save();
+  }
+  function setTool(next) {
+    S.select = next === "select";
+    S.lens = next === "lens";
+    if (S.select) S.tab = "context";
+    if (S.lens) el("tip").hidden = true;
+    update();
+    save();
+  }
+  // The largest inspector and drawer this window leaves room for: the chart
+  // keeps at least 480px of width, and its column keeps the chart header,
+  // 220px of plot, the drawer's tab bar and the status bar, however they wrap.
+  const sideMax = () => clamp(innerWidth - 520, 260, 560),
+    drawerMax = () => {
+      const part = (s) => root.querySelector(s).offsetHeight,
+        used =
+          part(".ol-chart-head") +
+          part(".ol-drawer-bar") +
+          part(".ol-status") +
+          part("#ol-loading") +
+          8;
+      return Math.max(120, part(".ol-chart") - used - 220);
+    };
+  // Inspector and drawer: open state and sizes, from S, within the window.
+  function applyPanels() {
+    const main = el("main"),
+      drawer = el("drawer"),
+      side = el("side-toggle"),
+      sideLabel = S.sideOpen ? "Collapse the inspector" : "Expand the inspector";
+    main.dataset.side = S.sideOpen ? "open" : "closed";
+    main.style.setProperty("--side-w", clamp(S.sideWidth, 260, sideMax()) + "px");
+    side.setAttribute("aria-expanded", String(S.sideOpen));
+    side.setAttribute("aria-label", sideLabel);
+    side.title = sideLabel;
+    drawer.dataset.open = String(S.drawerOpen);
+    drawer.style.setProperty(
+      "--drawer-h",
+      clamp(S.drawerHeight, 120, drawerMax()) + "px",
+    );
+    // A closed or switched drawer leaves no row outlined on the chart.
+    if (!(S.drawerOpen && S.drawer === "cells")) tableHover = null;
+    for (const tab of qsa("[data-drawer]")) {
+      const on = tab.dataset.drawer === S.drawer;
+      tab.setAttribute("aria-selected", String(on));
+      tab.tabIndex = on ? 0 : -1;
+      el("panel-" + tab.dataset.drawer).hidden = !on;
+    }
+    el("drawer-toggle").setAttribute("aria-expanded", String(S.drawerOpen));
+    el("drawer-toggle").setAttribute(
+      "aria-label",
+      S.drawerOpen ? "Close the drawer" : "Open the drawer",
+    );
+  }
+  function openDrawer(tab, open = true) {
+    S.drawer = tab;
+    S.drawerOpen = open;
+    update();
+    save();
+  }
+  // Drag, or arrow keys on a focused grip, resize the inspector and the drawer.
+  function bindGrip(grip, begin, onMove, onKey) {
+    grip.addEventListener("pointerdown", (e) => {
+      grip.setPointerCapture(e.pointerId);
+      grip.dataset.active = "true";
+      const start = { x: e.clientX, y: e.clientY };
+      const move = (ev) => onMove(ev.clientX - start.x, ev.clientY - start.y);
+      const end = () => {
+        grip.dataset.active = "false";
+        grip.removeEventListener("pointermove", move);
+        grip.removeEventListener("pointerup", end);
+        grip.removeEventListener("pointercancel", end);
+        save();
+      };
+      begin();
+      grip.addEventListener("pointermove", move);
+      grip.addEventListener("pointerup", end);
+      grip.addEventListener("pointercancel", end);
+    });
+    grip.addEventListener("keydown", (e) => {
+      if (onKey(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        applyPanels();
+        save();
+      }
+    });
+  }
+  function bindPanels() {
+    let width0 = 0,
+      height0 = 0;
+    bindGrip(
+      el("side-grip"),
+      () => (width0 = clamp(S.sideWidth, 260, sideMax())),
+      (dx) => {
+        S.sideWidth = clamp(width0 - dx, 260, sideMax());
+        applyPanels();
+      },
+      (key) => {
+        if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
+        S.sideWidth = clamp(
+          S.sideWidth + (key === "ArrowLeft" ? 16 : -16),
+          260,
+          sideMax(),
+        );
+        return true;
+      },
+    );
+    bindGrip(
+      el("drawer-grip"),
+      () => (height0 = clamp(S.drawerHeight, 120, drawerMax())),
+      (dx, dy) => {
+        S.drawerHeight = clamp(height0 - dy, 120, drawerMax());
+        applyPanels();
+      },
+      (key) => {
+        if (key !== "ArrowUp" && key !== "ArrowDown") return false;
+        S.drawerHeight = clamp(
+          S.drawerHeight + (key === "ArrowUp" ? 24 : -24),
+          120,
+          drawerMax(),
+        );
+        return true;
+      },
+    );
+    el("side-toggle").addEventListener("click", () => {
+      S.sideOpen = !S.sideOpen;
+      applyPanels();
+      save();
+    });
+    el("drawer-toggle").addEventListener("click", () =>
+      openDrawer(S.drawer, !S.drawerOpen),
+    );
+    const tabs = [...qsa("[data-drawer]")];
+    for (const tab of tabs) {
+      // A tab opens its panel; the open tab, clicked again, closes the drawer.
+      tab.addEventListener("click", () =>
+        openDrawer(
+          tab.dataset.drawer,
+          !(S.drawerOpen && S.drawer === tab.dataset.drawer),
+        ),
+      );
+      tab.addEventListener("keydown", (e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const next =
+          tabs[
+            (tabs.indexOf(tab) + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+              tabs.length
+          ];
+        openDrawer(next.dataset.drawer, S.drawerOpen);
+        next.focus();
+      });
+    }
+    el("open-cases").addEventListener("click", () => openDrawer("cases"));
+  }
+
+  // Popovers: one open at a time; outside clicks and Escape close them.
+  const pop = { open: null };
+  function closePop(restoreFocus = false) {
+    if (!pop.open) return false;
+    const { button, panel } = pop.open;
+    panel.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    pop.open = null;
+    if (restoreFocus) button.focus();
+    return true;
+  }
+  function bindPop(buttonId, panelId, onOpen) {
+    const button = el(buttonId),
+      panel = el(panelId);
+    button.addEventListener("click", () => {
+      if (pop.open?.panel === panel) {
+        closePop();
+        return;
+      }
+      closePop();
+      panel.hidden = false;
+      button.setAttribute("aria-expanded", "true");
+      pop.open = { button, panel };
+      if (onOpen) onOpen();
+    });
+  }
+  function setSheet(open) {
+    root.dataset.sheet = open ? "open" : "closed";
+    el("sheet-toggle").setAttribute("aria-expanded", String(open));
+    if (!open) closePop();
+  }
+  function bindTopBar() {
+    bindPop("res", "res-pop", () => {
+      nav.planeKey = "";
+      refreshPlane();
+    });
+    bindPop("hist", "hist-pop");
+    bindPop("help", "help-pop");
+    bindPop("evidence-info", "evidence-more");
+    document.addEventListener("pointerdown", (e) => {
+      if (
+        !pop.open ||
+        pop.open.panel.contains(e.target) ||
+        pop.open.button.contains(e.target) ||
+        // In the phone sheet a popover is part of the sheet's flow: closing it on
+        // pointerdown would shrink the sheet and move the control being tapped.
+        (root.dataset.sheet === "open" && el("controls").contains(e.target))
+      )
+        return;
+      closePop();
+    });
+    el("sheet-toggle").addEventListener("click", () =>
+      setSheet(root.dataset.sheet !== "open"),
+    );
+    el("sheet-close").addEventListener("click", () => setSheet(false));
+    for (const button of qsa("[data-follow]"))
+      button.addEventListener("click", () => setFollow(button.dataset.follow));
+    for (const button of qsa("[data-tool]"))
+      button.addEventListener("click", () => setTool(button.dataset.tool));
+    el("hist-back").addEventListener("click", () =>
+      goToCrumb(nav.crumbIndex - 1),
+    );
+    el("hist-fwd").addEventListener("click", () =>
+      goToCrumb(nav.crumbIndex + 1),
+    );
   }
 
   let markState = {
@@ -3588,21 +4600,30 @@
           down: "Lower POC first",
         }
       : { up: "Higher POC", flat: "Same price row", down: "Lower POC" };
+    // One row per outcome: matching share, all-states share, their difference
+    // in points, and the two as paired bars on the same 0–100% scale.
     for (const kind of ["up", "flat", "down"]) {
-      const p = supported ? sample[kind] / sample.n : 0,
-        bp = base?.n ? base[kind] / base.n : 0;
+      const baseOk = Boolean(base && base.n >= 30),
+        p = supported ? sample[kind] / sample.n : 0,
+        bp = baseOk ? base[kind] / base.n : 0,
+        diff = Math.round(p * 100) - Math.round(bp * 100);
       el("label-" + kind).textContent = labels[kind];
       el("prob-" + kind).textContent = supported
         ? Math.round(p * 100) + "%"
         : sample
           ? sample[kind] + " cases"
           : "—";
-      el("bar-" + kind).style.width = p * 100 + "%";
-      el("base-" + kind).style.width =
-        (base && base.n >= 30 ? bp * 100 : 0) + "%";
       el("base-prob-" + kind).textContent = base
-        ? `All states ${base.n >= 30 ? Math.round(bp * 100) + "%" : base[kind] + " cases"}`
-        : "All states —";
+        ? baseOk
+          ? Math.round(bp * 100) + "%"
+          : base[kind] + " cases"
+        : "—";
+      el("diff-" + kind).textContent =
+        supported && baseOk
+          ? (diff > 0 ? "+" : diff < 0 ? "−" : "±") + Math.abs(diff)
+          : "—";
+      el("bar-" + kind).style.width = p * 100 + "%";
+      el("base-" + kind).style.width = bp * 100 + "%";
       root
         .querySelector('[data-case-direction="' + kind + '"]')
         .setAttribute(
@@ -3611,7 +4632,10 @@
             (sample
               ? " · " + sample[kind] + " of " + sample.n + " matching cases"
               : "") +
-            " · inspect evidence",
+            (supported && baseOk
+              ? ` · ${Math.round(p * 100)}% against ${Math.round(bp * 100)}% in all states`
+              : "") +
+            " · inspect these cases",
         );
     }
     el("case-n").textContent = sample ? integer(sample.n) : "—";
@@ -3633,12 +4657,42 @@
           ? " Barriers use the first column-end POC crossing; trade first-touch is not observable here."
           : " Both cones show historical POC movement.") +
         " Every outcome ends by the anchor.";
+    el("evidence-brief").textContent = e.error
+      ? "Choose a completed column containing trades."
+      : supported
+        ? "Empirical shares, not calibrated odds."
+        : "Below 30 matches: percentages withheld.";
     evidenceCases(e);
   }
+  // The drawer's cases table: sortable, fifty to a page, each date a jump
+  // into replay. Rebuilt only when the evidence or the table's own state moves.
+  const CASES_PAGE = 50;
+  let casesKey = "",
+    casesEvidence = null;
   function evidenceCases(e) {
+    if (!(S.drawerOpen && S.drawer === "cases")) return;
+    const key = [
+      S.caseFilter,
+      S.casePage,
+      S.caseSort,
+      S.caseDir,
+      S.horizon,
+      S.evidenceKind,
+      stepT(),
+      stepP(),
+    ].join("|");
+    if (e === casesEvidence && key === casesKey) return;
+    casesEvidence = e;
+    casesKey = key;
     const list = el("case-list"),
       { sample, field } = evidenceTotals(e);
     el("case-filter").value = S.caseFilter || "all";
+    for (const button of qsa("[data-case-sort]")) {
+      const th = button.parentElement;
+      if (button.dataset.caseSort === S.caseSort)
+        th.setAttribute("aria-sort", S.caseDir > 0 ? "ascending" : "descending");
+      else th.removeAttribute("aria-sort");
+    }
     if (e.error) {
       list.replaceChildren();
       el("case-definition").textContent = e.error;
@@ -3660,33 +4714,49 @@
         (c) => c[field] === { up: 1, flat: 0, down: -1 }[filter],
       );
     if (filter === "failure") rows = rows.filter((c) => c[field] !== modalSign);
-    rows = rows.slice().reverse();
-    const pageSize = 5,
-      pages = Math.max(1, Math.ceil(rows.length / pageSize));
+    const barrier = S.evidenceKind === "barrier",
+      value = {
+        date: (c) => c.c,
+        outcome: (c) => (barrier ? c.first : c.direction),
+        change: (c) => c.delta,
+        poc: (c) => c.poc,
+        excursion: (c) => c.max - c.min,
+        buy: (c) => c.buyShare,
+      }[S.caseSort];
+    rows = rows
+      .slice()
+      .sort(
+        (x, y) =>
+          (value(x) < value(y) ? -1 : value(x) > value(y) ? 1 : 0) *
+            S.caseDir || y.c - x.c,
+      );
+    const pages = Math.max(1, Math.ceil(rows.length / CASES_PAGE));
     S.casePage = clamp(S.casePage || 0, 0, pages - 1);
     el("case-definition").textContent =
       filter === "failure"
         ? `Cases opposing the matching sample’s most common outcome (${modal}). This is a retrospective comparison.`
-        : "Open a date to inspect its recorded starting state in replay. Excursions use column-end POCs.";
-    const fragment = document.createDocumentFragment();
+        : "Open a date to replay its recorded starting state. Excursions use column-end POCs.";
+    const fragment = document.createDocumentFragment(),
+      cell = (tr, content) => {
+        const td = document.createElement("td");
+        td.append(content);
+        tr.append(td);
+      };
     for (const c of rows.slice(
-      S.casePage * pageSize,
-      (S.casePage + 1) * pageSize,
+      S.casePage * CASES_PAGE,
+      (S.casePage + 1) * CASES_PAGE,
     )) {
-      const row = document.createElement("div");
-      row.className = "ol-case-row";
-      const button = document.createElement("button");
+      const tr = document.createElement("tr"),
+        button = document.createElement("button");
       button.type = "button";
       button.className = "cursor-interaction";
       button.dataset.caseAnchor = String((c.c + 1) * stepT());
-      button.textContent = dateShort((c.c + 1) * stepT()) + " UTC";
-      row.append(button);
-      const result = document.createElement("div");
-      result.className = "ol-case-result";
-      const outcome = document.createElement("span"),
-        amount = document.createElement("span");
-      outcome.textContent =
-        S.evidenceKind === "barrier"
+      button.textContent = dateShort((c.c + 1) * stepT());
+      button.title = "Replay this case";
+      cell(tr, button);
+      cell(
+        tr,
+        barrier
           ? (c.first > 0
               ? "Upper first"
               : c.first < 0
@@ -3699,26 +4769,28 @@
             ? "Higher"
             : c.delta < 0
               ? "Lower"
-              : "Same row";
-      amount.textContent =
-        (c.delta > 0 ? "+" : "") + price(c.delta * stepP() * PR) + " USDT";
-      result.append(outcome, amount);
-      row.append(result);
-      const range = document.createElement("div");
-      range.className = "ol-muted";
-      range.textContent = `POC ${price((c.poc + 0.5) * stepP() * PR)} → ${price((c.finalPoc + 0.5) * stepP() * PR)} · ${Math.round(c.buyShare * 100)}% buy`;
-      row.append(range);
-      const adverse = document.createElement("div");
-      adverse.className = "ol-muted";
-      adverse.textContent = `Excursion ${c.min > 0 ? "+" : ""}${price(c.min * stepP() * PR)} / +${price(c.max * stepP() * PR)} USDT`;
-      row.append(adverse);
-      fragment.append(row);
+              : "Same row",
+      );
+      cell(tr, (c.delta > 0 ? "+" : "") + price(c.delta * stepP() * PR));
+      cell(
+        tr,
+        `${price((c.poc + 0.5) * stepP() * PR)} → ${price((c.finalPoc + 0.5) * stepP() * PR)}`,
+      );
+      cell(
+        tr,
+        `${c.min > 0 ? "+" : ""}${price(c.min * stepP() * PR)} / +${price(c.max * stepP() * PR)}`,
+      );
+      cell(tr, Math.round(c.buyShare * 100) + "%");
+      fragment.append(tr);
     }
     if (!rows.length) {
-      const empty = document.createElement("div");
-      empty.className = "ol-evidence-note";
-      empty.textContent = "No qualifying cases in this loaded history.";
-      fragment.append(empty);
+      const tr = document.createElement("tr"),
+        td = document.createElement("td");
+      td.colSpan = 6;
+      td.className = "ol-muted";
+      td.textContent = "No qualifying cases in this loaded history.";
+      tr.append(td);
+      fragment.append(tr);
     }
     list.replaceChildren(fragment);
     el("case-page").textContent = rows.length
@@ -3804,15 +4876,15 @@
         save();
         return;
       }
+      // An outcome row opens its cases in the drawer.
       const direction = event.target.closest("[data-case-direction]");
       if (direction) {
         S.caseFilter = direction.dataset.caseDirection;
         S.casePage = 0;
-        el("cases").open = true;
-        evidenceUI(calcEvidence());
-        save();
-        return;
+        openDrawer("cases");
       }
+    });
+    el("case-list").addEventListener("click", (event) => {
       const anchor = event.target.closest("[data-case-anchor]");
       if (anchor) {
         const base = Number(anchor.dataset.caseAnchor),
@@ -3850,7 +4922,7 @@
     el("case-filter").addEventListener("change", () => {
       S.caseFilter = el("case-filter").value;
       S.casePage = 0;
-      evidenceUI(calcEvidence());
+      evidenceCases(calcEvidence());
       save();
     });
     for (const [id, step] of [
@@ -3859,7 +4931,19 @@
     ])
       el(id).addEventListener("click", () => {
         S.casePage = (S.casePage || 0) + step;
-        evidenceUI(calcEvidence());
+        evidenceCases(calcEvidence());
+      });
+    for (const button of qsa("[data-case-sort]"))
+      button.addEventListener("click", () => {
+        const key = button.dataset.caseSort;
+        if (S.caseSort === key) S.caseDir = -S.caseDir;
+        else {
+          S.caseSort = key;
+          S.caseDir = -1;
+        }
+        S.casePage = 0;
+        evidenceCases(calcEvidence());
+        save();
       });
   }
 
@@ -4062,6 +5146,7 @@
         b.addEventListener("mouseenter", show);
         b.addEventListener("focus", show);
         b.addEventListener("click", () => changeResolution(n, m));
+        b.tabIndex = -1;
         nav.planeButtons.push(b);
         frag.append(b);
       }
@@ -4070,6 +5155,31 @@
     for (let n = 0; n <= N_MAX; n++)
       frag.append(label(n % 4 === 0 ? String(n) : ""));
     el("plane").replaceChildren(frag);
+  }
+  // The plane is one tab stop: arrow keys move through it, Enter chooses.
+  function planeButton(n, m) {
+    return nav.planeButtons[(M_MAX - m) * (N_MAX + 1) + n];
+  }
+  function focusPlaneCell(n, m) {
+    const target = planeButton(n, m);
+    for (const b of nav.planeButtons) b.tabIndex = b === target ? 0 : -1;
+    target.focus();
+  }
+  function planeKeys(e) {
+    const b = e.target.closest("button");
+    if (!b || !nav.planeButtons) return;
+    let n = Number(b.dataset.n),
+      m = Number(b.dataset.m);
+    if (e.key === "ArrowLeft") n--;
+    else if (e.key === "ArrowRight") n++;
+    else if (e.key === "ArrowUp") m++;
+    else if (e.key === "ArrowDown") m--;
+    else if (e.key === "Home") n = 0;
+    else if (e.key === "End") n = N_MAX;
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+    focusPlaneCell(clamp(n, 0, N_MAX), clamp(m, 0, M_MAX));
   }
   // Cell size for the plane's hover text: whole pixels, or words at the extremes,
   // per axis when the two disagree (a sliver can be taller than the view).
@@ -4139,6 +5249,11 @@
         b.setAttribute("aria-label", text);
       }
     }
+    // The tab stop is the current level, unless focus is already in the plane.
+    const focused = el("plane").contains(document.activeElement)
+      ? document.activeElement
+      : planeButton(S.n, S.m);
+    for (const b of nav.planeButtons) b.tabIndex = b === focused ? 0 : -1;
   }
   function changeResolution(n, m, timeOnly = false) {
     n = clamp(Math.round(n), 0, N_MAX);
@@ -4213,41 +5328,55 @@
       s.replay,
     ].join("|");
   }
+  function crumbLabel(c) {
+    return c.label === "Level"
+      ? dur(BASE * 2 ** c.state.n) + " / " + price(PR * 2 ** c.state.m)
+      : c.label === "Zoom"
+        ? "Zoom " + dur((c.state.tB - c.state.tA) * BASE)
+        : c.label;
+  }
+  function crumbTitle(c) {
+    return `${dateShort(c.state.tA)} UTC · ${dur((c.state.tB - c.state.tA) * BASE)} · ${dur(BASE * 2 ** c.state.n)} × ${price(PR * 2 ** c.state.m)} USDT`;
+  }
+  function goToCrumb(i) {
+    const c = nav.crumbs[i];
+    if (!c) return;
+    Object.assign(S, c.state, {
+      selection: c.state.selection?.slice() || null,
+    });
+    nav.crumbIndex = i;
+    confine();
+    hover = null;
+    el("tip").hidden = true;
+    update();
+    renderCrumbs();
+    save();
+  }
+  // History: back and forward in the bar, the whole trail in its popover.
   function renderCrumbs() {
     const frag = document.createDocumentFragment();
     nav.crumbs.forEach((c, i) => {
-      if (i) {
-        const s = document.createElement("span");
-        s.textContent = "›";
-        s.setAttribute("aria-hidden", "true");
-        frag.append(s);
-      }
       const b = document.createElement("button");
       b.type = "button";
       b.className = "cursor-interaction";
-      b.textContent =
-        c.label === "Level"
-          ? dur(BASE * 2 ** c.state.n) + " / " + price(PR * 2 ** c.state.m)
-          : c.label === "Zoom"
-            ? "Zoom " + dur((c.state.tB - c.state.tA) * BASE)
-            : c.label;
+      b.textContent = crumbLabel(c);
       b.setAttribute("aria-current", i === nav.crumbIndex ? "step" : "false");
-      b.title = `${dateShort(c.state.tA)} UTC · ${dur((c.state.tB - c.state.tA) * BASE)} · ${dur(BASE * 2 ** c.state.n)} × ${price(PR * 2 ** c.state.m)} USDT`;
+      b.title = crumbTitle(c);
       b.addEventListener("click", () => {
-        Object.assign(S, c.state, {
-          selection: c.state.selection?.slice() || null,
-        });
-        nav.crumbIndex = i;
-        confine();
-        hover = null;
-        el("tip").hidden = true;
-        update();
-        renderCrumbs();
-        save();
+        goToCrumb(i);
+        closePop();
       });
       frag.append(b);
     });
     el("breadcrumbs").replaceChildren(frag);
+    const back = nav.crumbs[nav.crumbIndex - 1],
+      forward = nav.crumbs[nav.crumbIndex + 1];
+    el("hist-back").disabled = !back;
+    el("hist-fwd").disabled = !forward;
+    el("hist-back").title = back ? `Back to ${crumbLabel(back)}` : "Back";
+    el("hist-fwd").title = forward
+      ? `Forward to ${crumbLabel(forward)}`
+      : "Forward";
   }
   function recordCrumb(label) {
     if (!ready) return;
@@ -4261,22 +5390,21 @@
     renderCrumbs();
   }
   function updateNavigation() {
-    for (const field of ["auto", "coupled", "diagonal", "refit", "lens"])
-      el(field).setAttribute("aria-pressed", String(S[field]));
+    el("auto").setAttribute("aria-pressed", String(S.auto));
     el("lens-depth").value = String(clamp(Math.round(S.lensDepth) || 2, 1, 4));
     el("lens-pin").hidden = !S.lens;
-    el("auto").textContent = S.auto ? "Auto level" : "Level locked";
     const g = navGeometry(),
       px = (stepT() * g.w) / (S.tB - S.tA),
       py = (stepP() * g.h) / (S.pB - S.pA),
       fmt = (x) => (x < 1 ? x.toFixed(1) : Math.round(x));
-    el("pixel-state").textContent = `${fmt(px)} × ${fmt(py)} px / cell`;
+    // The one pixels-per-cell readout, in the status bar.
+    el("pixel-state").textContent = `${fmt(px)} × ${fmt(py)} px per cell`;
     nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)`;
     if (!nav.planeHover) setPlaneStatus(nav.planeStatus);
     el("gesture").textContent = S.lens
-      ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · L releases"
+      ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · V: pan"
       : S.select
-        ? "Drag a rectangle · base-cell edges"
+        ? "Drag a rectangle on base-cell edges · then back to pan"
         : S.coupled
           ? "Wheel / pinch: time + price · Alt: lens"
           : S.diagonal
@@ -4574,50 +5702,6 @@
       recordCrumb(S.auto ? "Auto" : "Locked");
       save();
     });
-    el("coupled").addEventListener("click", () => {
-      S.coupled = !S.coupled;
-      if (S.coupled) {
-        S.refit = false;
-        S.diagonal = false;
-      }
-      update();
-      save();
-    });
-    el("diagonal").addEventListener("click", () => {
-      S.diagonal = !S.diagonal;
-      if (S.diagonal) {
-        S.refit = false;
-        S.coupled = false;
-        if (S.auto) autoLevel();
-        else if (S.m !== diagonalM(S.n)) {
-          transition = reduce
-            ? null
-            : { n: renderN(), m: renderM(), start: performance.now() };
-          S.m = diagonalM(S.n);
-        }
-      }
-      update();
-      recordCrumb(S.diagonal ? "Diagonal" : "Free axes");
-      save();
-    });
-    el("refit").addEventListener("click", () => {
-      S.refit = !S.refit;
-      if (S.refit) {
-        S.coupled = false;
-        S.diagonal = false;
-        fit();
-        autoLevel();
-      }
-      update();
-      recordCrumb("Refit");
-      save();
-    });
-    el("lens").addEventListener("click", () => {
-      S.lens = !S.lens;
-      if (S.lens) el("tip").hidden = true;
-      update();
-      save();
-    });
     el("lens-depth").addEventListener("change", () => {
       S.lensDepth = clamp(Number(el("lens-depth").value) || 2, 1, 4);
       requestDraw();
@@ -4634,6 +5718,7 @@
     el("plane").addEventListener("focusout", (e) => {
       if (!el("plane").contains(e.relatedTarget)) leavePlane();
     });
+    el("plane").addEventListener("keydown", planeKeys);
     canvas.addEventListener("pointerdown", (e) => {
       if (!ready) return;
       const p = at(e);
@@ -4768,6 +5853,8 @@
             ? "Selection"
             : "Pan"
           : "Anchor";
+      // A finished selection hands the pointer back to Pan; the selection stays.
+      if (!held && drag.moved && S.select) S.select = false;
       drag = null;
       nav.hold = false;
       if (
@@ -4792,6 +5879,7 @@
         nav.last = null;
         nav.alt = false;
         el("tip").hidden = true;
+        syncRowHover(null);
         requestDraw();
       }
     });
@@ -4854,12 +5942,22 @@
       }
       if (k === "l") {
         e.preventDefault();
-        el("lens").click();
+        setTool(S.lens ? "pan" : "lens");
+        return;
+      }
+      if (k === "s") {
+        e.preventDefault();
+        setTool(S.select ? "pan" : "select");
+        return;
+      }
+      if (k === "v") {
+        e.preventDefault();
+        setTool("pan");
         return;
       }
       if (k === "d") {
         e.preventDefault();
-        el("diagonal").click();
+        setFollow(S.diagonal ? "free" : "diagonal");
         return;
       }
       if (k === "enter" && e.target === canvas && (S.lens || nav.alt || nav.hold)) {
@@ -4904,6 +6002,13 @@
       }
       if (k === "escape") {
         e.preventDefault();
+        // Escape closes what is open first, then clears the lens and selection.
+        if (closePop(true)) return;
+        if (root.dataset.sheet === "open") {
+          setSheet(false);
+          el("sheet-toggle").focus();
+          return;
+        }
         S.lens = false;
         nav.hold = false;
         nav.alt = false;
@@ -4983,15 +6088,6 @@
       update();
       save();
     });
-  el("select").addEventListener("click", () => {
-    S.select = !S.select;
-    if (S.select) {
-      S.tab = "context";
-      S.lens = false;
-    }
-    update();
-    save();
-  });
   el("clear").addEventListener("click", () => {
     S.selection = null;
     recordCrumb("Selection cleared");
@@ -5042,7 +6138,7 @@
   bindNavigation();
   try {
     qsa("button,input,select").forEach((control) => (control.disabled = true));
-    el("market").textContent = PACK.live ? "LIVE MARKET" : "RECORDED MARKET";
+    el("market").textContent = PACK.live ? "LIVE" : "RECORDED";
     el("snapshot").textContent = PACK.live
       ? stamp(CUT).slice(0, 16) + " UTC"
       : date(CUT).toLocaleDateString("en-GB", {
@@ -5050,7 +6146,7 @@
           day: "2-digit",
           month: "short",
           year: "numeric",
-        }) + " · UTC";
+        });
     getColors();
     sources.recent = await unpack(PACK.blocks.recent, "recent");
     loadState.recent = "ready";

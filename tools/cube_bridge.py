@@ -12,7 +12,8 @@ one JSON spec of tiles, asks the service for each, reads the Arrow files through
 
 ``serve`` runs anywhere with the standard library. It serves ``index.html`` with the live
 pack in place of the recorded snapshot, and answers ``/cube/tile`` for finer tiles the page
-asks for. It obtains packs by running ``fetch`` through a command prefix such as
+asks for. The pack's cutoff is the last complete base column before the cube's data cutoff,
+fixed once per pack, and every tier and tile is bounded to it. It obtains packs by running ``fetch`` through a command prefix such as
 ``ssh HOST docker exec -i tdw-control-plane-market-state-1``, sending this file on stdin, or
 in-process when the reader is importable.
 
@@ -49,13 +50,13 @@ MAX_TILE_COLUMNS = 4096
 SOURCE = "Binance BTCUSDT spot · Origo market state cube"
 VENDOR_TYPES = {".js": "application/javascript", ".css": "text/css", ".txt": "text/plain", ".md": "text/markdown"}
 TIERS = (
-    {"id": "recent", "n": 0, "m": 0, "days": 7},
-    {"id": "reference", "n": 4, "m": 0, "days": 30},
     {"id": "overview", "n": 12, "m": 3},
+    {"id": "recent", "n": 0, "m": 0, "days": 7},
+    {"id": "reference", "n": 4, "m": 0, "days": 30, "complete": True},
 )
 NOTES = [
     "Every block is read live from the market state cube through its supported reader.",
-    "Recent has the last seven days at base resolution, including the unfinished last column.",
+    "Recent has the last seven days at base resolution up to the last complete base column before the cube's data cutoff.",
     "Reference has 30 days of completed 15-minute columns. Filter each candidate outcome to end before the replay anchor.",
     "Overview is contextual: 64 hours × 1000 USDT over the whole history.",
     "Finer detail for any window is fetched from the cube on demand.",
@@ -77,13 +78,8 @@ def fetch(spec: dict) -> dict:
     import numpy as np
     from origo.query.market_state_reader import query, read_table
 
-    def tile(n: int, m: int, b0: float | None, b1: float | None) -> tuple[dict, dict]:
-        request = {"tR": BASE_SECONDS * 2**n, "pR": BASE_PRICE * 2**m}
-        if b0 is not None:
-            request["t1"] = edge(b0)
-        if b1 is not None:
-            request["t2"] = edge(b1)
-        result = query(**request)
+    def tile(n: int, m: int, b0: float, b1: float) -> tuple[dict, dict]:
+        result = query(t1=edge(b0), t2=edge(b1), tR=BASE_SECONDS * 2**n, pR=BASE_PRICE * 2**m)
         cells = read_table(result.cells)
         grid = json.loads(cells.schema.metadata[b"origo.market_state"])["grid"]
         if (grid["time_exponent"], grid["price_exponent"]) != (n, m):
@@ -117,7 +113,8 @@ def fetch(spec: dict) -> dict:
                 "trades": summary["trade_count"], "buyTrades": summary["taker_buy_trade_count"],
             },
             "result_id": response["result_id"],
-            "last_column_unfinished": response["last_column_unfinished"],
+            "data_cutoff": response["data_cutoff"],
+            "state_token": response["state_token"],
         }
         return block, response
 
@@ -125,22 +122,21 @@ def fetch(spec: dict) -> dict:
         t = spec["tile"]
         block, response = tile(int(t["n"]), int(t["m"]), float(t["b0"]), float(t["b1"]))
         return {"cutoff": response["data_cutoff"], "block": block}
+    # One empty query fixes the cutoff; every tier is then bounded to the same base edge, so
+    # the pack cannot mix cube states even though the cube advances between the queries.
+    state = dict(query(t1=edge(0), t2=edge(0.001)).response)
+    cutoff = int(base_units(state["data_cutoff"]))
     blocks = {}
-    overview, response = tile(12, 3, None, None)
-    cutoff = base_units(response["data_cutoff"])
-    blocks["overview"] = overview
     for tier in TIERS:
-        if tier["id"] == "overview":
-            continue
         step = 2 ** tier["n"]
-        b1 = None if tier["n"] == 0 else (cutoff // step) * step
-        b0 = ((cutoff if b1 is None else b1) - tier["days"] * DAY) // step * step
+        b1 = (cutoff // step) * step if tier.get("complete") else cutoff
+        b0 = 0 if "days" not in tier else (b1 - tier["days"] * DAY) // step * step
         blocks[tier["id"]], _ = tile(tier["n"], tier["m"], b0, b1)
     return {
         "source": SOURCE, "t0": T0, "base_seconds": BASE_SECONDS, "base_price": BASE_PRICE,
-        "cutoff": response["data_cutoff"], "cutoffBase": cutoff, "snapshot": False, "live": True,
-        "canonical_through": response["canonical_through"], "state_token": response["state_token"],
-        "notes": NOTES, "blocks": blocks,
+        "cutoff": edge(cutoff), "cutoffBase": cutoff, "data_cutoff": state["data_cutoff"],
+        "canonical_through": state["canonical_through"], "state_token": state["state_token"],
+        "snapshot": False, "live": True, "notes": NOTES, "blocks": blocks,
     }
 
 
@@ -157,10 +153,10 @@ class Bridge:
     def run(self, spec: dict) -> dict:
         if self.remote is None:
             return fetch(spec)
-        command = [*shlex.split(self.remote), "python", "-", "fetch", json.dumps(spec)]
-        if command[0] == "ssh":
-            host = command[1]
-            command = ["ssh", host, " ".join(shlex.quote(part) for part in command[2:])]
+        prefix = shlex.split(self.remote)
+        # ssh hands the command to a remote shell, which splits it again; a local prefix does not.
+        argument = shlex.quote(json.dumps(spec)) if Path(prefix[0]).name == "ssh" else json.dumps(spec)
+        command = [*prefix, "python", "-", "fetch", argument]
         done = subprocess.run(command, input=Path(__file__).read_bytes(), capture_output=True, timeout=600)
         if done.returncode != 0:
             raise RuntimeError(done.stderr.decode(errors="replace").strip().splitlines()[-1] if done.stderr else f"fetch exited {done.returncode}")
@@ -198,7 +194,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, "text/html; charset=utf-8", self.bridge.html())
             elif url.path == "/cube/tile":
                 self.reply(200, "application/json", json.dumps(self.tile(parse_qs(url.query))).encode())
-            elif url.path.startswith("/vendor/") and (asset := self.bridge.page.parent / url.path[1:]).is_file():
+            elif (asset := self.vendor_file(url.path)) is not None:
                 self.reply(200, VENDOR_TYPES.get(asset.suffix, "application/octet-stream"), asset.read_bytes())
             else:
                 self.reply(404, "text/plain", b"not found")
@@ -207,15 +203,21 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as error:  # the page reports the message; nothing is substituted for the data
             self.reply(502, "application/json", json.dumps({"error": f"{type(error).__name__}: {error}"}).encode())
 
+    def vendor_file(self, path: str) -> Path | None:
+        """A file under vendor/ named by a flat file name; anything else is not served."""
+        name = path.removeprefix("/vendor/")
+        if path == name or Path(name).name != name or name.startswith("."):
+            return None
+        asset = self.bridge.page.parent / "vendor" / name
+        return asset if asset.is_file() else None
+
     def tile(self, args: dict) -> dict:
         n, m, b0, b1 = (float(args[key][0]) for key in ("n", "m", "b0", "b1"))
         if not (n.is_integer() and m.is_integer() and 0 <= n <= 20 and 0 <= m <= 9):
             raise ValueError("n must be 0..20 and m 0..9")
-        step = 2**int(n)
-        b0, b1 = max(0.0, (b0 // step) * step), max(0.0, -(-b1 // step) * step)
-        if b1 <= b0:
-            raise ValueError("empty tile")
-        if (b1 - b0) / step > MAX_TILE_COLUMNS:
+        if not (b0.is_integer() and b1.is_integer() and 0 <= b0 < b1):
+            raise ValueError("b0 and b1 must be base edges with b0 < b1")
+        if (b1 - b0) / 2 ** int(n) > MAX_TILE_COLUMNS:
             raise ValueError(f"tile wider than {MAX_TILE_COLUMNS} columns")
         return self.bridge.run({"tile": {"n": int(n), "m": int(m), "b0": b0, "b1": b1}})
 

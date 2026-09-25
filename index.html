@@ -3920,7 +3920,7 @@
     const step = 2 ** n,
       r = requestedBounds(),
       b0 = Math.floor(Math.min(r[0], CUT) / step) * step,
-      b1 = Math.ceil(Math.min(r[1], CUT) / step) * step;
+      b1 = Math.min(Math.ceil(Math.min(r[1], CUT) / step) * step, CUT);
     if (b1 <= b0 || (b1 - b0) / step > TILE_COLUMNS) return null;
     return { id: `tile:${n}:${m}:${b0}:${b1}`, n, m, b0, b1 };
   }

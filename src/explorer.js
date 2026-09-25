@@ -4084,6 +4084,8 @@
   }
   function endZoom(timeZoomed) {
     zoomStep(timeZoomed);
+    // While a zoom key is held the gesture goes on: its release ends it.
+    if (nav.zoomKeys.size) return;
     nav.zoomTimer = setTimeout(() => {
       if (nav.zoomTime) refitAfterGesture();
       nav.zoomTime = false;

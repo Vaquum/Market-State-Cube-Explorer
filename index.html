@@ -5615,10 +5615,11 @@
     addEventListener("scroll", hideHint, true);
     addEventListener("resize", hideHint);
     addEventListener("blur", hideHint);
+    // Any key but a modifier alone puts the label away.
     document.addEventListener(
       "keydown",
       (e) => {
-        if (e.key === "Escape") hideHint();
+        if (!["Shift", "Alt", "Control", "Meta"].includes(e.key)) hideHint();
       },
       true,
     );

@@ -1,0 +1,58 @@
+name: Deploy explorer
+on:
+  push:
+    branches: [main]
+concurrency:
+  group: deploy-main
+permissions:
+  contents: read
+jobs:
+  deploy:
+    name: Sync to the Origo host and start
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+      DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deploy configuration
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_DIR"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+      - name: Pin the host key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Sync the checkout
+        run: rsync -az --delete --exclude .git --exclude .env ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/"
+      - name: Write credentials and start
+        env:
+          EXPLORER_AUTH_USER: ${{ secrets.EXPLORER_AUTH_USER }}
+          EXPLORER_AUTH_PASS: ${{ secrets.EXPLORER_AUTH_PASS }}
+        run: |
+          test -n "$EXPLORER_AUTH_USER"
+          test -n "$EXPLORER_AUTH_PASS"
+          printf 'EXPLORER_AUTH_USER=%s\nEXPLORER_AUTH_PASS=%s\n' "$EXPLORER_AUTH_USER" "$EXPLORER_AUTH_PASS" \
+            | ssh "$DEPLOY_USER@$DEPLOY_HOST" "umask 077 && cat > '$DEPLOY_DIR/.env'"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_DIR' && docker compose up -d --build --remove-orphans && docker compose ps"
+      - name: Check the deployed explorer
+        env:
+          EXPLORER_AUTH_USER: ${{ secrets.EXPLORER_AUTH_USER }}
+          EXPLORER_AUTH_PASS: ${{ secrets.EXPLORER_AUTH_PASS }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 120 -u "$EXPLORER_AUTH_USER:$EXPLORER_AUTH_PASS" "http://$DEPLOY_HOST:8487/")
+            test "$code" = "200" && break
+            sleep 10
+          done
+          test "$code" = "200"
+          test "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "http://$DEPLOY_HOST:8487/")" = "401"

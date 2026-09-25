@@ -19,5 +19,6 @@ jobs:
       - run: node --check src/explorer.js
       - run: node --check src/state.js
       - run: node --check worker.js
-      - run: python3 -m py_compile tools/cube_bridge.py
+      - run: python3 -m py_compile tools/cube_bridge.py tools/market_state_reader.py
+      - run: printf 'EXPLORER_AUTH_USER=x\nEXPLORER_AUTH_PASS=y\n' > .env && docker compose config -q
       - run: npx --yes wrangler@4 deploy --dry-run --outdir /tmp/dry-run

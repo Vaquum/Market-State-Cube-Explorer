@@ -3950,9 +3950,15 @@
       `Fetching ${dur(BASE * 2 ** t.n)} by ${price(PR * 2 ** t.m)} USDT cells from the cube`;
     update();
     try {
-      const response = await fetch(
-          `/cube/tile?n=${t.n}&m=${t.m}&b0=${t.b0}&b1=${t.b1}`,
-        ),
+      // Resolved against the page but without any credentials the page's own URL
+      // may carry; the browser attaches the session's Basic credentials itself.
+      const target = new URL(
+        `/cube/tile?n=${t.n}&m=${t.m}&b0=${t.b0}&b1=${t.b1}&pack=${encodeURIComponent(PACK.state_token)}`,
+        location.href,
+      );
+      target.username = "";
+      target.password = "";
+      const response = await fetch(target),
         body = await response.json();
       if (body.error === "cube_changed") {
         // The cube holds another revision of history than this page; nothing is mixed.

@@ -4,10 +4,8 @@ compatibility_date = "2026-09-12"
 workers_dev = false
 preview_urls = false
 
-[assets]
-directory = "."
-binding = "ASSETS"
-run_worker_first = true
+[vars]
+EXPLORER_URL = "http://37.27.112.167:8487"
 
 [[routes]]
 pattern = "cube.vaquum.fi"

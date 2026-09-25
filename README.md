@@ -23,19 +23,11 @@ The Controls disclosure lists mouse, keyboard and touch gestures. Click or focus
 
 ## Live cube data
 
-`tools/cube_bridge.py` plugs the explorer into the Origo market state cube ([PRD-0022](https://github.com/Vaquum/Origo/issues/462)). The cube's query service runs on the production host and answers with paths to Arrow files on its own volume, so the bridge has two roles:
+On the Origo host the explorer runs beside the market state cube ([PRD-0022](https://github.com/Vaquum/Origo/issues/462)) and reads it live. The cube's query service answers with paths to Arrow files on its own volume, so `tools/cube_bridge.py` runs where that volume is mounted: it asks the service for tiles, reads the files through the cube's supported reader (`tools/market_state_reader.py`, a pinned copy from Origo 3.27.0) and serves `index.html` with a live pack in place of the recorded snapshot, behind HTTP Basic Auth.
 
-- **`fetch`** runs beside that volume, inside the `market-state` container. It asks the service for tiles, reads the Arrow files through the cube's supported reader (which renews their 24-hour clock) and prints them as MSC1 blocks in the snapshot's own JSON shape.
-- **`serve`** runs anywhere on the standard library. It serves `index.html` with a live pack in place of the recorded snapshot and answers `GET /cube/tile?n&m&b0&b1` for finer tiles. It reaches the volume through a command prefix and sends itself on stdin, or calls `fetch` in-process when the reader is importable.
+The live pack holds the same three tiers as the snapshot: the last seven days at base resolution, 30 completed days at 15 minutes, and the whole history at 64 hours × 1,000 USDT. Its cutoff is the last complete base column before the cube's data cutoff, fixed once per pack; every tier is bounded to it, the partitions the tiers share are checked to carry the same generation, revision and build id (the pack is read again once if the cube changed underneath), and the pack token digests every pin it read. It is rebuilt at most once a minute. When the requested level has no covering block, the page asks `GET /cube/tile?n&m&b0&b1&pack` for one tile of the visible window, at most 4,096 columns wide; a tile is refused unless every partition it read is one the page's pack read, at the same revision, and the page then asks for a reload rather than mixing two cube states. The header reads **LIVE MARKET** with the cutoff minute. Every value comes from the cube; nothing is substituted when a request fails, and the status line says why.
 
-```sh
-python3 tools/cube_bridge.py serve --port 8080 \
-  --remote "ssh 37.27.112.167 docker exec -i tdw-control-plane-market-state-1"
-```
-
-The live pack holds the same three tiers as the snapshot: the last seven days at base resolution, 30 completed days at 15 minutes, and the whole history at 64 hours × 1,000 USDT. Its cutoff is the last complete base column before the cube's data cutoff, fixed once per pack; every tier is bounded to it, the partitions the tiers share are checked to carry the same generation, revision and build id (the pack is read again once if the cube changed underneath), and the pack token digests every pin it read. It is rebuilt at most once a minute. When the requested level has no covering block, the page asks for one tile of the visible window, at most 4,096 columns wide, and the header reads **LIVE MARKET** with the cutoff minute. Every value comes from the cube; nothing is substituted when a request fails, and the status line says why.
-
-The committed `index.html` keeps the recorded snapshot, so the page also works from any static host, including the deployed Worker, and reads **RECORDED MARKET** there.
+The committed `index.html` keeps the recorded snapshot, so the page also works from a plain static server and reads **RECORDED MARKET** there.
 
 ## Recorded data
 
@@ -59,7 +51,7 @@ python3 tools/build.py --check
 node --check src/explorer.js
 node --check src/state.js
 node --check worker.js
-python3 -m py_compile tools/cube_bridge.py
+python3 -m py_compile tools/cube_bridge.py tools/market_state_reader.py
 npx wrangler@4 deploy --dry-run --outdir /tmp/dry-run
 ```
 
@@ -71,25 +63,18 @@ Edit `src/`, then rebuild the committed `index.html`. The build uses Python's st
 - `data/snapshot.json`: real recorded measures, compressed in three embedded blocks.
 - `vendor/`: pinned D3 7.9.0 and its license.
 - `tools/build.py`: assembles the portable page.
-- `tools/cube_bridge.py`: live data from the market state cube.
+- `tools/cube_bridge.py`: the server that reads the market state cube live; `tools/market_state_reader.py` is the cube's pinned reader.
 
 ## Deploy
 
-[cube.vaquum.fi](https://cube.vaquum.fi) is a Cloudflare Worker that serves the committed `index.html` as a static asset behind HTTP Basic Auth. `wrangler.toml` is the deploy contract: the Worker name (`market-state-cube-explorer`, the Worker connected to this repository in the dashboard), the custom domain and its DNS record come from it, and `.assetsignore` uploads nothing but `index.html`. `worker.js` runs before every request: plain HTTP is redirected to HTTPS, a request without matching credentials gets a `401` challenge, and without the two secrets below the Worker admits nobody. There is no workers.dev or preview URL.
+The explorer runs on the Origo host, `37.27.112.167`, as the Compose project `cube-explorer` in `/opt/cube-explorer`: `docker-compose.yml` builds the `Dockerfile` (Python 3.12, pyarrow, numpy), mounts the cube's result volume `tdw-control-plane_market-state` read-only at `/opt/origo/market-state`, uses the host network so the cube service is `127.0.0.1:8486`, and serves the page on port 8487 as a non-root user on a read-only filesystem. Credentials come from `/opt/cube-explorer/.env` (`EXPLORER_AUTH_USER`, `EXPLORER_AUTH_PASS`); without them the server refuses to start. The page is at `http://37.27.112.167:8487/`, plain HTTP, so the credentials travel unencrypted between the browser and the host.
 
-Cloudflare's Git integration deploys every push to `main`. One-time setup in the dashboard:
+Every push to `main` deploys through `.github/workflows/deploy.yml`: it syncs the checkout to the host with rsync, writes `.env` from the repository secrets, runs `docker compose up -d --build`, and then checks that the page answers 200 with the credentials and 401 without. It needs the secrets `DEPLOY_SSH_KEY`, `EXPLORER_AUTH_USER` and `EXPLORER_AUTH_PASS` and the variables `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_DIR` and `DEPLOY_KNOWN_HOSTS`.
 
-1. **Workers & Pages → Create → Git-connected Worker**, connect `Vaquum/Market-State-Cube-Explorer`, root directory `/`, no build command, deploy command `npx wrangler deploy`.
-2. After the first deploy, open the Worker's **Settings → Variables and Secrets** and add the secrets `AUTH_USER` and `AUTH_PASS`. Until both exist every request answers `401`.
+[cube.vaquum.fi](https://cube.vaquum.fi) is a Cloudflare Worker that only redirects to the explorer's address (`EXPLORER_URL` in `wrangler.toml`); Cloudflare's Git integration redeploys it on every push to `main`.
 
-The same secrets can be set from a logged-in shell with `npx wrangler@4 secret put AUTH_USER` and `npx wrangler@4 secret put AUTH_PASS`.
-
-Local check, with a git-ignored `.dev.vars` holding test values for `AUTH_USER` and `AUTH_PASS`:
+Local check of the server, which needs the cube volume and service and therefore runs on the host:
 
 ```sh
-npx wrangler@4 dev --local-protocol https
+EXPLORER_AUTH_USER=admin EXPLORER_AUTH_PASS=… python3 tools/cube_bridge.py --port 8487
 ```
-
-The local proxy rewrites the HTTPS redirect back to the dev protocol; in production it points at `https://cube.vaquum.fi`.
-
-This repository contains the visualization overlay. Server ingestion, live updates, corrections and Arrow delivery are separate work.

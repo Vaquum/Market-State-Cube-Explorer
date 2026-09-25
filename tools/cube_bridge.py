@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""Bridge between the explorer and the market state cube (Origo PRD-0022).
+"""Serve the explorer on the Origo host from the live market state cube (PRD-0022).
 
-The cube's query service answers with paths to Arrow files on its own volume, so the page
-cannot read it directly. This file has two roles:
+The cube's query service answers with paths to Arrow files on its own volume, so this server
+runs beside that volume. It asks the service for tiles, reads the files through the cube's
+supported reader (``market_state_reader.py``, a pinned copy, which renews each file's 24-hour
+clock) and hands the page MSC1 blocks in the shape of ``data/snapshot.json``.
 
-``fetch`` runs where the volume is mounted (the ``market-state`` container) and needs only
-pyarrow, numpy and ``origo.query.market_state_reader``, the supported cube reader. It takes
-one JSON spec of tiles, asks the service for each, reads the Arrow files through the reader
-(which renews their 24-hour clock) and prints a pack: the same JSON shape as
-``data/snapshot.json``, with each tile as a gzip+base64 MSC1 block.
+Routes, all behind HTTP Basic Auth except ``/healthz``:
 
-``serve`` runs anywhere with the standard library. It serves ``index.html`` with the live
-pack in place of the recorded snapshot, and answers ``/cube/tile`` for finer tiles the page
-asks for. The pack's cutoff is the last complete base column before the cube's data cutoff,
-fixed once per pack, and every tier and tile is bounded to it. It obtains packs by running ``fetch`` through a command prefix such as
-``ssh HOST docker exec -i tdw-control-plane-market-state-1``, sending this file on stdin, or
-in-process when the reader is importable.
+- ``/``: ``index.html`` with a live pack in place of the recorded snapshot. The pack holds the
+  three snapshot tiers cut at the last complete base column before the cube's data cutoff,
+  fixed once per pack; the partitions its tiers share must carry the same revision, and its
+  token digests every pin it read. It is rebuilt at most once a minute.
+- ``/vendor/<file>``: the vendored scripts, flat file names only.
+- ``/cube/tile?n&m&b0&b1&pack``: one finer tile, at most 4,096 columns, for the page holding
+  pack ``pack``; refused unless every partition it read is one that pack read, at the same
+  revision.
+
+Credentials come from ``EXPLORER_AUTH_USER`` and ``EXPLORER_AUTH_PASS``; the server refuses to
+start without them. ``MARKET_STATE_URL`` names the cube service (default ``http://127.0.0.1:8486``).
 
 MSC1 (little-endian): 32-byte header ``magic n m pad col0 col1 count 12x`` then columnar
 arrays volume f64, taker-buy volume f64, column u32, row u32, trades u32, taker-buy trades
@@ -29,26 +32,33 @@ import argparse
 import base64
 import gzip
 import hashlib
+import hmac
 import json
+import os
 import re
-import shlex
 import struct
-import subprocess
 import sys
 import threading
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from market_state_reader import query, read_table  # noqa: E402
 
 T0 = 1609459200
 BASE_SECONDS = 56.25
 BASE_PRICE = 125
 DAY = 1536  # base columns per day
 PACK_MAX_AGE_SECONDS = 60
+PACKS_HELD = 16
 MAX_TILE_COLUMNS = 4096
+CUBE_URL = os.environ.get("MARKET_STATE_URL", "http://127.0.0.1:8486")
 SOURCE = "Binance BTCUSDT spot · Origo market state cube"
+CHALLENGE = 'Basic realm="Market State Cube", charset="UTF-8"'
+CREDENTIALS = re.compile(r"^basic +([A-Za-z0-9+/]+={0,2})$", re.IGNORECASE)
 VENDOR_TYPES = {".js": "application/javascript", ".css": "text/css", ".txt": "text/plain", ".md": "text/markdown"}
 TIERS = (
     {"id": "overview", "n": 12, "m": 3},
@@ -72,68 +82,67 @@ def base_units(stamp: str) -> float:
     return (datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp() - T0) / BASE_SECONDS
 
 
-# ---------------------------------------------------------------- fetch (runs beside the volume)
+# ---------------------------------------------------------------- reading the cube
 
 
-def fetch(spec: dict) -> dict:
+def tile(n: int, m: int, b0: float, b1: float) -> tuple[dict, dict, dict]:
+    """One level-(n, m) block over base columns [b0, b1): the block, the response, its pins."""
     import numpy as np
-    from origo.query.market_state_reader import query, read_table
 
-    def tile(n: int, m: int, b0: float, b1: float) -> tuple[dict, dict, dict]:
-        result = query(t1=edge(b0), t2=edge(b1), tR=BASE_SECONDS * 2**n, pR=BASE_PRICE * 2**m)
-        cells = read_table(result.cells)
-        meta = json.loads(cells.schema.metadata[b"origo.market_state"])
-        grid = meta["grid"]
-        if (grid["time_exponent"], grid["price_exponent"]) != (n, m):
-            raise RuntimeError(f"Cube answered level {grid} for requested ({n}, {m}).")
-        pins = {pin[0]: tuple(pin[1:]) for pin in meta["pins"]}
-        col = cells.column("time_index").to_numpy().astype(np.uint64)
-        row = cells.column("price_index").to_numpy().astype(np.uint64)
-        order = np.lexsort((row, col))
-        columns = {
-            "vol": cells.column("volume").to_numpy()[order].astype("<f8"),
-            "tbvol": cells.column("taker_buy_volume").to_numpy()[order].astype("<f8"),
-            "col": col[order].astype("<u4"),
-            "row": row[order].astype("<u4"),
-            "cnt": cells.column("trade_count").to_numpy()[order].astype("<u4"),
-            "tbcnt": cells.column("taker_buy_trade_count").to_numpy()[order].astype("<u4"),
-        }
-        response = dict(result.response)
-        cutoff = base_units(response["data_cutoff"])
-        start = base_units(response["effective"]["t1"])
-        stop = min(base_units(response["effective"]["t2"]), cutoff)
-        col0, col1 = int(start // 2**n), int(-(-stop // 2**n))
-        count = len(col)
-        header = struct.pack("<4sBBHIII12x", b"MSC1", n, m, 0, col0, col1, count)
-        payload = header + b"".join(columns[key].tobytes() for key in ("vol", "tbvol", "col", "row", "cnt", "tbcnt"))
-        summary = read_table(result.summary).to_pylist()[0]
-        block = {
-            "n": n, "m": m, "b0": start, "b1": stop, "start": edge(start), "end": edge(stop),
-            "count": count, "col0": col0, "col1": col1, "encoding": "gzip+base64", "layout": "MSC1",
-            "gzip_base64": base64.b64encode(gzip.compress(payload, compresslevel=6)).decode(),
-            "totals": {
-                "volume": summary["volume"], "buyVolume": summary["taker_buy_volume"],
-                "trades": summary["trade_count"], "buyTrades": summary["taker_buy_trade_count"],
-            },
-            "result_id": response["result_id"],
-            "data_cutoff": response["data_cutoff"],
-            "state_token": response["state_token"],
-        }
-        return block, response, pins
+    result = query(t1=edge(b0), t2=edge(b1), tR=BASE_SECONDS * 2**n, pR=BASE_PRICE * 2**m, url=CUBE_URL)
+    cells = read_table(result.cells, url=CUBE_URL)
+    meta = json.loads(cells.schema.metadata[b"origo.market_state"])
+    grid = meta["grid"]
+    if (grid["time_exponent"], grid["price_exponent"]) != (n, m):
+        raise RuntimeError(f"Cube answered level {grid} for requested ({n}, {m}).")
+    pins = {pin[0]: list(pin[1:]) for pin in meta["pins"]}
+    col = cells.column("time_index").to_numpy().astype(np.uint64)
+    row = cells.column("price_index").to_numpy().astype(np.uint64)
+    order = np.lexsort((row, col))
+    columns = {
+        "vol": cells.column("volume").to_numpy()[order].astype("<f8"),
+        "tbvol": cells.column("taker_buy_volume").to_numpy()[order].astype("<f8"),
+        "col": col[order].astype("<u4"),
+        "row": row[order].astype("<u4"),
+        "cnt": cells.column("trade_count").to_numpy()[order].astype("<u4"),
+        "tbcnt": cells.column("taker_buy_trade_count").to_numpy()[order].astype("<u4"),
+    }
+    response = dict(result.response)
+    cutoff = base_units(response["data_cutoff"])
+    start = base_units(response["effective"]["t1"])
+    stop = min(base_units(response["effective"]["t2"]), cutoff)
+    col0, col1 = int(start // 2**n), int(-(-stop // 2**n))
+    count = len(col)
+    header = struct.pack("<4sBBHIII12x", b"MSC1", n, m, 0, col0, col1, count)
+    payload = header + b"".join(columns[key].tobytes() for key in ("vol", "tbvol", "col", "row", "cnt", "tbcnt"))
+    summary = read_table(result.summary, url=CUBE_URL).to_pylist()[0]
+    block = {
+        "n": n, "m": m, "b0": start, "b1": stop, "start": edge(start), "end": edge(stop),
+        "count": count, "col0": col0, "col1": col1, "encoding": "gzip+base64", "layout": "MSC1",
+        "gzip_base64": base64.b64encode(gzip.compress(payload, compresslevel=6)).decode(),
+        "totals": {
+            "volume": summary["volume"], "buyVolume": summary["taker_buy_volume"],
+            "trades": summary["trade_count"], "buyTrades": summary["taker_buy_trade_count"],
+        },
+        "result_id": response["result_id"],
+        "data_cutoff": response["data_cutoff"],
+        "state_token": response["state_token"],
+    }
+    return block, response, pins
 
-    if "tile" in spec:
-        t = spec["tile"]
-        block, response, pins = tile(int(t["n"]), int(t["m"]), float(t["b0"]), float(t["b1"]))
-        return {"cutoff": response["data_cutoff"], "block": block, "pins": pins}
-    # The tiers are separate queries. One empty query fixes the cutoff and every tier is
-    # bounded to that base edge; the partitions the tiers share must then carry the same
-    # generation, revision and build id, or the cube changed under the pack and it is read
-    # again. The pack token digests the pins the whole pack read.
+
+def pack() -> tuple[dict, dict]:
+    """The three tiers as one consistent pack, plus every pin the pack read.
+
+    One empty query fixes the cutoff and every tier is bounded to that base edge; the
+    partitions the tiers share must then carry the same generation, revision and build id,
+    or the cube changed under the pack and it is read again once.
+    """
     for _attempt in range(2):
-        state = dict(query(t1=edge(0), t2=edge(0.001)).response)
+        state = dict(query(t1=edge(0), t2=edge(0.001), url=CUBE_URL).response)
         cutoff = int(base_units(state["data_cutoff"]))
         blocks: dict[str, dict] = {}
-        pinned: dict[str, tuple] = {}
+        pinned: dict[str, list] = {}
         conflict = None
         for tier in TIERS:
             step = 2 ** tier["n"]
@@ -151,57 +160,59 @@ def fetch(spec: dict) -> dict:
         "cutoff": edge(cutoff), "cutoffBase": cutoff, "data_cutoff": state["data_cutoff"],
         "canonical_through": state["canonical_through"], "state_token": digest,
         "partitions": len(pinned), "snapshot": False, "live": True, "notes": NOTES, "blocks": blocks,
-        "pins": pinned,
-    }
+    }, pinned
 
 
-# ---------------------------------------------------------------- serve (runs anywhere)
+# ---------------------------------------------------------------- serving the page
 
 
 class CubeChanged(Exception):
     """A tile read a partition at a different revision than the pack the page holds."""
 
 
-class Bridge:
-    def __init__(self, page: Path, remote: str | None) -> None:
-        self.page, self.remote = page, remote
+class Explorer:
+    def __init__(self, page: Path, user: str, password: str) -> None:
+        self.page = page
+        self.expected = f"{user}:{password}".encode()
         self.lock = threading.Lock()
         self.pack: dict | None = None
-        self.pins: dict[str, list] = {}
+        self.pins: dict[str, dict[str, list]] = {}  # pack token -> the pins that pack read
         self.packed_at = 0.0
 
-    def run(self, spec: dict) -> dict:
-        if self.remote is None:
-            return fetch(spec)
-        prefix = shlex.split(self.remote)
-        # ssh hands the command to a remote shell, which splits it again; a local prefix does not.
-        argument = shlex.quote(json.dumps(spec)) if Path(prefix[0]).name == "ssh" else json.dumps(spec)
-        command = [*prefix, "python", "-", "fetch", argument]
-        done = subprocess.run(command, input=Path(__file__).read_bytes(), capture_output=True, timeout=600)
-        if done.returncode != 0:
-            raise RuntimeError(done.stderr.decode(errors="replace").strip().splitlines()[-1] if done.stderr else f"fetch exited {done.returncode}")
-        return json.loads(done.stdout)
+    def allows(self, header: str | None) -> bool:
+        match = CREDENTIALS.match(header or "")
+        if not match or len(match.group(1)) % 4:
+            return False
+        return hmac.compare_digest(base64.b64decode(match.group(1)), self.expected)
 
     def current_pack(self) -> dict:
         with self.lock:
             if self.pack is None or time.monotonic() - self.packed_at > PACK_MAX_AGE_SECONDS:
                 started = time.monotonic()
-                self.pack = self.run({"pack": True})
-                self.pins = {key: list(identity) for key, identity in self.pack.pop("pins").items()}
+                self.pack, pinned = pack()
+                self.pins[self.pack["state_token"]] = pinned
+                while len(self.pins) > PACKS_HELD:
+                    del self.pins[next(iter(self.pins))]
                 self.packed_at = time.monotonic()
                 cells = sum(b["count"] for b in self.pack["blocks"].values())
                 print(f"pack built in {self.packed_at - started:.1f} s, cutoff {self.pack['cutoff']}, {cells} cells", flush=True)
             return self.pack
 
-    def tile(self, spec: dict) -> dict:
-        """One tile, refused when it read any pack partition at another revision."""
-        answer = self.run({"tile": spec})
-        pins = {key: list(identity) for key, identity in answer.pop("pins").items()}
+    def tile(self, spec: dict, token: str) -> dict:
+        """One tile for the page holding pack ``token``.
+
+        Every partition the tile read must be one that pack read, at the same generation,
+        revision and build id; a pack this server no longer holds is refused the same way.
+        """
         with self.lock:
-            changed = [key for key, identity in pins.items() if key in self.pins and self.pins[key] != identity]
+            held = self.pins.get(token)
+        if held is None:
+            raise CubeChanged("the page's pack is no longer held by the server")
+        block, response, pins = tile(spec["n"], spec["m"], spec["b0"], spec["b1"])
+        changed = [key for key, identity in pins.items() if held.get(key) != identity]
         if changed:
-            raise CubeChanged(f"{len(changed)} partition(s) changed since the page loaded, first {changed[0]}")
-        return answer
+            raise CubeChanged(f"{len(changed)} partition(s) differ from the page's pack, first {changed[0]}")
+        return {"cutoff": response["data_cutoff"], "block": block}
 
     def html(self) -> bytes:
         text = self.page.read_text(encoding="utf-8")
@@ -214,18 +225,32 @@ class Bridge:
             raise RuntimeError("index.html has no origo-lens-data block; run tools/build.py first.")
         return replaced.encode()
 
+    def vendor_file(self, path: str) -> Path | None:
+        """A file under vendor/ named by a flat file name; anything else is not served."""
+        name = path.removeprefix("/vendor/")
+        if path == name or Path(name).name != name or name.startswith("."):
+            return None
+        asset = self.page.parent / "vendor" / name
+        return asset if asset.is_file() else None
+
 
 class Handler(BaseHTTPRequestHandler):
-    bridge: Bridge
+    explorer: Explorer
 
     def do_GET(self) -> None:
         url = urlsplit(self.path)
+        if url.path == "/healthz":
+            self.reply(200, "text/plain", b"ok")
+            return
+        if not self.explorer.allows(self.headers.get("Authorization")):
+            self.reply(401, "text/plain", b"Authentication required.", {"WWW-Authenticate": CHALLENGE})
+            return
         try:
             if url.path in ("/", "/index.html"):
-                self.reply(200, "text/html; charset=utf-8", self.bridge.html())
+                self.reply(200, "text/html; charset=utf-8", self.explorer.html())
             elif url.path == "/cube/tile":
                 self.reply(200, "application/json", json.dumps(self.tile(parse_qs(url.query))).encode())
-            elif (asset := self.vendor_file(url.path)) is not None:
+            elif (asset := self.explorer.vendor_file(url.path)) is not None:
                 self.reply(200, VENDOR_TYPES.get(asset.suffix, "application/octet-stream"), asset.read_bytes())
             else:
                 self.reply(404, "text/plain", b"not found")
@@ -233,32 +258,27 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(400, "application/json", json.dumps({"error": str(error)}).encode())
         except CubeChanged as error:
             self.reply(409, "application/json", json.dumps({"error": "cube_changed", "detail": str(error)}).encode())
-        except Exception as error:  # the page reports the message; nothing is substituted for the data
+        except Exception as error:  # the page shows the message; nothing is substituted for the data
             self.reply(502, "application/json", json.dumps({"error": f"{type(error).__name__}: {error}"}).encode())
-
-    def vendor_file(self, path: str) -> Path | None:
-        """A file under vendor/ named by a flat file name; anything else is not served."""
-        name = path.removeprefix("/vendor/")
-        if path == name or Path(name).name != name or name.startswith("."):
-            return None
-        asset = self.bridge.page.parent / "vendor" / name
-        return asset if asset.is_file() else None
 
     def tile(self, args: dict) -> dict:
         n, m, b0, b1 = (float(args[key][0]) for key in ("n", "m", "b0", "b1"))
+        token = args.get("pack", [""])[0]
         if not (n.is_integer() and m.is_integer() and 0 <= n <= 20 and 0 <= m <= 9):
             raise ValueError("n must be 0..20 and m 0..9")
         if not (b0.is_integer() and b1.is_integer() and 0 <= b0 < b1):
             raise ValueError("b0 and b1 must be base edges with b0 < b1")
         if (b1 - b0) / 2 ** int(n) > MAX_TILE_COLUMNS:
             raise ValueError(f"tile wider than {MAX_TILE_COLUMNS} columns")
-        return self.bridge.tile({"n": int(n), "m": int(m), "b0": b0, "b1": b1})
+        return self.explorer.tile({"n": int(n), "m": int(m), "b0": b0, "b1": b1}, token)
 
-    def reply(self, status: int, kind: str, body: bytes) -> None:
+    def reply(self, status: int, kind: str, body: bytes, headers: dict[str, str] | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -267,22 +287,17 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    commands = parser.add_subparsers(dest="command", required=True)
-    fetcher = commands.add_parser("fetch", help="print a pack or one tile as JSON (needs the cube reader)")
-    fetcher.add_argument("spec", help='{"pack": true} or {"tile": {"n", "m", "b0", "b1"}}')
-    server = commands.add_parser("serve", help="serve the explorer on live cube data")
-    server.add_argument("--page", type=Path, default=Path(__file__).resolve().parents[1] / "index.html")
-    server.add_argument("--remote", help='command prefix that reaches the cube volume, e.g. "ssh HOST docker exec -i tdw-control-plane-market-state-1"')
-    server.add_argument("--bind", default="127.0.0.1")
-    server.add_argument("--port", type=int, default=8080)
+    parser = argparse.ArgumentParser(description="Serve the explorer on live market state cube data.")
+    parser.add_argument("--page", type=Path, default=Path(__file__).resolve().parents[1] / "index.html")
+    parser.add_argument("--bind", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8487)
     arguments = parser.parse_args(argv)
-    if arguments.command == "fetch":
-        json.dump(fetch(json.loads(arguments.spec)), sys.stdout, separators=(",", ":"))
-        return 0
-    Handler.bridge = Bridge(arguments.page, arguments.remote)
+    user, password = os.environ.get("EXPLORER_AUTH_USER"), os.environ.get("EXPLORER_AUTH_PASS")
+    if not user or not password:
+        raise SystemExit("EXPLORER_AUTH_USER and EXPLORER_AUTH_PASS are required.")
+    Handler.explorer = Explorer(arguments.page, user, password)
     with ThreadingHTTPServer((arguments.bind, arguments.port), Handler) as httpd:
-        print(f"explorer on http://{arguments.bind}:{arguments.port} · cube via {arguments.remote or 'in-process reader'}", flush=True)
+        print(f"explorer on http://{arguments.bind}:{arguments.port} · cube at {CUBE_URL}", flush=True)
         httpd.serve_forever()
     return 0
 

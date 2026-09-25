@@ -3505,7 +3505,9 @@
     renderHistory();
     saveHistory();
   }
-  function line(text, className) {
+  // Text for the history and saved-view rows. (Named apart from line(), the
+  // canvas's own: two functions of one name here, the later replaces the other.)
+  function rowText(text, className) {
     const span = document.createElement("span");
     span.className = className;
     span.textContent = text;
@@ -3540,8 +3542,8 @@
       b.className = "ol-entry cursor-interaction";
       b.setAttribute("aria-current", i === hist.index ? "step" : "false");
       b.append(
-        line(entryPlace(x), "ol-entry-main"),
-        line(
+        rowText(entryPlace(x), "ol-entry-main"),
+        rowText(
           `${levelText(x.n, x.m)}${x.replay ? " · replay" : ""} · ${x.label}`,
           "ol-entry-sub",
         ),
@@ -3742,7 +3744,7 @@
       open.title = x.window || x.live
         ? "Opens on the latest data"
         : "Opens where it was saved";
-      open.append(line(x.name, "ol-entry-main"), line(viewDetail(x), "ol-entry-sub"));
+      open.append(rowText(x.name, "ol-entry-main"), rowText(viewDetail(x), "ol-entry-sub"));
       open.addEventListener("click", () => {
         closePop();
         openView(x);
@@ -3758,7 +3760,7 @@
     });
     if (!views.list.length)
       frag.append(
-        line(
+        rowText(
           "No saved views yet. A view saved while it shows the latest data opens on the latest data.",
           "ol-muted ol-empty",
         ),

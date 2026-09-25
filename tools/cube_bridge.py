@@ -25,11 +25,13 @@ Routes, all behind HTTP Basic Auth except ``/healthz``:
   holding pack ``pack`` only when every partition read is one that pack read, at the same
   revision. The open base column comes from the pack itself, so a cube that has moved on
   since the pack was read never mixes into the answer.
-- ``/cube/tile?n&m&b0&b1&pack``: the same without price bounds or summary, for pages that
-  predate ``/cube/query``.
+- ``/cube/tile?n&m&b0&b1&pack``: the same without price bounds or summary.
 - ``/cube/columns?n&m&pack``: each column's POC, volume and taker-buy volume at level (n, m),
   for up to the last 100,000 complete columns: the history the continuations compare.
 - ``/vendor/<file>``: the vendored scripts, flat file names only.
+
+Every ``/cube/`` route takes ``proto=2``, the page's protocol. A page loaded before it names
+none and can't read MSC2 blocks, so it is answered 409 with words telling its reader to reload.
 
 Credentials come from ``EXPLORER_AUTH_USER`` and ``EXPLORER_AUTH_PASS``; the server refuses to
 start without them. ``MARKET_STATE_URL`` names the cube service (default ``http://127.0.0.1:8486``).
@@ -77,6 +79,11 @@ MAX_CELLS = 1_000_000
 HISTORY_COLUMNS = 100_000
 MAX_TIME_EXPONENT = 24
 MAX_PRICE_EXPONENT = 12
+# The page's protocol: MSC2 blocks, the open column and /cube/query. A page that
+# names no protocol was loaded before it and can't read these blocks: it is
+# told to reload, in words its status line shows as they are.
+PROTOCOL = "2"
+OUTDATED = "the explorer was updated; reload the page to see the latest data"
 # The service runs two queries at once for every consumer: this server takes one at a time,
 # and waits out a busy service this long before it gives up.
 BUSY_WAIT_SECONDS = 20.0
@@ -610,6 +617,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             args = parse_qs(url.query)
+            if url.path.startswith("/cube/") and args.get("proto", [""])[0] != PROTOCOL:
+                self.json({"error": OUTDATED, "reload": True}, 409)
+                return
             if url.path in ("/", "/index.html"):
                 self.reply(200, "text/html; charset=utf-8", self.explorer.html())
             elif url.path == "/cube/pack":

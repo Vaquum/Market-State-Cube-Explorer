@@ -3291,7 +3291,11 @@
   const BASE = PACK.base_seconds,
     PR = PACK.base_price,
     T0 = PACK.t0,
-    INSTRUMENT = "BTC/USDT";
+    INSTRUMENT = "BTC/USDT",
+    // What this page reads from the server: MSC2 blocks and the open column.
+    // The server tells a page that names no protocol, one from before it, to
+    // reload rather than send it blocks it can't read.
+    PROTOCOL = 2;
   // On the live host the cutoff advances in place as new data arrives. It is
   // the cube's data cutoff, a minute edge, so the base column that holds it is
   // open: it has the latest trades and still gains more.
@@ -3944,9 +3948,10 @@
       // What the chart draws in the rectangle: the measure's own cells when they
       // are at the drawn level, or else the display block's cells that overlap it.
       shown =
-        query.n === renderN()
+        meas.shown ||
+        (query.n === renderN()
           ? query
-          : aggregate(src, renderN(), renderM(), outwardBounds(meas.r)),
+          : aggregate(src, renderN(), renderM(), outwardBounds(meas.r))),
       ts = stepT(),
       ps = stepP(),
       u = transition
@@ -4113,7 +4118,7 @@
     ctx.restore();
     const ro = readouts(cut);
     axes(ro);
-    profile(query, b);
+    profile(query, b, meas.state);
     activity(shown, cut);
     crosshair(ro);
     querySummary(meas);
@@ -4297,15 +4302,16 @@
   }
   // The rectangle measured: the selection, or the view up to the latest data,
   // each bound on the nearest base edge with midpoints up, as the cube rounds
-  // them. It ends at most at the edge that closes the data, so the open column
-  // and its latest trades are in it.
+  // them. One that reaches the latest data ends at the edge that closes it,
+  // however little of the open column has passed, so the open column and its
+  // latest trades are always in it.
   function requestedBounds() {
     const b = S.selection || [S.tA, S.tB, S.pA, S.pB],
       end = cutEdge(),
       edge = (x) => Math.floor(x + 0.5),
       r = [
         clamp(edge(b[0]), 0, end),
-        clamp(edge(b[1]), 0, end),
+        b[1] >= activeCutoff() ? end : clamp(edge(b[1]), 0, end),
         Math.max(0, edge(b[2])),
         Math.max(0, edge(b[3])),
       ];
@@ -4394,10 +4400,39 @@
     const spec = measureSpec(r, n, m),
       hit = measured.get(spec.key);
     if (hit) return { r, b: r, query: hit.query, summary: hit.summary, state: "cube" };
+    // A rectangle at the latest data, which the arriving data moved on by a
+    // little, keeps the measures it had a moment ago, exact to that cutoff and
+    // with its own bounds, while the cube reads the new minutes: live numbers
+    // don't blank once a minute. A window slides and may refit its prices; any
+    // other rectangle keeps its prices and only grows.
+    const near = (a, b) => Math.abs(a - b) <= 64,
+      windowed = S.window && !S.selection;
+    const was =
+      !S.replay && r[1] >= Math.floor(CUT)
+        ? [...measured.values()]
+            .reverse()
+            .find(
+              (x) =>
+                x.edge &&
+                x.nq === spec.nq &&
+                x.m === m &&
+                x.r[1] <= r[1] &&
+                near(x.r[1], r[1]) &&
+                near(x.r[0], r[0]) &&
+                (windowed
+                  ? x.win === S.window
+                  : !x.win && x.r[0] === r[0] && x.r[2] === r[2] && x.r[3] === r[3]),
+            )
+        : null;
+    if (was && !cube.failed.has(spec.key))
+      return { r: was.r, b: was.r, query: was.query, summary: was.summary, state: "cube", updating: true, end: was.cut };
+    // Until then the chart draws the loaded cells that overlap the rectangle,
+    // and the rectangle has no measures: no totals, no profile, no POCs.
     return {
       r,
       b: r,
-      query: aggregate(displaySource(), n, m, outwardBounds(r)),
+      query: summarize([], n, m),
+      shown: aggregate(displaySource(), n, m, outwardBounds(r)),
       state: cube.failed.has(spec.key) ? "failed" : "pending",
       error: cube.failed.get(spec.key),
     };
@@ -4409,14 +4444,18 @@
     let nq = n;
     while (nq < 24 && Math.ceil(r[1] / 2 ** nq) - Math.floor(r[0] / 2 ** nq) > TILE_COLUMNS)
       nq++;
-    const key = ["measure", live.generation, nq, m, ...r, r[1] > Math.floor(CUT) ? CUT : ""].join("|");
+    const key = ["measure", live.generation, nq, m, ...r, r[1] > Math.floor(CUT) ? CUT : ""].join("|"),
+      edge = r[1] >= Math.floor(CUT),
+      // The data it covers ends here, and the window it was measured for.
+      cut = CUT,
+      win = S.window && !S.selection ? S.window : null;
     return {
       key,
+      nq,
       path: `/cube/query?n=${nq}&m=${m}&b0=${r[0]}&b1=${r[1]}&r0=${r[2]}&r1=${r[3]}`,
-      done: async (body) => {
-        const block = await unpack(body.block, key),
-          q = summarize(block.cells, nq, m),
-          s = body.summary,
+      decode: async (body) => ({ block: await unpack(body.block, key), s: body.summary }),
+      apply: ({ block, s }) => {
+        const q = summarize(block.cells, nq, m),
           row = (p) => (p == null ? null : Math.round(p / (PR * 2 ** m) - 0.5));
         // The cube's own totals and POCs, summed exactly.
         q.v = s.volume;
@@ -4426,7 +4465,7 @@
         q.poc = row(s.poc);
         q.bpoc = row(s.taker_buy_poc);
         measured.delete(key);
-        measured.set(key, { query: q, summary: s });
+        measured.set(key, { query: q, summary: s, r, nq, m, edge, cut, win });
         while (measured.size > 48) measured.delete(measured.keys().next().value);
       },
     };
@@ -4878,7 +4917,9 @@
         ? `The recorded snapshot counts only its whole cells inside these bounds: ${range(b[0], b[1])} UTC; ${price(b[2] * PR)}–${price(b[3] * PR)} USDT; ${shown}. The live cube measures the six parameters exactly.`
         : meas.state === "pending"
           ? "Measuring these six parameters in the cube…"
-          : meas.state === "failed"
+          : meas.updating
+            ? `The cube's answer up to ${when(Math.min(meas.r[1], meas.end))} UTC, updating to the latest data…`
+            : meas.state === "failed"
             ? `The cube didn't answer for these six parameters: ${meas.error}.`
             : renderM() !== S.m
               ? `Shown and measured at ${shown}, the finest ${PACK.live ? "loaded so far" : "recorded here"}: the POC is per ${price(PR * stepP())} USDT row until finer cells load.`
@@ -5136,7 +5177,7 @@
     el("context").classList.toggle("ol-measuring", measuring);
     el("context").setAttribute("aria-busy", String(state === "pending"));
     // Each date and the price range stay whole; lines break only between them.
-    const times = rangeParts(b[0], Math.min(b[1], Math.max(b[0], activeCutoff())));
+    const times = rangeParts(b[0], Math.min(b[1], Math.max(b[0], meas.end ?? activeCutoff())));
     times[times.length - 1] += " UTC";
     el("bounds").replaceChildren(
       ...[...times, `· ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`].flatMap(
@@ -5357,11 +5398,22 @@
       syncRowHover(null);
     } else if (last && onProfile(p)) {
       const r = Math.floor(p.p / ps),
-        row = last.query.rows.find((x) => x.r === r);
+        row = last.query.rows.find((x) => x.r === r),
+        waiting = last.meas.state === "pending" || last.meas.state === "failed";
       hover.row = row ? r : null;
       // A profile row is no one cell: the Cells drawer shows none as hovered.
       syncRowHover(null);
-      if (!row) tipRows(tip, priceRow(r), "", [], "No trades at this price in view");
+      if (waiting)
+        tipRows(
+          tip,
+          priceRow(r),
+          "",
+          [],
+          last.meas.state === "failed"
+            ? `Not measured: the cube didn't answer (${last.meas.error})`
+            : "Measuring the rectangle in the cube…",
+        );
+      else if (!row) tipRows(tip, priceRow(r), "", [], "No trades at this price in view");
       else
         tipRows(
           tip,
@@ -6534,7 +6586,7 @@
     ctx.stroke();
     ctx.restore();
   }
-  function profile(query, b) {
+  function profile(query, b, state) {
     if (!G.profile) return;
     const max = d3.max(query.rows, (z) => z.v) || 1,
       px = G.x + G.w + 9,
@@ -6628,7 +6680,20 @@
       text(label.symbol, px + pw + 9, label.ly, colors.ink, "left", 11);
     }
     ctx.restore();
-    text(S.selection ? "Selected" : "Profile", px, G.y - 5, colors.muted, "left");
+    // While the cube measures the rectangle, the profile waits for it.
+    text(
+      state === "pending"
+        ? "Measuring…"
+        : state === "failed"
+          ? "Not measured"
+          : S.selection
+            ? "Selected"
+            : "Profile",
+      px,
+      G.y - 5,
+      colors.muted,
+      "left",
+    );
   }
   function markings(full, cut) {
     const ts = stepT(),
@@ -6739,12 +6804,13 @@
     DAY_COLOURS = ["day1", "day2", "day3", "day4"],
     DAYS_KEPT = 12,
     lineInfo = (key) => LINES.find((l) => l.key === key),
-    // A day by its UTC date, from the history's first day on.
-    isDay = (key) =>
-      typeof key === "string" &&
-      /^\d{4}-\d{2}-\d{2}$/.test(key) &&
-      key >= "2021-01-01" &&
-      new Date(key + "T00:00:00Z").toISOString().startsWith(key),
+    // A day by its UTC date, a real one, from the history's first day on.
+    isDay = (key) => {
+      if (typeof key !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(key) || key < "2021-01-01")
+        return false;
+      const t = Date.parse(key + "T00:00:00Z");
+      return Number.isFinite(t) && new Date(t).toISOString().startsWith(key);
+    },
     dayStart = (key) => (Date.parse(key + "T00:00:00Z") / 1000 - T0) / BASE;
   // A line's name, in lists and its tooltip; its tag, on the chart. The
   // calendar periods are named by what they are now: the month, the year.
@@ -6794,10 +6860,10 @@
       ["line", live.generation, key, span[0], span[1], span[1] > Math.floor(CUT) ? CUT : ""].join("|");
   // A POC from row sums: the row with the most volume, the lower row winning a
   // tie, with its volume and the period's.
-  function linePOC(key, span, q, exact, rowPrice) {
+  function linePOC(key, span, q, exact, rowPrice, columns = 1) {
     const row = q.poc,
       volume = row === null ? 0 : q.rows.find((x) => x.r === row)?.v || 0;
-    return { key, span, state: "ready", exact, row, rowPrice, volume, total: q.v };
+    return { key, span, state: "ready", exact, row, rowPrice, columns, volume, total: q.v };
   }
   // A line's POC: from loaded cells at 125 USDT rows that tile its period; from
   // the cube (live); or, in the recorded snapshot, from its finest cells that
@@ -6821,22 +6887,33 @@
       const src = blocks[0];
       if (src) {
         const ts = 2 ** src.n,
+          end = Math.min(src.b1, activeCutoff()),
           a = Math.ceil(span[0] / ts) * ts,
-          b = span[1] >= Math.min(src.b1, activeCutoff()) ? span[1] : Math.floor(span[1] / ts) * ts;
-        result = linePOC(key, span, aggregate(src, src.n, src.m, [a, Math.max(a, b), 0, Infinity]), false, 2 ** src.m);
-      }
+          b = span[1] >= end ? span[1] : Math.floor(span[1] / ts) * ts,
+          covered = Math.max(0, Math.min(b, end) - a),
+          wanted = Math.min(span[1], activeCutoff()) - span[0];
+        // Cells too coarse to hold most of the period can't say where it traded
+        // the most: the snapshot says so, rather than draw another period's POC
+        // or call the period empty.
+        result =
+          covered >= wanted / 2
+            ? linePOC(key, span, aggregate(src, src.n, src.m, [a, Math.max(a, b), 0, Infinity]), false, 2 ** src.m, ts)
+            : { key, span, state: "unrecorded" };
+      } else result = { key, span, state: "unrecorded" };
     }
     if (!result)
       return { key, span, state: cube.failed.has(id) ? "failed" : "pending", id, error: cube.failed.get(id) };
     lineResults.set(id, result);
-    lineLatest.set(key, result);
+    if (result.state === "ready") lineLatest.set(key, result);
     return result;
   }
   // What a line draws: its own result, or while that is read, the latest one
   // that ends no later than the data shown, so no line runs ahead of a replay.
+  // A line whose read failed shows nothing but the failure: nothing is being
+  // read for it until new data arrives.
   function lineShown(key) {
     const r = lineResult(key);
-    if (r.state === "ready") return r;
+    if (r.state !== "pending") return r;
     const was = lineLatest.get(key);
     return was && r.span && was.span[1] <= cutEdge() ? { ...was, stale: true } : r;
   }
@@ -6850,10 +6927,9 @@
       return {
         key: id,
         path: `/cube/query?n=${nq}&m=0&b0=${a}&b1=${b}`,
-        done: async (body) => {
-          const block = await unpack(body.block, id),
-            q = summarize(block.cells, nq, 0),
-            s = body.summary;
+        decode: async (body) => ({ block: await unpack(body.block, id), s: body.summary }),
+        apply: ({ block, s }) => {
+          const q = summarize(block.cells, nq, 0);
           q.poc = s.poc == null ? null : Math.round(s.poc / PR - 0.5);
           q.v = s.volume;
           const result = linePOC(key, r.span, q, true, 1);
@@ -6892,19 +6968,18 @@
         hot = hover?.line === l.key,
         width = hot ? 3 : 2;
       l.y = y;
-      ctx.globalAlpha = l.r.stale ? 0.55 : 1;
-      // The halo, then the period solid and the rest of the way dashed.
-      line(xa, y, right, y, colors.surface, width + 3, 0.85 * (l.r.stale ? 0.55 : 1));
-      line(xa, y, xb, y, l.colour, width, l.r.stale ? 0.55 : 1);
+      // The halo, then the period solid and the rest of the way dashed. A line
+      // being updated keeps its last place until the new one is read.
+      line(xa, y, right, y, colors.surface, width + 3, 0.85);
+      line(xa, y, xb, y, l.colour, width, 1);
       ctx.setLineDash([5, 4]);
-      line(xb, y, right, y, l.colour, hot ? 2 : 1.4, l.r.stale ? 0.45 : 0.85);
+      line(xb, y, right, y, l.colour, hot ? 2 : 1.4, 0.85);
       ctx.setLineDash([]);
       // Where the period starts, when it starts in view.
       if (G.X(l.r.span[0]) > G.x + 1 && G.X(l.r.span[0]) < right - 1) {
         line(xa, y - 5, xa, y + 5, colors.surface, 4, 0.85);
-        line(xa, y - 5, xa, y + 5, l.colour, 2, l.r.stale ? 0.55 : 1);
+        line(xa, y - 5, xa, y + 5, l.colour, 2, 1);
       }
-      ctx.globalAlpha = 1;
       lineHits.push({ key: l.key, y, xa, xb: right, r: l.r, colour: l.colour });
     }
     ctx.restore();
@@ -6959,7 +7034,7 @@
       ctx.beginPath();
       ctx.roundRect(x, top, w, height, 3);
       ctx.fill();
-      ctx.globalAlpha = t.r.stale ? 0.6 : 1;
+      ctx.globalAlpha = 1;
       ctx.fillStyle = t.colour;
       ctx.beginPath();
       ctx.roundRect(x, top, t.nameW, height, [3, 0, 0, 3]);
@@ -7007,11 +7082,13 @@
         ["In the row", `${compact(r.volume)} USDT · ${r.total ? ((100 * r.volume) / r.total).toFixed(1) : "0"}%`],
         ["Period volume", `${compact(r.total)} USDT`],
       ],
-      r.exact
-        ? r.stale
-          ? "Updating to the latest data…"
-          : "Where the period traded the most USDT, per 125 USDT row"
-        : `Approximate: the recorded snapshot has ${price(r.rowPrice * PR)} USDT rows here`,
+      r.stale
+        ? "Updating to the latest data…"
+        : r.exact
+          ? "Where the period traded the most USDT, per 125 USDT row"
+          : r.rowPrice > 1
+            ? `Approximate: the recorded snapshot has ${price(r.rowPrice * PR)} USDT rows here`
+            : `Approximate: the recorded snapshot starts the period on its ${dur(BASE * r.columns)} columns`,
     );
   }
   // The POC lines' popover: the periods as checkboxes, each with its colour and,
@@ -7024,6 +7101,7 @@
         ? "no trades"
         : (r.exact ? "" : "≈ ") + price((r.row + 0.5) * r.rowPrice * PR) + (r.stale ? " …" : "");
     if (r.state === "none") return isDay(key) ? "after the data" : "no trades yet";
+    if (r.state === "unrecorded") return "not in this snapshot";
     if (r.state === "failed") return "unavailable";
     return "…";
   }
@@ -7078,8 +7156,11 @@
       swatch.style.setProperty("--line", lineColour(swatch.dataset.lineSwatch));
     for (const value of qsa("[data-line-value]")) {
       const key = value.dataset.lineValue,
-        text = on.has(key) ? lineValue(key) : "";
+        text = on.has(key) ? lineValue(key) : "",
+        r = on.has(key) ? lineShown(key) : null,
+        why = r?.state === "failed" ? `The cube didn't answer: ${r.error}` : "";
       if (value.textContent !== text) value.textContent = text;
+      if (value.title !== why) value.title = why;
     }
     el("lines-clear").disabled = !S.lines.length;
     el("lines-days-head").textContent = days.length ? "Days" : "Days · none yet";
@@ -8014,8 +8095,8 @@
         delete PACK.blocks[t.id];
         delete loadState[t.id];
       },
-      done: async (body) => {
-        const tile = await unpack(body.block, t.id);
+      decode: async (body) => ({ tile: await unpack(body.block, t.id), body }),
+      apply: ({ tile, body }) => {
         const meta = { ...body.block };
         delete meta.gzip_base64;
         PACK.blocks[t.id] = meta;
@@ -8073,8 +8154,9 @@
     return {
       key,
       path: `/cube/columns?n=${n}&m=${m}`,
-      done: async (body) => {
-        histories.set(key, await unpackHistory(body.columns));
+      decode: (body) => unpackHistory(body.columns),
+      apply: (history) => {
+        histories.set(key, history);
         // A level's history can hold 100,000 columns: only the latest few stay.
         while (histories.size > 3) histories.delete(histories.keys().next().value);
         evidenceCache.clear();
@@ -8144,7 +8226,7 @@
       // Resolved against the page but without any credentials the page's own URL
       // may carry; the browser attaches the session's Basic credentials itself.
       const target = new URL(
-        `${want.path}&pack=${encodeURIComponent(PACK.state_token)}`,
+        `${want.path}&pack=${encodeURIComponent(PACK.state_token)}&proto=${PROTOCOL}`,
         location.href,
       );
       target.username = "";
@@ -8162,9 +8244,11 @@
         throw Error("the cube changed; taking its new data first");
       }
       if (!response.ok) throw Error(body?.error || `the server answered ${response.status}`);
-      // Read for a pack the page has replaced since, even while it decoded:
-      // dropped, and asked for again.
-      if (generation === live.generation) await want.done(body);
+      // Decoded first; then, with nothing awaited between the check and the
+      // use, an answer for a pack the page replaced meanwhile is dropped and
+      // asked for again, so no two cube states ever mix.
+      const decoded = await want.decode(body);
+      if (generation === live.generation) want.apply(decoded);
       else want.drop?.();
       if (want.loading) el("loading").hidden = true;
     } catch (error) {
@@ -9698,7 +9782,7 @@
       // A tier that never loaded can't take a delta: then the whole pack.
       const since = TIERS.every((id) => sources[id]) ? PACK.state_token : "",
         target = new URL(
-          `/cube/pack?since=${encodeURIComponent(since)}`,
+          `/cube/pack?since=${encodeURIComponent(since)}&proto=${PROTOCOL}`,
           location.href,
         );
       target.username = "";

@@ -5,8 +5,12 @@
   <header class="ol-bar">
     <div class="ol-id">
       <div class="ol-brand" title="Market State Cube Explorer">
-        <span class="ol-org">ORIGO</span>Cube Explorer<span class="ol-state-pill"
+        <span class="ol-org">ORIGO</span>Cube Explorer<span
+          class="ol-state-pill"
+          id="ol-state-pill"
+          data-state="live"
           ><span id="ol-market">RECORDED</span> <span id="ol-snapshot"></span
+          ><span id="ol-fresh" class="ol-fresh" hidden></span
         ></span>
       </div>
       <div class="ol-market">
@@ -19,6 +23,7 @@
       class="ol-sheet-toggle ol-action ol-l cursor-interaction"
       aria-expanded="false"
       aria-controls="ol-controls"
+      title="Show the controls"
     >
       Controls
     </button>
@@ -30,6 +35,7 @@
           id="ol-sheet-close"
           class="ol-icon-button cursor-interaction"
           aria-label="Close controls"
+          title="Close the controls (Esc)"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
             <path d="m4 4 8 8M12 4l-8 8" />
@@ -43,7 +49,7 @@
             class="cursor-interaction"
             data-window="1"
             aria-pressed="true"
-            title="The last 24 hours"
+            title="The last 24 hours (1)"
           >
             24h</button
           ><button
@@ -51,7 +57,7 @@
             class="cursor-interaction"
             data-window="7"
             aria-pressed="false"
-            title="The last 7 days"
+            title="The last 7 days (2)"
           >
             7d</button
           ><button
@@ -59,12 +65,17 @@
             class="cursor-interaction"
             data-window="all"
             aria-pressed="false"
-            title="All history from 2021"
+            title="All history from 2021 (3)"
           >
             All
           </button>
         </div>
-        <output id="ol-span" class="ol-span ol-num" hidden></output>
+        <output
+          id="ol-span"
+          class="ol-span ol-num"
+          title="The time span in view"
+          hidden
+        ></output>
       </div>
       <div class="ol-group ol-res-group">
         <button
@@ -149,7 +160,7 @@
               id="ol-pminus"
               class="ol-action cursor-interaction"
               aria-label="Finer price resolution"
-              title="Finer price cells (Shift+[ )"
+              title="Finer price cells ( { )"
             >
               <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
                 <rect x="3" y="3" width="4" height="4" />
@@ -162,7 +173,7 @@
               id="ol-pplus"
               class="ol-action cursor-interaction"
               aria-label="Coarser price resolution"
-              title="Coarser price cells (Shift+] )"
+              title="Coarser price cells ( } )"
             >
               <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
                 <rect x="3" y="3" width="10" height="10" rx="1" />
@@ -223,7 +234,7 @@
             class="cursor-interaction"
             data-follow="diagonal"
             aria-pressed="false"
-            title="Zoom time by k and price by the square root of k; the price level follows the measured diagonal (D)"
+            title="Zooming time by k zooms price by the square root of k; the price level follows the measured diagonal (D)"
           >
             Diagonal
           </button>
@@ -309,7 +320,7 @@
           id="ol-replay"
           class="ol-action ol-toggle ol-l cursor-interaction"
           aria-pressed="false"
-          title="Replay: hide trades after an anchor and step it with , and ."
+          title="Replay: hide the trades after an anchor (R); step it with , and ."
         >
           Replay</button
         ><button
@@ -317,6 +328,7 @@
           id="ol-back"
           class="ol-icon-button ol-action ol-l cursor-interaction"
           aria-label="Previous replay column"
+          title="Previous replay column ( , )"
           hidden
         >
           ←</button
@@ -326,6 +338,7 @@
           id="ol-next"
           class="ol-icon-button ol-action ol-l cursor-interaction"
           aria-label="Next replay column"
+          title="Next replay column ( . )"
           hidden
         >
           →
@@ -355,8 +368,8 @@
           aria-haspopup="dialog"
           aria-expanded="false"
           aria-controls="ol-hist-pop"
-          aria-label="History"
-          title="History"
+          aria-label="Views and history"
+          title="Views and history (H)"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
             <circle cx="8" cy="8" r="5.5" />
@@ -364,17 +377,48 @@
           </svg>
         </button>
         <div
-          class="ol-pop ol-pop-end"
+          class="ol-pop ol-pop-end ol-views-pop"
           id="ol-hist-pop"
           role="dialog"
-          aria-label="History"
+          aria-label="Views and history"
           hidden
         >
-          <div class="ol-pop-head"><span>History</span></div>
+          <div class="ol-pop-head">
+            <span>Views</span
+            ><button
+              type="button"
+              id="ol-copy-link"
+              class="ol-action ol-s cursor-interaction"
+              title="Copy a link that opens this view"
+            >
+              Copy link
+            </button>
+          </div>
+          <form class="ol-view-form" id="ol-view-form">
+            <input
+              type="text"
+              id="ol-view-name"
+              maxlength="80"
+              autocomplete="off"
+              aria-label="Name for this view"
+              placeholder="Name this view"
+              title="Name this view and press Enter to save it (Shift+S)"
+            /><button
+              type="submit"
+              class="ol-solid ol-s cursor-interaction"
+              title="Save this view under the name (Shift+S)"
+            >
+              Save
+            </button>
+          </form>
+          <div class="ol-views-status" id="ol-views-status" role="status"></div>
+          <div class="ol-list-head">Saved</div>
+          <div class="ol-saved" id="ol-saved"></div>
+          <div class="ol-list-head">This tab's history</div>
           <nav
             class="ol-breadcrumbs"
             id="ol-breadcrumbs"
-            aria-label="Exploration path"
+            aria-label="This tab's history"
           ></nav>
         </div>
       </div>
@@ -384,30 +428,12 @@
           id="ol-help"
           class="ol-icon-button ol-l cursor-interaction"
           aria-haspopup="dialog"
-          aria-expanded="false"
-          aria-controls="ol-help-pop"
-          aria-label="Controls and keys"
-          title="Controls and keys"
+          aria-controls="ol-keys"
+          aria-label="Keyboard shortcuts"
+          title="Keyboard shortcuts (?)"
         >
           ?
         </button>
-        <div
-          class="ol-pop ol-pop-end ol-help-pop"
-          id="ol-help-pop"
-          role="dialog"
-          aria-label="Controls and keys"
-          hidden
-        >
-          <div class="ol-pop-head"><span>Controls and keys</span></div>
-          <div>
-            Drag: pan · wheel: time · Shift-wheel: price · pinch: zoom<br />Arrows:
-            pan · + / −: zoom · [ / ]: time level · Shift+[ / ]: price level<br />V:
-            pan · S: select · L / hold Alt: lens · Shift+L: lens depth · Enter: pin
-            lens<br />A: auto level · D: diagonal zoom · F: fit price · Esc: clear<br />,
-            / . : step the replay anchor · Touch: hold to inspect finer cells; lift
-            to return<br />Click or focus the chart before using keys.
-          </div>
-        </div>
       </div>
     </div>
   </header>
@@ -422,6 +448,7 @@
             type="button"
             data-mode="volume"
             class="cursor-interaction"
+            title="Volume: USDT traded per cell (M cycles the encodings)"
             aria-pressed="true"
           >
             Volume</button
@@ -429,6 +456,7 @@
             type="button"
             data-mode="flow"
             class="cursor-interaction"
+            title="Taker flow: Share of each cell's volume bought by takers (M cycles the encodings)"
             aria-pressed="false"
           >
             Taker flow</button
@@ -436,6 +464,7 @@
             type="button"
             data-mode="density"
             class="cursor-interaction"
+            title="Density: USDT traded per second per USDT of price range (M cycles the encodings)"
             aria-pressed="false"
           >
             Density</button
@@ -443,6 +472,7 @@
             type="button"
             data-mode="delta"
             class="cursor-interaction"
+            title="Delta: Taker-buy minus taker-sell volume per cell (M cycles the encodings)"
             aria-pressed="false"
           >
             Delta</button
@@ -450,15 +480,20 @@
             type="button"
             data-mode="geometry"
             class="cursor-interaction"
+            title="Geometry: The grid's occupied cells (M cycles the encodings)"
             aria-pressed="false"
           >
             Geometry
           </button>
         </div>
         <div class="ol-marks" role="group" aria-label="Overlays">
-          <label><input type="checkbox" id="ol-poc" checked />POC</label
-          ><label><input type="checkbox" id="ol-area" />70% area</label
-          ><label><input type="checkbox" id="ol-untested" />Untested</label>
+          <label title="Each column's point of control, and the profile's (P)"
+            ><input type="checkbox" id="ol-poc" checked />POC</label
+          ><label title="Each column's value area: the rows around its POC that hold 70% of its volume"
+            ><input type="checkbox" id="ol-area" />70% area</label
+          ><label title="Column POCs that no later column in view has traded at"
+            ><input type="checkbox" id="ol-untested" />Untested</label
+          >
         </div>
         <span class="ol-legend"
           ><i class="ol-ramp" id="ol-ramp" aria-hidden="true"></i
@@ -473,6 +508,17 @@
           aria-label="Time by price grid with real traded volume, point of control and linked volume profile"
         ></canvas>
         <div class="ol-tip" id="ol-tip" role="tooltip" hidden></div>
+        <button
+          type="button"
+          id="ol-latest"
+          class="ol-latest ol-action ol-s cursor-interaction"
+          title="Back to the latest data, keeping the span (End)"
+          hidden
+        >
+          Latest<svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 8h8M8 4.5 11.5 8 8 11.5M13.5 3.5v9" />
+          </svg>
+        </button>
       </div>
       <div class="ol-drawer" id="ol-drawer">
         <div
@@ -481,6 +527,7 @@
           role="separator"
           aria-orientation="horizontal"
           aria-label="Resize the drawer"
+          title="Drag, or use the arrow keys, to resize the drawer"
           tabindex="0"
         ></div>
         <div class="ol-drawer-bar">
@@ -493,6 +540,7 @@
               data-drawer="cells"
               aria-controls="ol-panel-cells"
               aria-selected="true"
+              title="Every occupied cell in view (T opens and closes the drawer)"
             >
               Cells</button
             ><button
@@ -503,6 +551,7 @@
               data-drawer="cases"
               aria-controls="ol-panel-cases"
               aria-selected="false"
+              title="The historical cases behind the continuations"
             >
               Cases</button
             ><button
@@ -513,6 +562,7 @@
               data-drawer="query"
               aria-controls="ol-panel-query"
               aria-selected="false"
+              title="The cube query for this view, and its view code"
             >
               Query<span id="ol-query-mini" class="ol-num ol-query-mini"></span>
             </button>
@@ -525,6 +575,7 @@
             aria-expanded="false"
             aria-controls="ol-drawer-body"
             aria-label="Open the drawer"
+            title="Open the drawer (T)"
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="m4.5 9.5 3.5-3.5 3.5 3.5" />
@@ -545,6 +596,7 @@
                   type="button"
                   id="ol-table-back"
                   class="ol-action ol-s cursor-interaction"
+                  title="Previous page"
                 >
                   Previous</button
                 ><span id="ol-table-page" class="ol-num"></span
@@ -552,6 +604,7 @@
                   type="button"
                   id="ol-table-next"
                   class="ol-action ol-s cursor-interaction"
+                  title="Next page"
                 >
                   Next
                 </button>
@@ -561,37 +614,37 @@
               <thead>
                 <tr>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="time">
+                    <button type="button" class="cursor-interaction" data-sort="time" title="Sort by time; again to reverse">
                       Time · UTC
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="price">
+                    <button type="button" class="cursor-interaction" data-sort="price" title="Sort by price; again to reverse">
                       Price · USDT
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="volume">
+                    <button type="button" class="cursor-interaction" data-sort="volume" title="Sort by USDT volume; again to reverse">
                       USDT volume
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="trades">
+                    <button type="button" class="cursor-interaction" data-sort="trades" title="Sort by trades; again to reverse">
                       Trades
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="buyvol">
+                    <button type="button" class="cursor-interaction" data-sort="buyvol" title="Sort by buy USDT; again to reverse">
                       Buy USDT
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="buytrades">
+                    <button type="button" class="cursor-interaction" data-sort="buytrades" title="Sort by buy trades; again to reverse">
                       Buy trades
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-sort="state">
+                    <button type="button" class="cursor-interaction" data-sort="state" title="Sort by state; again to reverse">
                       State
                     </button>
                   </th>
@@ -609,7 +662,7 @@
           >
             <div class="ol-panel-head">
               <label for="ol-case-filter">Cases</label
-              ><select id="ol-case-filter">
+              ><select id="ol-case-filter" title="Which cases to list">
                 <option value="all">Matching states</option>
                 <option value="failure">Opposite / failed</option>
                 <option value="up">Higher / upper</option>
@@ -623,6 +676,7 @@
                   type="button"
                   id="ol-case-prev"
                   class="ol-action ol-s cursor-interaction"
+                  title="Previous page"
                 >
                   Previous</button
                 ><span id="ol-case-page" class="ol-num"></span
@@ -630,6 +684,7 @@
                   type="button"
                   id="ol-case-next"
                   class="ol-action ol-s cursor-interaction"
+                  title="Next page"
                 >
                   Next
                 </button>
@@ -639,32 +694,32 @@
               <thead>
                 <tr>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="date">
+                    <button type="button" class="cursor-interaction" data-case-sort="date" title="Sort by date; again to reverse">
                       Date · UTC
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="outcome">
+                    <button type="button" class="cursor-interaction" data-case-sort="outcome" title="Sort by outcome; again to reverse">
                       Outcome
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="change">
+                    <button type="button" class="cursor-interaction" data-case-sort="change" title="Sort by change; again to reverse">
                       Change · USDT
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="poc">
+                    <button type="button" class="cursor-interaction" data-case-sort="poc" title="Sort by POC; again to reverse">
                       POC
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="excursion">
+                    <button type="button" class="cursor-interaction" data-case-sort="excursion" title="Sort by excursion; again to reverse">
                       Excursion · USDT
                     </button>
                   </th>
                   <th>
-                    <button type="button" class="cursor-interaction" data-case-sort="buy">
+                    <button type="button" class="cursor-interaction" data-case-sort="buy" title="Sort by buy share; again to reverse">
                       Buy share
                     </button>
                   </th>
@@ -693,18 +748,21 @@
                 type="button"
                 id="ol-copy-query"
                 class="ol-action cursor-interaction"
+                title="Copy the six-parameter query for the cube"
               >
                 Copy query</button
               ><button
                 type="button"
                 id="ol-copy-view"
                 class="ol-action cursor-interaction"
+                title="Copy a code that restores this view in any copy of the explorer"
               >
                 Copy view code</button
               ><button
                 type="button"
                 id="ol-import-toggle"
                 class="ol-action cursor-interaction"
+                title="Paste a query or a view code to open it"
               >
                 Restore view</button
               ><span id="ol-copy-status" role="status"></span>
@@ -716,6 +774,7 @@
                 type="button"
                 id="ol-import-apply"
                 class="ol-solid cursor-interaction"
+                title="Open the pasted query or view code"
               >
                 Apply view
               </button>
@@ -758,6 +817,7 @@
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize the inspector"
+      title="Drag, or use the arrow keys, to resize the inspector"
       tabindex="0"
     ></div>
     <aside class="ol-side" id="ol-side" aria-label="Inspector">
@@ -768,6 +828,7 @@
             id="ol-context-tab"
             class="cursor-interaction"
             aria-pressed="true"
+            title="What is in view: volume, trades, POCs (C switches)"
           >
             Measures</button
           ><button
@@ -775,6 +836,7 @@
             id="ol-evidence-tab"
             class="cursor-interaction"
             aria-pressed="false"
+            title="How similar states continued in history (C switches)"
           >
             Continuations
           </button>
@@ -786,7 +848,7 @@
           aria-expanded="true"
           aria-controls="ol-side-body"
           aria-label="Collapse the inspector"
-          title="Collapse the inspector"
+          title="Collapse the inspector (I)"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
             <path d="m6 3.5 4.5 4.5L6 12.5" />
@@ -801,6 +863,7 @@
               type="button"
               class="ol-action ol-s cursor-interaction"
               id="ol-clear"
+              title="Clear the selection (Esc)"
               hidden
             >
               Clear selection
@@ -864,6 +927,7 @@
               class="cursor-interaction"
               data-evidence-kind="poc"
               aria-pressed="true"
+              title="Where the POC is some columns later"
             >
               Next POC</button
             ><button
@@ -871,6 +935,7 @@
               class="cursor-interaction"
               data-evidence-kind="barrier"
               aria-pressed="false"
+              title="Which POC barrier, above or below, is crossed first"
             >
               POC barriers
             </button>
@@ -878,7 +943,7 @@
           <div class="ol-evidence-state" id="ol-state"></div>
           <div class="ol-row">
             <label for="ol-horizon">Horizon</label
-            ><select id="ol-horizon">
+            ><select id="ol-horizon" title="How many columns ahead each outcome is read">
               <option value="1">1 column</option>
               <option value="2">2 columns</option>
               <option value="4">4 columns</option>
@@ -887,7 +952,7 @@
           </div>
           <div class="ol-row" id="ol-barrier-control" hidden>
             <label for="ol-barrier">Distance each side</label
-            ><select id="ol-barrier">
+            ><select id="ol-barrier" title="How far each barrier is from the POC">
               <option value="1">1 price row</option>
               <option value="2">2 price rows</option>
               <option value="4">4 price rows</option>
@@ -902,6 +967,7 @@
               type="button"
               class="ol-probability cursor-interaction"
               data-case-direction="up"
+              title="List these cases in the drawer"
               aria-label="Inspect higher POC cases"
             >
               <span class="ol-outcome"
@@ -918,6 +984,7 @@
               type="button"
               class="ol-probability cursor-interaction"
               data-case-direction="flat"
+              title="List these cases in the drawer"
               aria-label="Inspect unchanged POC cases"
             >
               <span class="ol-outcome"
@@ -934,6 +1001,7 @@
               type="button"
               class="ol-probability cursor-interaction"
               data-case-direction="down"
+              title="List these cases in the drawer"
               aria-label="Inspect lower POC cases"
             >
               <span class="ol-outcome"
@@ -991,6 +1059,7 @@
             type="button"
             id="ol-open-cases"
             class="ol-action cursor-interaction"
+            title="List these cases in the drawer"
           >
             Inspect cases
           </button>
@@ -998,4 +1067,173 @@
       </div>
     </aside>
   </div>
+  <dialog class="ol-keys" id="ol-keys" aria-labelledby="ol-keys-title">
+    <div class="ol-keys-body">
+      <div class="ol-keys-head">
+        <h2 id="ol-keys-title">Keyboard shortcuts</h2>
+        <button
+          type="button"
+          id="ol-keys-close"
+          class="ol-icon-button cursor-interaction"
+          aria-label="Close"
+          title="Close (Esc)"
+        >
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m4 4 8 8M12 4l-8 8" />
+          </svg>
+        </button>
+      </div>
+      <p class="ol-keys-note">
+        Keys work anywhere on the page except in text fields.
+      </p>
+      <div class="ol-keys-grid">
+        <section aria-labelledby="ol-keys-move">
+          <h3 id="ol-keys-move">Move</h3>
+          <dl>
+            <div>
+              <dt>Pan</dt>
+              <dd><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> or drag</dd>
+            </div>
+            <div>
+              <dt>Zoom time</dt>
+              <dd><kbd>=</kbd> <kbd>-</kbd> or the wheel</dd>
+            </div>
+            <div>
+              <dt>Zoom price</dt>
+              <dd><kbd>Shift</kbd> with <kbd>=</kbd> <kbd>-</kbd> or the wheel</dd>
+            </div>
+            <div>
+              <dt>Zoom in on a point</dt>
+              <dd>Double-click</dd>
+            </div>
+            <div>
+              <dt>Fit the price range</dt>
+              <dd><kbd>F</kbd></dd>
+            </div>
+            <div>
+              <dt>Back to the latest data</dt>
+              <dd><kbd>End</kbd></dd>
+            </div>
+            <div>
+              <dt>Last 24 hours, 7 days, all</dt>
+              <dd><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dd>
+            </div>
+          </dl>
+        </section>
+        <section aria-labelledby="ol-keys-level">
+          <h3 id="ol-keys-level">Resolution</h3>
+          <dl>
+            <div>
+              <dt>Auto level on or off</dt>
+              <dd><kbd>A</kbd></dd>
+            </div>
+            <div>
+              <dt>Finer or coarser time cells</dt>
+              <dd><kbd>[</kbd> <kbd>]</kbd></dd>
+            </div>
+            <div>
+              <dt>Finer or coarser price cells</dt>
+              <dd><kbd>{</kbd> <kbd>}</kbd></dd>
+            </div>
+            <div>
+              <dt>Diagonal zoom on or off</dt>
+              <dd><kbd>D</kbd></dd>
+            </div>
+          </dl>
+        </section>
+        <section aria-labelledby="ol-keys-tools">
+          <h3 id="ol-keys-tools">Tools</h3>
+          <dl>
+            <div>
+              <dt>Pan, select, lens</dt>
+              <dd><kbd>V</kbd> <kbd>S</kbd> <kbd>L</kbd></dd>
+            </div>
+            <div>
+              <dt>Lens depth</dt>
+              <dd><kbd>Shift</kbd> <kbd>L</kbd></dd>
+            </div>
+            <div>
+              <dt>Peek with the lens</dt>
+              <dd>Hold <kbd>Alt</kbd></dd>
+            </div>
+            <div>
+              <dt>Pin the lens as the view</dt>
+              <dd><kbd>Enter</kbd></dd>
+            </div>
+            <div>
+              <dt>Close, leave the lens, clear the selection</dt>
+              <dd><kbd>Esc</kbd></dd>
+            </div>
+          </dl>
+        </section>
+        <section aria-labelledby="ol-keys-show">
+          <h3 id="ol-keys-show">Show</h3>
+          <dl>
+            <div>
+              <dt>Next or previous encoding</dt>
+              <dd><kbd>M</kbd> <kbd>Shift</kbd> <kbd>M</kbd></dd>
+            </div>
+            <div>
+              <dt>POC marks</dt>
+              <dd><kbd>P</kbd></dd>
+            </div>
+            <div>
+              <dt>Measures or continuations</dt>
+              <dd><kbd>C</kbd></dd>
+            </div>
+            <div>
+              <dt>Inspector</dt>
+              <dd><kbd>I</kbd></dd>
+            </div>
+            <div>
+              <dt>Drawer</dt>
+              <dd><kbd>T</kbd></dd>
+            </div>
+          </dl>
+        </section>
+        <section aria-labelledby="ol-keys-replay">
+          <h3 id="ol-keys-replay">Replay</h3>
+          <dl>
+            <div>
+              <dt>Replay on or off</dt>
+              <dd><kbd>R</kbd></dd>
+            </div>
+            <div>
+              <dt>Step the anchor</dt>
+              <dd><kbd>,</kbd> <kbd>.</kbd></dd>
+            </div>
+            <div>
+              <dt>Anchor a column</dt>
+              <dd>Click it</dd>
+            </div>
+          </dl>
+        </section>
+        <section aria-labelledby="ol-keys-views">
+          <h3 id="ol-keys-views">Views</h3>
+          <dl>
+            <div>
+              <dt>Views and history</dt>
+              <dd><kbd>H</kbd></dd>
+            </div>
+            <div>
+              <dt>Save this view</dt>
+              <dd><kbd>Shift</kbd> <kbd>S</kbd></dd>
+            </div>
+            <div>
+              <dt>Back, forward</dt>
+              <dd><kbd data-key="back">Alt+←</kbd> <kbd data-key="forward">Alt+→</kbd></dd>
+            </div>
+            <div>
+              <dt>These shortcuts</dt>
+              <dd><kbd>?</kbd></dd>
+            </div>
+          </dl>
+        </section>
+      </div>
+      <p class="ol-keys-note">
+        On a touch screen: drag to pan, pinch to zoom, hold to see finer cells,
+        and tap a column to anchor it.
+      </p>
+    </div>
+  </dialog>
 </div>

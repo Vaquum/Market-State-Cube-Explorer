@@ -7,7 +7,9 @@
   const BASE = PACK.base_seconds,
     PR = PACK.base_price,
     T0 = PACK.t0,
-    CUT = (Date.parse(PACK.cutoff) / 1000 - T0) / BASE;
+    INSTRUMENT = "BTC/USDT";
+  // On the live host the cutoff advances in place as new data arrives.
+  let CUT = (Date.parse(PACK.cutoff) / 1000 - T0) / BASE;
   // Diagonal through the resolution lattice: least-squares fit of
   // log2(median column price range / 125) against n over the full history,
   // n = 6..13, measured on the 2026-09-24 extraction (exponent 0.49).
@@ -121,8 +123,10 @@
   const compact = (x) => {
     const sign = x < 0 ? "−" : "",
       a = Math.abs(x);
-    if (a < 1000)
+    // Below a thousand, unless rounding to three digits reaches it.
+    if (a < 1000 && +a.toPrecision(3) < 1000)
       return sign + (Number.isInteger(a) ? String(a) : String(+a.toPrecision(3)));
+    if (a < 1000) return sign + "1.00 k";
     let i = Math.min(4, Math.floor(Math.log10(a) / 3));
     if (+(a / 1000 ** i).toPrecision(3) >= 1000 && i < 4) i++;
     return sign + (a / 1000 ** i).toPrecision(3) + " " + " kMBT"[i];
@@ -136,13 +140,14 @@
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }),
-    date = (b) => new Date((T0 + b * BASE) * 1000),
+    // To the nearest millisecond, so a time read back from the address is the same time.
+    date = (b) => new Date(Math.round((T0 + b * BASE) * 1000)),
     // ISO is for the query and view codes only.
     iso = (b) => date(b).toISOString();
   // Times read one way everywhere, matching the axis: "24 Sep 12:02", with the
   // year only when it differs from the cutoff's and seconds only when set.
-  const CUT_YEAR = date(CUT).getUTCFullYear(),
-    dayMonth = d3.utcFormat("%-d %b"),
+  let CUT_YEAR = date(CUT).getUTCFullYear();
+  const dayMonth = d3.utcFormat("%-d %b"),
     clock = (d) =>
       d3.utcFormat(
         d.getUTCMilliseconds()
@@ -170,6 +175,16 @@
         : [`${dayOf(x)} ${clock(x)} →`, `${dayOf(y)} ${clock(y)}`];
     },
     range = (a, b) => rangeParts(a, b).join(" ");
+  // Elapsed time for the live state, in its largest unit: "8 s", "6 min", "2 h".
+  const elapsed = (ms) => {
+      const s = Math.max(0, Math.round(ms / 1000));
+      return s < 60
+        ? `${s} s`
+        : s < 3600
+          ? `${Math.floor(s / 60)} min`
+          : `${Math.floor(s / 3600)} h`;
+    },
+    ago = (ms) => (ms < 5000 ? "just now" : `${elapsed(ms)} ago`);
   async function unpack(block, id) {
     const bytes = Uint8Array.from(atob(block.gzip_base64), (c) =>
       c.charCodeAt(0),
@@ -525,11 +540,17 @@
     markings(query, cut);
     paintUnfinished(query);
     if (S.tab === "evidence") {
-      const ev = calcEvidence();
-      drawCone(ev);
-      evidenceUI(ev);
-    } else if (S.drawerOpen && S.drawer === "cases")
-      evidenceCases(calcEvidence());
+      const ev = settledEvidence();
+      // Busy until a result for this view is up: the panel may still show the last one.
+      el("evidence").setAttribute("aria-busy", String(!ev || ev !== evidence.ready));
+      if (ev) {
+        drawCone(ev);
+        evidenceUI(ev);
+      }
+    } else if (S.drawerOpen && S.drawer === "cases") {
+      const ev = settledEvidence();
+      if (ev) evidenceCases(ev);
+    }
     if (S.selection) {
       ctx.strokeStyle = colors.accent;
       ctx.lineWidth = 1.5;
@@ -718,13 +739,17 @@
     S.pA = Math.max(0, low - pad);
     S.pB = high + pad;
   }
+  // A window ends at the cutoff, with a tenth of its length to spare after it.
+  function windowRange(w) {
+    S.tA = w === "all" ? 0 : Math.max(0, CUT - (Number(w) * 86400) / BASE);
+    S.tB = CUT + (CUT - S.tA) * 0.105;
+  }
   function setWindow(w) {
     S.window = w;
     S.selection = null;
     S.anchor = null;
     S.replay = false;
-    S.tA = w === "all" ? 0 : Math.max(0, CUT - (Number(w) * 86400) / BASE);
-    S.tB = CUT + (CUT - S.tA) * 0.105;
+    windowRange(w);
     chooseSource();
     S.n = w === "all" ? 14 : w === "7" ? 6 : 4;
     S.m = w === "all" ? 3 : 0;
@@ -745,48 +770,39 @@
       pR: PR * 2 ** S.m,
     };
   }
+  // This browser keeps the workspace and the last view for every tab: the
+  // panels, the drawer, the tables' sorts and the lens depth. The view itself
+  // lives in the address, so each tab keeps its own.
+  const PREFS = [
+    "sideOpen",
+    "sideWidth",
+    "drawer",
+    "drawerOpen",
+    "drawerHeight",
+    "cellSort",
+    "cellDir",
+    "caseSort",
+    "caseDir",
+    "lensDepth",
+  ];
   function save() {
+    if (!ready) return;
+    syncURL();
+    saveHistory();
     if (!window.explorerState) return;
     try {
       window.explorerState.save({
-        version: 4,
-        ...S,
-        crumbs: nav.crumbs,
-        crumbIndex: nav.crumbIndex,
+        version: 5,
+        prefs: Object.fromEntries(PREFS.map((k) => [k, S[k]])),
+        view: viewHash(),
       });
     } catch (error) {
       el("copy-status").textContent =
-        "View retained here; persistence unavailable.";
+        "This tab keeps the view; this browser's storage is unavailable.";
     }
   }
-  function restore(x) {
-    if (!x || x.version !== 4) return false;
-    for (const k of [
-      "n",
-      "m",
-      "tA",
-      "tB",
-      "pA",
-      "pB",
-      "horizon",
-      "barrier",
-      "lensDepth",
-    ])
-      if (Number.isFinite(x[k])) S[k] = x[k];
-    for (const k of [
-      "poc",
-      "area",
-      "untested",
-      "replay",
-      "select",
-      "auto",
-      "coupled",
-      "diagonal",
-      "refit",
-      "lens",
-      "sideOpen",
-      "drawerOpen",
-    ])
+  function restorePrefs(x) {
+    for (const k of ["sideOpen", "drawerOpen"])
       if (typeof x[k] === "boolean") S[k] = x[k];
     // A view saved before the drawer kept its table open as `table`.
     if (x.table === true && typeof x.drawerOpen !== "boolean") {
@@ -801,42 +817,232 @@
     if (CASE_SORTS.includes(x.caseSort)) S.caseSort = x.caseSort;
     if (x.cellDir === 1 || x.cellDir === -1) S.cellDir = x.cellDir;
     if (x.caseDir === 1 || x.caseDir === -1) S.caseDir = x.caseDir;
-    if (Array.isArray(x.crumbs)) {
-      nav.crumbs = x.crumbs
-        .filter(
-          (c) =>
-            c &&
-            typeof c.label === "string" &&
-            c.state &&
-            ["tA", "tB", "pA", "pB", "n", "m"].every((k) =>
-              Number.isFinite(c.state[k]),
-            ),
-        )
-        .slice(-8)
-        .map((c) => ({ ...c, key: navSnapshotKey(c.state) }));
-      nav.crumbIndex = clamp(
-        Number.isInteger(x.crumbIndex) ? x.crumbIndex : nav.crumbs.length - 1,
-        -1,
-        nav.crumbs.length - 1,
-      );
-      renderCrumbs();
+    if (Number.isFinite(x.lensDepth))
+      S.lensDepth = clamp(Math.round(x.lensDepth), 1, 4);
+  }
+  // The workspace and last view this browser saved; version 4 kept both in one
+  // object with the view as raw state.
+  function restore(x) {
+    if (!x || (x.version !== 4 && x.version !== 5)) return false;
+    restorePrefs(x.version === 5 ? x.prefs || {} : x);
+    const view =
+      x.version === 5
+        ? typeof x.view === "string"
+          ? readView(x.view)
+          : null
+        : checkView({
+            window: x.window,
+            tA: x.tA,
+            tB: x.tB,
+            pA: x.pA,
+            pB: x.pB,
+            auto: x.auto !== false,
+            n: x.n,
+            m: x.m,
+            follow: x.diagonal
+              ? "diagonal"
+              : x.coupled
+                ? "coupled"
+                : x.refit === false
+                  ? "free"
+                  : "refit",
+            mode: x.mode,
+            poc: x.poc !== false,
+            area: x.area === true,
+            untested: x.untested === true,
+            selection: x.selection,
+            anchor: x.anchor,
+            replay: x.replay === true,
+            tab: x.tab,
+            evidenceKind: x.evidenceKind,
+            horizon: x.horizon,
+            barrier: x.barrier,
+          });
+    if (view) applyView(view);
+    return Boolean(view);
+  }
+
+  // A view in the address: the window or the rectangle, the level when it is
+  // locked, and each display setting that differs from its default. Times are
+  // UTC and prices USDT. A window (24h, 7d, All) is relative: it opens on the
+  // latest data wherever the cutoff has moved; a rectangle opens where it was.
+  const WINDOWS = { 1: "24h", 7: "7d", all: "all" },
+    WINDOW_LABELS = { 1: "Last 24 hours", 7: "Last 7 days", all: "All history" },
+    FOLLOWS = ["free", "refit", "coupled", "diagonal"],
+    MODES = ["volume", "flow", "density", "delta", "geometry"],
+    MODE_NAMES = {
+      volume: "Volume",
+      flow: "Taker flow",
+      density: "Density",
+      delta: "Delta",
+      geometry: "Geometry",
+    };
+  // "2026-09-24T10:00Z", with seconds and milliseconds only when set.
+  const stamp = (b) =>
+      date(b).toISOString().replace(".000Z", "Z").replace(/:00Z$/, "Z"),
+    usd = (p) => String(+(p * PR).toFixed(2));
+  function viewParams() {
+    const out = [],
+      add = (k, v) => out.push(k + "=" + v);
+    if (S.window) add("w", WINDOWS[S.window]);
+    else {
+      add("t", stamp(S.tA) + "~" + stamp(S.tB));
+      add("p", usd(S.pA) + "~" + usd(S.pB));
     }
-    if (["volume", "flow", "geometry", "density", "delta"].includes(x.mode))
-      S.mode = x.mode;
-    if (["context", "evidence"].includes(x.tab)) S.tab = x.tab;
-    if (["poc", "barrier"].includes(x.evidenceKind))
-      S.evidenceKind = x.evidenceKind;
-    S.window = x.window || "";
-    S.anchor = Number.isFinite(x.anchor) ? x.anchor : null;
-    S.selection =
-      Array.isArray(x.selection) &&
-      x.selection.length === 4 &&
-      x.selection.every(Number.isFinite)
-        ? x.selection
-        : null;
-    limits();
-    chooseSource();
-    return true;
+    if (!S.auto) add("r", S.n + "," + S.m);
+    if (followMode() !== "refit") add("f", followMode());
+    if (S.mode !== "volume") add("mode", S.mode);
+    const marks = ["poc", "area", "untested"].filter((k) => S[k]).join(",");
+    if (marks !== "poc") add("marks", marks || "none");
+    if (S.selection) {
+      const [a, b, p, q] = S.selection;
+      add("sel", `${stamp(a)}~${stamp(b)},${usd(p)}~${usd(q)}`);
+    }
+    if (S.anchor !== null) add("at", stamp(S.anchor));
+    if (S.replay) add("replay", "1");
+    if (S.tab === "evidence") add("tab", "continuations");
+    if (S.evidenceKind === "barrier") add("outcome", "barrier");
+    if (S.horizon !== 1) add("h", S.horizon);
+    if (S.barrier !== 1) add("dist", S.barrier);
+    return out.join("&");
+  }
+  const viewHash = () => "#" + viewParams();
+  // A view from an address, or null when it names no window or rectangle.
+  // Anything unreadable falls back to its default rather than being guessed.
+  function readView(hash) {
+    const q = new Map();
+    for (const part of String(hash).replace(/^#/, "").split("&")) {
+      const i = part.indexOf("=");
+      try {
+        if (i > 0) q.set(part.slice(0, i), decodeURIComponent(part.slice(i + 1)));
+      } catch {
+        // A malformed escape leaves its parameter out.
+      }
+    }
+    const time = (s) => (Date.parse(s) / 1000 - T0) / BASE,
+      rows = (s) => (s === "" ? NaN : Number(s) / PR),
+      pair = (s, f) => {
+        const x = String(s ?? "").split("~").map(f);
+        return x.length === 2 ? x : [NaN, NaN];
+      },
+      marks = String(q.get("marks") ?? "poc").split(","),
+      level = /^(\d+),(\d+)$/.exec(q.get("r") || ""),
+      [selT, selP = ""] = String(q.get("sel") ?? "").split(",");
+    return checkView({
+      window: Object.keys(WINDOWS).find((k) => WINDOWS[k] === q.get("w")),
+      ...Object.fromEntries(
+        [...pair(q.get("t"), time), ...pair(q.get("p"), rows)].map((v, i) => [
+          ["tA", "tB", "pA", "pB"][i],
+          v,
+        ]),
+      ),
+      auto: !level,
+      n: level ? Number(level[1]) : NaN,
+      m: level ? Number(level[2]) : NaN,
+      follow: q.get("f") || "refit",
+      mode: q.get("mode") || "volume",
+      poc: marks.includes("poc"),
+      area: marks.includes("area"),
+      untested: marks.includes("untested"),
+      selection: q.has("sel")
+        ? [...pair(selT, time), ...pair(selP, rows)].map(Math.round)
+        : null,
+      anchor: q.has("at") ? Math.round(time(q.get("at"))) : null,
+      replay: q.get("replay") === "1",
+      tab: q.get("tab") === "continuations" ? "evidence" : "context",
+      evidenceKind: q.get("outcome") === "barrier" ? "barrier" : "poc",
+      horizon: Number(q.get("h") || 1),
+      barrier: Number(q.get("dist") || 1),
+    });
+  }
+  // A view whose every part can be shown here, or null without a window or a
+  // rectangle. Parts that can't be are dropped: a replay after this page's
+  // cutoff, a selection outside its history.
+  function checkView(v) {
+    const ok = (...x) => x.every(Number.isFinite),
+      w = Object.hasOwn(WINDOWS, v.window) ? v.window : "";
+    if (
+      !w &&
+      !(
+        ok(v.tA, v.tB, v.pA, v.pB) &&
+        v.tB > v.tA &&
+        v.pB > v.pA &&
+        v.tA < CUT &&
+        v.pA >= 0
+      )
+    )
+      return null;
+    const sel = Array.isArray(v.selection) ? v.selection : [],
+      anchor =
+        Number.isFinite(v.anchor) && v.anchor > 0 && v.anchor <= CUT
+          ? v.anchor
+          : null,
+      locked = v.auto === false && ok(v.n, v.m);
+    return {
+      window: w,
+      tA: v.tA,
+      tB: v.tB,
+      pA: v.pA,
+      pB: v.pB,
+      auto: !locked,
+      n: locked ? clamp(Math.round(v.n), 0, N_MAX) : null,
+      m: locked ? clamp(Math.round(v.m), 0, M_MAX) : null,
+      follow: FOLLOWS.includes(v.follow) ? v.follow : "refit",
+      mode: MODES.includes(v.mode) ? v.mode : "volume",
+      poc: v.poc !== false,
+      area: v.area === true,
+      untested: v.untested === true,
+      selection:
+        sel.length === 4 &&
+        ok(...sel) &&
+        sel[0] >= 0 &&
+        sel[1] > sel[0] &&
+        sel[0] < CUT &&
+        sel[2] >= 0 &&
+        sel[3] > sel[2]
+          ? [sel[0], Math.min(sel[1], Math.floor(CUT)), sel[2], sel[3]]
+          : null,
+      anchor,
+      replay: v.replay === true && anchor !== null,
+      tab: v.tab === "evidence" ? "evidence" : "context",
+      evidenceKind: v.evidenceKind === "barrier" ? "barrier" : "poc",
+      horizon: [1, 2, 4, 8].includes(v.horizon) ? v.horizon : 1,
+      barrier: [1, 2, 4].includes(v.barrier) ? v.barrier : 1,
+    };
+  }
+  // Put a checked view in place.
+  function applyView(v) {
+    if (v.window) setWindow(v.window);
+    else {
+      [S.tA, S.tB, S.pA, S.pB] = [v.tA, v.tB, v.pA, v.pB];
+      S.window = "";
+    }
+    S.auto = v.auto;
+    if (!v.auto) {
+      S.n = v.n;
+      S.m = v.m;
+    }
+    S.refit = v.follow === "refit";
+    S.coupled = v.follow === "coupled";
+    S.diagonal = v.follow === "diagonal";
+    for (const k of [
+      "mode",
+      "poc",
+      "area",
+      "untested",
+      "selection",
+      "anchor",
+      "replay",
+      "tab",
+      "evidenceKind",
+      "horizon",
+      "barrier",
+    ])
+      S[k] = v[k];
+    hover = null;
+    el("tip").hidden = true;
+    confine();
+    if (S.auto) autoLevel();
   }
   function queryUI(b) {
     const q = cubeQuery();
@@ -952,7 +1158,7 @@
       }
       chooseSource();
       limits();
-      recordCrumb("Restored query");
+      recordView("Restored query");
       update();
       save();
       el("copy-status").textContent = "View restored";
@@ -1359,10 +1565,11 @@
     el("res").dataset.auto = String(S.auto);
     el("res").dataset.coarse = String(coarse);
     el("res").title =
-      (S.auto ? "Auto level" : "Level locked") +
+      (S.auto ? "Auto level (A)" : "Level locked; A for auto") +
       (coarse
         ? ` · showing ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT, the finest recorded here`
-        : "");
+        : "") +
+      " · [ and ] step time cells, { and } price cells";
     el("span").hidden = Boolean(S.window);
     el("span").textContent = dur((S.tB - S.tA) * BASE);
     qsa("[data-follow]").forEach((b) =>
@@ -1386,6 +1593,12 @@
     el("scope").textContent =
       `${Object.keys(sources).length}/${Object.keys(PACK.blocks).length} ${PACK.live ? "live cube" : "recorded"} blocks ready · ${when(displaySource().b0)} onward`;
     el("cutoff").textContent = `Cutoff ${when(CUT)} UTC`;
+    // A recorded page names its day; a live one says how fresh it is instead.
+    el("snapshot").textContent = PACK.live ? "" : day(CUT);
+    // Latest appears when the cutoff is out of view, beside the price profile.
+    el("latest").hidden = S.replay || (S.tA < CUT && S.tB >= CUT);
+    el("latest").style.right =
+      GUTTER + profileWidth(canvas.clientWidth) + 8 + "px";
     applyPanels();
     updateNavigation();
     requestDraw();
@@ -1493,7 +1706,7 @@
       }
     }
     update();
-    recordCrumb(
+    recordView(
       { free: "Free axes", refit: "Refit", coupled: "Coupled", diagonal: "Diagonal" }[
         mode
       ],
@@ -1543,7 +1756,7 @@
     }
     side.setAttribute("aria-expanded", String(S.sideOpen));
     side.setAttribute("aria-label", sideLabel);
-    side.title = sideLabel;
+    side.title = sideLabel + " (I)";
     drawer.dataset.open = String(S.drawerOpen);
     drawer.style.setProperty("--drawer-h", drawerHeight + "px");
     // A closed or switched drawer leaves no row outlined on the chart.
@@ -1559,6 +1772,8 @@
       "aria-label",
       S.drawerOpen ? "Close the drawer" : "Open the drawer",
     );
+    el("drawer-toggle").title =
+      (S.drawerOpen ? "Close the drawer" : "Open the drawer") + " (T)";
   }
   function openDrawer(tab, open = true) {
     S.drawer = tab;
@@ -1700,8 +1915,14 @@
       nav.planeKey = "";
       refreshPlane();
     });
-    bindPop("hist", "hist-pop");
-    bindPop("help", "help-pop");
+    bindPop("hist", "hist-pop", () => {
+      loadViews();
+      renderHistory();
+      renderViews();
+      viewsStatus("");
+      el("view-name").value =
+        viewPlace() + (S.mode === "volume" ? "" : " · " + MODE_NAMES[S.mode]);
+    });
     bindPop("evidence-info", "evidence-more");
     document.addEventListener("pointerdown", (e) => {
       if (
@@ -1723,12 +1944,45 @@
       button.addEventListener("click", () => setFollow(button.dataset.follow));
     for (const button of qsa("[data-tool]"))
       button.addEventListener("click", () => setTool(button.dataset.tool));
-    el("hist-back").addEventListener("click", () =>
-      goToCrumb(nav.crumbIndex - 1),
-    );
-    el("hist-fwd").addEventListener("click", () =>
-      goToCrumb(nav.crumbIndex + 1),
-    );
+    el("hist-back").addEventListener("click", () => history.back());
+    el("hist-fwd").addEventListener("click", () => history.forward());
+    el("view-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      saveView(el("view-name").value);
+    });
+    // Text fields keep their keys, so the name field closes its popover itself.
+    el("view-name").addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      closePop(true);
+    });
+    el("copy-link").addEventListener("click", copyLink);
+    el("help").addEventListener("click", openKeys);
+    el("keys-close").addEventListener("click", () => el("keys").close());
+    // The dialog's own box is its backdrop; its content sits in a child.
+    el("keys").addEventListener("click", (e) => {
+      if (e.target === el("keys")) el("keys").close();
+    });
+    // Views saved in another tab appear here too.
+    addEventListener("storage", (e) => {
+      if (e.key !== window.explorerState?.viewsKey) return;
+      loadViews();
+      renderViews();
+    });
+  }
+  function openKeys() {
+    closePop();
+    if (!el("keys").open) el("keys").showModal();
+  }
+  async function copyLink() {
+    const url = new URL(location.href);
+    url.username = url.password = "";
+    try {
+      await navigator.clipboard.writeText(url.href);
+      viewsStatus("Link copied.");
+    } catch {
+      viewsStatus("Copy the address from the browser's address bar.");
+    }
   }
 
   let markState = {
@@ -2226,25 +2480,55 @@
         : [],
     };
   }
+  // The anchor column: the chosen anchor, or the last complete column in view.
+  function evidenceAnchor() {
+    const end = Math.min(CUT, S.anchor === null ? bounds()[1] : S.anchor);
+    return Math.floor(end / stepT()) - 1;
+  }
+  function evidenceKey() {
+    const loaded = Object.values(sources)
+      .map((src) => src.id + ":" + src.cells.length)
+      .sort()
+      .join(",");
+    return ["v4", renderN(), renderM(), evidenceAnchor(), S.barrier || 1, loaded].join("|");
+  }
+  // Continuations wait for the view to settle: a level change mid-gesture would
+  // otherwise recompute them inside the frame. Meanwhile the last result at the
+  // same level stays up, marked as updating.
+  let gestureAt = 0;
+  const evidence = { ready: null, last: null, timer: 0 },
+    gesturing = () =>
+      drag !== null || nav.pinch !== null || performance.now() - gestureAt < 200;
+  function settledEvidence() {
+    const key = evidenceKey();
+    if (evidenceCache.has(key) || !gesturing()) {
+      evidence.ready = evidence.last = calcEvidence();
+      return evidence.ready;
+    }
+    evidence.ready = null;
+    clearTimeout(evidence.timer);
+    evidence.timer = setTimeout(requestDraw, 220);
+    const e = evidence.last;
+    return e && e.n === renderN() && e.m === renderM() && e.barrier === (S.barrier || 1)
+      ? e
+      : null;
+  }
   function calcEvidence() {
-    const b = bounds(),
-      n = renderN(),
+    const n = renderN(),
       m = renderM(),
       ts = stepT(),
-      end = Math.min(CUT, S.anchor === null ? b[1] : S.anchor),
-      a = Math.floor(end / ts) - 1,
-      barrier = S.barrier || 1;
-    const loaded = Object.values(sources)
-        .map((src) => src.id + ":" + src.cells.length)
-        .sort()
-        .join(","),
-      key = ["v4", n, m, a, barrier, loaded].join("|");
+      a = evidenceAnchor(),
+      barrier = S.barrier || 1,
+      key = evidenceKey();
     if (evidenceCache.has(key)) return evidenceCache.get(key);
     const history = evidenceColumns(n, m, (a + 1) * ts),
       cols = history.cols,
       ai = cols.findIndex((c) => c.c === a);
     const shared = {
       a,
+      n,
+      m,
+      barrier,
       from: cols[0]?.c,
       sources: history.sources,
       covered: history.covered,
@@ -2688,7 +2972,7 @@
         limits();
         confine();
         update();
-        recordCrumb("Historical case");
+        recordView("Historical case");
         save();
       }
     });
@@ -2734,8 +3018,6 @@
     hold: false,
     holdTimer: 0,
     wheelTimer: 0,
-    crumbs: [],
-    crumbIndex: -1,
     planeKey: "",
     planeStatus: "",
     planeHover: false,
@@ -2752,6 +3034,7 @@
     hover = null;
     el("tip").hidden = true;
     update();
+    recordView("Anchor");
     save();
   }
   function pixelLevel(level, span, pixels, max) {
@@ -2851,6 +3134,7 @@
     const t = tileSpec(S.n, S.m);
     if (!t) return;
     tiles.pending = t.id;
+    const generation = live.generation;
     PACK.blocks[t.id] = { n: t.n, m: t.m, b0: t.b0, b1: t.b1 };
     loadState[t.id] = "loading";
     el("loading").hidden = false;
@@ -2866,25 +3150,41 @@
       );
       target.username = "";
       target.password = "";
-      const response = await fetch(target),
+      // A tile that hangs would hold every later one back: it fails instead.
+      const response = await fetch(target, { signal: AbortSignal.timeout(120000) }),
         body = await response.json();
       if (body.error === "cube_changed") {
-        // The cube holds another revision of history than this page; nothing is mixed.
+        // The cube holds another revision of history than this page. Nothing is
+        // mixed: the page takes the new data first, then asks for the tile again.
         tiles.stale = true;
-        throw Error("the cube changed since this page loaded; reload to continue");
+        throw Error("the cube changed; taking its new data first");
       }
       if (!response.ok) throw Error(body.error || response.statusText);
+      const tile = await unpack(body.block, t.id);
+      // Read for a pack the page has replaced since, even while it decoded: dropped,
+      // and asked for again. Nothing awaits between this check and the tile's use.
+      if (generation !== live.generation) {
+        delete PACK.blocks[t.id];
+        delete loadState[t.id];
+        tiles.pending = null;
+        el("loading").hidden = true;
+        update();
+        return;
+      }
       PACK.blocks[t.id] = body.block;
-      sources[t.id] = await unpack(body.block, t.id);
+      sources[t.id] = tile;
       loadState[t.id] = "ready";
       el("loading").hidden = true;
     } catch (error) {
       delete PACK.blocks[t.id];
       delete loadState[t.id];
-      el("loading").textContent = `Cube tile unavailable: ${error.message}`;
+      el("loading").textContent = `Cube tile unavailable: ${
+        error.name === "TimeoutError" ? "the server didn't answer within two minutes" : error.message
+      }`;
       el("loading").setAttribute("role", "alert");
     }
     tiles.pending = null;
+    if (tiles.stale && PACK.live) pollLive();
     chooseSource();
     evidenceCache.clear();
     // After a failure the view that failed is not asked for again by itself: any
@@ -2994,6 +3294,7 @@
         S.pA,
         S.pB,
         S.selection?.join(","),
+        CUT,
         Object.values(loadState).join(","),
       ].join("|");
     if (key === nav.planeKey) return;
@@ -3052,7 +3353,7 @@
     hover = null;
     el("tip").hidden = true;
     update();
-    recordCrumb("Level");
+    recordView("Level");
     save();
   }
   function confine() {
@@ -3075,98 +3376,402 @@
     chooseSource();
     limits();
   }
-  function navSnapshot() {
+  // History: every navigation is an entry in the browser's history, so Back and
+  // Forward walk it, from the browser, the keyboard or the bar. This tab keeps a
+  // summary of each entry for the list: its range, its level and what made it.
+  // Browsers keep 50 entries a tab; the list keeps the same, so each maps to one.
+  const HISTORY_KEPT = 50,
+    // Steps of one kind in quick succession are one entry, so Back undoes a gesture.
+    MERGED = new Set(["Zoom", "Pan", "Level", "Anchor", "Pinch"]),
+    MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent),
+    KEYS = { back: MAC ? "⌘[" : "Alt+←", forward: MAC ? "⌘]" : "Alt+→" };
+  const hist = { entries: [], index: -1, at: 0 };
+  const newId = () => Math.random().toString(36).slice(2, 10);
+  function summary() {
     return {
+      hash: viewHash(),
       tA: S.tA,
       tB: S.tB,
-      pA: S.pA,
-      pB: S.pB,
+      cut: CUT,
       n: S.n,
       m: S.m,
-      auto: S.auto,
-      coupled: S.coupled,
-      diagonal: S.diagonal,
-      refit: S.refit,
       window: S.window,
-      selection: S.selection?.slice() || null,
-      anchor: S.anchor,
       replay: S.replay,
     };
   }
-  function navSnapshotKey(s) {
-    return [
-      s.tA,
-      s.tB,
-      s.pA,
-      s.pB,
-      s.n,
-      s.m,
-      s.auto,
-      s.selection?.join(","),
-      s.anchor,
-      s.replay,
-    ].join("|");
+  function replaceURL(entry) {
+    try {
+      history.replaceState({ explorer: entry.id }, "", entry.hash);
+    } catch {
+      // Browsers limit how often a page may rewrite its address; the view stands.
+    }
   }
-  function crumbLabel(c) {
-    return c.label === "Level"
-      ? dur(BASE * 2 ** c.state.n) + " / " + price(PR * 2 ** c.state.m)
-      : c.label === "Zoom"
-        ? "Zoom " + dur((c.state.tB - c.state.tA) * BASE)
-        : c.label;
+  // An entry is a place. A change that moves nothing (the encoding, the
+  // overlays, the inspector's tab) rewrites the current entry instead.
+  function recordView(label) {
+    if (!ready) return;
+    const current = hist.entries[hist.index],
+      now = Date.now();
+    if (current && place(current.hash) === place(viewHash())) {
+      syncURL(true);
+      return;
+    }
+    // Only the newest entry takes a merge: after Back, a step starts a new branch.
+    if (
+      current?.label === label &&
+      MERGED.has(label) &&
+      now - hist.at < 2500 &&
+      hist.index === hist.entries.length - 1
+    ) {
+      Object.assign(current, summary());
+      replaceURL(current);
+    } else {
+      hist.entries = hist.entries.slice(0, hist.index + 1);
+      const entry = { id: newId(), label, ...summary() };
+      hist.entries.push(entry);
+      if (hist.entries.length > HISTORY_KEPT) hist.entries.shift();
+      hist.index = hist.entries.length - 1;
+      try {
+        history.pushState({ explorer: entry.id }, "", entry.hash);
+      } catch {
+        // As above.
+      }
+    }
+    hist.at = now;
+    renderHistory();
   }
-  function crumbTitle(c) {
-    return `${when(c.state.tA)} UTC · ${dur((c.state.tB - c.state.tA) * BASE)} · ${dur(BASE * 2 ** c.state.n)} × ${price(PR * 2 ** c.state.m)} USDT`;
+  // Where a view is, as opposed to how it is shown: its window or rectangle,
+  // level, selection and replay.
+  const place = (hash) =>
+    hash
+      .replace(/^#/, "")
+      .split("&")
+      .filter((x) => /^(w|t|p|r|sel|at|replay)=/.test(x))
+      .join("&");
+  // The address follows the view. A move nothing recorded becomes an entry of
+  // its own; any other change, such as the encoding, rewrites the current one,
+  // and so does a live view following the cutoff (rewrite).
+  function syncURL(rewrite = false) {
+    const current = hist.entries[hist.index];
+    if (!current) return;
+    if (!rewrite && place(current.hash) !== place(viewHash())) {
+      recordView("View");
+      return;
+    }
+    if (current.hash === viewHash() && location.hash === current.hash) return;
+    Object.assign(current, summary());
+    replaceURL(current);
+    renderHistory();
   }
-  function goToCrumb(i) {
-    const c = nav.crumbs[i];
-    if (!c) return;
-    Object.assign(S, c.state, {
-      selection: c.state.selection?.slice() || null,
-    });
-    nav.crumbIndex = i;
-    confine();
-    hover = null;
-    el("tip").hidden = true;
-    update();
-    renderCrumbs();
-    save();
-  }
-  // History: back and forward in the bar, the whole trail in its popover.
-  function renderCrumbs() {
-    const frag = document.createDocumentFragment();
-    nav.crumbs.forEach((c, i) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "cursor-interaction";
-      b.textContent = crumbLabel(c);
-      b.setAttribute("aria-current", i === nav.crumbIndex ? "step" : "false");
-      b.title = crumbTitle(c);
-      b.addEventListener("click", () => {
-        goToCrumb(i);
-        closePop();
+  function saveHistory() {
+    try {
+      window.explorerState?.saveHistory({
+        entries: hist.entries,
+        index: hist.index,
       });
-      frag.append(b);
-    });
-    el("breadcrumbs").replaceChildren(frag);
-    const back = nav.crumbs[nav.crumbIndex - 1],
-      forward = nav.crumbs[nav.crumbIndex + 1];
+    } catch {
+      // The tab's list lasts until it closes; only a reload forgets it.
+    }
+  }
+  // The tab's list survives a reload, when the address is still one of its
+  // entries; a new tab, or a link, starts a list of its own.
+  function startHistory(label) {
+    let kept = null;
+    try {
+      kept = window.explorerState?.history();
+    } catch {
+      // No list to continue.
+    }
+    const entries = Array.isArray(kept?.entries)
+        ? kept.entries.filter(
+            (x) =>
+              x &&
+              typeof x.id === "string" &&
+              typeof x.label === "string" &&
+              typeof x.hash === "string" &&
+              [x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite),
+          )
+        : [],
+      i = entries.findIndex((x) => x.id === history.state?.explorer);
+    if (i >= 0) {
+      hist.entries = entries;
+      hist.index = i;
+      Object.assign(entries[i], summary());
+    } else {
+      hist.entries = [{ id: newId(), label, ...summary() }];
+      hist.index = 0;
+    }
+    replaceURL(hist.entries[hist.index]);
+    renderHistory();
+    saveHistory();
+  }
+  function line(text, className) {
+    const span = document.createElement("span");
+    span.className = className;
+    span.textContent = text;
+    return span;
+  }
+  const levelText = (n, m) => `${dur(BASE * 2 ** n)} × ${price(PR * 2 ** m)} USDT`,
+    // Lists name a range to the minute: "15 Sep 04:21 → 22 Sep 21:59".
+    minute = (b) => (Math.round((b * BASE) / 60) * 60) / BASE,
+    listRange = (a, b) => range(minute(a), minute(b));
+  function entryPlace(x) {
+    return x.window
+      ? WINDOW_LABELS[x.window]
+      : listRange(x.tA, Math.min(x.tB, x.cut));
+  }
+  // Back, Forward and the list: each entry names its range and level.
+  function renderHistory() {
+    const back = hist.entries[hist.index - 1],
+      forward = hist.entries[hist.index + 1];
     el("hist-back").disabled = !back;
     el("hist-fwd").disabled = !forward;
-    el("hist-back").title = back ? `Back to ${crumbLabel(back)}` : "Back";
-    el("hist-fwd").title = forward
-      ? `Forward to ${crumbLabel(forward)}`
-      : "Forward";
+    el("hist-back").title =
+      (back ? `Back to ${entryPlace(back)}` : "Back") + ` (${KEYS.back})`;
+    el("hist-fwd").title =
+      (forward ? `Forward to ${entryPlace(forward)}` : "Forward") +
+      ` (${KEYS.forward})`;
+    if (el("hist-pop").hidden) return;
+    const frag = document.createDocumentFragment();
+    for (let i = hist.entries.length - 1; i >= 0; i--) {
+      const x = hist.entries[i],
+        b = document.createElement("button");
+      b.type = "button";
+      b.className = "ol-entry cursor-interaction";
+      b.setAttribute("aria-current", i === hist.index ? "step" : "false");
+      b.append(
+        line(entryPlace(x), "ol-entry-main"),
+        line(
+          `${levelText(x.n, x.m)}${x.replay ? " · replay" : ""} · ${x.label}`,
+          "ol-entry-sub",
+        ),
+      );
+      b.addEventListener("click", () => {
+        closePop();
+        if (i !== hist.index) history.go(i - hist.index);
+      });
+      frag.append(b);
+    }
+    el("breadcrumbs").replaceChildren(frag);
   }
-  function recordCrumb(label) {
+  // Back and Forward return to a place and leave how it is shown alone; an
+  // address edited by hand is taken whole.
+  addEventListener("popstate", (e) => {
     if (!ready) return;
-    const state = navSnapshot(),
-      key = navSnapshotKey(state);
-    if (nav.crumbs[nav.crumbIndex]?.key === key) return;
-    nav.crumbs = nav.crumbs.slice(0, nav.crumbIndex + 1);
-    nav.crumbs.push({ label: label || "View", state, key });
-    if (nav.crumbs.length > 8) nav.crumbs.shift();
-    nav.crumbIndex = nav.crumbs.length - 1;
-    renderCrumbs();
+    const view = readView(location.hash);
+    if (!view) return;
+    transition = reduce
+      ? null
+      : { n: renderN(), m: renderM(), start: performance.now() };
+    const i = hist.entries.findIndex((x) => x.id === e.state?.explorer);
+    applyView(
+      i < 0
+        ? view
+        : {
+            ...view,
+            follow: followMode(),
+            mode: S.mode,
+            poc: S.poc,
+            area: S.area,
+            untested: S.untested,
+            tab: S.tab,
+            evidenceKind: S.evidenceKind,
+            horizon: S.horizon,
+            barrier: S.barrier,
+          },
+    );
+    // The step after Back or Forward is new, whatever its kind.
+    hist.at = 0;
+    if (i >= 0) hist.index = i;
+    else if (e.state?.explorer) {
+      // An entry this list no longer holds: where it sits among the browser's is
+      // unknown, so the list starts again from it rather than guess.
+      hist.entries = [{ id: e.state.explorer, label: "View", ...summary() }];
+      hist.index = 0;
+    } else {
+      // An address edited by hand: a new entry after the current one.
+      hist.entries = hist.entries.slice(0, hist.index + 1);
+      hist.entries.push({ id: newId(), label: "Link", ...summary() });
+      hist.index = hist.entries.length - 1;
+    }
+    update();
+    syncURL(true);
+    save();
+  });
+
+  // Named views, kept by this browser for every tab. A view saved while it
+  // shows the cutoff is live: it opens on the latest data with the same span
+  // and fits the price range again, as the price has moved since.
+  const views = { list: [], undo: null };
+  function loadViews() {
+    let list = null;
+    try {
+      list = window.explorerState?.views();
+    } catch {
+      // No saved views to show.
+    }
+    views.list = Array.isArray(list)
+      ? list.filter(
+          (x) =>
+            x &&
+            typeof x.name === "string" &&
+            typeof x.hash === "string" &&
+            [x.span, x.lead, x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite),
+        )
+      : [];
+  }
+  function storeViews() {
+    try {
+      window.explorerState.saveViews(views.list);
+      return true;
+    } catch {
+      viewsStatus("This browser's storage is unavailable, so views can't be saved.");
+      return false;
+    }
+  }
+  const atCutoff = () => !S.replay && S.tA < CUT && S.tB >= CUT;
+  function viewPlace() {
+    return S.window
+      ? WINDOW_LABELS[S.window]
+      : atCutoff()
+        ? `Last ${dur((CUT - S.tA) * BASE)}`
+        : listRange(S.tA, Math.min(S.tB, CUT));
+  }
+  // Every change starts from the list as stored, so two tabs saving at once
+  // both keep their views.
+  function saveView(name) {
+    name = name.trim().slice(0, 80);
+    if (!name) {
+      viewsStatus("Name the view to save it.");
+      return;
+    }
+    loadViews();
+    const view = {
+        name,
+        live: !S.window && atCutoff(),
+        span: S.tB - S.tA,
+        lead: S.tB - CUT,
+        auto: S.auto,
+        mode: S.mode,
+        ...summary(),
+      },
+      i = views.list.findIndex((x) => x.name === name);
+    if (i >= 0) views.list[i] = view;
+    else views.list.push(view);
+    views.undo = null;
+    if (storeViews())
+      viewsStatus(i >= 0 ? `Updated “${name}”.` : `Saved “${name}”.`);
+    renderViews();
+  }
+  function openView(x) {
+    const view = readView(x.hash);
+    if (!view) return;
+    if (x.live && !view.window) {
+      view.tB = CUT + x.lead;
+      view.tA = view.tB - x.span;
+    }
+    transition = reduce
+      ? null
+      : { n: renderN(), m: renderM(), start: performance.now() };
+    applyView(view);
+    if (x.live) {
+      fit();
+      if (S.auto) autoLevel();
+    }
+    update();
+    recordView(x.name);
+    save();
+  }
+  function deleteView(name) {
+    loadViews();
+    const i = views.list.findIndex((x) => x.name === name);
+    if (i < 0) return renderViews();
+    const [gone] = views.list.splice(i, 1);
+    if (!storeViews()) {
+      views.list.splice(i, 0, gone);
+      return;
+    }
+    views.undo = { view: gone, index: i };
+    viewsStatus(`Deleted “${gone.name}”.`, true);
+    renderViews();
+  }
+  function undoDelete() {
+    const { view, index } = views.undo || {};
+    if (!view) return;
+    loadViews();
+    // A view saved under the same name since then stays.
+    if (!views.list.some((x) => x.name === view.name))
+      views.list.splice(Math.min(index, views.list.length), 0, view);
+    views.undo = null;
+    if (storeViews()) viewsStatus(`Restored “${view.name}”.`);
+    renderViews();
+  }
+  function viewsStatus(text, undo = false) {
+    const node = el("views-status");
+    node.replaceChildren(text);
+    if (undo) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "ol-action ol-s cursor-interaction";
+      b.textContent = "Undo";
+      b.addEventListener("click", undoDelete);
+      node.append(" ", b);
+    }
+  }
+  function viewDetail(x) {
+    return [
+      x.window
+        ? WINDOW_LABELS[x.window]
+        : x.live
+          ? `Last ${dur((x.span - x.lead) * BASE)}`
+          : listRange(x.tA, Math.min(x.tB, x.cut)),
+      x.auto ? "auto level" : levelText(x.n, x.m),
+      ...(x.mode && x.mode !== "volume" ? [MODE_NAMES[x.mode]] : []),
+    ].join(" · ");
+  }
+  function renderViews() {
+    if (el("hist-pop").hidden) return;
+    const frag = document.createDocumentFragment();
+    views.list.forEach((x, i) => {
+      const row = document.createElement("div"),
+        open = document.createElement("button"),
+        remove = document.createElement("button");
+      row.className = "ol-saved-row";
+      open.type = remove.type = "button";
+      open.className = "ol-entry cursor-interaction";
+      open.title = x.window || x.live
+        ? "Opens on the latest data"
+        : "Opens where it was saved";
+      open.append(line(x.name, "ol-entry-main"), line(viewDetail(x), "ol-entry-sub"));
+      open.addEventListener("click", () => {
+        closePop();
+        openView(x);
+      });
+      remove.className = "ol-icon-button ol-s cursor-interaction";
+      remove.setAttribute("aria-label", `Delete “${x.name}”`);
+      remove.title = "Delete this view";
+      remove.innerHTML =
+        '<svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>';
+      remove.addEventListener("click", () => deleteView(x.name));
+      row.append(open, remove);
+      frag.append(row);
+    });
+    if (!views.list.length)
+      frag.append(
+        line(
+          "No saved views yet. A view saved while it shows the latest data opens on the latest data.",
+          "ol-muted ol-empty",
+        ),
+      );
+    el("saved").replaceChildren(frag);
+  }
+  // Open the views popover; to save, with the name field ready to type.
+  function openViews(naming = false) {
+    if (el("hist-pop").hidden) el("hist").click();
+    if (naming) {
+      el("view-name").focus();
+      el("view-name").select();
+    }
   }
   function updateNavigation() {
     el("auto").setAttribute("aria-pressed", String(S.auto));
@@ -3199,7 +3804,7 @@
     el("tip").hidden = true;
     update();
     if (label) {
-      recordCrumb(label);
+      recordView(label);
       save();
     }
   }
@@ -3282,7 +3887,7 @@
     hover = null;
     el("tip").hidden = true;
     update();
-    recordCrumb("Pinned lens");
+    recordView("Pinned lens");
     save();
     return true;
   }
@@ -3474,13 +4079,7 @@
   function bindNavigation() {
     if (nav.bound) return;
     nav.bound = true;
-    el("auto").addEventListener("click", () => {
-      S.auto = !S.auto;
-      autoLevel();
-      update();
-      recordCrumb(S.auto ? "Auto" : "Locked");
-      save();
-    });
+    el("auto").addEventListener("click", toggleAuto);
     el("lens-depth").addEventListener("change", () => {
       S.lensDepth = clamp(Number(el("lens-depth").value) || 2, 1, 4);
       requestDraw();
@@ -3669,6 +4268,7 @@
         const p = at(e);
         if (!inPlot(p)) return;
         e.preventDefault();
+        gestureAt = performance.now();
         zoomNavigation(
           Math.exp(clamp(e.deltaY, -120, 120) * 0.003),
           p,
@@ -3676,7 +4276,7 @@
         );
         clearTimeout(nav.wheelTimer);
         nav.wheelTimer = setTimeout(() => {
-          recordCrumb("Zoom");
+          recordView("Zoom");
           save();
         }, 220);
       },
@@ -3688,137 +4288,122 @@
       if (!inPlot(p)) return;
       zoomNavigation(0.5, p, e.shiftKey);
       if (!S.replay) S.anchor = null;
-      recordCrumb("Drill");
+      recordView("Drill");
       save();
     });
-    root.addEventListener("keydown", (e) => {
+    // Keys work anywhere on the page except in text fields and lists, which
+    // keep their own; the browser keeps its shortcuts, and Alt with an arrow is
+    // its Back and Forward. Every key is listed under ? (see the key list).
+    const TEXT_FIELDS =
+      'input:not([type="checkbox"]):not([type="radio"]), select, textarea, [contenteditable]:not([contenteditable="false"])';
+    document.addEventListener("keydown", (e) => {
+      const target = e.target instanceof Element ? e.target : null,
+        // The level keys go by the character typed, [ ] for time cells and
+        // { } for price cells, which some layouts type with AltGr or Option.
+        bracket = { "[": [-1, 0], "]": [1, 0], "{": [0, -1], "}": [0, 1] }[e.key],
+        typed = Boolean(bracket) && (e.altKey || e.getModifierState?.("AltGraph"));
       if (
         !ready ||
-        /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) ||
+        e.defaultPrevented ||
+        e.isComposing ||
         e.metaKey ||
-        e.ctrlKey
+        (e.ctrlKey && !typed) ||
+        target?.closest(TEXT_FIELDS)
       )
         return;
-      const k = e.key.toLowerCase(),
-        centre = { t: (S.tA + S.tB) / 2, p: (S.pA + S.pB) / 2 };
       if (e.key === "Alt") {
         nav.alt = true;
         el("tip").hidden = true;
         requestDraw();
         return;
       }
-      if (k === "a") {
-        e.preventDefault();
-        el("auto").click();
+      if (e.altKey && !typed) return;
+      // The key list is a modal dialog: it handles Escape, and ? closes it.
+      if (el("keys").open) {
+        if (e.key === "?") {
+          e.preventDefault();
+          el("keys").close();
+        }
         return;
       }
-      if (k === "l" && e.shiftKey) {
-        e.preventDefault();
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key,
+        shift = e.shiftKey,
+        // The digit typed, or on layouts that type another character there (AZERTY)
+        // the digit key; a keypad with NumLock off types End and the arrows instead.
+        digit = /^[1-3]$/.test(e.key)
+          ? e.key
+          : !shift && /^Digit[1-3]$/.test(e.code)
+            ? e.code.slice(-1)
+            : null,
+        centre = { t: (S.tA + S.tB) / 2, p: (S.pA + S.pB) / 2 };
+      // A held key repeats like a gesture: the continuations wait for it to end.
+      if (e.repeat) gestureAt = performance.now();
+      if (e.key === "?") openKeys();
+      else if (digit) chooseWindow(["1", "7", "all"][digit - 1]);
+      else if (bracket)
+        changeResolution(S.n + bracket[0], S.m + bracket[1], !bracket[1]);
+      else if (["+", "=", "-", "_"].includes(k)) {
+        zoomNavigation(k === "-" || k === "_" ? 1.4 : 1 / 1.4, centre, shift);
+        recordView("Zoom");
+        save();
+      } else if (k.startsWith("Arrow")) {
+        const dt = (S.tB - S.tA) * 0.15,
+          dp = (S.pB - S.pA) * 0.15,
+          [x, y] = {
+            ArrowLeft: [-dt, 0],
+            ArrowRight: [dt, 0],
+            ArrowUp: [0, dp],
+            ArrowDown: [0, -dp],
+          }[k] || [0, 0];
+        S.tA += x;
+        S.tB += x;
+        S.pA += y;
+        S.pB += y;
+        S.window = "";
+        settleNavigation("Pan", false);
+      } else if (k === "End") jumpLatest();
+      else if (k === "Escape") escapeKey();
+      else if (k === "Enter") {
+        // Enter on a control presses it; anywhere else it pins the lens.
+        if (
+          !(S.lens || nav.alt || nav.hold) ||
+          (target !== canvas && target?.closest("button, a, summary, [tabindex]"))
+        )
+          return;
+        pinLens();
+      } else if (k === "a") toggleAuto();
+      else if (k === "l" && shift) {
         S.lensDepth = (clamp(Math.round(S.lensDepth) || 2, 1, 4) % 4) + 1;
         update();
         save();
-        return;
-      }
-      if (k === "l") {
-        e.preventDefault();
-        setTool(S.lens ? "pan" : "lens");
-        return;
-      }
-      if (k === "s") {
-        e.preventDefault();
-        setTool(S.select ? "pan" : "select");
-        return;
-      }
-      if (k === "v") {
-        e.preventDefault();
-        setTool("pan");
-        return;
-      }
-      if (k === "d") {
-        e.preventDefault();
-        setFollow(S.diagonal ? "free" : "diagonal");
-        return;
-      }
-      if (k === "enter" && e.target === canvas && (S.lens || nav.alt || nav.hold)) {
-        e.preventDefault();
-        pinLens();
-        return;
-      }
-      if (k === "," || k === ".") {
-        e.preventDefault();
-        stepAnchor(k === "," ? -1 : 1);
-        return;
-      }
-      if (k === "f") {
-        e.preventDefault();
-        fit();
-        autoLevel();
-        update();
-        recordCrumb("Fit");
-        save();
-        return;
-      }
-      if (["[", "]", "{", "}"].includes(k)) {
-        e.preventDefault();
-        const d = k === "[" || k === "{" ? -1 : 1;
-        changeResolution(
-          S.n + (e.shiftKey ? 0 : d),
-          S.m + (e.shiftKey ? d : 0),
-          !e.shiftKey,
-        );
-        return;
-      }
-      if (["+", "=", "-", "_"].includes(k)) {
-        e.preventDefault();
-        zoomNavigation(
-          k === "-" || k === "_" ? 1.4 : 1 / 1.4,
-          centre,
-          e.shiftKey,
-        );
-        recordCrumb("Zoom");
-        save();
-        return;
-      }
-      if (k === "escape") {
-        e.preventDefault();
-        // Escape closes what is open first, then clears the lens and selection.
-        if (closePop(true)) return;
-        if (root.dataset.sheet === "open") {
-          setSheet(false);
-          el("sheet-toggle").focus();
-          return;
-        }
-        S.lens = false;
-        nav.hold = false;
-        nav.alt = false;
-        S.selection = null;
+      } else if (k === "l") setTool(S.lens ? "pan" : "lens");
+      else if (k === "s" && shift) openViews(true);
+      else if (k === "s") setTool(S.select ? "pan" : "select");
+      else if (k === "v") setTool("pan");
+      else if (k === "d") setFollow(S.diagonal ? "free" : "diagonal");
+      else if (k === "f") fitPrice("Fit price");
+      else if (k === "," || k === ".") stepAnchor(k === "," ? -1 : 1);
+      else if (k === "m") {
+        const i = MODES.indexOf(S.mode) + (shift ? -1 : 1);
+        setMode(MODES[(i + MODES.length) % MODES.length]);
+      } else if (k === "p") {
+        S.poc = !S.poc;
         update();
         save();
-        return;
-      }
-      if (k.startsWith("arrow")) {
-        e.preventDefault();
-        const dt = (S.tB - S.tA) * 0.15,
-          dp = (S.pB - S.pA) * 0.15;
-        if (k === "arrowleft") {
-          S.tA -= dt;
-          S.tB -= dt;
-        }
-        if (k === "arrowright") {
-          S.tA += dt;
-          S.tB += dt;
-        }
-        if (k === "arrowup") {
-          S.pA += dp;
-          S.pB += dp;
-        }
-        if (k === "arrowdown") {
-          S.pA -= dp;
-          S.pB -= dp;
-        }
-        S.window = "";
-        settleNavigation("Pan", false);
-      }
+      } else if (k === "r") toggleReplay();
+      else if (k === "c") {
+        S.tab = S.tab === "evidence" ? "context" : "evidence";
+        S.sideOpen = true;
+        update();
+        save();
+      } else if (k === "i") {
+        S.sideOpen = !S.sideOpen;
+        applyPanels();
+        save();
+      } else if (k === "t") openDrawer(S.drawer, !S.drawerOpen);
+      else if (k === "h") el("hist").click();
+      else return;
+      e.preventDefault();
     });
     window.addEventListener("keyup", (e) => {
       if (e.key === "Alt") {
@@ -3837,20 +4422,79 @@
     });
   }
 
+  // Commands shared by the controls and their keys.
+  function chooseWindow(w) {
+    setWindow(w);
+    recordView("Window");
+    update();
+    save();
+  }
+  function setMode(mode) {
+    S.mode = mode;
+    update();
+    save();
+  }
+  function toggleAuto() {
+    S.auto = !S.auto;
+    autoLevel();
+    update();
+    recordView(S.auto ? "Auto" : "Locked");
+    save();
+  }
+  function fitPrice(label) {
+    fit();
+    if (S.auto) autoLevel();
+    recordView(label);
+    update();
+    save();
+  }
+  function toggleReplay() {
+    S.replay = !S.replay;
+    S.selection = null;
+    if (S.replay && S.anchor === null)
+      S.anchor =
+        Math.floor((S.tA + (Math.min(S.tB, CUT) - S.tA) * 0.65) / stepT()) *
+        stepT();
+    S.tab = S.replay ? "evidence" : S.tab;
+    fit();
+    hover = null;
+    el("tip").hidden = true;
+    recordView(S.replay ? "Replay" : "Cutoff");
+    update();
+    save();
+  }
+  // The same span, moved to end at the cutoff with a tenth of it to spare, as a
+  // window does; replay ends, since the latest data is what was asked for.
+  function jumpLatest() {
+    const span = S.tB - S.tA;
+    S.tB = CUT + span * (0.105 / 1.105);
+    S.tA = S.tB - span;
+    S.replay = false;
+    S.window = "";
+    settleNavigation("Latest", true);
+  }
+  // Escape closes what is open first, then leaves the lens and clears the selection.
+  function escapeKey() {
+    if (closePop(true)) return;
+    if (root.dataset.sheet === "open") {
+      setSheet(false);
+      el("sheet-toggle").focus();
+      return;
+    }
+    const selected = S.selection !== null;
+    S.lens = false;
+    nav.hold = false;
+    nav.alt = false;
+    S.selection = null;
+    update();
+    if (selected) recordView("Selection cleared");
+    save();
+  }
   qsa("[data-window]").forEach((b) =>
-    b.addEventListener("click", () => {
-      setWindow(b.dataset.window);
-      recordCrumb(b.textContent.trim());
-      update();
-      save();
-    }),
+    b.addEventListener("click", () => chooseWindow(b.dataset.window)),
   );
   qsa("[data-mode]").forEach((b) =>
-    b.addEventListener("click", () => {
-      S.mode = b.dataset.mode;
-      update();
-      save();
-    }),
+    b.addEventListener("click", () => setMode(b.dataset.mode)),
   );
   for (const [id, dn, dm] of [
     ["tminus", -1, 0],
@@ -3869,17 +4513,12 @@
     });
   el("clear").addEventListener("click", () => {
     S.selection = null;
-    recordCrumb("Selection cleared");
+    recordView("Selection cleared");
     update();
     save();
   });
-  el("fit").addEventListener("click", () => {
-    fit();
-    if (S.auto) autoLevel();
-    recordCrumb("Fit price");
-    update();
-    save();
-  });
+  el("fit").addEventListener("click", () => fitPrice("Fit price"));
+  el("latest").addEventListener("click", jumpLatest);
   for (const tab of ["context", "evidence"])
     el(tab + "-tab").addEventListener("click", () => {
       S.tab = tab;
@@ -3892,54 +4531,281 @@
     update();
     save();
   });
-  el("replay").addEventListener("click", () => {
-    S.replay = !S.replay;
-    S.selection = null;
-    if (S.replay && S.anchor === null)
-      S.anchor =
-        Math.floor((S.tA + (Math.min(S.tB, CUT) - S.tA) * 0.65) / stepT()) *
-        stepT();
-    S.tab = S.replay ? "evidence" : S.tab;
-    fit();
-    hover = null;
-    el("tip").hidden = true;
-    recordCrumb(S.replay ? "Replay" : "Cutoff");
-    update();
-    save();
-  });
+  el("replay").addEventListener("click", toggleReplay);
   for (const [id, delta] of [
     ["back", -1],
     ["next", 1],
   ])
     el(id).addEventListener("click", () => stepAnchor(delta));
+
+  // The tab's title carries the market: the latest POC and the instrument, and
+  // the snapshot's day, or that live updates have stopped.
+  function title() {
+    const src = sources.recent;
+    let poc = null;
+    if (src?.cells.length) {
+      const last = src.cells.at(-1).c;
+      let best = -1;
+      // Ties choose the lower row, as every POC does.
+      for (let i = src.cells.length - 1; i >= 0 && src.cells[i].c === last; i--)
+        if (src.cells[i].v >= best) {
+          best = src.cells[i].v;
+          poc = src.cells[i].r;
+        }
+    }
+    document.title = [
+      poc === null
+        ? INSTRUMENT
+        : `${price((poc + 0.5) * PR * 2 ** src.m)} ${INSTRUMENT}`,
+      !PACK.live ? day(CUT) : live.state === "live" ? "" : "not updating",
+      "Cube Explorer",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  // Live data. The page asks the bridge what changed since its pack, when the
+  // bridge says a newer one can be ready, and puts it in place: the columns
+  // each tier gained, or the whole pack when the cube's history changed. A view
+  // showing the cutoff follows it; any other view stays where it is.
+  const TIERS = ["overview", "recent", "reference"];
+  const live = {
+    state: "live", // live, stale (the cube has no new data) or stopped (no answer)
+    timer: 0,
+    busy: false,
+    failures: 0,
+    error: "",
+    ok: Date.now(), // the bridge's last answer
+    // When the cube's data last advanced, as the bridge saw it: a cube that stalled
+    // before the page opened is stale from the start.
+    updated: Date.now() - (Number(PACK.quiet ?? PACK.age) || 0) * 1000,
+    generation: 0, // counts whole packs; a tile asked for before one is dropped
+    notice: false, // the loading line is saying that updates stopped
+  };
+  // A request that hangs counts as a failure, so the page retries and can say so.
+  const LIVE_TIMEOUT = 60000;
+  // An answer is used only when it is one of the three the bridge sends, whole.
+  function checkUpdate(body) {
+    const pack = body?.status === "pack" ? body.pack : body,
+      whole = (x) =>
+        x &&
+        typeof x.cutoff === "string" &&
+        Number.isFinite(Date.parse(x.cutoff)) &&
+        typeof x.state_token === "string" &&
+        TIERS.every((id) => typeof x.blocks?.[id]?.gzip_base64 === "string");
+    if (body?.status === "current" && typeof body.state_token === "string") return;
+    if (body?.status === "pack" && whole(pack)) return;
+    if (
+      body?.status === "delta" &&
+      whole(body) &&
+      TIERS.every((id) => Number.isFinite(body.blocks[id].from))
+    )
+      return;
+    throw Error("the server's answer couldn't be read");
+  }
+  function scheduleLive(seconds) {
+    clearTimeout(live.timer);
+    // A hidden tab asks at most once a minute; showing it again asks at once.
+    const wait = document.hidden ? Math.max(60, seconds) : seconds;
+    live.timer = setTimeout(pollLive, clamp(wait, 3, 300) * 1000);
+  }
+  async function pollLive() {
+    if (live.busy) return;
+    live.busy = true;
+    clearTimeout(live.timer);
+    let next;
+    try {
+      // A tier that never loaded can't take a delta: then the whole pack.
+      const since = TIERS.every((id) => sources[id]) ? PACK.state_token : "",
+        target = new URL(
+          `/cube/pack?since=${encodeURIComponent(since)}`,
+          location.href,
+        );
+      target.username = "";
+      target.password = "";
+      const response = await fetch(target, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(LIVE_TIMEOUT),
+        }),
+        body = await response.json().catch(() => null);
+      if (!response.ok)
+        throw Error(body?.error || `the server answered ${response.status}`);
+      checkUpdate(body);
+      if (body.status === "delta") await applyLive(body, false);
+      else if (body.status === "pack") await applyLive(body.pack, true);
+      if (Number.isFinite(body.quiet)) live.updated = Date.now() - body.quiet * 1000;
+      live.failures = 0;
+      live.error = "";
+      live.ok = Date.now();
+      next = Number(body.next) || 20;
+    } catch (error) {
+      live.failures++;
+      // The server's own words end a sentence the page continues.
+      live.error = (
+        error.name === "TimeoutError"
+          ? "the server didn't answer within a minute"
+          : error instanceof TypeError
+            ? "the server can't be reached"
+            : error.message
+      ).replace(/\.+$/, "");
+      next = Math.min(120, 15 * 2 ** (live.failures - 1));
+    }
+    live.busy = false;
+    renderLive();
+    scheduleLive(next);
+  }
+  async function applyLive(body, whole) {
+    const was = CUT,
+      parts = {};
+    // Everything is decoded before anything changes: no frame sees half a pack.
+    for (const id of TIERS)
+      if (body.blocks?.[id]) parts[id] = await unpack(body.blocks[id], id);
+    if (whole) {
+      for (const id of Object.keys(sources))
+        if (!TIERS.includes(id)) {
+          delete sources[id];
+          delete loadState[id];
+          delete PACK.blocks[id];
+        }
+      live.generation++;
+      tiles.stale = false;
+    }
+    for (const [id, part] of Object.entries(parts)) {
+      const src = sources[id],
+        meta = { ...body.blocks[id] };
+      if (whole || !src) sources[id] = part;
+      else {
+        // The page keeps its columns before `from` that are still in the tier.
+        src.cells = src.cells
+          .filter((c) => c.c >= part.col0 && c.c < meta.from)
+          .concat(part.cells);
+        Object.assign(src, {
+          b0: part.b0,
+          b1: part.b1,
+          col0: part.col0,
+          col1: part.col1,
+        });
+      }
+      loadState[id] = "ready";
+      delete meta.gzip_base64;
+      PACK.blocks[id] = meta;
+    }
+    for (const key of [
+      "cutoff",
+      "cutoffBase",
+      "data_cutoff",
+      "canonical_through",
+      "state_token",
+      "partitions",
+    ])
+      if (key in body) PACK[key] = body[key];
+    CUT = (Date.parse(PACK.cutoff) / 1000 - T0) / BASE;
+    CUT_YEAR = date(CUT).getUTCFullYear();
+    groups.clear();
+    evidenceCache.clear();
+    rebuildReference();
+    followCutoff(was);
+    chooseSource();
+    limits();
+    update();
+    title();
+  }
+  // A view that showed the old cutoff moves with it, keeping its span; a window
+  // keeps its length. Not during a gesture, and never in replay.
+  function followCutoff(was) {
+    if (CUT === was || S.replay || !(S.tA < was && S.tB >= was) || gesturing())
+      return;
+    if (S.window) windowRange(S.window);
+    else {
+      S.tA += CUT - was;
+      S.tB += CUT - was;
+    }
+    if (S.window || (S.refit && !S.coupled && !S.diagonal)) fit();
+    confine();
+    if (S.auto) autoLevel();
+    hover = null;
+    el("tip").hidden = true;
+    syncURL(true);
+    save();
+  }
+  // The state pill: how fresh the data is, and plainly when updates stop.
+  function renderLive() {
+    if (!PACK.live) return;
+    const now = Date.now(),
+      quiet = now - live.updated,
+      state =
+        live.failures && now - live.ok > 45000
+          ? "stopped"
+          : quiet > 300000
+            ? "stale"
+            : "live",
+      pill = el("state-pill");
+    el("fresh").textContent =
+      state === "stopped"
+        ? "updates stopped"
+        : state === "stale"
+          ? `no new data for ${elapsed(quiet)}`
+          : `updated ${ago(quiet)}`;
+    pill.dataset.state = state;
+    pill.title =
+      state === "stopped"
+        ? `No answer from the server for ${elapsed(now - live.ok)}: ${live.error}. The page keeps asking.`
+        : `Data through ${when(CUT)} UTC. The page asks for new data about once a minute` +
+          (state === "stale" ? "; the cube has had none since." : ".");
+    if (state === live.state) return;
+    live.state = state;
+    title();
+    // The loading line says it once, where assistive technology hears it.
+    const note = el("loading");
+    if (state === "stopped") {
+      note.textContent = `Live updates stopped: ${live.error}. The page keeps asking.`;
+      note.hidden = false;
+      live.notice = true;
+    } else if (live.notice) {
+      note.hidden = true;
+      live.notice = false;
+    }
+  }
+  function startLive() {
+    if (!PACK.live) return;
+    renderLive();
+    setInterval(() => {
+      if (!document.hidden) renderLive();
+    }, 1000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      renderLive();
+      if (!live.busy && Date.now() - live.ok > 15000) pollLive();
+    });
+    scheduleLive(Number(PACK.next) || 20);
+  }
+
   bindRoot();
   bindEvidence();
   bindNavigation();
   try {
     qsa("button,input,select").forEach((control) => (control.disabled = true));
     el("market").textContent = PACK.live ? "LIVE" : "RECORDED";
-    el("snapshot").textContent = PACK.live
-      ? `${day(CUT)} ${d3.utcFormat("%H:%M")(date(CUT))} UTC`
-      : day(CUT);
+    el("fresh").hidden = !PACK.live;
+    for (const kbd of qsa("[data-key]")) kbd.textContent = KEYS[kbd.dataset.key];
     getColors();
     sources.recent = await unpack(PACK.blocks.recent, "recent");
+    // Decoded blocks keep their metadata only: a tab open all day holds no payloads.
+    delete PACK.blocks.recent.gzip_base64;
     loadState.recent = "ready";
     ready = true;
     geometry();
     setWindow("1");
-    restore(window.explorerState?.saved);
+    // The address names the view; without one the page opens on the view this
+    // browser showed last. The workspace is this browser's either way.
+    const linked = readView(location.hash),
+      restored = restore(window.explorerState?.saved);
+    if (linked) applyView(linked);
     transition = null;
     qsa("button,input,select").forEach((control) => (control.disabled = false));
-    recordCrumb(
-      S.window === "all"
-        ? "All history"
-        : S.window === "1"
-          ? "24 hours"
-          : S.window === "7"
-            ? "7 days"
-            : "Restored",
-    );
+    startHistory(linked ? "Link" : restored ? "Restored" : "Opened");
     update();
+    title();
     new ResizeObserver(() => {
       if (ready) {
         geometry();
@@ -3962,6 +4828,7 @@
         `Loading ${id === "overview" ? "the full history" : "the 30-day archive"}${PACK.live ? " from the cube" : ""}…`;
       try {
         sources[id] = await unpack(PACK.blocks[id], id);
+        delete PACK.blocks[id].gzip_base64;
         loadState[id] = "ready";
         rebuildReference();
         chooseSource();
@@ -3977,6 +4844,7 @@
     }
     if (Object.values(loadState).every((x) => x === "ready"))
       el("loading").hidden = true;
+    startLive();
   } catch (error) {
     el("loading").textContent =
       (PACK.live ? "Cube data unavailable: " : "Recorded data unavailable: ") +

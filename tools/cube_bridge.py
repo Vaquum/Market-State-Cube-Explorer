@@ -11,7 +11,12 @@ Routes, all behind HTTP Basic Auth except ``/healthz``:
 - ``/``: ``index.html`` with a live pack in place of the recorded snapshot. The pack holds the
   three snapshot tiers cut at the last complete base column before the cube's data cutoff,
   fixed once per pack; the partitions its tiers share must carry the same revision, and its
-  token digests every pin it read. It is rebuilt at most once a minute.
+  token digests every pin it read and the cutoff. It is rebuilt at most once a minute.
+- ``/cube/pack?since``: what a page holding pack ``since`` needs to hold the current one:
+  nothing, the columns each tier gained when its pack is a prefix of the current one, or else
+  the whole pack; with the current pack's age, how long the cube has had no new data, and
+  when to ask again. An open page asks for this on its own, so the data advances without a
+  reload.
 - ``/vendor/<file>``: the vendored scripts, flat file names only.
 - ``/cube/tile?n&m&b0&b1&pack``: one finer tile, at most 4,096 columns, for the page holding
   pack ``pack``; refused unless every partition it read is one that pack read, at the same
@@ -54,6 +59,7 @@ BASE_PRICE = 125
 DAY = 1536  # base columns per day
 PACK_MAX_AGE_SECONDS = 60
 PACKS_HELD = 16
+COLUMNS = ("vol", "tbvol", "col", "row", "cnt", "tbcnt")  # MSC1 order
 MAX_TILE_COLUMNS = 4096
 CUBE_URL = os.environ.get("MARKET_STATE_URL", "http://127.0.0.1:8486")
 SOURCE = "Binance BTCUSDT spot · Origo market state cube"
@@ -85,8 +91,9 @@ def base_units(stamp: str) -> float:
 # ---------------------------------------------------------------- reading the cube
 
 
-def tile(n: int, m: int, b0: float, b1: float) -> tuple[dict, dict, dict]:
-    """One level-(n, m) block over base columns [b0, b1): the block, the response, its pins."""
+def tile(n: int, m: int, b0: float, b1: float) -> tuple[dict, dict, dict, dict]:
+    """One level-(n, m) block over base columns [b0, b1): the block, the response, its pins and
+    its cells as columnar arrays sorted by (column, row)."""
     import numpy as np
 
     result = query(t1=edge(b0), t2=edge(b1), tR=BASE_SECONDS * 2**n, pR=BASE_PRICE * 2**m, url=CUBE_URL)
@@ -112,14 +119,11 @@ def tile(n: int, m: int, b0: float, b1: float) -> tuple[dict, dict, dict]:
     start = base_units(response["effective"]["t1"])
     stop = min(base_units(response["effective"]["t2"]), cutoff)
     col0, col1 = int(start // 2**n), int(-(-stop // 2**n))
-    count = len(col)
-    header = struct.pack("<4sBBHIII12x", b"MSC1", n, m, 0, col0, col1, count)
-    payload = header + b"".join(columns[key].tobytes() for key in ("vol", "tbvol", "col", "row", "cnt", "tbcnt"))
     summary = read_table(result.summary, url=CUBE_URL).to_pylist()[0]
     block = {
         "n": n, "m": m, "b0": start, "b1": stop, "start": edge(start), "end": edge(stop),
-        "count": count, "col0": col0, "col1": col1, "encoding": "gzip+base64", "layout": "MSC1",
-        "gzip_base64": base64.b64encode(gzip.compress(payload, compresslevel=6)).decode(),
+        "count": len(col), "col0": col0, "col1": col1, "encoding": "gzip+base64", "layout": "MSC1",
+        "gzip_base64": msc1(n, m, col0, col1, columns),
         "totals": {
             "volume": summary["volume"], "buyVolume": summary["taker_buy_volume"],
             "trades": summary["trade_count"], "buyTrades": summary["taker_buy_trade_count"],
@@ -128,11 +132,18 @@ def tile(n: int, m: int, b0: float, b1: float) -> tuple[dict, dict, dict]:
         "data_cutoff": response["data_cutoff"],
         "state_token": response["state_token"],
     }
-    return block, response, pins
+    return block, response, pins, columns
 
 
-def pack() -> tuple[dict, dict]:
-    """The three tiers as one consistent pack, plus every pin the pack read.
+def msc1(n: int, m: int, col0: int, col1: int, columns: dict, first: int = 0) -> str:
+    """The cells from index ``first`` on as one MSC1 payload, gzipped and base64-encoded."""
+    header = struct.pack("<4sBBHIII12x", b"MSC1", n, m, 0, col0, col1, len(columns["col"]) - first)
+    payload = header + b"".join(columns[key][first:].tobytes() for key in COLUMNS)
+    return base64.b64encode(gzip.compress(payload, compresslevel=6)).decode()
+
+
+def pack() -> tuple[dict, dict, dict]:
+    """The three tiers as one consistent pack, every pin the pack read, and each tier's cells.
 
     One empty query fixes the cutoff and every tier is bounded to that base edge; every
     partition a later tier reads must then be one the overview read, at the same generation,
@@ -142,13 +153,14 @@ def pack() -> tuple[dict, dict]:
         state = dict(query(t1=edge(0), t2=edge(0.001), url=CUBE_URL).response)
         cutoff = int(base_units(state["data_cutoff"]))
         blocks: dict[str, dict] = {}
+        cells: dict[str, dict] = {}
         pinned: dict[str, list] = {}
         conflict = None
         for tier in TIERS:
             step = 2 ** tier["n"]
             b1 = (cutoff // step) * step if tier.get("complete") else cutoff
             b0 = 0 if "days" not in tier else (b1 - tier["days"] * DAY) // step * step
-            blocks[tier["id"]], _, pins = tile(tier["n"], tier["m"], b0, b1)
+            blocks[tier["id"]], _, pins, cells[tier["id"]] = tile(tier["n"], tier["m"], b0, b1)
             if not pinned:
                 pinned = pins  # the overview comes first and reads every partition up to the cutoff
             else:
@@ -159,13 +171,43 @@ def pack() -> tuple[dict, dict]:
             break
     else:
         raise RuntimeError(f"The cube changed while the pack was read (partition {conflict}); try again.")
-    digest = hashlib.sha256(json.dumps(sorted(pinned.items()), separators=(",", ":")).encode()).hexdigest()
+    # The cutoff is digested too: a pack whose data advanced always carries a new token.
+    digest = hashlib.sha256(json.dumps([cutoff, sorted(pinned.items())], separators=(",", ":")).encode()).hexdigest()
     return {
         "source": SOURCE, "t0": T0, "base_seconds": BASE_SECONDS, "base_price": BASE_PRICE,
         "cutoff": edge(cutoff), "cutoffBase": cutoff, "data_cutoff": state["data_cutoff"],
         "canonical_through": state["canonical_through"], "state_token": digest,
         "partitions": len(pinned), "snapshot": False, "live": True, "notes": NOTES, "blocks": blocks,
-    }, pinned
+    }, pinned, cells
+
+
+def tails(old: dict, new: dict) -> dict | None:
+    """The new pack's tiers as what a page holding the old pack lacks, or None when it can't be.
+
+    The old pack must be a prefix of the new: every partition it read is unchanged, and the
+    columns the page keeps, from the new tier's first column up to the one holding the old
+    tier's end edge, hold the same cells in both. A backfill or a revision fails one of the
+    two, and the page then takes the whole pack. Each tier travels as its cells from that
+    column on, which the page puts in place of its own from the same column.
+    """
+    import numpy as np
+
+    if any(new["pins"].get(key) != identity for key, identity in old["pins"].items()):
+        return None
+    blocks = {}
+    for tier in TIERS:
+        before, after = old["tiers"][tier["id"]], new["tiers"][tier["id"]]
+        block = after["block"]
+        first = int(before["block"]["b1"] // 2 ** tier["n"])
+        kept = [np.searchsorted(side["cells"]["col"], [block["col0"], first]) for side in (before, after)]
+        if not all(
+            np.array_equal(before["cells"][key][kept[0][0]:kept[0][1]], after["cells"][key][kept[1][0]:kept[1][1]])
+            for key in COLUMNS
+        ):
+            return None
+        tail = msc1(tier["n"], tier["m"], block["col0"], block["col1"], after["cells"], int(kept[1][1]))
+        blocks[tier["id"]] = {**block, "from": first, "gzip_base64": tail}
+    return blocks
 
 
 # ---------------------------------------------------------------- serving the page
@@ -179,10 +221,16 @@ class Explorer:
     def __init__(self, page: Path, user: str, password: str) -> None:
         self.page = page
         self.expected = f"{user}:{password}".encode()
-        self.lock = threading.Lock()
+        self.lock = threading.Lock()  # guards the fields below; never held while the cube is read
+        self.building = threading.Lock()  # one pack build at a time
         self.pack: dict | None = None
-        self.pins: dict[str, dict[str, list]] = {}  # pack token -> the pins that pack read
+        self.held: dict[str, dict] = {}  # pack token -> the pins that pack read and its tiers
         self.packed_at = 0.0
+        # When the cube's data cutoff last moved, on this server's clock. The first pack
+        # starts it at the cutoff itself: a cube that stalled before the server started is
+        # already quiet, rather than fresh.
+        self.data_cutoff: str | None = None
+        self.advanced_at = 0.0
 
     def allows(self, header: str | None) -> bool:
         match = CREDENTIALS.match(header or "")
@@ -190,18 +238,60 @@ class Explorer:
             return False
         return hmac.compare_digest(base64.b64decode(match.group(1)), self.expected)
 
-    def current_pack(self) -> dict:
-        with self.lock:
-            if self.pack is None or time.monotonic() - self.packed_at > PACK_MAX_AGE_SECONDS:
-                started = time.monotonic()
-                self.pack, pinned = pack()
-                self.pins[self.pack["state_token"]] = pinned
-                while len(self.pins) > PACKS_HELD:
-                    del self.pins[next(iter(self.pins))]
+    def current_pack(self) -> tuple[dict, float]:
+        """The current pack and its age in seconds; rebuilt once it is older than a minute.
+
+        Tiles are checked while a pack is built: the build holds only its own lock.
+        """
+        with self.building:
+            with self.lock:
+                if self.pack is not None and time.monotonic() - self.packed_at <= PACK_MAX_AGE_SECONDS:
+                    return self.pack, time.monotonic() - self.packed_at
+            started = time.monotonic()
+            built, pinned, cells = pack()
+            tiers = {
+                key: {"block": {k: v for k, v in block.items() if k != "gzip_base64"}, "cells": cells[key]}
+                for key, block in built["blocks"].items()
+            }
+            with self.lock:
+                self.pack = built
+                if built["data_cutoff"] != self.data_cutoff:
+                    cutoff = datetime.fromisoformat(built["data_cutoff"].replace("Z", "+00:00")).timestamp()
+                    self.advanced_at = time.time() if self.data_cutoff else cutoff
+                    self.data_cutoff = built["data_cutoff"]
+                # A token built again moves to the end, so the oldest held pack is always first.
+                self.held.pop(built["state_token"], None)
+                self.held[built["state_token"]] = {"pins": pinned, "tiers": tiers}
+                while len(self.held) > PACKS_HELD:
+                    del self.held[next(iter(self.held))]
                 self.packed_at = time.monotonic()
-                cells = sum(b["count"] for b in self.pack["blocks"].values())
-                print(f"pack built in {self.packed_at - started:.1f} s, cutoff {self.pack['cutoff']}, {cells} cells", flush=True)
-            return self.pack
+            count = sum(b["count"] for b in built["blocks"].values())
+            print(f"pack built in {self.packed_at - started:.1f} s, cutoff {built['cutoff']}, {count} cells", flush=True)
+            return built, 0.0
+
+    def timing(self, age: float) -> dict:
+        """The pack's age, how long the cube has had no new data, and when a page should
+        next ask: just after the pack can be rebuilt."""
+        with self.lock:
+            quiet = max(0.0, time.time() - self.advanced_at)
+        return {
+            "age": round(age, 1), "quiet": round(quiet, 1),
+            "next": round(max(1.0, PACK_MAX_AGE_SECONDS - age + 1), 1),
+        }
+
+    def update(self, since: str) -> dict:
+        """What a page holding pack ``since`` needs to hold the current pack."""
+        current, age = self.current_pack()
+        token = current["state_token"]
+        if since == token:
+            return {"status": "current", "state_token": token, **self.timing(age)}
+        with self.lock:
+            old, new = self.held.get(since), self.held.get(token)
+        blocks = tails(old, new) if old and new else None
+        if blocks is None:
+            return {"status": "pack", "pack": current, **self.timing(age)}
+        fields = ("cutoff", "cutoffBase", "data_cutoff", "canonical_through", "state_token", "partitions")
+        return {"status": "delta", **{key: current[key] for key in fields}, "blocks": blocks, **self.timing(age)}
 
     def tile(self, spec: dict, token: str) -> dict:
         """One tile for the page holding pack ``token``.
@@ -210,10 +300,10 @@ class Explorer:
         revision and build id; a pack this server no longer holds is refused the same way.
         """
         with self.lock:
-            held = self.pins.get(token)
+            held = self.held.get(token, {}).get("pins")
         if held is None:
             raise CubeChanged("the page's pack is no longer held by the server")
-        block, response, pins = tile(spec["n"], spec["m"], spec["b0"], spec["b1"])
+        block, response, pins, _ = tile(spec["n"], spec["m"], spec["b0"], spec["b1"])
         changed = [key for key, identity in pins.items() if held.get(key) != identity]
         if changed:
             raise CubeChanged(f"{len(changed)} partition(s) differ from the page's pack, first {changed[0]}")
@@ -221,7 +311,8 @@ class Explorer:
 
     def html(self) -> bytes:
         text = self.page.read_text(encoding="utf-8")
-        data = json.dumps(self.current_pack(), separators=(",", ":")).replace("<", "\\u003c")
+        current, age = self.current_pack()
+        data = json.dumps({**current, **self.timing(age)}, separators=(",", ":")).replace("<", "\\u003c")
         replaced, hits = re.subn(
             r'(<script type="application/json" id="origo-lens-data">).*?(</script>)',
             lambda match: match.group(1) + data + match.group(2), text, count=1, flags=re.S,
@@ -253,6 +344,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if url.path in ("/", "/index.html"):
                 self.reply(200, "text/html; charset=utf-8", self.explorer.html())
+            elif url.path == "/cube/pack":
+                since = parse_qs(url.query).get("since", [""])[0]
+                self.reply(200, "application/json", json.dumps(self.explorer.update(since), separators=(",", ":")).encode())
             elif url.path == "/cube/tile":
                 self.reply(200, "application/json", json.dumps(self.tile(parse_qs(url.query))).encode())
             elif (asset := self.explorer.vendor_file(url.path)) is not None:

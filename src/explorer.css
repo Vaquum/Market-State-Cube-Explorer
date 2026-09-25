@@ -13,6 +13,8 @@
   --ol-sell: light-dark(#b3624b, #d89777);
   --ol-poc: light-dark(#a87823, #dfb967);
   --ol-evidence: light-dark(#7664a9, #b4a1df);
+  /* Taker flow's midpoint: an even share, distinct from gridlines and both sides */
+  --ol-neutral: light-dark(#b9c2bc, #5f6b64);
   /* Interface: focus, selection, controls; never data */
   --ol-accent: var(--ol-ink);
   --ol-border: light-dark(#768d7e, #667f6f);
@@ -344,14 +346,12 @@
   min-height: var(--h-l);
 }
 #origo-lens .ol-cap,
-#origo-lens .ol-span,
-#origo-lens .ol-replay #ol-replay-at {
+#origo-lens .ol-span {
   font-size: var(--fs-s);
   color: var(--ol-muted);
   white-space: nowrap;
 }
-#origo-lens .ol-span,
-#origo-lens .ol-replay #ol-replay-at {
+#origo-lens .ol-span {
   padding: 0 var(--sp-1);
 }
 #origo-lens .ol-res .ol-caret {
@@ -387,7 +387,6 @@
   }
 }
 @container (max-width: 1400px) {
-  #origo-lens #ol-replay-at,
   #origo-lens #ol-hist-back,
   #origo-lens #ol-hist-fwd {
     display: none;
@@ -707,10 +706,22 @@
   height: 100%;
   touch-action: none;
 }
+#origo-lens canvas#ol-canvas[data-cursor="grab"] {
+  cursor: grab;
+}
+#origo-lens canvas#ol-canvas[data-cursor="grabbing"] {
+  cursor: grabbing;
+}
+#origo-lens canvas#ol-canvas[data-cursor="crosshair"] {
+  cursor: crosshair;
+}
+#origo-lens canvas#ol-canvas[data-cursor="zoom-in"] {
+  cursor: zoom-in;
+}
 #origo-lens .ol-tip {
   position: absolute;
   z-index: 4;
-  max-width: 235px;
+  max-width: 280px;
   padding: var(--sp-2) var(--sp-3);
   font-size: var(--fs-s);
   font-variant-numeric: tabular-nums;
@@ -721,8 +732,66 @@
   box-shadow: 0 var(--sp-1) var(--sp-5) var(--ol-shadow);
   pointer-events: none;
 }
-#origo-lens .ol-tip div {
-  margin: 2px 0;
+#origo-lens .ol-tip-head {
+  font-weight: 500;
+}
+#origo-lens .ol-tip-sub,
+#origo-lens .ol-tip-note {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-tip-rows {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px var(--sp-3);
+  margin: var(--sp-1) 0 0;
+}
+#origo-lens .ol-tip-rows dt {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-tip-rows dd {
+  margin: 0;
+  text-align: right;
+}
+#origo-lens .ol-tip-note {
+  margin-top: var(--sp-1);
+}
+/* The replay transport, at the top of the plot on the replay line; placed by
+   the page. */
+#origo-lens .ol-transport {
+  position: absolute;
+  top: calc(var(--sp-3) + var(--sp-2));
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  /* Its own width, capped by the page to the plot's, wherever it is placed */
+  width: max-content;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-line);
+  border-radius: var(--r-m);
+  box-shadow: 0 1px var(--sp-1) var(--ol-shadow);
+}
+#origo-lens .ol-transport select {
+  min-height: var(--h-s);
+  padding: 0 var(--sp-4) 0 var(--sp-1);
+  font-size: var(--fs-s);
+  background-color: transparent;
+  border-color: transparent;
+}
+#origo-lens #ol-replay-at {
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-s);
+  white-space: nowrap;
+}
+#origo-lens #ol-play[aria-pressed="true"] .ol-play-icon,
+#origo-lens #ol-play[aria-pressed="false"] .ol-pause-icon {
+  display: none;
+}
+#origo-lens #ol-play .ol-play-icon {
+  fill: currentColor;
 }
 /* Beside the price profile, level with the top of the plot; placed by the page. */
 #origo-lens button.ol-latest {

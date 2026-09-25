@@ -24,8 +24,9 @@ The explorer fills the window. One bar across the top holds the controls, the ch
   **Fit now** fits the price range once (F).
 - **Pan, Select and Lens** are the pointer tools (V, S, L). A finished selection hands the pointer back to Pan.
   - **Lens** shows finer recorded cells inside a region while preserving the surrounding view, one to four levels finer (Shift+L). Hold Alt, or hold on touch, to inspect temporarily. Enter or **Pin lens** makes the lens rectangle and resolution the view.
-- **Volume, taker flow, density, delta and geometry** share one grid. Profiles include total and buy POCs and a composite 70% value area.
-- **Continuations** compare matching historical states with unconditional outcomes over all price rows, whatever band is on screen. Each outcome opens its cases in the drawer, including opposing outcomes and POC-barrier crossings. **Replay** hides future trades and steps with the , and . keys.
+- **Reading the chart:** gridlines and ticks sit on cell edges at every level. The crosshair reads the price and time on the axes. The tooltip gives a cell's span and measures, exact while Shift is held, and over the price profile a row's. Each column's volume, or its signed taker volume, runs in a pane under the prices.
+- **Volume, taker flow, delta and geometry** share one grid. Volume shades an edge cell or the open column at its full-cell rate, so it compares with whole cells. Taker flow diverges from an even share to buy and sell, paler where less traded. Profiles include total and buy POCs and a composite 70% value area.
+- **Continuations** compare matching historical states with unconditional outcomes over all price rows, whatever band is on screen. Each outcome opens its cases in the drawer, including opposing outcomes and POC-barrier crossings. **Replay** hides the trades after an anchor and nothing else. Its transport on the chart steps the anchor (`,` and `.`), plays it at ½× to 4× (Space) and returns to now (End).
 - **The drawer** holds three tabs:
   - **Cells:** the measures of every occupied cell, sortable and linked to the chart on hover.
   - **Cases:** the historical cases, each date a jump into replay.
@@ -59,7 +60,7 @@ The snapshot cutoff is **2026-09-24 12:02:48.750 UTC**. This is a recorded proto
 
 Source blocks overlap; historical cases are deduplicated. Finer historical detail is explicitly unavailable where it was not included in the snapshot. Requested query bounds/resolutions and rendered coverage can therefore differ; the UI reports both. Zero-trade, unfinished and unavailable cells have distinct states.
 
-Empirical continuation shares are descriptive, not calibrated forecasts. Samples overlap. Matching percentages and cones are withheld below 30 cases. Barriers measure **first column-end POC crossings**, not trade-level first-touch events. See [data and semantics](docs/data-and-semantics.md).
+Empirical continuation shares are descriptive, not calibrated forecasts. Samples overlap. Matching percentages and boxes are withheld below 30 cases. Barriers measure **first column-end POC crossings**, not trade-level first-touch events. See [data and semantics](docs/data-and-semantics.md).
 
 ## Develop
 

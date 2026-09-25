@@ -611,8 +611,11 @@
       labelsTaken.push([right - el("latest").offsetWidth, 16, right, 16 + el("latest").offsetHeight]);
     }
     if (S.replay) {
-      const bar = el("transport"),
-        w = bar.offsetWidth,
+      // The transport stays inside the plot: where one row is too wide for it
+      // (a phone's touch targets), it wraps onto a second.
+      const bar = el("transport");
+      bar.style.maxWidth = Math.max(0, G.w - 8) + "px";
+      const w = bar.offsetWidth,
         left = clamp(G.X(cut) - w / 2, G.x + 4, G.x + G.w - w - 4);
       bar.style.left = left + "px";
       labelsTaken.push([left, 16, left + w, 20 + bar.offsetHeight]);
@@ -3223,8 +3226,8 @@
     zoomTimer: 0,
     zoomTime: false,
     zoomKey: "",
-    // The key whose press the chart took, while it is held.
-    pressed: "",
+    // The keys whose presses the chart took, while they are held.
+    pressed: new Set(),
     planeKey: "",
     planeStatus: "",
     planeHover: false,
@@ -4525,10 +4528,11 @@
           e.key.startsWith("Arrow") ||
           ["+", "=", "-", "_", ",", "."].includes(e.key);
       // A held key repeats only steps: the arrows, zoom, levels and the anchor.
-      // Any other key the chart took acts once a press, wherever the focus has
-      // gone since: a held toggle doesn't flicker, a held Space doesn't stall a
-      // replay, and a held Shift+S doesn't type into the name field it opened.
-      if (e.repeat && !step && nav.pressed && nav.pressed === id) {
+      // Any other key the chart took acts once a press, whatever is pressed or
+      // focused while it is held: a held toggle doesn't flicker, a held Space
+      // doesn't stall a replay, and a held Shift+S doesn't type into the name
+      // field it opened.
+      if (e.repeat && !step && nav.pressed.has(id)) {
         e.preventDefault();
         return;
       }
@@ -4562,7 +4566,7 @@
       if (el("keys").open) {
         if (e.key === "?") {
           e.preventDefault();
-          nav.pressed = id;
+          nav.pressed.add(id);
           el("keys").close();
         }
         return;
@@ -4653,7 +4657,7 @@
       else if (k === "h") el("hist").click();
       else return;
       e.preventDefault();
-      nav.pressed = id;
+      nav.pressed.add(id);
     });
     window.addEventListener("keyup", (e) => {
       if (e.key === "Alt") {
@@ -4666,7 +4670,7 @@
         if (hover && !el("tip").hidden) tooltip(hover);
       }
       const id = e.code || e.key;
-      if (nav.pressed === id) nav.pressed = "";
+      nav.pressed.delete(id);
       if (nav.zoomKey && nav.zoomKey === id) {
         nav.zoomKey = "";
         endZoom(false);
@@ -4677,7 +4681,7 @@
         nav.zoomKey = "";
         endZoom(false);
       }
-      nav.pressed = "";
+      nav.pressed.clear();
       nav.alt = false;
       nav.shift = false;
       nav.hold = false;

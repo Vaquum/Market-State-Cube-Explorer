@@ -762,6 +762,10 @@
   top: calc(var(--sp-3) + var(--sp-2));
   z-index: 3;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  /* Its own width, capped by the page to the plot's, wherever it is placed */
+  width: max-content;
   align-items: center;
   gap: 2px;
   padding: 2px;

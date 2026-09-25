@@ -3,9 +3,19 @@
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def check_names(app: str) -> None:
+    """Fail when two functions share a name in the script's own scope, where the
+    later one silently replaces the other for every caller."""
+    names = re.findall(r'^  (?:async )?function (\w+)\(', app, re.M)
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        raise SystemExit(f"src/explorer.js declares {', '.join(repeated)} more than once; the last replaces the others.")
 
 
 def build() -> str:
@@ -13,6 +23,7 @@ def build() -> str:
     style = (ROOT / 'src/explorer.css').read_text(encoding='utf-8')
     runtime = (ROOT / 'src/state.js').read_text(encoding='utf-8')
     app = (ROOT / 'src/explorer.js').read_text(encoding='utf-8')
+    check_names(app)
     snapshot = json.loads((ROOT / 'data/snapshot.json').read_text(encoding='utf-8'))
     data = json.dumps(snapshot, separators=(',', ':'), ensure_ascii=True).replace('<', '\\u003c')
     template = (ROOT / 'src/document.html').read_text(encoding='utf-8')

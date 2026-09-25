@@ -457,16 +457,20 @@
     return false;
   }
   // The crosshair's readouts, as ink chips: the price at the pointer in the
-  // price labels' column, the time under the panes.
-  function chip(s, x, y, align = "center") {
+  // price labels' column, the time under the panes. A chip's box is known
+  // before it is drawn, so the axes can leave out the labels it would cover.
+  function chipBox(s, x, y, align = "center") {
     ctx.font = `${TYPE.s}px ${FONT}`;
     const w = Math.ceil(ctx.measureText(s).width) + 8,
       left = align === "right" ? x - w : align === "center" ? x - w / 2 : x;
+    return [left, y - 8, left + w, y + 8];
+  }
+  function chip(s, [left, top, right, bottom]) {
     ctx.fillStyle = colors.ink;
     ctx.beginPath();
-    ctx.roundRect(left, y - 8, w, 16, 2);
+    ctx.roundRect(left, top, right - left, bottom - top, 2);
     ctx.fill();
-    text(s, left + w / 2, y, colors.bg, "center");
+    text(s, (left + right) / 2, (top + bottom) / 2, colors.bg, "center");
   }
   function line(x1, y1, x2, y2, color, width = 1, alpha = 1) {
     ctx.strokeStyle = color;
@@ -540,14 +544,25 @@
     }
     timeGrid(G.y, G.y + G.h);
   }
-  function axes() {
+  function axes(ro) {
     ctx.globalAlpha = 1;
+    ctx.font = `${TYPE.s}px ${FONT}`;
+    // A tick label a crosshair readout covers, or nearly touches, is left out
+    // rather than shown in part.
+    const covered = (box, l, t, r, b) =>
+      box && l < box[2] + 3 && box[0] - 3 < r && t < box[3] + 3 && box[1] - 3 < b;
     // Tick labels keep clear of the pane's edges, where the unit and the
     // activity pane's scale sit.
     for (const p of priceTicks()) {
-      const y = G.Y(p / PR);
-      if (y >= G.y + 10 && y <= G.y + G.h - 4)
-        text(price(p), G.x - 8, y, colors.muted, "right");
+      const y = G.Y(p / PR),
+        s = price(p),
+        left = G.x - 8 - ctx.measureText(s).width;
+      if (
+        y >= G.y + 10 &&
+        y <= G.y + G.h - 4 &&
+        !covered(ro?.price?.box, left, y - 7, G.x - 8, y + 7)
+      )
+        text(s, G.x - 8, y, colors.muted, "right");
     }
     text("USDT", G.x - 8, G.y - 5, colors.muted, "right");
     const ticks = timeTicks(),
@@ -555,9 +570,12 @@
     let previous = null;
     for (const b of ticks) {
       const x = G.X(b),
-        label = fmt(date(b));
+        label = fmt(date(b)),
+        half = ctx.measureText(label).width / 2;
       // Nothing is labelled after the cutoff: that time has no trades yet.
       if (b > CUT || x < G.x + 7 || x > G.x + G.w - 7 || label === previous)
+        continue;
+      if (covered(ro?.time.box, x - half, G.axis - 7, x + half, G.axis + 7))
         continue;
       text(label, x, G.axis, colors.muted, "center");
       previous = label;
@@ -706,10 +724,11 @@
     }
     drawResolutionLens();
     ctx.restore();
-    axes();
+    const ro = readouts(cut);
+    axes(ro);
     profile(query, b);
     activity(query, cut);
-    crosshair(cut);
+    crosshair(ro);
     querySummary(query, b);
     el("legend-text").textContent = legendText(full);
     el("legend-text").title = LEGEND_TITLES[S.mode];
@@ -727,30 +746,27 @@
       else requestDraw();
     }
   }
-  // The crosshair's time line runs through both panes wherever the pointer is
-  // on either, so a bar lines up with its column of cells; the pointer's price
-  // and time show on the axes, rounded to what a pixel can tell apart.
-  function crosshair(cut) {
-    if (!hover || hover.t >= cut || !(inPlot(hover) || inActivity(hover))) return;
-    const x = Math.round(hover.x) + 0.5;
-    line(x, G.y, x, G.y + G.h, colors.muted, 1, 0.6);
-    line(x, G.ay, x, G.ay + G.ah, colors.muted, 1, 0.6);
+  // The crosshair's readouts where the pointer is on either pane, each rounded
+  // to what a pixel can tell apart, with the box its chip takes.
+  function readouts(cut) {
+    if (!hover || hover.t >= cut || !(inPlot(hover) || inActivity(hover)))
+      return null;
+    let price = null;
     if (inPlot(hover)) {
       // The price goes to the finest round step (1, 2 or 5 × 10ⁿ USDT) no
       // smaller than a pixel.
       const perPx = ((S.pB - S.pA) * PR) / G.h,
         power = 10 ** Math.floor(Math.log10(perPx)),
         step = [1, 2, 5, 10].map((m) => m * power).find((s) => s >= perPx),
-        digits = clamp(-Math.floor(Math.log10(step)), 0, 2);
-      chip(
-        (Math.round((hover.p * PR) / step) * step).toLocaleString("en-US", {
+        digits = clamp(-Math.floor(Math.log10(step)), 0, 2),
+        s = (Math.round((hover.p * PR) / step) * step).toLocaleString("en-US", {
           minimumFractionDigits: digits,
           maximumFractionDigits: digits,
-        }),
-        G.x - 3,
-        clamp(hover.y, G.y + 8, G.y + G.h - 8),
-        "right",
-      );
+        });
+      price = {
+        s,
+        box: chipBox(s, G.x - 3, clamp(hover.y, G.y + 8, G.y + G.h - 8), "right"),
+      };
     }
     // The time goes to the finest round step no shorter than a pixel: seconds,
     // minutes and hours in steps of 1, 5, 15 and 30 (hours 1, 3, 6 and 12),
@@ -774,8 +790,25 @@
                 : `${dayMonth(monday)} – `) + dayOf(sunday, true)
             : d3.utcFormat(secondsPerPx <= 31 * DAY ? "%b %Y" : "%Y")(at);
     ctx.font = `${TYPE.s}px ${FONT}`;
-    const half = ctx.measureText(label).width / 2 + 4;
-    chip(label, clamp(hover.x, G.x + half, G.x + G.w - half), G.axis);
+    const half = Math.ceil(ctx.measureText(label).width) / 2 + 4;
+    return {
+      price,
+      time: {
+        s: label,
+        box: chipBox(label, clamp(hover.x, G.x + half, G.x + G.w - half), G.axis),
+      },
+    };
+  }
+  // The crosshair's time line runs through both panes wherever the pointer is
+  // on either, so a bar lines up with its column of cells, and its readouts
+  // sit on the axes.
+  function crosshair(ro) {
+    if (!ro) return;
+    const x = Math.round(hover.x) + 0.5;
+    line(x, G.y, x, G.y + G.h, colors.muted, 1, 0.6);
+    line(x, G.ay, x, G.ay + G.ah, colors.muted, 1, 0.6);
+    if (ro.price) chip(ro.price.s, ro.price.box);
+    chip(ro.time.s, ro.time.box);
   }
   // Each tool's cursor over the prices: grab to pan, grabbing while dragging, a
   // crosshair to select, zoom for the lens (held Alt and a touch hold too).
@@ -1294,9 +1327,10 @@
       S.replay = false;
       S.anchor = null;
       if (obj.view) {
-        const v = obj.view;
-        if (MODES.includes(v.mode))
-          S.mode = v.mode;
+        const v = obj.view,
+          // Density folded into Volume: a code that asks for it opens as Volume.
+          mode = v.mode === "density" ? "volume" : v.mode;
+        if (MODES.includes(mode)) S.mode = mode;
         for (const k of ["poc", "area", "untested", "replay"])
           if (typeof v[k] === "boolean") S[k] = v[k];
         if (["context", "evidence"].includes(v.tab)) S.tab = v.tab;
@@ -3922,7 +3956,9 @@
           ? `Last ${dur((x.span - x.lead) * BASE)}`
           : listRange(x.tA, Math.min(x.tB, x.cut)),
       x.auto ? "auto level" : levelText(x.n, x.m),
-      ...(x.mode && x.mode !== "volume" ? [MODE_NAMES[x.mode]] : []),
+      // A view saved in a retired encoding (Density) opens as Volume and
+      // names none.
+      ...(x.mode !== "volume" && MODE_NAMES[x.mode] ? [MODE_NAMES[x.mode]] : []),
     ].join(" · ");
   }
   function renderViews() {

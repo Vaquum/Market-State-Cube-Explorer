@@ -2231,7 +2231,7 @@
     }
     return { status: "unavailable", source: shown?.id || S.dataset };
   }
-  const tiles = { pending: null, timer: 0, skip: null, stale: false };
+  const tiles = { pending: null, timer: 0, quiet: false, stale: false };
   function tileSpec(n, m) {
     const step = 2 ** n,
       r = requestedBounds(),
@@ -2241,15 +2241,11 @@
     return { id: `tile:${n}:${m}:${b0}:${b1}`, n, m, b0, b1 };
   }
   function requestTile() {
-    if (!PACK.live || !ready) return;
+    if (!PACK.live || !ready || tiles.quiet) return;
     clearTimeout(tiles.timer);
     tiles.timer = setTimeout(fetchTile, 250);
   }
   async function fetchTile() {
-    // A failure skips only the re-check it triggers itself, whatever view that
-    // re-check finds; the next navigation, level change or import asks again.
-    const skipped = tiles.skip;
-    tiles.skip = null;
     if (
       tiles.pending ||
       tiles.stale ||
@@ -2257,7 +2253,7 @@
     )
       return;
     const t = tileSpec(S.n, S.m);
-    if (!t || t.id === skipped) return;
+    if (!t) return;
     tiles.pending = t.id;
     PACK.blocks[t.id] = { n: t.n, m: t.m, b0: t.b0, b1: t.b1 };
     loadState[t.id] = "loading";
@@ -2289,14 +2285,18 @@
     } catch (error) {
       delete PACK.blocks[t.id];
       delete loadState[t.id];
-      tiles.skip = t.id;
       el("loading").textContent = `Cube tile unavailable: ${error.message}`;
       el("loading").setAttribute("role", "alert");
     }
+    const failed = !sources[t.id];
     tiles.pending = null;
     chooseSource();
     evidenceCache.clear();
+    // A failure's own refresh asks for nothing; the next navigation, level
+    // change or import asks the cube again.
+    tiles.quiet = failed;
     update();
+    tiles.quiet = false;
   }
   function buildPlane() {
     const frag = document.createDocumentFragment(),

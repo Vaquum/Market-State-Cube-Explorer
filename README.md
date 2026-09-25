@@ -68,7 +68,7 @@ Edit `src/`, then rebuild the committed `index.html`. The build uses Python's st
 The explorer runs on the Origo host, `37.27.112.167`, as the Compose project `cube-explorer` in `/opt/cube-explorer`:
 
 - `explorer` builds the `Dockerfile` (Python 3.12, pyarrow, numpy), mounts the cube's result volume `tdw-control-plane_market-state` read-only at `/opt/origo/market-state`, uses the host network so the cube service is `127.0.0.1:8486`, and serves the page on `127.0.0.1:8487` only, as a non-root user on a read-only filesystem. Credentials come from `/opt/cube-explorer/.env` (`EXPLORER_AUTH_USER`, `EXPLORER_AUTH_PASS`); without them the server refuses to start.
-- The page is reachable only through a TLS front on the host that proxies `cube.vaquum.fi` to `127.0.0.1:8487`, so the credentials only ever travel over TLS. Which front does that is decided below the deploy workflow.
+- TLS is terminated by the host's shared Caddy ingress on port 443, deployed from [Vaquum/Loop](https://github.com/Vaquum/Loop) (`/opt/loop-api/Caddyfile`), whose `cube.vaquum.fi` site block proxies to `127.0.0.1:8487` with a Let's Encrypt certificate. The credentials therefore only ever travel over TLS. `cube.vaquum.fi` is a DNS-only A record for the host.
 
 Every push to `main` deploys through `.github/workflows/deploy.yml`: it syncs the checkout to the host with rsync, writes `.env` from the repository secrets, runs `docker compose up -d --build`, and checks over SSH that the explorer answers 200 with the credentials and 401 without. It needs the secrets `DEPLOY_SSH_KEY`, `EXPLORER_AUTH_USER` and `EXPLORER_AUTH_PASS` and the variables `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_DIR` and `DEPLOY_KNOWN_HOSTS`.
 

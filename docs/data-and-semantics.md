@@ -10,7 +10,7 @@ The copyable query has six parameters: `t1`, `t2`, `p1`, `p2`, `tR`, `pR`. Reque
 
 Each occupied cell carries USDT volume, trade count, taker-buy USDT volume and taker-buy count. Taker buys mean `is_buyer_maker = 0`. A POC is the center of the price row with the greatest summed volume; ties choose the lower row. The buy POC uses taker-buy volume. Rows without qualifying volume have no POC.
 
-Signed taker volume is `2 × buy_volume − volume`. Density is volume divided by observed seconds and selected price width, including partial-cell exposure. The contiguous 70% value area expands from the POC into adjacent rows, choosing the larger adjacent volume and the lower row on ties.
+Signed taker volume is `2 × buy_volume − volume`. Volume is shaded at each cell's full-cell rate: its volume divided by the seconds and price width it covers, times a whole cell's, so an edge portion or the open column compares with whole cells. Values shown are always the cell's own. The contiguous 70% value area expands from the POC into adjacent rows, choosing the larger adjacent volume and the lower row on ties.
 
 Counts in this snapshot are exact within JavaScript's safe integer range. The full-history trade count is 6,173,120,060. Volumes use Float64 arithmetic and retain normal floating-point summation differences.
 
@@ -29,7 +29,7 @@ The seven-day block contains base cells. The 30-day archive and full-history ove
 
 For each displayed grid, the engine uses every loaded source that can represent it, over all price rows: the visible price window never conditions the historical population, so the same anchor gives the same base rates whichever band is on screen. The finest complete source owns overlapping columns. A state combines POC direction, buy-share third and volume third. Thresholds use columns before the anchor; candidate outcomes end no later than the anchor. Missing contiguous POCs interrupt a case.
 
-Unconditional and conditional distributions use the same qualifying history. Cases, price bounds, source provenance and sample sizes are visible. Matching samples below 30 retain counts but suppress percentages and cones. These descriptive distributions are not probability calibration, independent trials, or validation of a trading strategy.
+Unconditional and conditional distributions use the same qualifying history. Cases, price bounds, source provenance and sample sizes are visible. Matching samples below 30 retain counts but suppress percentages and the matching boxes on the chart. These descriptive distributions are not probability calibration, independent trials, or validation of a trading strategy.
 
 POC barriers are first crossings by column-end POCs over the selected horizon. Intracell trade ordering and true trade-price barrier first-touch cannot be recovered from this aggregated snapshot.
 

@@ -320,28 +320,9 @@
           id="ol-replay"
           class="ol-action ol-toggle ol-l cursor-interaction"
           aria-pressed="false"
-          title="Replay: hide the trades after an anchor (R); step it with , and ."
+          title="Replay: hide the trades after an anchor (R); its controls sit on the chart"
         >
-          Replay</button
-        ><button
-          type="button"
-          id="ol-back"
-          class="ol-icon-button ol-action ol-l cursor-interaction"
-          aria-label="Previous replay column"
-          title="Previous replay column ( , )"
-          hidden
-        >
-          ←</button
-        ><span id="ol-replay-at" class="ol-num" hidden></span
-        ><button
-          type="button"
-          id="ol-next"
-          class="ol-icon-button ol-action ol-l cursor-interaction"
-          aria-label="Next replay column"
-          title="Next replay column ( . )"
-          hidden
-        >
-          →
+          Replay
         </button>
       </div>
       <div class="ol-group ol-history" role="group" aria-label="History">
@@ -462,14 +443,6 @@
             Taker flow</button
           ><button
             type="button"
-            data-mode="density"
-            class="cursor-interaction"
-            title="Density: USDT traded per second per USDT of price range (M cycles the encodings)"
-            aria-pressed="false"
-          >
-            Density</button
-          ><button
-            type="button"
             data-mode="delta"
             class="cursor-interaction"
             title="Delta: Taker-buy minus taker-sell volume per cell (M cycles the encodings)"
@@ -508,6 +481,61 @@
           aria-label="Time by price grid with real traded volume, point of control and linked volume profile"
         ></canvas>
         <div class="ol-tip" id="ol-tip" role="tooltip" hidden></div>
+        <div
+          class="ol-transport"
+          id="ol-transport"
+          role="group"
+          aria-label="Replay"
+          hidden
+        >
+          <button
+            type="button"
+            id="ol-back"
+            class="ol-icon-button ol-s cursor-interaction"
+            aria-label="Previous column"
+            title="Previous column ( , )"
+          >
+            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M10 3.5 5.5 8l4.5 4.5" />
+            </svg></button
+          ><button
+            type="button"
+            id="ol-play"
+            class="ol-icon-button ol-s cursor-interaction"
+            aria-label="Play"
+            aria-pressed="false"
+            title="Play (Space)"
+          >
+            <svg class="ol-icon ol-play-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M5 3.5v9l7.5-4.5z" />
+            </svg>
+            <svg class="ol-icon ol-pause-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M5.5 3.5v9M10.5 3.5v9" /></svg></button
+          ><button
+            type="button"
+            id="ol-next"
+            class="ol-icon-button ol-s cursor-interaction"
+            aria-label="Next column"
+            title="Next column ( . )"
+          >
+            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m6 3.5 4.5 4.5L6 12.5" />
+            </svg></button
+          ><select id="ol-speed" aria-label="Replay speed" title="Columns a second while playing">
+            <option value="0.5">½×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option></select
+          ><span id="ol-replay-at" class="ol-num"></span
+          ><button
+            type="button"
+            id="ol-replay-now"
+            class="ol-s cursor-interaction"
+            title="End replay at the latest data (End)"
+          >
+            Now
+          </button>
+        </div>
         <button
           type="button"
           id="ol-latest"
@@ -1018,7 +1046,7 @@
           <div class="ol-evidence-legend">
             <span><i class="ol-match-key"></i>Matching states</span
             ><span><i class="ol-all-key"></i>All states</span
-            ><span>Cones: 10–90% and 25–75% of outcomes</span>
+            ><span>Boxes: the middle 80% and 50% of outcomes</span>
           </div>
           <div class="ol-rule"></div>
           <div class="ol-row">
@@ -1115,6 +1143,10 @@
               <dd><kbd>End</kbd></dd>
             </div>
             <div>
+              <dt>Exact values in the tooltip</dt>
+              <dd>Hold <kbd>Shift</kbd></dd>
+            </div>
+            <div>
               <dt>Last 24 hours, 7 days, all</dt>
               <dd><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dd>
             </div>
@@ -1201,6 +1233,10 @@
             <div>
               <dt>Step the anchor</dt>
               <dd><kbd>,</kbd> <kbd>.</kbd></dd>
+            </div>
+            <div>
+              <dt>Play or pause the replay</dt>
+              <dd><kbd>Space</kbd></dd>
             </div>
             <div>
               <dt>Anchor a column</dt>

@@ -41,9 +41,28 @@
     PRICE_LABELS = 43,
     PLOT_LEFT = GUTTER + PRICE_LABELS + 8,
     PLOT_TOP = 12,
-    PLOT_BOTTOM = 90,
+    PANE_GAP = 8,
+    AXIS = 24,
     profileWidth = (width) => (width > 470 ? 79 : 52);
-  const design = { grid: 0.32, gap: 1 },
+  // The chart's panes: prices on top, activity under them sharing the time
+  // axis, about 15% of the height, and the time labels along the bottom.
+  function layout(width, height) {
+    const profile = profileWidth(width),
+      free = Math.max(1, height - PLOT_TOP - AXIS),
+      ah = clamp(Math.round(free * 0.15), 36, 120),
+      h = Math.max(1, free - ah - PANE_GAP);
+    return {
+      x: PLOT_LEFT,
+      y: PLOT_TOP,
+      w: Math.max(1, width - PLOT_LEFT - profile - GUTTER),
+      h,
+      ay: PLOT_TOP + h + PANE_GAP,
+      ah,
+      axis: height - AXIS / 2,
+      profile,
+    };
+  }
+  const design = { gap: 1 },
     S = {
       dataset: "recent",
       window: "1",
@@ -379,6 +398,7 @@
       "poc",
       "evidence",
       "accent",
+      "neutral",
     ]) {
       probe.style.color = `var(--ol-${key})`;
       colors[key] = getComputedStyle(probe).color;
@@ -400,16 +420,7 @@
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const profile = profileWidth(width);
-    G = {
-      width,
-      height,
-      x: PLOT_LEFT,
-      y: PLOT_TOP,
-      w: width - PLOT_LEFT - profile - GUTTER,
-      h: height - PLOT_BOTTOM,
-      profile,
-    };
+    G = { width, height, ...layout(width, height) };
     G.X = d3
       .scaleLinear()
       .domain([S.tA, S.tB])
@@ -427,6 +438,36 @@
     ctx.font = `${size}px ${FONT}`;
     ctx.fillText(s, x, y);
   }
+  // Chart labels: one style, 11px and sentence case, placed so none covers
+  // another. A label tries its own line, then the next ones down and up; with
+  // no room left it is left out. The rects taken reset with every frame.
+  let labelsTaken = [];
+  function chartLabel(s, x, y, color = colors.muted, align = "left") {
+    ctx.font = `${TYPE.s}px ${FONT}`;
+    const w = ctx.measureText(s).width,
+      left = align === "left" ? x : align === "right" ? x - w : x - w / 2;
+    for (const dy of [0, 15, -15, 30]) {
+      const r = [left - 3, y + dy - 8, left + w + 3, y + dy + 8];
+      if (labelsTaken.some((q) => r[0] < q[2] && q[0] < r[2] && r[1] < q[3] && q[1] < r[3]))
+        continue;
+      labelsTaken.push(r);
+      text(s, x, y + dy, color, align);
+      return true;
+    }
+    return false;
+  }
+  // The crosshair's readouts, as ink chips: the price at the pointer in the
+  // price labels' column, the time under the panes.
+  function chip(s, x, y, align = "center") {
+    ctx.font = `${TYPE.s}px ${FONT}`;
+    const w = Math.ceil(ctx.measureText(s).width) + 8,
+      left = align === "right" ? x - w : align === "center" ? x - w / 2 : x;
+    ctx.fillStyle = colors.ink;
+    ctx.beginPath();
+    ctx.roundRect(left, y - 8, w, 16, 2);
+    ctx.fill();
+    text(s, left + w / 2, y, colors.bg, "center");
+  }
   function line(x1, y1, x2, y2, color, width = 1, alpha = 1) {
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
@@ -437,61 +478,93 @@
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  function grid() {
-    const ts = stepT(),
-      ps = stepP();
-    let dt = ts,
-      dp = ps;
-    while ((dt / (S.tB - S.tA)) * G.w < 8) dt *= 2;
-    while ((dp / (S.pB - S.pA)) * G.h < 8) dp *= 2;
-    for (let t = Math.ceil(S.tA / dt) * dt; t <= S.tB; t += dt)
-      line(G.X(t), G.y, G.X(t), G.y + G.h, colors.line, 0.6, design.grid);
-    for (let p = Math.ceil(S.pA / dp) * dp; p <= S.pB; p += dp)
-      line(G.x, G.Y(p), G.x + G.w, G.Y(p), colors.line, 0.6, design.grid);
+  // Ticks sit on the lattice, so every gridline is a cell edge: prices at
+  // multiples of the price step, times at column edges. The round ticks d3
+  // picks are kept when they are edges; otherwise the step doubles from one
+  // cell until the labels have room.
+  function priceTicks() {
+    const step = stepP() * PR,
+      want = Math.max(3, Math.floor(G.h / 56)),
+      round = d3.ticks(S.pA * PR, S.pB * PR, want);
+    if (round.length && round.every((p) => Number.isInteger(p / step)))
+      return round;
+    let t = step;
+    while (((S.pB - S.pA) * PR) / t > want) t *= 2;
+    return d3.range(Math.ceil((S.pA * PR) / t) * t, S.pB * PR, t);
   }
-  // Time labels follow the tick step rather than the visible span, so two
-  // adjacent labels never repeat; a tick at midnight UTC names its day.
-  function timeFormat(step) {
-    const dayMs = DAY * 1000;
+  function timeTicks() {
+    const step = stepT(),
+      want = G.width < 400 ? 3 : G.width < 650 ? 4 : 5,
+      base = (d) => (+d / 1000 - T0) / BASE,
+      round = d3
+        .scaleUtc()
+        .domain([date(S.tA), date(S.tB)])
+        .ticks(want)
+        .map(base);
+    if (round.length > 1 && round.every((b) => Math.abs(b / step - Math.round(b / step)) < 1e-6))
+      return round;
+    let t = step;
+    while ((S.tB - S.tA) / t > want) t *= 2;
+    return d3.range(Math.ceil(S.tA / t) * t, S.tB, t);
+  }
+  // Labels follow the tick step, so two adjacent labels never repeat: a day
+  // names its date, and a tick off midnight its time too.
+  function timeFormat(ticks) {
+    const dayMs = DAY * 1000,
+      ms = ticks.map((b) => +date(b)),
+      step = ms.length > 1 ? ms[1] - ms[0] : (S.tB - S.tA) * BASE * 1000,
+      midnight = ms.every((x) => x % dayMs === 0);
     if (step < dayMs) {
       const time = d3.utcFormat(step < 60e3 ? "%H:%M:%S" : "%H:%M");
       return (d) => (+d % dayMs === 0 ? dayMonth(d) : time(d));
     }
-    return step < 28 * dayMs
-      ? dayMonth
-      : d3.utcFormat(step < 365 * dayMs ? "%b %Y" : "%Y");
+    if (step >= 28 * dayMs)
+      return midnight
+        ? d3.utcFormat(step < 365 * dayMs ? "%b %Y" : "%Y")
+        : (d) => dayOf(d, true);
+    return midnight ? dayMonth : (d) => `${dayMonth(d)} ${d3.utcFormat("%H:%M")(d)}`;
+  }
+  // Gridlines at the ticks only, on whole pixels: prices across the price
+  // pane, times down whichever pane is drawing (y0 to y1).
+  function timeGrid(y0, y1) {
+    for (const t of timeTicks()) {
+      if (t > CUT) continue;
+      const x = Math.round(G.X(t)) + 0.5;
+      line(x, y0, x, y1, colors.line, 1, 0.7);
+    }
+  }
+  function grid() {
+    for (const p of priceTicks()) {
+      const y = Math.round(G.Y(p / PR)) + 0.5;
+      line(G.x, y, G.x + G.w, y, colors.line, 1, 0.7);
+    }
+    timeGrid(G.y, G.y + G.h);
   }
   function axes() {
     ctx.globalAlpha = 1;
-    const pt = d3.ticks(
-      S.pA * PR,
-      S.pB * PR,
-      Math.max(3, Math.floor(G.h / 56)),
-    );
-    for (const p of pt)
-      text(price(p), G.x - 8, G.Y(p / PR), colors.muted, "right");
-    text("USDT", G.x - 8, G.y - 5, colors.muted, "right", 9);
-    const count = G.width < 400 ? 3 : G.width < 650 ? 4 : 5;
-    const times = d3
-        .scaleUtc()
-        .domain([date(S.tA), date(S.tB)])
-        .ticks(count),
-      fmt = timeFormat(
-        times.length > 1 ? times[1] - times[0] : (S.tB - S.tA) * BASE * 1000,
-      );
+    // Tick labels keep clear of the pane's edges, where the unit and the
+    // activity pane's scale sit.
+    for (const p of priceTicks()) {
+      const y = G.Y(p / PR);
+      if (y >= G.y + 10 && y <= G.y + G.h - 4)
+        text(price(p), G.x - 8, y, colors.muted, "right");
+    }
+    text("USDT", G.x - 8, G.y - 5, colors.muted, "right");
+    const ticks = timeTicks(),
+      fmt = timeFormat(ticks);
     let previous = null;
-    for (const d of times) {
-      const b = (+d / 1000 - T0) / BASE,
-        x = G.X(b),
-        label = fmt(d);
+    for (const b of ticks) {
+      const x = G.X(b),
+        label = fmt(date(b));
       // Nothing is labelled after the cutoff: that time has no trades yet.
       if (b > CUT || x < G.x + 7 || x > G.x + G.w - 7 || label === previous)
         continue;
-      text(label, x, G.y + G.h + 15, colors.muted, "center");
+      text(label, x, G.axis, colors.muted, "center");
       previous = label;
     }
+    text("UTC", G.x - 8, G.axis, colors.muted, "right");
     line(G.x, G.y + G.h, G.x + G.w, G.y + G.h, colors.line);
-    text("TIME · UTC", G.x + G.w / 2, G.height - 7, colors.muted, "center", 10);
+    line(G.x, G.ay + G.ah, G.x + G.w, G.ay + G.ah, colors.line);
   }
   function draw() {
     if (!ready) return;
@@ -512,6 +585,20 @@
         ? clamp((performance.now() - transition.start) / 170, 0, 1)
         : 1;
     prepareMeasures(full, query, b);
+    labelsTaken = [];
+    // Latest sits over the plot's top right when it shows, and the replay
+    // transport on the replay line: labels keep clear of both.
+    if (!el("latest").hidden) {
+      const right = G.x + G.w - 8;
+      labelsTaken.push([right - el("latest").offsetWidth, 16, right, 16 + el("latest").offsetHeight]);
+    }
+    if (S.replay) {
+      const bar = el("transport"),
+        w = bar.offsetWidth,
+        left = clamp(G.X(cut) - w / 2, G.x + 4, G.x + G.w - w - 4);
+      bar.style.left = left + "px";
+      labelsTaken.push([left, 16, left + w, 20 + bar.offsetHeight]);
+    }
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, G.width, G.height);
     ctx.fillStyle = colors.surface;
@@ -565,24 +652,23 @@
     if (xc >= G.x && xc <= G.x + G.w) {
       line(xc, G.y, xc, G.y + G.h, colors.muted, 1, 0.7);
       if (xc < G.x + G.w - 50)
-        text(
-          S.replay ? "REPLAY" : "CUTOFF",
-          xc + 6,
-          G.y + 10,
-          colors.muted,
-          "left",
-          9,
-        );
+        chartLabel(S.replay ? "Replay" : "Cutoff", xc + 6, G.y + 12);
     }
-    if (S.anchor !== null && !S.replay) {
+    if (
+      S.anchor !== null &&
+      !S.replay &&
+      (S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases"))
+    ) {
       const x = G.X(Math.floor(S.anchor / ts) * ts);
       ctx.setLineDash([3, 4]);
       line(x, G.y, x, G.y + G.h, colors.evidence, 1, 0.65);
       ctx.setLineDash([]);
     }
-    if (hover && hover.t < cut) {
-      line(G.X(hover.t), G.y, G.X(hover.t), G.y + G.h, colors.muted, 1, 0.35);
-      line(G.x, G.Y(hover.p), G.x + G.w, G.Y(hover.p), colors.muted, 1, 0.2);
+    if (hover && inPlot(hover) && hover.t < cut) {
+      const x = Math.round(hover.x) + 0.5,
+        y = Math.round(hover.y) + 0.5;
+      line(x, G.y, x, G.y + G.h, colors.muted, 1, 0.6);
+      line(G.x, y, G.x + G.w, y, colors.muted, 1, 0.6);
       const z = query.map.get(
         Math.floor(hover.t / ts) + "," + Math.floor(hover.p / ps),
       );
@@ -609,11 +695,21 @@
         G.Y(r * ps) - G.Y((r + 1) * ps) + 2,
       );
     }
+    // The profile row under the pointer, as a band across the prices.
+    if (hover?.row != null && onProfile(hover)) {
+      const ya = G.Y((hover.row + 1) * ps),
+        yb = G.Y(hover.row * ps);
+      ctx.fillStyle = colors.ink;
+      ctx.globalAlpha = 0.06;
+      ctx.fillRect(G.x, ya, G.w, yb - ya);
+      ctx.globalAlpha = 1;
+    }
     drawResolutionLens();
     ctx.restore();
     axes();
     profile(query, b);
     activity(query, cut);
+    crosshair(cut);
     querySummary(query, b);
     el("legend-text").textContent = legendText(full);
     el("legend-text").title = LEGEND_TITLES[S.mode];
@@ -630,6 +726,50 @@
       if (u >= 1) transition = null;
       else requestDraw();
     }
+  }
+  // The crosshair runs through both panes, with the pointer's price and time on
+  // the axes, rounded to what a pixel can tell apart.
+  function crosshair(cut) {
+    if (!hover || hover.t >= cut || !(inPlot(hover) || inActivity(hover))) return;
+    const x = Math.round(hover.x) + 0.5;
+    line(x, G.ay, x, G.ay + G.ah, colors.muted, 1, 0.6);
+    if (inPlot(hover)) {
+      const perPx = ((S.pB - S.pA) * PR) / G.h,
+        digits = perPx < 0.1 ? 2 : perPx < 1 ? 1 : 0;
+      chip(
+        (hover.p * PR).toLocaleString("en-US", {
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits,
+        }),
+        G.x - 3,
+        clamp(hover.y, G.y + 8, G.y + G.h - 8),
+        "right",
+      );
+    }
+    const secondsPerPx = ((S.tB - S.tA) * BASE) / G.w,
+      unit = secondsPerPx < 30 ? 1000 : 60000,
+      d = new Date(Math.round(+date(hover.t) / unit) * unit),
+      label = `${dayOf(d)} ${d3.utcFormat(unit === 1000 ? "%H:%M:%S" : "%H:%M")(d)}`;
+    ctx.font = `${TYPE.s}px ${FONT}`;
+    const half = ctx.measureText(label).width / 2 + 4;
+    chip(label, clamp(hover.x, G.x + half, G.x + G.w - half), G.axis);
+  }
+  // Each tool's cursor over the prices: grab to pan, grabbing while dragging, a
+  // crosshair to select, zoom for the lens (held Alt and a touch hold too).
+  function setCursor(p = nav.last) {
+    const cursor = !p || !inPlot(p)
+      ? ""
+      : S.lens || nav.alt || nav.hold || drag?.lens
+        ? "zoom-in"
+        : S.select
+          ? "crosshair"
+          : drag
+            ? "grabbing"
+            : "grab";
+    if (canvas.dataset.cursor !== cursor) canvas.dataset.cursor = cursor;
+  }
+  function inActivity(p) {
+    return p.x >= G.x && p.x <= G.x + G.w && p.y >= G.ay && p.y <= G.ay + G.ah;
   }
   function at(e) {
     const r = canvas.getBoundingClientRect();
@@ -869,11 +1009,10 @@
   const WINDOWS = { 1: "24h", 7: "7d", all: "all" },
     WINDOW_LABELS = { 1: "Last 24 hours", 7: "Last 7 days", all: "All history" },
     FOLLOWS = ["free", "refit", "coupled", "diagonal"],
-    MODES = ["volume", "flow", "density", "delta", "geometry"],
+    MODES = ["volume", "flow", "delta", "geometry"],
     MODE_NAMES = {
       volume: "Volume",
       flow: "Taker flow",
-      density: "Density",
       delta: "Delta",
       geometry: "Geometry",
     };
@@ -1133,7 +1272,7 @@
       S.anchor = null;
       if (obj.view) {
         const v = obj.view;
-        if (["volume", "flow", "geometry", "delta", "density"].includes(v.mode))
+        if (MODES.includes(v.mode))
           S.mode = v.mode;
         for (const k of ["poc", "area", "untested", "replay"])
           if (typeof v[k] === "boolean") S[k] = v[k];
@@ -1193,21 +1332,17 @@
       ctx.fillStyle = colors.bg;
       ctx.fillRect(xc, G.y, G.x + G.w - xc, G.h);
     }
-    if (x0 - G.x > 75)
-      text(
+    if (x0 - G.x > 100)
+      chartLabel(
         Object.values(loadState).includes("loading")
-          ? "LOADING HISTORY"
-          : "UNAVAILABLE",
+          ? "Loading history"
+          : "Unavailable",
         G.x + 8,
-        G.y + 16,
-        colors.muted,
-        "left",
-        10,
+        G.y + 12,
       );
-    if (xc - xe > 70)
-      text("UNAVAILABLE", xe + 8, G.y + G.h - 12, colors.muted, "left", 9);
-    if (S.replay && G.x + G.w - xc > 70)
-      text("FUTURE HIDDEN", xc + 8, G.y + G.h - 12, colors.muted, "left", 9);
+    if (xc - xe > 80) chartLabel("Unavailable", xe + 8, G.y + G.h - 12);
+    if (S.replay && G.x + G.w - xc > 90)
+      chartLabel("Future hidden", xc + 8, G.y + G.h - 12);
     const r = requestedBounds();
     // The status bar keys "Unavailable / hidden" only while such a region shows.
     coverageGap =
@@ -1266,14 +1401,7 @@
       hatchRect(xa, G.y, xb - xa, G.h, colors.poc, 7, 0.25);
       if (xb > G.x && xa < G.x + G.w) {
         line(xa, G.y, xb, G.y, colors.poc, 3, 0.8);
-        text(
-          "OPEN",
-          clamp(xa + 3, G.x + 4, G.x + G.w - 32),
-          G.y + 29,
-          colors.poc,
-          "left",
-          9,
-        );
+        chartLabel("Open", clamp(xa + 3, G.x + 4, G.x + G.w - 36), G.y + 28, colors.poc);
       }
     }
     if (renderN() > S.n || renderM() > S.m) {
@@ -1472,69 +1600,112 @@
     tr?.classList.add("is-hover");
     hoverRow = tr;
   }
+  // The tooltip: a header naming the cell's time span and price row, then a
+  // label and value for each measure. Numbers are compact; Shift shows them
+  // exact. Over the price profile it reads out the row under the pointer.
+  function tipRows(tip, head, sub, rows, note) {
+    const part = (tag, className, textContent) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      node.textContent = textContent;
+      return node;
+    };
+    const list = part("dl", "ol-tip-rows", "");
+    for (const [label, value] of rows) list.append(part("dt", "", label), part("dd", "", value));
+    tip.replaceChildren(
+      part("div", "ol-tip-head", head),
+      ...(sub ? [part("div", "ol-tip-sub", sub)] : []),
+      ...(rows.length ? [list] : []),
+      ...(note ? [part("div", "ol-tip-note", note)] : []),
+    );
+  }
+  function onProfile(p) {
+    const px = G.x + G.w + 9;
+    return p.x >= px && p.x <= px + G.profile - 8 && p.y >= G.y && p.y <= G.y + G.h;
+  }
   function tooltip(p) {
     hover = p;
-    const tip = el("tip");
-    if (!last || !inPlot(p)) {
+    const tip = el("tip"),
+      exact = nav.shift,
+      money = (x) => (exact ? usdt(x) : compact(x)) + " USDT",
+      count = (x) => (exact ? integer(x) : compact(x)),
+      share = (x) => (x * 100).toFixed(exact ? 2 : 1) + "%",
+      note = exact ? "" : "Hold Shift for exact values",
+      ps = stepP(),
+      priceRow = (r) => `${price(r * ps * PR)}–${price((r + 1) * ps * PR)} USDT`;
+    if (last && onProfile(p)) {
+      const r = Math.floor(p.p / ps),
+        row = last.query.rows.find((x) => x.r === r);
+      hover.row = row ? r : null;
+      if (!row) tipRows(tip, priceRow(r), "", [], "No trades at this price in view");
+      else
+        tipRows(
+          tip,
+          priceRow(r),
+          [r === last.query.poc ? "Point of control" : "", r === last.query.bpoc ? "Buy point of control" : ""]
+            .filter(Boolean)
+            .join(" · "),
+          [
+            ["Volume", money(row.v)],
+            ["Of the profile", share(row.v / last.query.v)],
+            ["Trades", count(row.ct)],
+            ["Taker buys", `${money(row.bv)} · ${share(row.bv / row.v)}`],
+          ],
+          note,
+        );
+    } else if (!last || !inPlot(p)) {
       tip.hidden = true;
       syncRowHover(null);
       requestDraw();
       return;
-    }
-    const c = Math.floor(p.t / stepT()),
-      r = Math.floor(p.p / stepP()),
-      z = last.query.map.get(c + "," + r),
-      src = displaySource(),
-      inside =
-        p.t >= last.b[0] &&
-        p.t < last.b[1] &&
-        p.p >= last.b[2] &&
-        p.p < last.b[3],
-      unavailable =
-        p.t < src.b0 || p.t >= Math.min(src.b1, last.cut) || !inside;
-    const open = !S.replay && c * stepT() < CUT && (c + 1) * stepT() > CUT;
-    let rows = [
-      `${when(c * stepT())} UTC`,
-      `${price(r * stepP() * PR)}–${price((r + 1) * stepP() * PR)} USDT`,
-    ];
-    if (unavailable)
-      rows.push(
-        S.replay && p.t >= last.cut
-          ? "Future hidden in replay"
+    } else {
+      const ts = stepT(),
+        c = Math.floor(p.t / ts),
+        r = Math.floor(p.p / ps),
+        z = last.query.map.get(c + "," + r),
+        src = displaySource(),
+        inside =
+          p.t >= last.b[0] && p.t < last.b[1] && p.p >= last.b[2] && p.p < last.b[3],
+        unavailable = p.t < src.b0 || p.t >= Math.min(src.b1, last.cut) || !inside,
+        open = !S.replay && c * ts < CUT && (c + 1) * ts > CUT,
+        head = `${range(c * ts, (c + 1) * ts)} UTC · ${dur(ts * BASE)}`,
+        coarse = renderN() > S.n || renderM() > S.m ? ["Detail", "coarser than requested"] : null;
+      if (unavailable)
+        tipRows(tip, head, priceRow(r), [], S.replay && p.t >= last.cut
+          ? "Hidden in replay"
           : p.t >= CUT
             ? "After the data cutoff"
             : S.selection
-              ? "Outside selected coverage"
-              : "Unavailable at requested bounds",
-      );
-    else if (!z)
-      rows.push(
-        open ? "Unfinished · no trades yet" : "No trades in this cell",
-      );
-    else
-      rows.push(
-        `${usdt(z.v)} USDT · ${integer(z.ct)} trades`,
-        `Buy ${usdt(z.bv)} USDT · ${integer(z.bt)} trades`,
-        `Δ ${signed(2 * z.bv - z.v, usdt)} USDT · ${((z.bv / z.v) * 100).toFixed(1)}% buy`,
-        open ? "Unfinished cell" : "Complete cell",
-      );
-    if (renderN() > S.n || renderM() > S.m) rows.push("Coarser than requested");
-    tip.replaceChildren(
-      ...rows.map((t) => {
-        const d = document.createElement("div");
-        d.textContent = t;
-        return d;
-      }),
-    );
+              ? "Outside the selection"
+              : "Not recorded at this level");
+      else if (!z)
+        tipRows(tip, head, priceRow(r), coarse ? [coarse] : [], open ? "Still open: no trades yet" : "No trades in this cell");
+      else
+        tipRows(
+          tip,
+          head,
+          priceRow(r),
+          [
+            ["Volume", money(z.v)],
+            ["Trades", count(z.ct)],
+            ["Taker buys", `${money(z.bv)} · ${share(z.bv / z.v)}`],
+            ["Buy − sell", signed(2 * z.bv - z.v, money)],
+            ["Column", open ? "Still open" : "Complete"],
+            ...(coarse ? [coarse] : []),
+          ],
+          note,
+        );
+      syncRowHover(z ? c + "," + r : null);
+    }
     tip.hidden = false;
-    syncRowHover(z ? c + "," + r : null);
-    // The tip shares the canvas box: above the pointer, or below it at the top.
+    // Beside the pointer, right of it where it fits, and inside the panes, so it
+    // never covers the cell under the pointer or the axis readouts.
     const tw = tip.offsetWidth,
       th = tip.offsetHeight,
-      above = p.y - th - 12;
-    tip.style.left = clamp(p.x + 17, 4, G.width - tw - 5) + "px";
-    tip.style.top =
-      clamp(above >= 4 ? above : p.y + 18, 4, G.height - th - 5) + "px";
+      right = p.x + 16,
+      left = right + tw <= G.x + G.w - 4 || onProfile(p) ? right : p.x - 16 - tw;
+    tip.style.left = clamp(onProfile(p) ? p.x - 16 - tw : left, 4, G.width - tw - 4) + "px";
+    tip.style.top = clamp(p.y - th / 2, G.y + 4, G.y + G.h - th - 4) + "px";
     requestDraw();
   }
   function update() {
@@ -1579,6 +1750,7 @@
       b.setAttribute("aria-pressed", String(b.dataset.tool === tool())),
     );
     el("lens-depth").hidden = !S.lens;
+    setCursor();
     // Replay and the lens add controls to the bar; its labels make room.
     root.dataset.busy = String(S.replay || S.lens);
     el("clear").hidden = !S.selection;
@@ -1587,7 +1759,7 @@
       el(t).hidden = S.tab !== t;
     }
     el("replay").setAttribute("aria-pressed", String(S.replay));
-    el("back").hidden = el("next").hidden = el("replay-at").hidden = !S.replay;
+    el("transport").hidden = !S.replay;
     el("replay-at").textContent = S.replay ? when(activeCutoff()) : "";
     el("horizon").value = S.horizon;
     el("scope").textContent =
@@ -1987,23 +2159,12 @@
 
   let markState = {
     metrics: new WeakMap(),
-    densityLo: 0,
-    densityHi: 1,
     deltaMax: 1,
     va: null,
     rays: [],
   };
   function signedCompact(value) {
     return (value < 0 ? "−" : value > 0 ? "+" : "") + compact(Math.abs(value));
-  }
-  function densityNumber(value) {
-    return value === 0
-      ? "0"
-      : Math.abs(value) < 0.01
-        ? value.toExponential(1)
-        : value < 10
-          ? value.toFixed(2)
-          : compact(value);
   }
   function cellExposure(z, b, ts = stepT(), ps = stepP()) {
     const seconds =
@@ -2044,30 +2205,17 @@
       ps = stepP(),
       sourceBounds = [src.b0, Math.min(src.b1, activeCutoff()), 0, Infinity];
     const metrics = new WeakMap(),
-      densities = [],
       deltas = [];
     for (const z of full.cells) {
-      const exposure = cellExposure(z, sourceBounds, ts, ps),
-        density = exposure.area > 0 ? z.v / exposure.area : 0,
-        delta = 2 * z.bv - z.v;
-      metrics.set(z, { ...exposure, density, delta });
-      if (density > 0) densities.push(Math.log(density));
+      const delta = 2 * z.bv - z.v;
+      metrics.set(z, { ...cellExposure(z, sourceBounds, ts, ps), delta });
       if (delta !== 0) deltas.push(Math.abs(delta));
     }
-    for (const z of query.cells) {
-      const exposure = cellExposure(z, b, ts, ps);
-      metrics.set(z, {
-        ...exposure,
-        density: exposure.area > 0 ? z.v / exposure.area : 0,
-        delta: 2 * z.bv - z.v,
-      });
-    }
-    densities.sort((a, b) => a - b);
+    for (const z of query.cells)
+      metrics.set(z, { ...cellExposure(z, b, ts, ps), delta: 2 * z.bv - z.v });
     deltas.sort((a, b) => a - b);
     markState = {
       metrics,
-      densityLo: d3.quantileSorted(densities, 0.02) ?? 0,
-      densityHi: d3.quantileSorted(densities, 0.995) ?? 1,
       deltaMax: d3.quantileSorted(deltas, 0.995) || 1,
       va: contiguousArea(query.rows, query.poc, query.v),
       rays: [],
@@ -2076,28 +2224,51 @@
   }
   function legendText(full) {
     if (S.mode === "geometry") return "Occupied cells";
-    if (S.mode === "flow") return "Buy share 0% · 50% · 100%";
+    if (S.mode === "flow") return "Buy share 25% · 50% · 75%";
     if (S.mode === "delta")
       return `Δ ${signedCompact(-markState.deltaMax)} · 0 · ${signedCompact(markState.deltaMax)} USDT`;
-    if (S.mode === "density")
-      return `Density ${densityNumber(Math.exp(markState.densityLo))}–${densityNumber(Math.exp(markState.densityHi))} · log`;
     return `${compact(Math.exp(full.lo))}–${compact(Math.exp(full.hi))} USDT · log`;
   }
-  // The legend's precise unit, one hover away.
+  // The legend's precise meaning, one hover away.
   const LEGEND_TITLES = {
-    volume: "USDT traded per cell, on a log scale",
-    flow: "Share of volume bought by takers",
-    density:
-      "USDT traded per second per USDT of price range, USDT/(s·USDT), on a log scale",
+    volume:
+      "USDT traded per cell, on a log scale. An edge cell or the open column is shaded at its full-cell rate.",
+    flow: "The share of each cell's volume bought by takers: buy colour above half, sell colour below, full at 75% and 25%. Paler cells traded less.",
     delta: "Taker-buy minus taker-sell volume per cell, in USDT",
     geometry: "The grid's occupied cells",
   };
   function legendRamp() {
-    return S.mode === "flow" || S.mode === "delta"
-      ? "linear-gradient(to right,var(--ol-sell),var(--ol-line),var(--ol-buy))"
-      : S.mode === "geometry"
-        ? "var(--ol-line)"
-        : "linear-gradient(to right,var(--ol-panel),var(--ol-volume))";
+    return S.mode === "flow"
+      ? "linear-gradient(to right,var(--ol-sell),var(--ol-neutral),var(--ol-buy))"
+      : S.mode === "delta"
+        ? "linear-gradient(to right,var(--ol-sell),var(--ol-line),var(--ol-buy))"
+        : S.mode === "geometry"
+          ? "var(--ol-line)"
+          : "linear-gradient(to right,var(--ol-panel),var(--ol-volume))";
+  }
+  // A cell's colour. Volume shades each cell at its full-cell rate, so an edge
+  // portion or the open column compares with whole cells. Taker flow diverges
+  // from a neutral midpoint to buy and sell, full at 75% and 25%, paler where
+  // less traded. Delta shades signed taker volume.
+  function cellColour(z, lo, hi, deltaMax, full) {
+    const level = clamp(
+      (Math.log(full) - lo) / Math.max(0.1, hi - lo),
+      0,
+      1,
+    );
+    if (S.mode === "flow") {
+      const t = clamp(((z.v ? z.bv / z.v : 0.5) - 0.5) / 0.25, -1, 1),
+        hue = d3.interpolateRgb(colors.neutral, t >= 0 ? colors.buy : colors.sell)(Math.abs(t));
+      return d3.interpolateRgb(colors.surface, hue)(0.3 + 0.7 * level);
+    }
+    if (S.mode === "delta") {
+      const delta = 2 * z.bv - z.v;
+      return d3.interpolateRgb(
+        colors.surface,
+        delta >= 0 ? colors.buy : colors.sell,
+      )(clamp(Math.log1p(Math.abs(delta)) / Math.log1p(deltaMax), 0, 1));
+    }
+    return d3.interpolateRgb(colors.surface, colors.volume)(0.2 + 0.8 * level);
   }
   function marksReadout(b) {
     const va = markState.va,
@@ -2129,41 +2300,7 @@
     }
     if (xb < G.x || xa > G.x + G.w || yb < G.y || ya > G.y + G.h) return;
     const measure = markState.metrics.get(z),
-      share = z.v ? z.bv / z.v : 0.5;
-    let level = clamp(
-        (Math.log(z.v) - full.lo) / Math.max(0.1, full.hi - full.lo),
-        0,
-        1,
-      ),
-      hue = colors.volume;
-    if (S.mode === "density") {
-      const density = measure.density;
-      level =
-        density > 0
-          ? clamp(
-              (Math.log(density) - markState.densityLo) /
-                Math.max(0.1, markState.densityHi - markState.densityLo),
-              0,
-              1,
-            )
-          : 0;
-    }
-    if (S.mode === "flow") {
-      hue = d3.interpolateRgb(
-        colors.line,
-        share >= 0.5 ? colors.buy : colors.sell,
-      )(Math.abs(share - 0.5) * 2);
-      level = 0.7;
-    }
-    if (S.mode === "delta") {
-      const delta = 2 * z.bv - z.v;
-      hue = delta >= 0 ? colors.buy : colors.sell;
-      level = clamp(
-        Math.log1p(Math.abs(delta)) / Math.log1p(markState.deltaMax),
-        0,
-        1,
-      );
-    }
+      area = ts * BASE * ps * PR;
     if (S.mode === "geometry") {
       const alpha = ctx.globalAlpha;
       ctx.strokeStyle = colors.volume;
@@ -2177,10 +2314,13 @@
       );
       ctx.globalAlpha = alpha;
     } else {
-      ctx.fillStyle = d3.interpolateRgb(
-        colors.surface,
-        hue,
-      )(S.mode === "delta" ? level : 0.2 + 0.8 * level);
+      ctx.fillStyle = cellColour(
+        z,
+        full.lo,
+        full.hi,
+        markState.deltaMax,
+        measure?.area > 0 ? (z.v * area) / measure.area : z.v,
+      );
       const gap = xb - xa > 4 && yb - ya > 4 ? design.gap : 0;
       ctx.fillRect(
         xa + gap / 2,
@@ -2238,6 +2378,13 @@
       );
     }
     ctx.globalAlpha = 1;
+    if (hover?.row != null && onProfile(hover)) {
+      const ya = G.Y((hover.row + 1) * ps),
+        yb = G.Y(hover.row * ps);
+      ctx.strokeStyle = colors.ink;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px + 0.5, ya + 0.5, pw + 2, Math.max(1, yb - ya - 1));
+    }
     if (S.area && va) {
       const high = G.Y(Math.min(va.r1 * ps, b[3])),
         low = G.Y(Math.max(va.r0 * ps, b[2]));
@@ -2263,16 +2410,17 @@
     const visible = labels
       .filter((x) => x.y >= G.y && x.y <= G.y + G.h)
       .sort((a, b) => a.y - b.y);
+    // A line of room between labels, as on the chart.
     for (let i = 0; i < visible.length; i++)
       visible[i].ly = Math.max(
         G.y + 7,
         visible[i].y,
-        i ? visible[i - 1].ly + 13 : G.y + 7,
+        i ? visible[i - 1].ly + 15 : G.y + 7,
       );
     if (visible.length && visible.at(-1).ly > G.y + G.h - 7) {
       visible.at(-1).ly = G.y + G.h - 7;
       for (let i = visible.length - 2; i >= 0; i--)
-        visible[i].ly = Math.min(visible[i].ly, visible[i + 1].ly - 13);
+        visible[i].ly = Math.min(visible[i].ly, visible[i + 1].ly - 15);
     }
     for (const label of visible) {
       markLine(
@@ -2287,14 +2435,7 @@
       text(label.symbol, px + pw + 9, label.ly, colors.ink, "left", 11);
     }
     ctx.restore();
-    text(
-      S.selection ? "SELECTED" : "PROFILE",
-      px,
-      G.y - 5,
-      colors.muted,
-      "left",
-      9,
-    );
+    text(S.selection ? "Selected" : "Profile", px, G.y - 5, colors.muted, "left");
   }
   function markings(full, cut) {
     const ts = stepT(),
@@ -2378,55 +2519,52 @@
     }
     ctx.restore();
   }
+  // Activity: each column's volume, or its signed taker volume in the flow and
+  // delta encodings, in a pane under the prices that shares their time axis.
   function activity(full, cut) {
     const ts = stepT(),
       b = bounds(),
       cols = full.cols.filter(
         (c) => (c.c + 1) * ts > S.tA && c.c * ts < S.tB && c.c * ts < cut,
       ),
-      signed = S.mode === "delta" || S.mode === "flow";
-    const value = (c) => (signed ? 2 * c.bv - c.v : c.v),
+      signed = S.mode === "delta" || S.mode === "flow",
+      value = (c) => (signed ? 2 * c.bv - c.v : c.v),
       max = d3.max(cols, (c) => Math.abs(value(c))) || 1,
-      top = G.y + G.h + 32,
-      h = 25,
-      zero = signed ? top + h / 2 : top + h;
+      top = G.ay,
+      h = G.ah,
+      zero = signed ? top + h / 2 : top + h,
+      room = (signed ? h / 2 : h) - 4;
+    ctx.fillStyle = colors.surface;
+    ctx.fillRect(G.x, top, G.w, h);
     ctx.save();
     ctx.beginPath();
     ctx.rect(G.x, top, G.w, h);
     ctx.clip();
+    // After the cutoff, as above: hidden in replay, otherwise plain.
+    const xc = clamp(G.X(cut), G.x, G.x + G.w);
+    if (S.replay) hatchRect(xc, top, G.x + G.w - xc, h, colors.line, 11, 0.45);
+    else {
+      ctx.fillStyle = colors.bg;
+      ctx.fillRect(xc, top, G.x + G.w - xc, h);
+    }
+    timeGrid(top, top + h);
     if (signed) markLine(G.x, zero, G.x + G.w, zero, colors.line, 1, 0.9);
     for (const c of cols) {
       const xa = G.X(Math.max(c.c * ts, b[0])),
         xb = G.X(Math.min((c.c + 1) * ts, cut, b[1]));
       if (xb <= xa) continue;
       const v = value(c),
-        bh = (Math.abs(v) / max) * (signed ? h / 2 : h),
+        bh = (Math.abs(v) / max) * room,
         y = signed ? (v >= 0 ? zero - bh : zero) : zero - bh;
-      ctx.fillStyle = signed
-        ? v >= 0
-          ? colors.buy
-          : colors.sell
-        : colors.volume;
+      ctx.fillStyle = signed ? (v >= 0 ? colors.buy : colors.sell) : colors.volume;
       ctx.globalAlpha = 0.65;
-      ctx.fillRect(xa, y, Math.max(0.1, xb - xa - 0.7), bh);
+      ctx.fillRect(xa, y, Math.max(0.1, xb - xa - (xb - xa > 3 ? 1 : 0)), bh);
     }
     ctx.restore();
-    text(
-      signed ? "Δ USDT" : "USDT",
-      G.x - 8,
-      top + 4,
-      colors.muted,
-      "right",
-      10,
-    );
-    text(
-      (signed ? "±" : "") + compact(max),
-      G.x - 8,
-      top + 18,
-      colors.muted,
-      "right",
-      10,
-    );
+    // The scale in the price labels' column: the largest value, then the unit.
+    if (!cols.length) return;
+    text((signed ? "±" : "") + compact(max), G.x - 8, top + 7, colors.muted, "right");
+    if (h >= 34) text("USDT", G.x - 8, top + 21, colors.muted, "right");
   }
 
   function evidenceColumns(n, m, end) {
@@ -2715,10 +2853,10 @@
       ? "Choose a completed column containing trades."
       : (supported
           ? "Empirical shares; overlapping cases, not calibrated odds."
-          : "Below 30 matches: percentages and matching cone withheld.") +
+          : "Below 30 matches: percentages and matching boxes withheld.") +
         (barriers
           ? " Barriers use the first column-end POC crossing; trade first-touch is not observable here."
-          : " Both cones show historical POC movement.") +
+          : " The boxes show where the POC moved in history.") +
         " Every outcome ends by the anchor.";
     el("evidence-brief").textContent = e.error
       ? "Choose a completed column containing trades."
@@ -2862,6 +3000,11 @@
     el("case-prev").disabled = S.casePage === 0;
     el("case-next").disabled = S.casePage + 1 >= pages;
   }
+  // Continuations on the chart: for each column ahead, a box over the rows
+  // where the POC landed, the middle 80% of outcomes light and the middle 50%
+  // darker, with the median row marked. All states are outlined across the
+  // column and matching states fill its middle, so the two read side by side.
+  // Boxes cover whole rows, so an outcome that stayed in its row still shows.
   function drawCone(e) {
     if (e.error) return;
     const ts = stepT(),
@@ -2869,50 +3012,47 @@
       x0 = G.X((e.a + 1) * ts),
       y0 = G.Y((e.poc + 0.5) * ps);
     if (x0 < G.x || x0 > G.x + G.w) return;
+    const rows = (q, low, high) => [
+        G.Y((e.poc + Math.ceil(q[high]) + 1) * ps),
+        G.Y((e.poc + Math.floor(q[low])) * ps),
+      ],
+      ends = {};
     ctx.save();
-    function band(summaries, color, opacity) {
-      for (const [low, high, alpha] of [
-        [0, 4, opacity],
-        [1, 3, opacity * 1.65],
-      ]) {
-        ctx.beginPath();
-        ctx.moveTo(x0, y0);
-        let hh = 0;
-        for (let h = 1; h <= 8; h++) {
-          if (summaries[h].n < 30) break;
-          hh = h;
-          ctx.lineTo(
-            G.X((e.a + 1 + h) * ts),
-            G.Y((e.poc + summaries[h].q[high] + 0.5) * ps),
-          );
+    for (const [key, summaries, color, inset] of [
+      ["all", e.all, colors.muted, 0],
+      ["match", e.match, colors.evidence, 0.25],
+    ]) {
+      for (let h = 1; h <= 8 && summaries[h].n >= 30; h++) {
+        const q = summaries[h].q,
+          xa = G.X((e.a + h) * ts),
+          xb = G.X((e.a + h + 1) * ts),
+          w = xb - xa,
+          left = xa + w * inset + 0.5,
+          width = Math.max(1, w * (1 - 2 * inset) - 1),
+          [outerTop, outerBottom] = rows(q, 0, 4),
+          [innerTop, innerBottom] = rows(q, 1, 3),
+          median = G.Y((e.poc + Math.round(q[2]) + 0.5) * ps),
+          chosen = h === S.horizon;
+        if (key === "all") {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = chosen ? 1.5 : 1;
+          ctx.globalAlpha = chosen ? 0.9 : 0.55;
+          ctx.strokeRect(left, outerTop + 0.5, width, outerBottom - outerTop - 1);
+          ctx.fillStyle = color;
+          ctx.globalAlpha = 0.14;
+          ctx.fillRect(left, innerTop, width, innerBottom - innerTop);
+        } else {
+          ctx.fillStyle = color;
+          ctx.globalAlpha = 0.22;
+          ctx.fillRect(left, outerTop, width, outerBottom - outerTop);
+          ctx.globalAlpha = 0.45;
+          ctx.fillRect(left, innerTop, width, innerBottom - innerTop);
         }
-        for (let h = hh; h >= 1; h--)
-          ctx.lineTo(
-            G.X((e.a + 1 + h) * ts),
-            G.Y((e.poc + summaries[h].q[low] + 0.5) * ps),
-          );
-        ctx.closePath();
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = color;
-        ctx.fill();
+        ctx.globalAlpha = 1;
+        line(left, median, left + width, median, color, chosen ? 2.5 : 2, 0.9);
+        ends[key] = { x: xb, y: median };
       }
-      ctx.globalAlpha = 0.9;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      for (let h = 1; h <= 8; h++) {
-        if (summaries[h].n < 30) break;
-        ctx.lineTo(
-          G.X((e.a + 1 + h) * ts),
-          G.Y((e.poc + summaries[h].q[2] + 0.5) * ps),
-        );
-      }
-      ctx.stroke();
     }
-    band(e.all, colors.muted, 0.1);
-    band(e.match, colors.evidence, 0.15);
-    ctx.globalAlpha = 1;
     if (S.evidenceKind === "barrier") {
       const distance = S.barrier || 1,
         x1 = G.X((e.a + 1 + S.horizon) * ts);
@@ -2928,6 +3068,9 @@
     ctx.arc(x0, y0, 3, 0, 7);
     ctx.fill();
     ctx.restore();
+    // Each set named beside its last box, at its median.
+    if (ends.match) chartLabel("Matching", ends.match.x + 6, ends.match.y, colors.evidence);
+    if (ends.all) chartLabel("All states", ends.all.x + 6, ends.all.y);
   }
   function bindEvidence() {
     el("evidence").addEventListener("click", (event) => {
@@ -3015,9 +3158,11 @@
     pinch: null,
     last: null,
     alt: false,
+    shift: false,
     hold: false,
     holdTimer: 0,
     wheelTimer: 0,
+    wheelTime: false,
     planeKey: "",
     planeStatus: "",
     planeHover: false,
@@ -3030,12 +3175,36 @@
       stepT(),
       Math.floor(CUT / stepT()) * stepT(),
     );
-    S.tab = "evidence";
+    // Outside replay the anchor is the continuations': they come into view.
+    if (!S.replay) S.tab = "evidence";
     hover = null;
     el("tip").hidden = true;
     update();
     recordView("Anchor");
     save();
+  }
+  // Playing a replay steps its anchor a column at a time at the chosen speed,
+  // moving the view on when the line nears its right edge, and stops at the
+  // latest column or when replay ends.
+  const player = { timer: 0 };
+  function setPlaying(on) {
+    clearInterval(player.timer);
+    player.timer = on ? setInterval(playStep, 1000 / Number(el("speed").value)) : 0;
+    el("play").setAttribute("aria-pressed", String(on));
+    el("play").setAttribute("aria-label", on ? "Pause" : "Play");
+    el("play").title = (on ? "Pause" : "Play") + " (Space)";
+  }
+  function playStep() {
+    const end = Math.floor(CUT / stepT()) * stepT();
+    if (!S.replay || S.anchor === null || S.anchor >= end) return setPlaying(false);
+    if (G.X(S.anchor + stepT()) > G.x + G.w * 0.85) {
+      const d = (S.tB - S.tA) / 2;
+      S.tA += d;
+      S.tB += d;
+      S.window = "";
+      confine();
+    }
+    stepAnchor(1);
   }
   function pixelLevel(level, span, pixels, max) {
     let n = clamp(Math.round(level), 0, max),
@@ -3052,10 +3221,7 @@
   }
   function navGeometry() {
     const r = canvas.getBoundingClientRect();
-    return {
-      w: Math.max(1, r.width - PLOT_LEFT - profileWidth(r.width) - GUTTER),
-      h: Math.max(1, r.height - PLOT_BOTTOM),
-    };
+    return layout(r.width, r.height);
   }
   function autoLevel() {
     if (!S.auto || !(S.tB > S.tA) || !(S.pB > S.pA)) return false;
@@ -3810,7 +3976,9 @@
       save();
     }
   }
-  function zoomNavigation(k, p, priceOnly = false) {
+  // A zoom leaves the price range alone while a gesture runs; refit mode fits
+  // it once the gesture ends (refitNow for a single step, such as a key).
+  function zoomNavigation(k, p, priceOnly = false, refitNow = false) {
     const tspan = S.tB - S.tA,
       pspan = S.pB - S.pA;
     if (!priceOnly || S.coupled) {
@@ -3828,8 +3996,27 @@
       S.pB = S.pA + span;
     }
     S.window = "";
-    settleNavigation(null, !priceOnly);
+    settleNavigation(null, refitNow && !priceOnly);
     return p;
+  }
+  function refitAfterGesture() {
+    if (!S.refit || S.coupled || S.diagonal) return;
+    fit();
+    if (S.auto) autoLevel();
+    update();
+  }
+  // A zoom gesture ends a moment after its last step, by wheel or held key:
+  // then the price range refits once, if time was zoomed, and the zoom is
+  // recorded.
+  function endZoom(timeZoomed) {
+    nav.wheelTime = nav.wheelTime || timeZoomed;
+    clearTimeout(nav.wheelTimer);
+    nav.wheelTimer = setTimeout(() => {
+      if (nav.wheelTime) refitAfterGesture();
+      nav.wheelTime = false;
+      recordView("Zoom");
+      save();
+    }, 220);
   }
   // Room for the lens caption tab: up to three 15px lines. The lens leaves twice
   // this free, so the tab fits above or below it wherever the lens goes.
@@ -3926,74 +4113,33 @@
             Math.ceil(pb / 2 ** src.m) * 2 ** src.m,
           ],
           q = aggregate(src, n, m, lensBounds),
-          metrics = new Map(),
-          densities = [],
-          deltas = [];
-        for (const z of q.cells) {
-          const exposure = cellExposure(z, lensBounds, ts, ps),
-            density = exposure.area > 0 ? z.v / exposure.area : 0,
-            delta = 2 * z.bv - z.v;
-          metrics.set(z, { density, delta });
-          if (density > 0) densities.push(Math.log(density));
-          if (delta !== 0) deltas.push(Math.abs(delta));
-        }
-        densities.sort((a, b) => a - b);
-        deltas.sort((a, b) => a - b);
-        const densityLo = d3.quantileSorted(densities, 0.02) ?? 0,
-          densityHi = d3.quantileSorted(densities, 0.995) ?? 1,
+          area = ts * BASE * ps * PR,
+          deltas = q.cells
+            .map((z) => Math.abs(2 * z.bv - z.v))
+            .filter(Boolean)
+            .sort((x, y) => x - y),
           deltaMax = d3.quantileSorted(deltas, 0.995) || 1;
         localLegend =
-          S.mode === "density"
-            ? `Density ${densityNumber(Math.exp(densityLo))}–${densityNumber(Math.exp(densityHi))} · log`
-            : S.mode === "delta"
-              ? `Δ −${compact(deltaMax)} · 0 · +${compact(deltaMax)} USDT`
-              : S.mode === "flow"
-                ? "Buy share 0% · 50% · 100%"
-                : S.mode === "geometry"
-                  ? "Occupied cells"
-                  : `${compact(Math.exp(q.lo))}–${compact(Math.exp(q.hi))} USDT · log`;
+          S.mode === "delta"
+            ? `Δ −${compact(deltaMax)} · 0 · +${compact(deltaMax)} USDT`
+            : S.mode === "flow"
+              ? "Buy share 25% · 50% · 75%"
+              : S.mode === "geometry"
+                ? "Occupied cells"
+                : `${compact(Math.exp(q.lo))}–${compact(Math.exp(q.hi))} USDT · log`;
         for (const z of q.cells) {
           const xa = G.X(z.c * ts),
             xb = G.X(Math.min((z.c + 1) * ts, b)),
             ya = G.Y((z.r + 1) * ps),
             yb = G.Y(z.r * ps),
-            share = z.v ? z.bv / z.v : 0.5,
-            measure = metrics.get(z);
-          let lv = clamp(
-              (Math.log(z.v) - q.lo) / Math.max(0.1, q.hi - q.lo),
-              0,
-              1,
-            ),
-            hue = colors.volume;
-          if (S.mode === "density")
-            lv =
-              measure.density > 0
-                ? clamp(
-                    (Math.log(measure.density) - densityLo) /
-                      Math.max(0.1, densityHi - densityLo),
-                    0,
-                    1,
-                  )
-                : 0;
-          if (S.mode === "flow") {
-            hue = d3.interpolateRgb(
-              colors.line,
-              share >= 0.5 ? colors.buy : colors.sell,
-            )(Math.abs(share - 0.5) * 2);
-            lv = 0.7;
-          }
-          if (S.mode === "delta") {
-            hue = measure.delta >= 0 ? colors.buy : colors.sell;
-            lv = clamp(
-              Math.log1p(Math.abs(measure.delta)) / Math.log1p(deltaMax),
-              0,
-              1,
-            );
-          }
-          ctx.fillStyle = d3.interpolateRgb(
-            colors.surface,
-            hue,
-          )(S.mode === "delta" ? lv : 0.2 + 0.8 * lv);
+            exposure = cellExposure(z, lensBounds, ts, ps);
+          ctx.fillStyle = cellColour(
+            z,
+            q.lo,
+            q.hi,
+            deltaMax,
+            exposure.area > 0 ? (z.v * area) / exposure.area : z.v,
+          );
           if (S.mode === "geometry") {
             ctx.strokeStyle = colors.volume;
             ctx.globalAlpha = 0.65;
@@ -4128,6 +4274,7 @@
         moved: false,
         lens: S.lens || e.altKey,
       };
+      setCursor(p);
       if (e.pointerType === "touch")
         nav.holdTimer = setTimeout(() => {
           if (drag && !drag.moved) {
@@ -4142,6 +4289,7 @@
       const p = at(e);
       nav.last = p;
       nav.alt = e.altKey;
+      setCursor(p);
       if (nav.pointers.has(e.pointerId)) nav.pointers.set(e.pointerId, p);
       if (nav.pinch && nav.pointers.size >= 2) {
         const [a, b] = [...nav.pointers.values()],
@@ -4159,7 +4307,7 @@
           S.pB = S.pA + pspan;
         }
         S.window = "";
-        settleNavigation(null, true);
+        settleNavigation(null, false);
         return;
       }
       if (S.lens || nav.alt || nav.hold || drag?.lens) {
@@ -4237,6 +4385,7 @@
       if (!held && drag.moved && S.select) S.select = false;
       drag = null;
       nav.hold = false;
+      setCursor(p);
       if (
         S.selection &&
         (S.selection[0] === S.selection[1] || S.selection[2] === S.selection[3])
@@ -4276,11 +4425,7 @@
           p,
           e.shiftKey,
         );
-        clearTimeout(nav.wheelTimer);
-        nav.wheelTimer = setTimeout(() => {
-          recordView("Zoom");
-          save();
-        }, 220);
+        endZoom(!e.shiftKey);
       },
       { passive: false },
     );
@@ -4288,7 +4433,7 @@
       if (!ready) return;
       const p = at(e);
       if (!inPlot(p)) return;
-      zoomNavigation(0.5, p, e.shiftKey);
+      zoomNavigation(0.5, p, e.shiftKey, true);
       if (!S.replay) S.anchor = null;
       recordView("Drill");
       save();
@@ -4316,7 +4461,17 @@
       if (e.key === "Alt") {
         nav.alt = true;
         el("tip").hidden = true;
+        setCursor();
         requestDraw();
+        return;
+      }
+      // Shift, held, shows the tooltip's values exact.
+      if (e.key === "Shift") {
+        if (!nav.shift && hover && !el("tip").hidden) {
+          nav.shift = true;
+          tooltip(hover);
+        }
+        nav.shift = true;
         return;
       }
       if (e.altKey && !typed) return;
@@ -4346,8 +4501,7 @@
         changeResolution(S.n + bracket[0], S.m + bracket[1], !bracket[1]);
       else if (["+", "=", "-", "_"].includes(k)) {
         zoomNavigation(k === "-" || k === "_" ? 1.4 : 1 / 1.4, centre, shift);
-        recordView("Zoom");
-        save();
+        endZoom(!shift);
       } else if (k.startsWith("Arrow")) {
         const dt = (S.tB - S.tA) * 0.15,
           dp = (S.pB - S.pA) * 0.15,
@@ -4393,6 +4547,13 @@
         update();
         save();
       } else if (k === "r") toggleReplay();
+      // Space plays and pauses a replay, where no control takes it.
+      else if (
+        k === " " &&
+        S.replay &&
+        !target?.closest("button, a, summary, [role=tab], [role=separator]")
+      )
+        setPlaying(!player.timer);
       else if (k === "c") {
         S.tab = S.tab === "evidence" ? "context" : "evidence";
         S.sideOpen = true;
@@ -4410,11 +4571,17 @@
     window.addEventListener("keyup", (e) => {
       if (e.key === "Alt") {
         nav.alt = false;
+        setCursor();
         requestDraw();
+      }
+      if (e.key === "Shift" && nav.shift) {
+        nav.shift = false;
+        if (hover && !el("tip").hidden) tooltip(hover);
       }
     });
     window.addEventListener("blur", () => {
       nav.alt = false;
+      nav.shift = false;
       nav.hold = false;
       drag = null;
       nav.pinch = null;
@@ -4450,15 +4617,15 @@
     update();
     save();
   }
+  // Replay only hides the trades after its anchor: the price range, the
+  // selection and the inspector stay as they were.
   function toggleReplay() {
     S.replay = !S.replay;
-    S.selection = null;
+    if (!S.replay) setPlaying(false);
     if (S.replay && S.anchor === null)
       S.anchor =
         Math.floor((S.tA + (Math.min(S.tB, CUT) - S.tA) * 0.65) / stepT()) *
         stepT();
-    S.tab = S.replay ? "evidence" : S.tab;
-    fit();
     hover = null;
     el("tip").hidden = true;
     recordView(S.replay ? "Replay" : "Cutoff");
@@ -4468,6 +4635,7 @@
   // The same span, moved to end at the cutoff with a tenth of it to spare, as a
   // window does; replay ends, since the latest data is what was asked for.
   function jumpLatest() {
+    setPlaying(false);
     const span = S.tB - S.tA;
     S.tB = CUT + span * (0.105 / 1.105);
     S.tA = S.tB - span;
@@ -4539,6 +4707,11 @@
     ["next", 1],
   ])
     el(id).addEventListener("click", () => stepAnchor(delta));
+  el("play").addEventListener("click", () => setPlaying(!player.timer));
+  el("speed").addEventListener("change", () => {
+    if (player.timer) setPlaying(true);
+  });
+  el("replay-now").addEventListener("click", jumpLatest);
 
   // The tab's title carries the market: the latest POC and the instrument, and
   // the snapshot's day, or that live updates have stopped.

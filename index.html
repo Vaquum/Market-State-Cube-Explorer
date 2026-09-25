@@ -3766,16 +3766,24 @@
       drawer = el("drawer"),
       side = el("side-toggle"),
       sideLabel = S.sideOpen ? "Collapse the inspector" : "Expand the inspector";
+    const sideWidth = clamp(S.sideWidth, 260, sideMax()),
+      drawerHeight = clamp(S.drawerHeight, 120, drawerMax());
     main.dataset.side = S.sideOpen ? "open" : "closed";
-    main.style.setProperty("--side-w", clamp(S.sideWidth, 260, sideMax()) + "px");
+    main.style.setProperty("--side-w", sideWidth + "px");
+    // Focusable separators state their size and its range to assistive tech.
+    for (const [grip, now, min, max] of [
+      [el("side-grip"), sideWidth, 260, sideMax()],
+      [el("drawer-grip"), drawerHeight, 120, drawerMax()],
+    ]) {
+      grip.setAttribute("aria-valuenow", String(Math.round(now)));
+      grip.setAttribute("aria-valuemin", String(min));
+      grip.setAttribute("aria-valuemax", String(Math.round(max)));
+    }
     side.setAttribute("aria-expanded", String(S.sideOpen));
     side.setAttribute("aria-label", sideLabel);
     side.title = sideLabel;
     drawer.dataset.open = String(S.drawerOpen);
-    drawer.style.setProperty(
-      "--drawer-h",
-      clamp(S.drawerHeight, 120, drawerMax()) + "px",
-    );
+    drawer.style.setProperty("--drawer-h", drawerHeight + "px");
     // A closed or switched drawer leaves no row outlined on the chart.
     if (!(S.drawerOpen && S.drawer === "cells")) tableHover = null;
     for (const tab of qsa("[data-drawer]")) {

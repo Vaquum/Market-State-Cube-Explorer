@@ -1,11 +1,11 @@
 <div
   id="origo-lens"
-  aria-label="Origo market lens with independent time and price geometry"
+  aria-label="Market State Cube Explorer: independent time and price grids"
 >
   <header class="ol-bar">
     <div class="ol-id">
-      <div class="ol-brand">
-        <span class="ol-org">ORIGO</span>Market lens<span class="ol-state-pill"
+      <div class="ol-brand" title="Market State Cube Explorer">
+        <span class="ol-org">ORIGO</span>Cube Explorer<span class="ol-state-pill"
           ><span id="ol-market">RECORDED</span> <span id="ol-snapshot"></span
         ></span>
       </div>
@@ -16,7 +16,7 @@
     <button
       type="button"
       id="ol-sheet-toggle"
-      class="ol-sheet-toggle cursor-interaction"
+      class="ol-sheet-toggle ol-action ol-l cursor-interaction"
       aria-expanded="false"
       aria-controls="ol-controls"
     >
@@ -28,7 +28,7 @@
         ><button
           type="button"
           id="ol-sheet-close"
-          class="cursor-interaction"
+          class="ol-icon-button cursor-interaction"
           aria-label="Close controls"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -70,7 +70,7 @@
         <button
           type="button"
           id="ol-res"
-          class="ol-res cursor-interaction"
+          class="ol-res ol-action ol-l cursor-interaction"
           aria-haspopup="dialog"
           aria-expanded="false"
           aria-controls="ol-res-pop"
@@ -102,7 +102,7 @@
             ><button
               type="button"
               id="ol-auto"
-              class="ol-toggle cursor-interaction"
+              class="ol-action ol-toggle cursor-interaction"
               aria-pressed="true"
               title="Choose the level from the cell size on screen (A)"
             >
@@ -117,7 +117,7 @@
             <button
               type="button"
               id="ol-tminus"
-              class="cursor-interaction"
+              class="ol-action cursor-interaction"
               aria-label="Finer time resolution"
               title="Finer time cells ( [ )"
             >
@@ -130,7 +130,7 @@
             ><button
               type="button"
               id="ol-tplus"
-              class="cursor-interaction"
+              class="ol-action cursor-interaction"
               aria-label="Coarser time resolution"
               title="Coarser time cells ( ] )"
             >
@@ -147,7 +147,7 @@
             <button
               type="button"
               id="ol-pminus"
-              class="cursor-interaction"
+              class="ol-action cursor-interaction"
               aria-label="Finer price resolution"
               title="Finer price cells (Shift+[ )"
             >
@@ -160,7 +160,7 @@
             ><button
               type="button"
               id="ol-pplus"
-              class="cursor-interaction"
+              class="ol-action cursor-interaction"
               aria-label="Coarser price resolution"
               title="Coarser price cells (Shift+] )"
             >
@@ -181,7 +181,7 @@
             ><span><i class="ol-plane-small"></i>Too small</span
             ><span><i class="ol-plane-large"></i>Too large</span
             ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
-            ><span><i class="ol-plane-loading"></i>… loading</span
+            ><span><i class="ol-plane-loading"></i>Loading</span
             ><span><i class="ol-plane-path"></i>Diagonal</span>
           </div>
           <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
@@ -231,7 +231,7 @@
         <button
           type="button"
           id="ol-fit"
-          class="ol-action cursor-interaction"
+          class="ol-action ol-l cursor-interaction"
           title="Fit the price range to the visible trades once (F)"
         >
           Fit now
@@ -296,7 +296,7 @@
         ><button
           type="button"
           id="ol-lens-pin"
-          class="ol-action cursor-interaction"
+          class="ol-solid ol-l cursor-interaction"
           hidden
           title="Make the lens rectangle and resolution the view (Enter)"
         >
@@ -307,7 +307,7 @@
         <button
           type="button"
           id="ol-replay"
-          class="ol-action cursor-interaction"
+          class="ol-action ol-toggle ol-l cursor-interaction"
           aria-pressed="false"
           title="Replay: hide trades after an anchor and step it with , and ."
         >
@@ -315,7 +315,7 @@
         ><button
           type="button"
           id="ol-back"
-          class="ol-action cursor-interaction"
+          class="ol-icon-button ol-action ol-l cursor-interaction"
           aria-label="Previous replay column"
           hidden
         >
@@ -324,7 +324,7 @@
         ><button
           type="button"
           id="ol-next"
-          class="ol-action cursor-interaction"
+          class="ol-icon-button ol-action ol-l cursor-interaction"
           aria-label="Next replay column"
           hidden
         >
@@ -335,7 +335,7 @@
         <button
           type="button"
           id="ol-hist-back"
-          class="ol-icon-button cursor-interaction"
+          class="ol-icon-button ol-l cursor-interaction"
           aria-label="Back"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -343,7 +343,7 @@
         ><button
           type="button"
           id="ol-hist-fwd"
-          class="ol-icon-button cursor-interaction"
+          class="ol-icon-button ol-l cursor-interaction"
           aria-label="Forward"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -351,7 +351,7 @@
         ><button
           type="button"
           id="ol-hist"
-          class="ol-icon-button cursor-interaction"
+          class="ol-icon-button ol-l cursor-interaction"
           aria-haspopup="dialog"
           aria-expanded="false"
           aria-controls="ol-hist-pop"
@@ -382,7 +382,7 @@
         <button
           type="button"
           id="ol-help"
-          class="ol-icon-button cursor-interaction"
+          class="ol-icon-button ol-l cursor-interaction"
           aria-haspopup="dialog"
           aria-expanded="false"
           aria-controls="ol-help-pop"
@@ -414,7 +414,7 @@
   <div class="ol-main" id="ol-main">
     <section class="ol-chart" aria-label="Market field and linked volume profile">
       <div id="ol-loading" class="ol-loading" role="status">
-        Loading recent base cells · geometry ready
+        Loading the last seven days…
       </div>
       <div class="ol-chart-head">
         <div class="ol-seg ol-modes" role="group" aria-label="Cell encoding">
@@ -484,7 +484,7 @@
           tabindex="0"
         ></div>
         <div class="ol-drawer-bar">
-          <div class="ol-drawer-tabs" role="tablist" aria-label="Details">
+          <div class="ol-drawer-tabs ol-seg" role="tablist" aria-label="Details">
             <button
               type="button"
               role="tab"
@@ -544,14 +544,14 @@
                 <button
                   type="button"
                   id="ol-table-back"
-                  class="ol-action cursor-interaction"
+                  class="ol-action ol-s cursor-interaction"
                 >
                   Previous</button
                 ><span id="ol-table-page" class="ol-num"></span
                 ><button
                   type="button"
                   id="ol-table-next"
-                  class="ol-action cursor-interaction"
+                  class="ol-action ol-s cursor-interaction"
                 >
                   Next
                 </button>
@@ -622,14 +622,14 @@
                 <button
                   type="button"
                   id="ol-case-prev"
-                  class="ol-action cursor-interaction"
+                  class="ol-action ol-s cursor-interaction"
                 >
                   Previous</button
                 ><span id="ol-case-page" class="ol-num"></span
                 ><button
                   type="button"
                   id="ol-case-next"
-                  class="ol-action cursor-interaction"
+                  class="ol-action ol-s cursor-interaction"
                 >
                   Next
                 </button>
@@ -715,7 +715,7 @@
               ><button
                 type="button"
                 id="ol-import-apply"
-                class="ol-action cursor-interaction"
+                class="ol-solid cursor-interaction"
               >
                 Apply view
               </button>
@@ -769,7 +769,7 @@
             class="cursor-interaction"
             aria-pressed="true"
           >
-            Structure</button
+            Measures</button
           ><button
             type="button"
             id="ol-evidence-tab"
@@ -796,12 +796,10 @@
       <div class="ol-side-body" id="ol-side-body">
         <div class="ol-side-context" id="ol-context">
           <div class="ol-section-row">
-            <div class="ol-section-heading" id="ol-focus-title">
-              Visible rectangle
-            </div>
+            <div class="ol-section-heading" id="ol-focus-title">In view</div>
             <button
               type="button"
-              class="ol-action cursor-interaction"
+              class="ol-action ol-s cursor-interaction"
               id="ol-clear"
               hidden
             >
@@ -845,7 +843,9 @@
               <span>Occupied cells</span><span id="ol-cells">—</span>
             </div>
             <div class="ol-row">
-              <span>Boundary portions</span><span id="ol-partials">—</span>
+              <span title="Boundary portions: cells only partly inside the rectangle"
+                >Edge cells</span
+              ><span id="ol-partials">—</span>
             </div>
             <div class="ol-row">
               <span>Zero-trade cells</span><span id="ol-zero-count">—</span>

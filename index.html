@@ -13,24 +13,56 @@
       /* The app fills the window; its panels scroll, the page does not. Phones scroll. */
       @media (min-width: 761px) { body { overflow: hidden; } }
       .cursor-interaction:not(:disabled) { cursor: pointer; }
-      #origo-lens {
+      /* Tokens: every size, space, radius and colour below comes from these. */
+#origo-lens {
+  /* Surfaces and text */
   --ol-bg: light-dark(#f7f9f7, #101713);
   --ol-surface: light-dark(#fff, #161f19);
   --ol-panel: light-dark(#eff4f0, #1b2720);
   --ol-ink: light-dark(#20392b, #e0eee4);
   --ol-muted: light-dark(#5c7263, #a1b5a7);
   --ol-line: light-dark(#d8e3db, #334a3c);
+  /* Data: these colours encode the market and nothing else */
   --ol-volume: light-dark(#39845d, #80cca1);
   --ol-buy: light-dark(#2d769c, #73b8d4);
   --ol-sell: light-dark(#b3624b, #d89777);
   --ol-poc: light-dark(#a87823, #dfb967);
   --ol-evidence: light-dark(#7664a9, #b4a1df);
+  /* Interface: focus, selection, controls; never data */
+  --ol-accent: var(--ol-ink);
+  --ol-border: light-dark(#768d7e, #667f6f);
+  --ol-hover: light-dark(#dde6e0, #2a3a30);
+  --ol-raised: light-dark(#fff, #3a4e41);
+  --ol-on: light-dark(#d6e0d9, #2e4035);
+  --ol-shadow: light-dark(#0000001f, #00000080);
+  /* Type: four sizes, nothing below the first */
+  --fs-s: 11px;
+  --fs-m: 12px;
+  --fs-l: 14px;
+  --fs-xl: 20px;
+  /* Space: a 4px scale; one gutter for every band */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --gutter: var(--sp-3);
+  /* Radii: swatches, controls, panels */
+  --r-s: 2px;
+  --r-m: 6px;
+  --r-l: 8px;
+  /* Control heights */
+  --h-s: 24px;
+  --h-m: 28px;
+  --h-l: 32px;
+  /* Layout, set by the page */
   --side-w: 312px;
   --drawer-h: 260px;
   background: var(--ol-bg);
   color: var(--ol-ink);
   font:
-    13px/1.5 -apple-system,
+    var(--fs-m) / 1.5 -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
@@ -44,49 +76,8 @@
 #origo-lens * {
   box-sizing: border-box;
 }
-#origo-lens button,
-#origo-lens select,
-#origo-lens input,
-#origo-lens textarea {
-  font: inherit;
-  color: inherit;
-}
-#origo-lens button {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  padding: 5px 9px;
-  min-height: 32px;
-  white-space: nowrap;
-}
-#origo-lens button:hover {
-  background: var(--ol-panel);
-}
-#origo-lens button[aria-pressed="true"],
-#origo-lens button[aria-selected="true"] {
-  background: var(--ol-ink);
-  color: var(--ol-bg);
-}
-#origo-lens button:disabled {
-  opacity: 0.35;
-}
-#origo-lens button:focus-visible,
-#origo-lens select:focus-visible,
-#origo-lens input:focus-visible,
-#origo-lens textarea:focus-visible,
-#origo-lens summary:focus-visible,
-#origo-lens .ol-grip:focus-visible {
-  outline: 2px solid var(--ol-volume);
-  outline-offset: 2px;
-}
-#origo-lens select {
-  background: var(--ol-surface);
-  border: 1px solid var(--ol-line);
-  border-radius: 4px;
-  padding: 4px 6px;
-}
-#origo-lens summary {
-  cursor: pointer;
+#origo-lens [hidden] {
+  display: none !important;
 }
 #origo-lens .ol-num {
   font-variant-numeric: tabular-nums;
@@ -94,12 +85,9 @@
 #origo-lens .ol-muted {
   color: var(--ol-muted);
 }
-#origo-lens [hidden] {
-  display: none !important;
-}
 #origo-lens .ol-icon {
-  width: 16px;
-  height: 16px;
+  width: var(--sp-4);
+  height: var(--sp-4);
   flex: none;
   fill: none;
   stroke: currentColor;
@@ -108,53 +96,176 @@
   stroke-linejoin: round;
 }
 
-/* Shared controls: segmented groups, outline actions, icon buttons, toggles. */
-#origo-lens .ol-seg {
-  display: flex;
-  gap: 2px;
-  align-items: center;
-  background: var(--ol-panel);
-  padding: 2px;
-  border-radius: 6px;
-}
-#origo-lens .ol-seg button {
-  font-size: 12px;
-  min-height: 28px;
-  padding: 3px 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-#origo-lens .ol-action {
-  font-size: 12px;
-  min-height: 29px;
-  padding: 4px 9px;
-  border-color: var(--ol-line);
-}
-#origo-lens .ol-icon-button {
-  min-height: 29px;
-  min-width: 29px;
-  padding: 0 6px;
+/* Buttons: ghost by default; .ol-action is outlined, .ol-solid is filled.
+   Heights: .ol-s 24px, default 28px, .ol-l 32px. */
+#origo-lens button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  gap: var(--sp-1);
+  min-height: var(--h-m);
+  padding: 0 var(--sp-2);
+  font: inherit;
+  font-size: var(--fs-m);
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-m);
+  white-space: nowrap;
+}
+#origo-lens button.ol-s {
+  min-height: var(--h-s);
+  font-size: var(--fs-s);
+}
+#origo-lens button.ol-l {
+  min-height: var(--h-l);
+}
+#origo-lens button:hover:not(:disabled) {
+  background: var(--ol-hover);
+}
+#origo-lens button:disabled {
+  opacity: 0.35;
+}
+#origo-lens .ol-action {
+  border-color: var(--ol-border);
+}
+#origo-lens .ol-solid {
+  background: var(--ol-ink);
+  border-color: var(--ol-ink);
+  color: var(--ol-bg);
+}
+#origo-lens .ol-solid:hover:not(:disabled) {
+  background: var(--ol-ink);
+  opacity: 0.88;
+}
+#origo-lens .ol-icon-button {
+  min-width: var(--h-m);
+  padding: 0;
   font-weight: 500;
 }
-#origo-lens .ol-toggle {
-  font-size: 12px;
-  min-height: 28px;
-  padding: 3px 10px;
-  border-color: var(--ol-line);
+#origo-lens .ol-icon-button.ol-l {
+  min-width: var(--h-l);
+}
+/* A toggle that is on gets an accent tint; a chosen option, a raised surface. */
+#origo-lens .ol-toggle[aria-pressed="true"] {
+  background: var(--ol-on);
+  border-color: var(--ol-accent);
+}
+#origo-lens .ol-seg {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--h-l);
+  padding: 2px;
+  background: var(--ol-panel);
+  border-radius: var(--r-m);
+}
+#origo-lens .ol-seg button {
+  border-radius: calc(var(--r-m) - 2px);
+}
+#origo-lens .ol-seg button[aria-pressed="true"],
+#origo-lens .ol-seg button[aria-selected="true"] {
+  background: var(--ol-raised);
+  color: var(--ol-ink);
+  box-shadow: 0 1px 2px var(--ol-shadow);
+}
+/* One focus style everywhere, the canvas included (inset, as it fills its box). */
+#origo-lens :is(button, select, input, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--ol-accent);
+  outline-offset: 2px;
+}
+#origo-lens canvas:focus-visible {
+  outline: 2px solid var(--ol-accent);
+  outline-offset: -2px;
+}
+#origo-lens select {
+  appearance: none;
+  min-height: var(--h-m);
+  padding: 0 var(--sp-5) 0 var(--sp-2);
+  font: inherit;
+  font-size: var(--fs-m);
+  color: var(--ol-ink);
+  background-color: var(--ol-surface);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 13px) 55%,
+    calc(100% - 9px) 55%;
+  background-size: var(--sp-1) var(--sp-1);
+  background-repeat: no-repeat;
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+}
+#origo-lens input[type="checkbox"] {
+  appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-s);
+}
+#origo-lens input[type="checkbox"]::before {
+  content: "";
+  width: var(--sp-2);
+  height: var(--sp-2);
+  background: var(--ol-bg);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transform: scale(0);
+}
+#origo-lens input[type="checkbox"]:checked {
+  background: var(--ol-accent);
+  border-color: var(--ol-accent);
+}
+#origo-lens input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+#origo-lens textarea {
+  font:
+    var(--fs-s) / 1.6 ui-monospace,
+    SFMono-Regular,
+    monospace;
+  color: var(--ol-ink);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+  padding: var(--sp-2);
+}
+#origo-lens summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-s);
+  list-style: none;
+  cursor: pointer;
+}
+#origo-lens summary::-webkit-details-marker {
+  display: none;
+}
+#origo-lens summary::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin: 0 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+#origo-lens details[open] > summary::before {
+  transform: rotate(45deg);
 }
 
 /* Top bar: identity, then every control that shapes the view, in one row. */
 #origo-lens .ol-bar {
   display: flex;
   align-items: center;
-  gap: 8px 16px;
-  padding: 6px 12px;
-  min-height: 48px;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-2) var(--gutter);
   background: var(--ol-surface);
   border-bottom: 1px solid var(--ol-line);
   position: relative;
@@ -163,37 +274,34 @@
 }
 #origo-lens .ol-id {
   flex: none;
-  line-height: 1.25;
+  line-height: 1.3;
 }
 #origo-lens .ol-brand {
-  font-size: 15px;
+  font-size: var(--fs-l);
   font-weight: 500;
-  letter-spacing: -0.3px;
-}
-#origo-lens .ol-brand {
   white-space: nowrap;
 }
 #origo-lens .ol-org {
-  font-size: 10px;
+  font-size: var(--fs-s);
+  font-weight: 400;
   letter-spacing: 0.13em;
-  margin-right: 8px;
+  margin-right: var(--sp-2);
   color: var(--ol-muted);
 }
 #origo-lens .ol-market {
-  font-size: 11px;
+  font-size: var(--fs-s);
   color: var(--ol-muted);
   white-space: nowrap;
 }
 #origo-lens .ol-state-pill {
-  margin-left: 8px;
-  padding: 1px 7px;
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-2);
   border: 1px solid var(--ol-line);
-  border-radius: 9px;
-  font-size: 10px;
+  border-radius: var(--r-l);
+  font-size: var(--fs-s);
   font-weight: 400;
-  letter-spacing: 0.02em;
   color: var(--ol-muted);
-  vertical-align: 2px;
+  vertical-align: 1px;
 }
 #origo-lens #ol-market {
   color: var(--ol-ink);
@@ -206,7 +314,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px 10px;
+  gap: var(--sp-2);
 }
 #origo-lens .ol-sheet-head,
 #origo-lens .ol-sheet-toggle {
@@ -215,25 +323,22 @@
 #origo-lens .ol-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-1);
   position: relative;
 }
-#origo-lens .ol-cap {
-  font-size: 11px;
-  color: var(--ol-muted);
+#origo-lens .ol-bar select {
+  min-height: var(--h-l);
 }
-#origo-lens .ol-span {
-  font-size: 11px;
+#origo-lens .ol-cap,
+#origo-lens .ol-span,
+#origo-lens .ol-replay #ol-replay-at {
+  font-size: var(--fs-s);
   color: var(--ol-muted);
   white-space: nowrap;
 }
-#origo-lens .ol-res {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  border-color: var(--ol-line);
-  min-height: 32px;
+#origo-lens .ol-span,
+#origo-lens .ol-replay #ol-replay-at {
+  padding: 0 var(--sp-1);
 }
 #origo-lens .ol-res .ol-caret {
   color: var(--ol-muted);
@@ -252,18 +357,9 @@
 #origo-lens .ol-res[data-coarse="true"] .ol-res-coarse {
   display: inline-block;
 }
-#origo-lens #ol-lens-depth {
-  min-height: 29px;
-  font-size: 12px;
-}
-#origo-lens .ol-replay #ol-replay-at {
-  font-size: 11px;
-  color: var(--ol-muted);
-  white-space: nowrap;
-}
 /* Narrower bars keep one row: tools go icon-only, then segments tighten, then
-   the replay date and back/forward give way (the history list keeps them).
-   Replay and the lens add controls, so they go icon-only as well. */
+   the replay date, the cutoff date and back/forward give way (the history
+   list keeps them). Replay and the lens add controls, so they tighten too. */
 @container (max-width: 1380px) {
   #origo-lens .ol-tool-label,
   #origo-lens .ol-cap {
@@ -271,12 +367,6 @@
   }
 }
 @container (max-width: 1400px) {
-  #origo-lens .ol-bar .ol-seg button {
-    padding: 3px 7px;
-  }
-  #origo-lens .ol-res {
-    padding: 5px 7px;
-  }
   #origo-lens #ol-replay-at,
   #origo-lens #ol-hist-back,
   #origo-lens #ol-hist-fwd,
@@ -290,23 +380,23 @@
     display: none;
   }
   #origo-lens[data-busy="true"] .ol-bar .ol-seg button {
-    padding: 3px 7px;
+    padding: 0 var(--sp-1);
   }
 }
 
 /* Popovers: anchored under their button, above the workspace. */
 #origo-lens .ol-pop {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + var(--sp-2));
   left: 0;
   z-index: 30;
   background: var(--ol-surface);
   color: var(--ol-ink);
   border: 1px solid var(--ol-line);
-  border-radius: 8px;
-  box-shadow: 0 10px 30px #0003;
-  padding: 10px 12px;
-  font-size: 11px;
+  border-radius: var(--r-l);
+  box-shadow: 0 var(--sp-2) var(--sp-6) var(--ol-shadow);
+  padding: var(--sp-3);
+  font-size: var(--fs-s);
   white-space: normal;
 }
 #origo-lens .ol-pop-end {
@@ -317,9 +407,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-  font-size: 12px;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-m);
   font-weight: 500;
 }
 #origo-lens .ol-res-pop {
@@ -336,44 +426,37 @@
 #origo-lens .ol-step {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin-bottom: 6px;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-2);
 }
 #origo-lens .ol-step button {
-  border-color: var(--ol-line);
-  width: 29px;
-  padding: 2px;
-  min-height: 29px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  width: var(--h-m);
+  padding: 0;
 }
 #origo-lens .ol-step-label {
   flex: 1;
 }
 #origo-lens .ol-step-label output {
-  font-weight: 500;
   display: block;
+  font-size: var(--fs-l);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
 }
 #origo-lens .ol-step-label > span {
-  font-size: 11px;
+  font-size: var(--fs-s);
   color: var(--ol-muted);
 }
 #origo-lens .ol-plane-cap {
+  margin: var(--sp-2) 0 var(--sp-1);
+  font-size: var(--fs-s);
   color: var(--ol-muted);
-  font-size: 10px;
-  margin: 8px 0 4px;
 }
 #origo-lens .ol-plane {
   display: grid !important;
-  grid-template-columns: 12px repeat(21, minmax(0, 1fr));
+  grid-template-columns: var(--sp-3) repeat(21, minmax(0, 1fr));
   gap: 1px;
-  margin: 0;
   align-items: center;
   justify-items: center;
-  max-width: none;
 }
 #origo-lens .ol-plane button {
   width: 100%;
@@ -381,8 +464,8 @@
   aspect-ratio: 1;
   min-height: 0;
   padding: 0;
-  border-radius: 2px;
   border: 1px solid transparent;
+  border-radius: var(--r-s);
   background: var(--ol-line);
   opacity: 0.55;
   font-size: 0;
@@ -410,7 +493,7 @@
     var(--ol-line),
     var(--ol-line) 2px,
     var(--ol-surface) 2px,
-    var(--ol-surface) 4px
+    var(--ol-surface) var(--sp-1)
   );
   opacity: 0.8;
 }
@@ -432,33 +515,33 @@
 }
 #origo-lens .ol-plane button:hover,
 #origo-lens .ol-plane button:focus-visible {
-  outline: 2px solid var(--ol-volume);
+  outline: 2px solid var(--ol-accent);
   outline-offset: 1px;
   opacity: 1;
 }
 #origo-lens .ol-plane span {
-  font-size: 8px;
+  font-size: var(--fs-s);
   line-height: 1;
   color: var(--ol-muted);
   text-align: center;
 }
 #origo-lens .ol-plane-key {
   display: flex;
-  gap: 4px 12px;
   flex-wrap: wrap;
-  margin-top: 6px;
-  font-size: 11px;
+  gap: var(--sp-1) var(--sp-3);
+  margin-top: var(--sp-2);
   color: var(--ol-muted);
 }
 #origo-lens .ol-plane-key span {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 #origo-lens .ol-plane-key i {
+  display: inline-block;
   width: 9px;
   height: 9px;
-  display: inline-block;
+  border-radius: var(--r-s);
   background: var(--ol-panel);
 }
 #origo-lens .ol-plane-key .ol-plane-path {
@@ -467,21 +550,21 @@
 }
 #origo-lens .ol-plane-status {
   min-height: 2.6em;
-  margin-top: 6px;
-  font-size: 10px;
+  margin-top: var(--sp-2);
   line-height: 1.3;
 }
+/* Ghost rows align their text with the popover's edge. */
 #origo-lens .ol-breadcrumbs {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 1px;
+  margin: 0 calc(-1 * var(--sp-2));
 }
 #origo-lens .ol-breadcrumbs button {
-  font-size: 11px;
-  padding: 2px 8px;
-  min-height: 26px;
-  text-align: left;
+  justify-content: flex-start;
+  min-height: var(--h-s);
+  font-size: var(--fs-s);
   color: var(--ol-muted);
 }
 #origo-lens .ol-breadcrumbs button[aria-current="step"] {
@@ -505,54 +588,48 @@
   min-height: 0;
 }
 #origo-lens .ol-loading {
-  background: var(--ol-panel);
+  padding: var(--sp-1) var(--gutter);
+  font-size: var(--fs-s);
   color: var(--ol-muted);
-  padding: 5px 12px;
-  font-size: 11px;
+  background: var(--ol-panel);
   border-bottom: 1px solid var(--ol-line);
 }
 #origo-lens .ol-chart-head {
   display: flex;
-  align-items: center;
-  gap: 6px 16px;
   flex-wrap: wrap;
-  padding: 5px 12px;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-4);
+  padding: var(--sp-1) var(--gutter);
   border-bottom: 1px solid var(--ol-line);
 }
 #origo-lens .ol-marks {
   display: flex;
-  gap: 3px;
-  align-items: center;
   flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
 }
 #origo-lens .ol-marks label {
   display: flex;
-  gap: 5px;
   align-items: center;
-  font-size: 12px;
-  padding: 4px;
-}
-#origo-lens input[type="checkbox"] {
-  accent-color: var(--ol-volume);
-  margin: 0;
-  width: 13px;
-  height: 13px;
+  gap: var(--sp-2);
+  min-height: var(--h-m);
+  cursor: pointer;
 }
 #origo-lens .ol-legend {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--fs-s);
   color: var(--ol-muted);
 }
 #origo-lens .ol-ramp {
+  flex: none;
   width: 50px;
   height: 5px;
   background: linear-gradient(to right, var(--ol-panel), var(--ol-volume));
-  border-radius: 1px;
-  flex-shrink: 0;
+  border-radius: var(--r-s);
 }
 #origo-lens .ol-plot {
   position: relative;
@@ -569,17 +646,17 @@
 }
 #origo-lens .ol-tip {
   position: absolute;
-  pointer-events: none;
   z-index: 4;
-  background: var(--ol-surface);
-  color: var(--ol-ink);
-  border: 1px solid var(--ol-line);
-  box-shadow: 0 5px 20px #0002;
-  padding: 9px 12px;
-  border-radius: 6px;
   max-width: 235px;
-  font-size: 11px;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-s);
   font-variant-numeric: tabular-nums;
+  color: var(--ol-ink);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-line);
+  border-radius: var(--r-l);
+  box-shadow: 0 var(--sp-1) var(--sp-5) var(--ol-shadow);
+  pointer-events: none;
 }
 #origo-lens .ol-tip div {
   margin: 2px 0;
@@ -590,40 +667,27 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--ol-line);
-  background: var(--ol-surface);
   position: relative;
+  background: var(--ol-surface);
+  border-top: 1px solid var(--ol-line);
 }
 #origo-lens .ol-drawer-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 3px 8px 3px 12px;
-  min-height: 36px;
-}
-#origo-lens .ol-drawer-tabs {
-  display: flex;
-  gap: 2px;
-}
-#origo-lens .ol-drawer-tabs button {
-  font-size: 12px;
-  min-height: 28px;
-  padding: 3px 10px;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--gutter);
 }
 #origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-tabs button {
   background: transparent;
   color: inherit;
+  box-shadow: none;
 }
 #origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-tabs button:hover {
-  background: var(--ol-panel);
+  background: var(--ol-hover);
 }
 #origo-lens .ol-query-mini {
+  margin-left: var(--sp-1);
   color: var(--ol-muted);
-  margin-left: 6px;
-}
-#origo-lens .ol-drawer-tabs button[aria-selected="true"] .ol-query-mini {
-  color: inherit;
-  opacity: 0.75;
 }
 #origo-lens .ol-drawer-space {
   flex: 1;
@@ -644,134 +708,127 @@
   display: none;
 }
 #origo-lens .ol-panel {
-  padding: 0 12px 10px;
+  padding: 0 var(--gutter) var(--sp-3);
 }
 #origo-lens .ol-panel-head {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
-  gap: 6px 12px;
-  padding: 8px 0;
-  font-size: 12px;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) 0;
 }
 #origo-lens .ol-panel-head > .ol-muted {
-  font-size: 11px;
   flex: 1;
   min-width: 160px;
+  font-size: var(--fs-s);
 }
 #origo-lens .ol-pager {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--fs-s);
 }
 #origo-lens .ol-table {
-  border-collapse: collapse;
   width: 100%;
-  font-size: 11px;
+  border-collapse: collapse;
+  font-size: var(--fs-s);
   font-variant-numeric: tabular-nums;
 }
 #origo-lens .ol-table th {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--ol-surface);
-  text-align: right;
-  font-weight: 500;
-  color: var(--ol-muted);
-  white-space: nowrap;
   padding: 0;
+  text-align: right;
+  white-space: nowrap;
+  background: var(--ol-surface);
   border-bottom: 1px solid var(--ol-line);
 }
+/* Header buttons fill their cell; their text lines up with the cells below. */
 #origo-lens .ol-table th button {
   width: 100%;
-  min-height: 30px;
-  padding: 4px 9px;
+  justify-content: flex-end;
+  min-height: var(--h-m);
+  padding: 0 var(--sp-2);
   border-radius: 0;
-  text-align: inherit;
-  font-size: 11px;
+  font-size: var(--fs-s);
   font-weight: 500;
   color: var(--ol-muted);
+}
+#origo-lens .ol-table th:first-child button {
+  justify-content: flex-start;
 }
 #origo-lens .ol-table th[aria-sort] button {
   color: var(--ol-ink);
 }
 #origo-lens .ol-table th[aria-sort="ascending"] button::after {
-  content: " ↑";
+  content: "↑";
 }
 #origo-lens .ol-table th[aria-sort="descending"] button::after {
-  content: " ↓";
+  content: "↓";
 }
 #origo-lens .ol-table td {
+  padding: var(--sp-1) var(--sp-2);
   text-align: right;
   white-space: nowrap;
-  padding: 6px 9px;
   border-bottom: 1px solid var(--ol-line);
 }
-#origo-lens .ol-table td:first-child,
-#origo-lens .ol-table th:first-child {
+#origo-lens .ol-table td:first-child {
   text-align: left;
 }
 #origo-lens .ol-table tbody tr:hover,
 #origo-lens .ol-table tbody tr.is-hover {
-  background: var(--ol-panel);
+  background: var(--ol-hover);
 }
+/* Case dates are ghost buttons whose text sits on the column's edge. */
 #origo-lens .ol-cases-table td button {
-  min-height: 24px;
-  padding: 1px 6px;
-  margin-left: -6px;
-  font-size: 11px;
+  min-height: var(--h-s);
+  margin-left: calc(-1 * var(--sp-2));
+  font-size: var(--fs-s);
   color: var(--ol-ink);
   text-decoration: underline;
-  text-decoration-color: var(--ol-line);
+  text-decoration-color: var(--ol-border);
   text-underline-offset: 3px;
 }
 #origo-lens .ol-query-body {
   display: grid;
-  gap: 8px;
-  padding-top: 10px;
-  font-size: 12px;
+  gap: var(--sp-2);
+  padding-top: var(--sp-3);
 }
 #origo-lens .ol-query-body textarea {
   width: 100%;
   min-height: 70px;
   resize: vertical;
-  background: var(--ol-surface);
-  border: 1px solid var(--ol-line);
-  border-radius: 5px;
-  padding: 10px;
-  font:
-    11px/1.6 ui-monospace,
-    SFMono-Regular,
-    monospace;
-  color: var(--ol-ink);
 }
 #origo-lens .ol-query-actions {
   display: flex;
-  align-items: center;
-  gap: 5px;
   flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
 }
 #origo-lens #ol-copy-status {
-  font-size: 11px;
+  font-size: var(--fs-s);
   color: var(--ol-muted);
 }
 #origo-lens #ol-import {
   display: grid;
-  gap: 6px;
   justify-items: start;
+  gap: var(--sp-2);
+}
+#origo-lens #ol-import textarea {
+  width: 100%;
 }
 #origo-lens #ol-query-ready {
-  font-size: 11px;
+  font-size: var(--fs-s);
   overflow-wrap: anywhere;
 }
 
 /* Resize grips between the chart and its drawer and inspector. */
 #origo-lens .ol-grip {
+  position: relative;
   background: transparent;
   touch-action: none;
-  position: relative;
 }
 #origo-lens .ol-grip::after {
   content: "";
@@ -780,7 +837,7 @@
 }
 #origo-lens .ol-grip:hover::after,
 #origo-lens .ol-grip[data-active="true"]::after {
-  background: var(--ol-volume);
+  background: var(--ol-accent);
 }
 #origo-lens .ol-side-grip {
   cursor: col-resize;
@@ -793,7 +850,7 @@
 }
 #origo-lens .ol-side-grip:hover::after,
 #origo-lens .ol-side-grip[data-active="true"]::after {
-  left: 4px;
+  left: var(--sp-1);
   width: 3px;
 }
 #origo-lens .ol-main[data-side="closed"] .ol-side-grip {
@@ -801,13 +858,13 @@
 }
 #origo-lens .ol-drawer-grip {
   height: 6px;
-  margin-top: -4px;
+  margin-top: calc(-1 * var(--sp-1));
   cursor: row-resize;
 }
 #origo-lens .ol-drawer-grip::after {
+  top: 3px;
   left: 0;
   right: 0;
-  top: 3px;
   height: 0;
 }
 #origo-lens .ol-drawer-grip:hover::after,
@@ -821,13 +878,13 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 4px 16px;
-  min-height: 28px;
-  padding: 3px 12px;
-  border-top: 1px solid var(--ol-line);
-  font-size: 11px;
+  gap: var(--sp-1) var(--sp-4);
+  min-height: var(--h-m);
+  padding: var(--sp-1) var(--gutter);
+  font-size: var(--fs-s);
   color: var(--ol-muted);
   white-space: nowrap;
+  border-top: 1px solid var(--ol-line);
   overflow: hidden;
   container-type: inline-size;
 }
@@ -841,12 +898,12 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 4px 12px;
+  gap: var(--sp-1) var(--sp-3);
 }
 #origo-lens .ol-status-keys > span {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-1);
 }
 #origo-lens .ol-gesture {
   flex: 1 1 auto;
@@ -855,14 +912,15 @@
   text-overflow: ellipsis;
 }
 #origo-lens .ol-status-meta {
-  margin-left: auto;
   display: flex;
-  gap: 12px;
+  gap: var(--sp-3);
+  margin-left: auto;
 }
 #origo-lens .ol-data-key {
   display: inline-block;
   width: 11px;
   height: 11px;
+  border-radius: var(--r-s);
   background: var(--ol-panel);
 }
 #origo-lens .ol-data-key.zero {
@@ -873,14 +931,14 @@
   background: repeating-linear-gradient(
     45deg,
     var(--ol-poc) 0 1px,
-    transparent 1px 4px
+    transparent 1px var(--sp-1)
   );
 }
 #origo-lens .ol-data-key.unavailable {
   background: repeating-linear-gradient(
     -45deg,
     var(--ol-line) 0 1px,
-    transparent 1px 4px
+    transparent 1px var(--sp-1)
   );
 }
 #origo-lens .ol-data-key.coarse {
@@ -890,10 +948,10 @@
 
 /* Inspector: its own scroll, so the chart stays in view. */
 #origo-lens .ol-side {
-  min-width: 0;
-  min-height: 0;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   background: var(--ol-surface);
   border-left: 1px solid var(--ol-line);
 }
@@ -901,8 +959,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  padding: 8px 8px 8px 12px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--gutter);
   border-bottom: 1px solid var(--ol-line);
 }
 #origo-lens #ol-side-toggle .ol-icon {
@@ -916,37 +974,37 @@
   display: none;
 }
 #origo-lens .ol-main[data-side="closed"] .ol-side-tabs {
-  padding: 8px 6px;
   justify-content: center;
+  padding: var(--sp-2) 0;
   border-bottom: 0;
 }
 #origo-lens .ol-side-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 14px 16px 18px;
+  padding: var(--sp-4) var(--gutter) var(--sp-5);
 }
 #origo-lens .ol-section-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  min-height: 29px;
-  margin-bottom: 2px;
+  gap: var(--sp-2);
+  min-height: var(--h-s);
+  margin-bottom: var(--sp-1);
 }
 #origo-lens .ol-section-heading {
+  margin-bottom: var(--sp-1);
+  font-size: var(--fs-l);
   font-weight: 500;
-  font-size: 13px;
-  margin-bottom: 5px;
 }
 #origo-lens .ol-section-row .ol-section-heading {
   margin-bottom: 0;
 }
 #origo-lens .ol-bounds {
-  font-size: 11px;
-  color: var(--ol-muted);
+  margin-bottom: var(--sp-4);
+  font-size: var(--fs-s);
   font-variant-numeric: tabular-nums;
-  margin-bottom: 14px;
+  color: var(--ol-muted);
 }
 #origo-lens .ol-bounds span {
   white-space: nowrap;
@@ -954,70 +1012,67 @@
 #origo-lens .ol-metrics {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 15px 8px;
+  gap: var(--sp-4) var(--sp-2);
 }
 #origo-lens .ol-metric label {
   display: block;
-  font-size: 11px;
+  font-size: var(--fs-s);
   color: var(--ol-muted);
 }
 #origo-lens .ol-metric strong {
-  font-size: 16px;
-  font-weight: 500;
-  letter-spacing: -0.4px;
   display: block;
+  font-size: var(--fs-xl);
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.4px;
   font-variant-numeric: tabular-nums;
 }
 #origo-lens .ol-rule {
   height: 1px;
+  margin: var(--sp-4) 0;
   background: var(--ol-line);
-  margin: 17px 0;
 }
 #origo-lens .ol-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  margin: 6px 0;
-  font-size: 11px;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0;
+  font-size: var(--fs-s);
 }
 #origo-lens .ol-row > span:first-child {
   color: var(--ol-muted);
 }
 #origo-lens .ol-row > span:last-child {
-  font-variant-numeric: tabular-nums;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 #origo-lens .ol-diag {
-  margin-top: 16px;
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-2);
+  font-size: var(--fs-s);
   border-top: 1px solid var(--ol-line);
-  padding-top: 8px;
-  font-size: 11px;
 }
 #origo-lens .ol-diag summary {
   color: var(--ol-muted);
-  padding: 4px 0;
 }
 #origo-lens .ol-evidence-state {
-  font-size: 12px;
+  margin: var(--sp-2) 0 var(--sp-3);
   line-height: 1.5;
-  margin: 8px 0 12px;
 }
 #origo-lens .ol-evidence-tabs button {
   flex: 1;
-  min-height: 30px;
-  padding: 4px 8px;
 }
 #origo-lens .ol-outcome-head,
 #origo-lens .ol-outcome {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 52px 44px 38px;
-  gap: 6px;
   align-items: baseline;
+  gap: var(--sp-2);
 }
 #origo-lens .ol-outcome-head {
-  margin-top: 12px;
-  font-size: 10px;
+  margin-top: var(--sp-3);
+  font-size: var(--fs-s);
   color: var(--ol-muted);
 }
 #origo-lens .ol-outcome-head span:not(:first-child),
@@ -1025,19 +1080,17 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+/* Outcome rows are ghost buttons whose text lines up with the column. */
 #origo-lens .ol-evidence-probs .ol-probability {
   display: block;
-  width: 100%;
-  white-space: normal;
+  width: calc(100% + 2 * var(--sp-2));
+  margin: 2px calc(-1 * var(--sp-2));
+  padding: var(--sp-2);
   text-align: left;
-  padding: 7px 6px 8px;
-  margin: 2px -6px;
-  width: calc(100% + 12px);
-  border-radius: 5px;
+  white-space: normal;
 }
 #origo-lens .ol-probability .ol-outcome {
-  font-size: 12px;
-  margin-bottom: 5px;
+  margin-bottom: var(--sp-1);
 }
 #origo-lens .ol-probability .ol-outcome > span:first-child::after {
   content: " ›";
@@ -1045,45 +1098,46 @@
 }
 #origo-lens .ol-track {
   display: block;
+  position: relative;
   height: 5px;
   background: var(--ol-panel);
-  position: relative;
-  border-radius: 1px;
+  border-radius: var(--r-s);
 }
 #origo-lens .ol-track span {
   display: block;
+  width: 0;
   height: 5px;
   background: var(--ol-evidence);
-  border-radius: 1px;
-  width: 0;
+  border-radius: var(--r-s);
 }
 #origo-lens .ol-probability .ol-base-track {
-  margin-top: 2px;
   height: 3px;
+  margin-top: 2px;
   background: transparent;
 }
 #origo-lens .ol-probability .ol-base-track span {
-  background: var(--ol-muted);
   height: 3px;
+  background: var(--ol-muted);
   opacity: 0.6;
 }
 #origo-lens .ol-evidence-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  margin-top: 6px;
-  font-size: 11px;
+  gap: var(--sp-1) var(--sp-3);
+  margin-top: var(--sp-2);
+  font-size: var(--fs-s);
   color: var(--ol-muted);
 }
 #origo-lens .ol-evidence-legend span {
   display: flex;
-  gap: 5px;
   align-items: center;
+  gap: var(--sp-1);
 }
 #origo-lens .ol-evidence-legend i {
   display: inline-block;
   width: 15px;
-  height: 4px;
+  height: var(--sp-1);
+  border-radius: var(--r-s);
   background: var(--ol-evidence);
 }
 #origo-lens .ol-evidence-legend .ol-all-key {
@@ -1094,9 +1148,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  margin: 12px 0 10px;
-  font-size: 11px;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0;
+  font-size: var(--fs-s);
   color: var(--ol-muted);
 }
 #origo-lens .ol-evidence-more {
@@ -1104,9 +1158,9 @@
   color: var(--ol-muted);
 }
 #origo-lens .ol-evidence-note {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-s);
   color: var(--ol-muted);
-  font-size: 11px;
-  margin: 0 0 8px;
 }
 #origo-lens .ol-evidence-note:last-child {
   margin-bottom: 0;
@@ -1126,30 +1180,27 @@
   }
   #origo-lens .ol-sheet-toggle {
     display: inline-flex;
-    align-items: center;
-    border-color: var(--ol-line);
-    font-size: 12px;
   }
   #origo-lens .ol-controls {
     display: none;
   }
   #origo-lens[data-sheet="open"] .ol-controls {
-    display: flex;
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
     z-index: 40;
-    max-height: 78vh;
-    overflow: auto;
+    display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 14px;
-    padding: 12px 16px 20px;
+    gap: var(--sp-3);
+    max-height: 78vh;
+    overflow: auto;
+    padding: var(--sp-3) var(--sp-4) var(--sp-5);
     background: var(--ol-surface);
     border-top: 1px solid var(--ol-line);
-    border-radius: 12px 12px 0 0;
-    box-shadow: 0 -12px 40px #0004;
+    border-radius: var(--r-l) var(--r-l) 0 0;
+    box-shadow: 0 calc(-1 * var(--sp-3)) var(--sp-6) var(--ol-shadow);
   }
   #origo-lens[data-sheet="open"] .ol-sheet-head {
     display: flex;
@@ -1166,10 +1217,10 @@
   }
   #origo-lens .ol-pop {
     position: static;
-    width: auto;
-    margin-top: 6px;
-    box-shadow: none;
     flex-basis: 100%;
+    width: auto;
+    margin-top: var(--sp-2);
+    box-shadow: none;
   }
   #origo-lens .ol-main {
     display: block;
@@ -1194,16 +1245,14 @@
     height: auto;
     max-height: 70vh;
   }
-  #origo-lens .ol-status {
+  #origo-lens .ol-status,
+  #origo-lens .ol-status-keys,
+  #origo-lens .ol-status-meta {
     flex-wrap: wrap;
     white-space: normal;
   }
-  #origo-lens .ol-status-keys {
-    flex-wrap: wrap;
-  }
   #origo-lens .ol-status-meta {
     margin-left: 0;
-    flex-wrap: wrap;
   }
 }
 @media (max-width: 440px) {
@@ -1212,14 +1261,13 @@
   }
   #origo-lens .ol-modes {
     flex-wrap: nowrap;
-    gap: 2px;
     max-width: 100%;
     overflow-x: auto;
     scrollbar-width: none;
   }
   #origo-lens .ol-modes button {
     flex: none;
-    padding: 3px 5px;
+    padding: 0 var(--sp-1);
   }
   /* The switcher may scroll here, which would clip an outside focus ring. */
   #origo-lens .ol-modes button:focus-visible {
@@ -1227,16 +1275,17 @@
   }
 }
 @media (pointer: coarse) {
-  #origo-lens button {
+  /* Touch targets win over every size class. */
+  #origo-lens button,
+  #origo-lens button.ol-s,
+  #origo-lens button.ol-l,
+  #origo-lens select,
+  #origo-lens .ol-bar select,
+  #origo-lens .ol-marks label {
     min-height: 44px;
   }
   #origo-lens .ol-step button {
-    min-height: 44px;
-    min-width: 38px;
-  }
-  #origo-lens .ol-marks label {
-    min-height: 44px;
-    padding: 8px;
+    min-width: 44px;
   }
   #origo-lens .ol-query-body textarea {
     font-size: 16px;
@@ -1256,12 +1305,12 @@
     <main>
       <div
   id="origo-lens"
-  aria-label="Origo market lens with independent time and price geometry"
+  aria-label="Market State Cube Explorer: independent time and price grids"
 >
   <header class="ol-bar">
     <div class="ol-id">
-      <div class="ol-brand">
-        <span class="ol-org">ORIGO</span>Market lens<span class="ol-state-pill"
+      <div class="ol-brand" title="Market State Cube Explorer">
+        <span class="ol-org">ORIGO</span>Cube Explorer<span class="ol-state-pill"
           ><span id="ol-market">RECORDED</span> <span id="ol-snapshot"></span
         ></span>
       </div>
@@ -1272,7 +1321,7 @@
     <button
       type="button"
       id="ol-sheet-toggle"
-      class="ol-sheet-toggle cursor-interaction"
+      class="ol-sheet-toggle ol-action ol-l cursor-interaction"
       aria-expanded="false"
       aria-controls="ol-controls"
     >
@@ -1284,7 +1333,7 @@
         ><button
           type="button"
           id="ol-sheet-close"
-          class="cursor-interaction"
+          class="ol-icon-button cursor-interaction"
           aria-label="Close controls"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -1326,7 +1375,7 @@
         <button
           type="button"
           id="ol-res"
-          class="ol-res cursor-interaction"
+          class="ol-res ol-action ol-l cursor-interaction"
           aria-haspopup="dialog"
           aria-expanded="false"
           aria-controls="ol-res-pop"
@@ -1358,7 +1407,7 @@
             ><button
               type="button"
               id="ol-auto"
-              class="ol-toggle cursor-interaction"
+              class="ol-action ol-toggle cursor-interaction"
               aria-pressed="true"
               title="Choose the level from the cell size on screen (A)"
             >
@@ -1373,7 +1422,7 @@
             <button
               type="button"
               id="ol-tminus"
-              class="cursor-interaction"
+              class="ol-action cursor-interaction"
               aria-label="Finer time resolution"
               title="Finer time cells ( [ )"
             >
@@ -1386,7 +1435,7 @@
             ><button
               type="button"
               id="ol-tplus"
-              class="cursor-interaction"
+              class="ol-action cursor-interaction"
               aria-label="Coarser time resolution"
               title="Coarser time cells ( ] )"
             >
@@ -1403,7 +1452,7 @@
             <button
               type="button"
               id="ol-pminus"
-              class="cursor-interaction"
+              class="ol-action cursor-interaction"
               aria-label="Finer price resolution"
               title="Finer price cells (Shift+[ )"
             >
@@ -1416,7 +1465,7 @@
             ><button
               type="button"
               id="ol-pplus"
-              class="cursor-interaction"
+              class="ol-action cursor-interaction"
               aria-label="Coarser price resolution"
               title="Coarser price cells (Shift+] )"
             >
@@ -1437,7 +1486,7 @@
             ><span><i class="ol-plane-small"></i>Too small</span
             ><span><i class="ol-plane-large"></i>Too large</span
             ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
-            ><span><i class="ol-plane-loading"></i>… loading</span
+            ><span><i class="ol-plane-loading"></i>Loading</span
             ><span><i class="ol-plane-path"></i>Diagonal</span>
           </div>
           <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
@@ -1487,7 +1536,7 @@
         <button
           type="button"
           id="ol-fit"
-          class="ol-action cursor-interaction"
+          class="ol-action ol-l cursor-interaction"
           title="Fit the price range to the visible trades once (F)"
         >
           Fit now
@@ -1552,7 +1601,7 @@
         ><button
           type="button"
           id="ol-lens-pin"
-          class="ol-action cursor-interaction"
+          class="ol-solid ol-l cursor-interaction"
           hidden
           title="Make the lens rectangle and resolution the view (Enter)"
         >
@@ -1563,7 +1612,7 @@
         <button
           type="button"
           id="ol-replay"
-          class="ol-action cursor-interaction"
+          class="ol-action ol-toggle ol-l cursor-interaction"
           aria-pressed="false"
           title="Replay: hide trades after an anchor and step it with , and ."
         >
@@ -1571,7 +1620,7 @@
         ><button
           type="button"
           id="ol-back"
-          class="ol-action cursor-interaction"
+          class="ol-icon-button ol-action ol-l cursor-interaction"
           aria-label="Previous replay column"
           hidden
         >
@@ -1580,7 +1629,7 @@
         ><button
           type="button"
           id="ol-next"
-          class="ol-action cursor-interaction"
+          class="ol-icon-button ol-action ol-l cursor-interaction"
           aria-label="Next replay column"
           hidden
         >
@@ -1591,7 +1640,7 @@
         <button
           type="button"
           id="ol-hist-back"
-          class="ol-icon-button cursor-interaction"
+          class="ol-icon-button ol-l cursor-interaction"
           aria-label="Back"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -1599,7 +1648,7 @@
         ><button
           type="button"
           id="ol-hist-fwd"
-          class="ol-icon-button cursor-interaction"
+          class="ol-icon-button ol-l cursor-interaction"
           aria-label="Forward"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -1607,7 +1656,7 @@
         ><button
           type="button"
           id="ol-hist"
-          class="ol-icon-button cursor-interaction"
+          class="ol-icon-button ol-l cursor-interaction"
           aria-haspopup="dialog"
           aria-expanded="false"
           aria-controls="ol-hist-pop"
@@ -1638,7 +1687,7 @@
         <button
           type="button"
           id="ol-help"
-          class="ol-icon-button cursor-interaction"
+          class="ol-icon-button ol-l cursor-interaction"
           aria-haspopup="dialog"
           aria-expanded="false"
           aria-controls="ol-help-pop"
@@ -1670,7 +1719,7 @@
   <div class="ol-main" id="ol-main">
     <section class="ol-chart" aria-label="Market field and linked volume profile">
       <div id="ol-loading" class="ol-loading" role="status">
-        Loading recent base cells · geometry ready
+        Loading the last seven days…
       </div>
       <div class="ol-chart-head">
         <div class="ol-seg ol-modes" role="group" aria-label="Cell encoding">
@@ -1740,7 +1789,7 @@
           tabindex="0"
         ></div>
         <div class="ol-drawer-bar">
-          <div class="ol-drawer-tabs" role="tablist" aria-label="Details">
+          <div class="ol-drawer-tabs ol-seg" role="tablist" aria-label="Details">
             <button
               type="button"
               role="tab"
@@ -1800,14 +1849,14 @@
                 <button
                   type="button"
                   id="ol-table-back"
-                  class="ol-action cursor-interaction"
+                  class="ol-action ol-s cursor-interaction"
                 >
                   Previous</button
                 ><span id="ol-table-page" class="ol-num"></span
                 ><button
                   type="button"
                   id="ol-table-next"
-                  class="ol-action cursor-interaction"
+                  class="ol-action ol-s cursor-interaction"
                 >
                   Next
                 </button>
@@ -1878,14 +1927,14 @@
                 <button
                   type="button"
                   id="ol-case-prev"
-                  class="ol-action cursor-interaction"
+                  class="ol-action ol-s cursor-interaction"
                 >
                   Previous</button
                 ><span id="ol-case-page" class="ol-num"></span
                 ><button
                   type="button"
                   id="ol-case-next"
-                  class="ol-action cursor-interaction"
+                  class="ol-action ol-s cursor-interaction"
                 >
                   Next
                 </button>
@@ -1971,7 +2020,7 @@
               ><button
                 type="button"
                 id="ol-import-apply"
-                class="ol-action cursor-interaction"
+                class="ol-solid cursor-interaction"
               >
                 Apply view
               </button>
@@ -2025,7 +2074,7 @@
             class="cursor-interaction"
             aria-pressed="true"
           >
-            Structure</button
+            Measures</button
           ><button
             type="button"
             id="ol-evidence-tab"
@@ -2052,12 +2101,10 @@
       <div class="ol-side-body" id="ol-side-body">
         <div class="ol-side-context" id="ol-context">
           <div class="ol-section-row">
-            <div class="ol-section-heading" id="ol-focus-title">
-              Visible rectangle
-            </div>
+            <div class="ol-section-heading" id="ol-focus-title">In view</div>
             <button
               type="button"
-              class="ol-action cursor-interaction"
+              class="ol-action ol-s cursor-interaction"
               id="ol-clear"
               hidden
             >
@@ -2101,7 +2148,9 @@
               <span>Occupied cells</span><span id="ol-cells">—</span>
             </div>
             <div class="ol-row">
-              <span>Boundary portions</span><span id="ol-partials">—</span>
+              <span title="Boundary portions: cells only partly inside the rectangle"
+                >Edge cells</span
+              ><span id="ol-partials">—</span>
             </div>
             <div class="ol-row">
               <span>Zero-trade cells</span><span id="ol-zero-count">—</span>
@@ -2314,6 +2363,16 @@
   const canvas = el("canvas"),
     ctx = canvas.getContext("2d"),
     reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // The canvas's share of the design tokens: its type sizes, and the plot's
+  // margins. The gutter is the page's; the widest price label ("120,000")
+  // fills the label column, so it starts on the same edge as every band.
+  const TYPE = { s: 11, m: 12, l: 14, xl: 20 },
+    GUTTER = 12,
+    PRICE_LABELS = 43,
+    PLOT_LEFT = GUTTER + PRICE_LABELS + 8,
+    PLOT_TOP = 12,
+    PLOT_BOTTOM = 90,
+    profileWidth = (width) => (width > 470 ? 79 : 52);
   const design = { grid: 0.32, gap: 1 },
     S = {
       dataset: "recent",
@@ -2371,46 +2430,78 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)),
     stepT = () => 2 ** renderN(),
     stepP = () => 2 ** renderM();
-  const dur = (s) =>
-    s < 60
-      ? `${s} s`
-      : s < 3600
-        ? `${+(s / 60).toFixed(3)} min`
-        : s < 86400
-          ? `${+(s / 3600).toFixed(2)} h`
-          : `${+(s / 86400).toFixed(2)} d`;
-  const compact = (x) =>
-    x >= 1e12
-      ? (x / 1e12).toFixed(2) + " T"
-      : x >= 1e9
-        ? (x / 1e9).toFixed(2) + " B"
-        : x >= 1e6
-          ? (x / 1e6).toFixed(2) + " M"
-          : x >= 1e3
-            ? (x / 1e3).toFixed(1) + " k"
-            : x.toFixed(0);
+  // Formats: the one place for how durations, numbers and times read.
+  //
+  // Durations use their two largest whole units: "1 min 52.5 s", "21 d 8 h";
+  // past a year, years to one decimal.
+  const DAY = 86400,
+    YEAR = 365.25 * DAY;
+  const dur = (s) => {
+    if (s >= YEAR) return `${+(s / YEAR).toFixed(1)} y`;
+    if (s < 60) return `${+s.toFixed(2)} s`;
+    const [big, small, bigUnit, smallUnit] =
+      s < 3600 ? [60, 1, "min", "s"] : s < DAY ? [3600, 60, "h", "min"] : [DAY, 3600, "d", "h"];
+    let whole = Math.floor(s / big),
+      rest = +((s - whole * big) / small).toFixed(smallUnit === "s" ? 2 : 0);
+    if (rest * small >= big) {
+      whole++;
+      rest = 0;
+    }
+    return `${whole} ${bigUnit}` + (rest ? ` ${rest} ${smallUnit}` : "");
+  };
+  // Compact numbers carry three significant digits: "96.0 k", "32.0 M", "1.92 B".
+  const compact = (x) => {
+    const sign = x < 0 ? "−" : "",
+      a = Math.abs(x);
+    if (a < 1000)
+      return sign + (Number.isInteger(a) ? String(a) : String(+a.toPrecision(3)));
+    let i = Math.min(4, Math.floor(Math.log10(a) / 3));
+    if (+(a / 1000 ** i).toPrecision(3) >= 1000 && i < 4) i++;
+    return sign + (a / 1000 ** i).toPrecision(3) + " " + " kMBT"[i];
+  };
+  // A signed value with a true minus sign: "+125", "−125".
+  const signed = (x, f) => (x > 0 ? "+" : x < 0 ? "−" : "") + f(Math.abs(x));
   const integer = (x) => Math.round(x).toLocaleString("en-US"),
     price = (x) => x.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-    date = (b) => new Date((T0 + b * BASE) * 1000),
-    dateShort = (b) =>
-      date(b).toLocaleString("en-GB", {
-        timeZone: "UTC",
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }),
-    iso = (b) => date(b).toISOString(),
-    stamp = (b) => {
-      const s = iso(b);
-      return s.slice(0, 10) + " " + s.slice(11, s.endsWith(".000Z") ? 19 : 23);
-    },
     usdt = (x) =>
       x.toLocaleString("en-US", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
-      });
+      }),
+    date = (b) => new Date((T0 + b * BASE) * 1000),
+    // ISO is for the query and view codes only.
+    iso = (b) => date(b).toISOString();
+  // Times read one way everywhere, matching the axis: "24 Sep 12:02", with the
+  // year only when it differs from the cutoff's and seconds only when set.
+  const CUT_YEAR = date(CUT).getUTCFullYear(),
+    dayMonth = d3.utcFormat("%-d %b"),
+    clock = (d) =>
+      d3.utcFormat(
+        d.getUTCMilliseconds()
+          ? "%H:%M:%S.%L"
+          : d.getUTCSeconds()
+            ? "%H:%M:%S"
+            : "%H:%M",
+      )(d),
+    dayOf = (d, year = d.getUTCFullYear() !== CUT_YEAR) =>
+      dayMonth(d) + (year ? " " + d.getUTCFullYear() : ""),
+    // "24 Sep 2026"
+    day = (b) => dayOf(date(b), true),
+    // "24 Sep 12:02:48.750"
+    when = (b) => {
+      const d = date(b);
+      return `${dayOf(d)} ${clock(d)}`;
+    },
+    // A range names its day once: ["21 Sep 14:00–16:00"], or across days
+    // ["23 Sep 12:02 →", "24 Sep 12:02"], as parts that wrap between them.
+    rangeParts = (a, b) => {
+      const x = date(a),
+        y = date(b);
+      return dayOf(x) === dayOf(y)
+        ? [`${dayOf(x)} ${clock(x)}–${clock(y)}`]
+        : [`${dayOf(x)} ${clock(x)} →`, `${dayOf(y)} ${clock(y)}`];
+    },
+    range = (a, b) => rangeParts(a, b).join(" ");
   async function unpack(block, id) {
     const bytes = Uint8Array.from(atob(block.gzip_base64), (c) =>
       c.charCodeAt(0),
@@ -2604,6 +2695,7 @@
       "sell",
       "poc",
       "evidence",
+      "accent",
     ]) {
       probe.style.color = `var(--ol-${key})`;
       colors[key] = getComputedStyle(probe).color;
@@ -2625,14 +2717,14 @@
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const profile = width > 470 ? 79 : 52;
+    const profile = profileWidth(width);
     G = {
       width,
       height,
-      x: 61,
-      y: 12,
-      w: width - 61 - profile - 12,
-      h: height - 90,
+      x: PLOT_LEFT,
+      y: PLOT_TOP,
+      w: width - PLOT_LEFT - profile - GUTTER,
+      h: height - PLOT_BOTTOM,
       profile,
     };
     G.X = d3
@@ -2645,7 +2737,7 @@
       .range([G.y + G.h, G.y]);
   }
   const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
-  function text(s, x, y, color = colors.muted, align = "left", size = 11) {
+  function text(s, x, y, color = colors.muted, align = "left", size = TYPE.s) {
     ctx.fillStyle = color;
     ctx.textAlign = align;
     ctx.textBaseline = "middle";
@@ -2677,15 +2769,14 @@
   // Time labels follow the tick step rather than the visible span, so two
   // adjacent labels never repeat; a tick at midnight UTC names its day.
   function timeFormat(step) {
-    const day = 86400e3;
-    if (step < day) {
-      const dayLabel = d3.utcFormat("%d %b"),
-        clock = d3.utcFormat(step < 60e3 ? "%H:%M:%S" : "%H:%M");
-      return (d) => (+d % day === 0 ? dayLabel(d) : clock(d));
+    const dayMs = DAY * 1000;
+    if (step < dayMs) {
+      const time = d3.utcFormat(step < 60e3 ? "%H:%M:%S" : "%H:%M");
+      return (d) => (+d % dayMs === 0 ? dayMonth(d) : time(d));
     }
-    return d3.utcFormat(
-      step < 28 * day ? "%d %b" : step < 365 * day ? "%b %Y" : "%Y",
-    );
+    return step < 28 * dayMs
+      ? dayMonth
+      : d3.utcFormat(step < 365 * dayMs ? "%b %Y" : "%Y");
   }
   function axes() {
     ctx.globalAlpha = 1;
@@ -2772,7 +2863,7 @@
     } else if (S.drawerOpen && S.drawer === "cases")
       evidenceCases(calcEvidence());
     if (S.selection) {
-      ctx.strokeStyle = colors.volume;
+      ctx.strokeStyle = colors.accent;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(
         G.X(b[0]),
@@ -2836,6 +2927,7 @@
     activity(query, cut);
     querySummary(query, b);
     el("legend-text").textContent = legendText(full);
+    el("legend-text").title = LEGEND_TITLES[S.mode];
     el("ramp").style.background = legendRamp();
     const marks = marksReadout(b);
     el("ray-count").textContent = marks.rayCount + " untested levels";
@@ -3088,7 +3180,7 @@
       renderN() !== S.n ||
       renderM() !== S.m;
     el("query-ready").textContent = changed
-      ? `Rendered coverage: ${iso(b[0])} → ${iso(b[1])}; ${price(b[2] * PR)}–${price(b[3] * PR)} USDT; ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT. Finer bounds remain unavailable in this snapshot.`
+      ? `Rendered coverage: ${range(b[0], b[1])} UTC; ${price(b[2] * PR)}–${price(b[3] * PR)} USDT; ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT. Finer bounds remain unavailable in this snapshot.`
       : "The rendered rectangle matches these six parameters.";
   }
   async function copyText(textToCopy, label) {
@@ -3325,21 +3417,24 @@
     const requested = requestedBounds(),
       partialCoverage = b.some((x, i) => x !== requested[i]);
     el("focus-title").textContent = partialCoverage
-      ? "Ready portion"
+      ? "Ready part"
       : S.selection
-        ? "Selected rectangle"
-        : "Visible rectangle";
+        ? "Selection"
+        : "In view";
+    el("focus-title").title = partialCoverage
+      ? "Only this part of the requested rectangle is recorded at this level"
+      : "";
     // Each date and the price range stay whole; lines break only between them.
+    const times = rangeParts(b[0], b[1]);
+    times[times.length - 1] += " UTC";
     el("bounds").replaceChildren(
-      ...[
-        `${stamp(b[0])} →`,
-        `${stamp(b[1])} UTC`,
-        `· ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`,
-      ].flatMap((part, i) => {
-        const span = document.createElement("span");
-        span.textContent = part;
-        return i ? [" ", span] : [span];
-      }),
+      ...[...times, `· ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`].flatMap(
+        (part, i) => {
+          const span = document.createElement("span");
+          span.textContent = part;
+          return i ? [" ", span] : [span];
+        },
+      ),
     );
     for (const [id, v, exact] of [
       ["vol", query.v, usdt(query.v) + " USDT"],
@@ -3359,9 +3454,7 @@
       ? ((100 * query.bv) / query.v).toFixed(1) + "%"
       : "—";
     el("delta-value").textContent =
-      (2 * query.bv - query.v >= 0 ? "+" : "−") +
-      compact(Math.abs(2 * query.bv - query.v)) +
-      " USDT";
+      signed(2 * query.bv - query.v, compact) + " USDT";
     el("cells").textContent = integer(query.cells.length);
     let partials = 0,
       unfinished = 0;
@@ -3462,9 +3555,10 @@
       tr.dataset.c = c.c;
       tr.dataset.r = c.r;
       const values = [
-        stamp(Math.max(c.c * stepT(), b[0])) +
-          " → " +
-          stamp(Math.min((c.c + 1) * stepT(), b[1])),
+        range(
+          Math.max(c.c * stepT(), b[0]),
+          Math.min((c.c + 1) * stepT(), b[1]),
+        ),
         price(Math.max(c.r * stepP(), b[2]) * PR) +
           "–" +
           price(Math.min((c.r + 1) * stepP(), b[3]) * PR),
@@ -3526,7 +3620,7 @@
         p.t < src.b0 || p.t >= Math.min(src.b1, last.cut) || !inside;
     const open = !S.replay && c * stepT() < CUT && (c + 1) * stepT() > CUT;
     let rows = [
-      `${stamp(c * stepT())} UTC`,
+      `${when(c * stepT())} UTC`,
       `${price(r * stepP() * PR)}–${price((r + 1) * stepP() * PR)} USDT`,
     ];
     if (unavailable)
@@ -3541,14 +3635,14 @@
       );
     else if (!z)
       rows.push(
-        open ? "Unfinished · no accepted trades" : "Zero trades · covered cell",
+        open ? "Unfinished · no trades yet" : "No trades in this cell",
       );
     else
       rows.push(
         `${usdt(z.v)} USDT · ${integer(z.ct)} trades`,
         `Buy ${usdt(z.bv)} USDT · ${integer(z.bt)} trades`,
-        `Δ ${usdt(2 * z.bv - z.v)} USDT · ${((z.bv / z.v) * 100).toFixed(1)}% buy`,
-        open ? "Unfinished cell" : "Completed source coverage",
+        `Δ ${signed(2 * z.bv - z.v, usdt)} USDT · ${((z.bv / z.v) * 100).toFixed(1)}% buy`,
+        open ? "Unfinished cell" : "Complete cell",
       );
     if (renderN() > S.n || renderM() > S.m) rows.push("Coarser than requested");
     tip.replaceChildren(
@@ -3619,11 +3713,11 @@
     }
     el("replay").setAttribute("aria-pressed", String(S.replay));
     el("back").hidden = el("next").hidden = el("replay-at").hidden = !S.replay;
-    el("replay-at").textContent = S.replay ? dateShort(activeCutoff()) : "";
+    el("replay-at").textContent = S.replay ? when(activeCutoff()) : "";
     el("horizon").value = S.horizon;
     el("scope").textContent =
-      `${Object.keys(sources).length}/${Object.keys(PACK.blocks).length} ${PACK.live ? "live cube" : "recorded"} blocks ready · ${dateShort(displaySource().b0)} onward`;
-    el("cutoff").textContent = "Cutoff " + iso(CUT);
+      `${Object.keys(sources).length}/${Object.keys(PACK.blocks).length} ${PACK.live ? "live cube" : "recorded"} blocks ready · ${when(displaySource().b0)} onward`;
+    el("cutoff").textContent = `Cutoff ${when(CUT)} UTC`;
     applyPanels();
     updateNavigation();
     requestDraw();
@@ -3766,16 +3860,24 @@
       drawer = el("drawer"),
       side = el("side-toggle"),
       sideLabel = S.sideOpen ? "Collapse the inspector" : "Expand the inspector";
+    const sideWidth = clamp(S.sideWidth, 260, sideMax()),
+      drawerHeight = clamp(S.drawerHeight, 120, drawerMax());
     main.dataset.side = S.sideOpen ? "open" : "closed";
-    main.style.setProperty("--side-w", clamp(S.sideWidth, 260, sideMax()) + "px");
+    main.style.setProperty("--side-w", sideWidth + "px");
+    // Focusable separators state their size and its range to assistive tech.
+    for (const [grip, now, min, max] of [
+      [el("side-grip"), sideWidth, 260, sideMax()],
+      [el("drawer-grip"), drawerHeight, 120, drawerMax()],
+    ]) {
+      grip.setAttribute("aria-valuenow", String(Math.round(now)));
+      grip.setAttribute("aria-valuemin", String(min));
+      grip.setAttribute("aria-valuemax", String(Math.round(max)));
+    }
     side.setAttribute("aria-expanded", String(S.sideOpen));
     side.setAttribute("aria-label", sideLabel);
     side.title = sideLabel;
     drawer.dataset.open = String(S.drawerOpen);
-    drawer.style.setProperty(
-      "--drawer-h",
-      clamp(S.drawerHeight, 120, drawerMax()) + "px",
-    );
+    drawer.style.setProperty("--drawer-h", drawerHeight + "px");
     // A closed or switched drawer leaves no row outlined on the chart.
     if (!(S.drawerOpen && S.drawer === "cells")) tableHover = null;
     for (const tab of qsa("[data-drawer]")) {
@@ -4056,9 +4158,18 @@
     if (S.mode === "delta")
       return `Δ ${signedCompact(-markState.deltaMax)} · 0 · ${signedCompact(markState.deltaMax)} USDT`;
     if (S.mode === "density")
-      return `${densityNumber(Math.exp(markState.densityLo))}–${densityNumber(Math.exp(markState.densityHi))} USDT/(s·USDT) · log`;
+      return `Density ${densityNumber(Math.exp(markState.densityLo))}–${densityNumber(Math.exp(markState.densityHi))} · log`;
     return `${compact(Math.exp(full.lo))}–${compact(Math.exp(full.hi))} USDT · log`;
   }
+  // The legend's precise unit, one hover away.
+  const LEGEND_TITLES = {
+    volume: "USDT traded per cell, on a log scale",
+    flow: "Share of volume bought by takers",
+    density:
+      "USDT traded per second per USDT of price range, USDT/(s·USDT), on a log scale",
+    delta: "Taker-buy minus taker-sell volume per cell, in USDT",
+    geometry: "The grid's occupied cells",
+  };
   function legendRamp() {
     return S.mode === "flow" || S.mode === "delta"
       ? "linear-gradient(to right,var(--ol-sell),var(--ol-line),var(--ol-buy))"
@@ -4571,7 +4682,7 @@
       barriers = S.evidenceKind === "barrier";
     el("anchor-time").textContent = e.error
       ? ""
-      : `${dateShort((e.a + 1) * stepT())} UTC · ${dur(BASE * stepT() * S.horizon)} ahead`;
+      : `${when((e.a + 1) * stepT())} UTC · ${dur(BASE * stepT() * S.horizon)} ahead`;
     el("state").textContent =
       e.error ||
       [
@@ -4751,7 +4862,7 @@
       button.type = "button";
       button.className = "cursor-interaction";
       button.dataset.caseAnchor = String((c.c + 1) * stepT());
-      button.textContent = dateShort((c.c + 1) * stepT());
+      button.textContent = when((c.c + 1) * stepT());
       button.title = "Replay this case";
       cell(tr, button);
       cell(
@@ -4771,14 +4882,14 @@
               ? "Lower"
               : "Same row",
       );
-      cell(tr, (c.delta > 0 ? "+" : "") + price(c.delta * stepP() * PR));
+      cell(tr, signed(c.delta * stepP() * PR, price));
       cell(
         tr,
         `${price((c.poc + 0.5) * stepP() * PR)} → ${price((c.finalPoc + 0.5) * stepP() * PR)}`,
       );
       cell(
         tr,
-        `${c.min > 0 ? "+" : ""}${price(c.min * stepP() * PR)} / +${price(c.max * stepP() * PR)}`,
+        `${signed(c.min * stepP() * PR, price)} / ${signed(c.max * stepP() * PR, price)}`,
       );
       cell(tr, Math.round(c.buyShare * 100) + "%");
       fragment.append(tr);
@@ -4991,8 +5102,8 @@
   function navGeometry() {
     const r = canvas.getBoundingClientRect();
     return {
-      w: Math.max(1, r.width - 61 - (r.width > 470 ? 79 : 52) - 12),
-      h: Math.max(1, r.height - 90),
+      w: Math.max(1, r.width - PLOT_LEFT - profileWidth(r.width) - GUTTER),
+      h: Math.max(1, r.height - PLOT_BOTTOM),
     };
   }
   function autoLevel() {
@@ -5336,7 +5447,7 @@
         : c.label;
   }
   function crumbTitle(c) {
-    return `${dateShort(c.state.tA)} UTC · ${dur((c.state.tB - c.state.tA) * BASE)} · ${dur(BASE * 2 ** c.state.n)} × ${price(PR * 2 ** c.state.m)} USDT`;
+    return `${when(c.state.tA)} UTC · ${dur((c.state.tB - c.state.tA) * BASE)} · ${dur(BASE * 2 ** c.state.n)} × ${price(PR * 2 ** c.state.m)} USDT`;
   }
   function goToCrumb(i) {
     const c = nav.crumbs[i];
@@ -5558,7 +5669,7 @@
           deltaMax = d3.quantileSorted(deltas, 0.995) || 1;
         localLegend =
           S.mode === "density"
-            ? `${densityNumber(Math.exp(densityLo))}–${densityNumber(Math.exp(densityHi))} USDT/(s·USDT) · log`
+            ? `Density ${densityNumber(Math.exp(densityLo))}–${densityNumber(Math.exp(densityHi))} · log`
             : S.mode === "delta"
               ? `Δ −${compact(deltaMax)} · 0 · +${compact(deltaMax)} USDT`
               : S.mode === "flow"
@@ -5654,7 +5765,7 @@
       }
     }
     ctx.restore();
-    ctx.strokeStyle = colors.volume;
+    ctx.strokeStyle = colors.accent;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     lensCaption(x, y, h, [
@@ -5666,7 +5777,7 @@
   // The caption sits on a tab outside the lens, so the lens shows only data:
   // above it when there is room, otherwise below. The tab is sized to its text.
   function lensCaption(x, y, lensHeight, lines) {
-    ctx.font = `11px ${FONT}`;
+    ctx.font = `${TYPE.s}px ${FONT}`;
     const room = G.w - 8,
       fitted = lines.map(([s, color]) => [fitText(s, room - 14), color]),
       w = Math.min(
@@ -5679,7 +5790,7 @@
       top = y - h >= G.y + 4 ? y - h : y + lensHeight - 1;
     ctx.fillStyle = colors.surface;
     ctx.fillRect(left, top, w, h);
-    ctx.strokeStyle = colors.volume;
+    ctx.strokeStyle = colors.accent;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h);
     fitted.forEach(([s, color], i) =>
@@ -6140,13 +6251,8 @@
     qsa("button,input,select").forEach((control) => (control.disabled = true));
     el("market").textContent = PACK.live ? "LIVE" : "RECORDED";
     el("snapshot").textContent = PACK.live
-      ? stamp(CUT).slice(0, 16) + " UTC"
-      : date(CUT).toLocaleDateString("en-GB", {
-          timeZone: "UTC",
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        });
+      ? `${day(CUT)} ${d3.utcFormat("%H:%M")(date(CUT))} UTC`
+      : day(CUT);
     getColors();
     sources.recent = await unpack(PACK.blocks.recent, "recent");
     loadState.recent = "ready";
@@ -6185,7 +6291,7 @@
     );
     for (const id of ["overview", "reference"]) {
       el("loading").textContent =
-        `Recent base cells ready · loading ${id === "overview" ? "full history" : "reference history"}${PACK.live ? " from the cube" : ""}`;
+        `Loading ${id === "overview" ? "the full history" : "the 30-day archive"}${PACK.live ? " from the cube" : ""}…`;
       try {
         sources[id] = await unpack(PACK.blocks[id], id);
         loadState[id] = "ready";

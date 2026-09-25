@@ -8237,6 +8237,7 @@
           signal: AbortSignal.timeout(120000),
         }),
         body = await response.json().catch(() => null);
+      offerReload(body);
       if (body?.error === "cube_changed") {
         // The cube holds another revision of history than this page. Nothing is
         // mixed: the page takes the new data first, then asks again.
@@ -9767,6 +9768,18 @@
       return;
     throw Error("the server's answer couldn't be read");
   }
+  // A server deployed since this page loaded serves a newer page. Every pack
+  // answer names the version of the page its server serves, as the pack this
+  // page came with named this one's (PACK.page), and a page too old for the
+  // server is answered reload: true. Either way the page says so and leaves the
+  // reload to the reader, even when it can't read the rest of the answer.
+  function offerReload(body) {
+    if (
+      body?.reload === true ||
+      (typeof body?.page === "string" && typeof PACK.page === "string" && body.page !== PACK.page)
+    )
+      el("update").hidden = false;
+  }
   function scheduleLive(seconds) {
     clearTimeout(live.timer);
     // A hidden tab asks at most once a minute; showing it again asks at once.
@@ -9792,13 +9805,10 @@
           signal: AbortSignal.timeout(LIVE_TIMEOUT),
         }),
         body = await response.json().catch(() => null);
+      offerReload(body);
       if (!response.ok)
         throw Error(body?.error || `the server answered ${response.status}`);
       checkUpdate(body);
-      // A server deployed since this page loaded serves a newer page: say so,
-      // and leave the reload to the reader.
-      if (typeof body.page === "string" && PACK.page && body.page !== PACK.page)
-        el("update").hidden = false;
       if (body.status === "delta") await applyLive(body, false);
       else if (body.status === "pack") await applyLive(body.pack, true);
       if (Number.isFinite(body.quiet)) live.updated = Date.now() - body.quiet * 1000;

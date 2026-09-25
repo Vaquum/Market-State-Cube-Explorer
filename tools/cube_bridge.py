@@ -527,6 +527,8 @@ class Explorer:
     def html(self) -> bytes:
         text = self.page.read_text(encoding="utf-8")
         current, age = self.current_pack()
+        # The pack with its timing, which names this page's version: the page compares it
+        # with the version later answers name, and offers a reload when they differ.
         data = json.dumps({**current, **self.timing(age)}, separators=(",", ":")).replace("<", "\\u003c")
         replaced, hits = re.subn(
             r'(<script type="application/json" id="origo-lens-data">).*?(</script>)',

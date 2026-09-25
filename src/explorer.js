@@ -1913,6 +1913,15 @@
       ? windowShort(S.window)
       : spanText((S.tB - S.tA) * BASE);
     el("window").dataset.custom = String(!S.window);
+    el("window").setAttribute(
+      "aria-label",
+      S.window
+        ? `Time window: ${windowOf(S.window).name}` +
+            (S.window === "ytd" || S.window === "lastyear"
+              ? `, ${windowShort(S.window)}`
+              : "")
+        : `Time window: none; ${spanText((S.tB - S.tA) * BASE)} in view`,
+    );
     qsa("#ol-window-menu [data-window]").forEach((b) =>
       b.setAttribute("aria-checked", String(b.dataset.window === S.window)),
     );
@@ -2483,7 +2492,35 @@
     if (hint.target || performance.now() - hint.hiddenAt < 600) showHint(target);
     else hint.timer = setTimeout(() => showHint(target), HINT_DELAY);
   }
+  // What a label says under a control's name, and its key when it doesn't
+  // state one itself, is also the control's description for assistive
+  // technology: a hidden text it points to, kept as the label changes.
+  const descs = document.createElement("div");
+  let descCount = 0;
+  function describe(node) {
+    const keys = node.hasAttribute("aria-keyshortcuts") ? "" : node.dataset.keys,
+      text = [node.dataset.hint, keys && `Key: ${keys}`].filter(Boolean).join(". ");
+    let span = document.getElementById(node.getAttribute("aria-describedby") || "");
+    if (!span) {
+      if (!text) return;
+      span = document.createElement("span");
+      span.id = `ol-desc-${++descCount}`;
+      descs.append(span);
+      node.setAttribute("aria-describedby", span.id);
+    }
+    if (span.textContent !== text) span.textContent = text;
+  }
   function bindHints() {
+    descs.hidden = true;
+    root.append(descs);
+    for (const node of qsa("[data-hint]")) describe(node);
+    new MutationObserver((records) => {
+      for (const r of records) if (r.target.matches?.("[data-hint]")) describe(r.target);
+    }).observe(root, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-hint", "data-keys", "aria-keyshortcuts"],
+    });
     const hinted = (node) => (node instanceof Element ? node.closest("[data-hint]") : null);
     root.addEventListener("pointerover", (e) => {
       const t = hinted(e.target);
@@ -4943,6 +4980,8 @@
     // Keys work anywhere on the page except in text fields and lists, which
     // keep their own; the browser keeps its shortcuts, and Alt with an arrow is
     // its Back and Forward. Every key is listed under ? (see the key list).
+    // The characters with keys of their own, which a digit key never stands in for.
+    const OWN_KEYS = ["?", "[", "]", "{", "}", "+", "=", "-", "_", ",", ".", " "];
     const TEXT_FIELDS =
       'input:not([type="checkbox"]):not([type="radio"]), select, textarea, [contenteditable]:not([contenteditable="false"])';
     document.addEventListener("keydown", (e) => {
@@ -5003,10 +5042,12 @@
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key,
         shift = e.shiftKey,
         // The digit typed, or on layouts that type another character there (AZERTY)
-        // the digit key; a keypad with NumLock off types End and the arrows instead.
+        // the digit key, unless that character is a key of its own: AZERTY types
+        // - and _ there, Czech + (zoom). A keypad with NumLock off types End and
+        // the arrows instead.
         digit = /^[0-9]$/.test(e.key)
           ? e.key
-          : !shift && /^Digit[0-9]$/.test(e.code)
+          : !shift && /^Digit[0-9]$/.test(e.code) && !OWN_KEYS.includes(e.key)
             ? e.code.slice(-1)
             : null,
         centre = { t: (S.tA + S.tB) / 2, p: (S.pA + S.pB) / 2 };

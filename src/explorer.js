@@ -4791,7 +4791,8 @@
       path: `/cube/columns?n=${n}&m=${m}`,
       done: async (body) => {
         histories.set(key, await unpackHistory(body.columns));
-        while (histories.size > 6) histories.delete(histories.keys().next().value);
+        // A level's history can hold 100,000 columns: only the latest few stay.
+        while (histories.size > 3) histories.delete(histories.keys().next().value);
         evidenceCache.clear();
       },
     };

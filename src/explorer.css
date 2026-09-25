@@ -20,6 +20,7 @@
   --ol-raised: light-dark(#fff, #3a4e41);
   --ol-on: light-dark(#d6e0d9, #2e4035);
   --ol-shadow: light-dark(#0000001f, #00000080);
+  --ol-scrim: light-dark(#0000004d, #000000a6);
   /* Type: four sizes, nothing below the first */
   --fs-s: 11px;
   --fs-m: 12px;
@@ -209,6 +210,20 @@
 #origo-lens input[type="checkbox"]:checked::before {
   transform: scale(1);
 }
+#origo-lens input[type="text"] {
+  min-width: 0;
+  min-height: var(--h-s);
+  padding: 0 var(--sp-2);
+  font: inherit;
+  font-size: var(--fs-m);
+  color: var(--ol-ink);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+}
+#origo-lens input[type="text"]::placeholder {
+  color: var(--ol-muted);
+}
 #origo-lens textarea {
   font:
     var(--fs-s) / 1.6 ui-monospace,
@@ -292,6 +307,20 @@
   color: var(--ol-ink);
   font-weight: 500;
 }
+#origo-lens .ol-fresh {
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-fresh::before {
+  content: "· ";
+}
+/* Stale data and stopped updates say so in ink, with an ink border. */
+#origo-lens .ol-state-pill:not([data-state="live"]) {
+  border-color: var(--ol-ink);
+}
+#origo-lens .ol-state-pill:not([data-state="live"]) .ol-fresh {
+  color: var(--ol-ink);
+  font-weight: 500;
+}
 #origo-lens .ol-controls {
   flex: 1;
   min-width: 0;
@@ -342,9 +371,15 @@
 #origo-lens .ol-res[data-coarse="true"] .ol-res-coarse {
   display: inline-block;
 }
-/* Narrower bars keep one row: tools go icon-only, then segments tighten, then
-   the replay date, the cutoff date and back/forward give way (the history
-   list keeps them). Replay and the lens add controls, so they tighten too. */
+/* Narrower bars keep one row: the snapshot's day goes first (the status bar
+   and the title keep it), then tools go icon-only and segments tighten, then
+   the replay date and back/forward give way (the history list keeps them).
+   Replay and the lens add controls, so they tighten too. */
+@container (max-width: 1480px) {
+  #origo-lens #ol-snapshot {
+    display: none;
+  }
+}
 @container (max-width: 1380px) {
   #origo-lens .ol-tool-label,
   #origo-lens .ol-cap {
@@ -354,14 +389,14 @@
 @container (max-width: 1400px) {
   #origo-lens #ol-replay-at,
   #origo-lens #ol-hist-back,
-  #origo-lens #ol-hist-fwd,
-  #origo-lens #ol-snapshot {
+  #origo-lens #ol-hist-fwd {
     display: none;
   }
 }
 @media (min-width: 761px) {
   #origo-lens[data-busy="true"] .ol-tool-label,
-  #origo-lens[data-busy="true"] .ol-cap {
+  #origo-lens[data-busy="true"] .ol-cap,
+  #origo-lens[data-busy="true"] .ol-span {
     display: none;
   }
   #origo-lens[data-busy="true"] .ol-bar .ol-seg button {
@@ -400,13 +435,10 @@
 #origo-lens .ol-res-pop {
   width: 296px;
 }
-#origo-lens .ol-help-pop {
-  width: 360px;
-  color: var(--ol-muted);
-  line-height: 1.6;
-}
-#origo-lens #ol-hist-pop {
-  min-width: 220px;
+#origo-lens .ol-views-pop {
+  width: 320px;
+  max-height: min(72vh, 600px);
+  overflow: auto;
 }
 #origo-lens .ol-step {
   display: flex;
@@ -538,23 +570,69 @@
   margin-top: var(--sp-2);
   line-height: 1.3;
 }
+#origo-lens .ol-view-form {
+  display: flex;
+  gap: var(--sp-2);
+}
+#origo-lens .ol-view-form input {
+  flex: 1;
+}
+#origo-lens .ol-views-status {
+  min-height: var(--sp-4);
+  margin-top: var(--sp-1);
+  font-size: var(--fs-s);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-views-status:empty {
+  min-height: 0;
+}
+#origo-lens .ol-list-head {
+  margin: var(--sp-3) 0 var(--sp-1);
+  font-size: var(--fs-s);
+  font-weight: 500;
+  color: var(--ol-muted);
+}
 /* Ghost rows align their text with the popover's edge. */
-#origo-lens .ol-breadcrumbs {
+#origo-lens .ol-breadcrumbs,
+#origo-lens .ol-saved {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 1px;
   margin: 0 calc(-1 * var(--sp-2));
 }
-#origo-lens .ol-breadcrumbs button {
-  justify-content: flex-start;
-  min-height: var(--h-s);
+#origo-lens .ol-saved .ol-empty {
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-s);
+}
+#origo-lens .ol-saved-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+#origo-lens button.ol-entry {
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: var(--sp-1) var(--sp-2);
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+}
+#origo-lens .ol-entry-main {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#origo-lens .ol-entry-sub {
   font-size: var(--fs-s);
   color: var(--ol-muted);
 }
 #origo-lens .ol-breadcrumbs button[aria-current="step"] {
   background: var(--ol-panel);
-  color: var(--ol-ink);
 }
 
 /* Workspace: the chart column, a resize grip and the inspector. */
@@ -645,6 +723,14 @@
 }
 #origo-lens .ol-tip div {
   margin: 2px 0;
+}
+/* Beside the price profile, level with the top of the plot; placed by the page. */
+#origo-lens button.ol-latest {
+  position: absolute;
+  top: calc(var(--sp-3) + var(--sp-2));
+  z-index: 3;
+  background: var(--ol-surface);
+  box-shadow: 0 1px var(--sp-1) var(--ol-shadow);
 }
 
 /* Drawer: cells, cases and the query, under the chart; the chart gives up height. */
@@ -1041,6 +1127,10 @@
 #origo-lens .ol-diag summary {
   color: var(--ol-muted);
 }
+/* A result for the previous view stays up, dimmed, until the view settles. */
+#origo-lens #ol-evidence[aria-busy="true"] > :not(.ol-section-heading) {
+  opacity: 0.5;
+}
 #origo-lens .ol-evidence-state {
   margin: var(--sp-2) 0 var(--sp-3);
   line-height: 1.5;
@@ -1151,6 +1241,86 @@
   margin-bottom: 0;
 }
 
+/* Keyboard shortcuts: a dialog over the page. */
+#origo-lens .ol-keys {
+  width: min(780px, calc(100vw - 2 * var(--sp-4)));
+  max-width: none;
+  max-height: calc(100dvh - 2 * var(--sp-5));
+  padding: 0;
+  color: var(--ol-ink);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-line);
+  border-radius: var(--r-l);
+  box-shadow: 0 var(--sp-2) var(--sp-6) var(--ol-shadow);
+}
+#origo-lens .ol-keys::backdrop {
+  background: var(--ol-scrim);
+}
+#origo-lens .ol-keys-body {
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+}
+#origo-lens .ol-keys-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+#origo-lens .ol-keys h2 {
+  margin: 0;
+  font-size: var(--fs-l);
+  font-weight: 500;
+}
+#origo-lens .ol-keys-note {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-s);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-keys-note:last-child {
+  margin: var(--sp-4) 0 0;
+}
+#origo-lens .ol-keys-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--sp-4) var(--sp-6);
+}
+#origo-lens .ol-keys h3 {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-s);
+  font-weight: 500;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-keys dl {
+  margin: 0;
+}
+#origo-lens .ol-keys dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-keys dd {
+  margin: 0;
+  font-size: var(--fs-s);
+  color: var(--ol-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+#origo-lens kbd {
+  display: inline-block;
+  min-width: var(--sp-5);
+  padding: 0 var(--sp-1);
+  font: inherit;
+  font-size: var(--fs-s);
+  line-height: 1.6;
+  text-align: center;
+  color: var(--ol-ink);
+  background: var(--ol-panel);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-s);
+}
+
 /* Phones: the chart first, the controls in a sheet, the page scrolls. */
 @media (max-width: 760px) {
   #origo-lens {
@@ -1169,6 +1339,7 @@
   #origo-lens .ol-controls {
     display: none;
   }
+  /* One column that scrolls; wrapping would start a second column off-screen. */
   #origo-lens[data-sheet="open"] .ol-controls {
     position: fixed;
     left: 0;
@@ -1177,6 +1348,7 @@
     z-index: 40;
     display: flex;
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: var(--sp-3);
     max-height: 78vh;
@@ -1272,8 +1444,12 @@
   #origo-lens .ol-step button {
     min-width: 44px;
   }
-  #origo-lens .ol-query-body textarea {
+  #origo-lens .ol-query-body textarea,
+  #origo-lens input[type="text"] {
     font-size: 16px;
+  }
+  #origo-lens input[type="text"] {
+    min-height: 44px;
   }
   /* Wider popover, not wider cells: the plane's cells scale to fit it. */
   #origo-lens .ol-res-pop {

@@ -8,7 +8,7 @@ A visualization overlay for independent dyadic time and price grids, using a rec
 python3 -m http.server 8080 --bind 127.0.0.1
 ```
 
-Open [localhost:8080](http://localhost:8080). The app ships with its snapshot and D3; it makes no external requests and requires no backend, account, or JavaScript build tool. View preferences persist in browser local storage.
+Open [localhost:8080](http://localhost:8080). The app ships with its snapshot and D3; it makes no external requests and requires no backend, account, or JavaScript build tool. The view lives in the page's address; the workspace, the last view and named views persist in browser local storage.
 
 ## Explore
 
@@ -30,16 +30,20 @@ The explorer fills the window. One bar across the top holds the controls, the ch
   - **Cells:** the measures of every occupied cell, sortable and linked to the chart on hover.
   - **Cases:** the historical cases, each date a jump into replay.
   - **Query:** the six-parameter query. Copy queries or portable `origo-cube:` view codes, and restore them in the same app.
-- **History** steps back and forward through earlier views, and its list survives reloads.
+- **The address holds the view**: its window or rectangle, the level when it is locked, the encoding, overlays and replay. Copy it to share or bookmark a view; each tab keeps its own. A window (24h, 7d, All) is relative and opens on the latest data; any other view opens where it was.
+- **History:** every move is an entry in the browser's history, so Back and Forward (the browser's, ⌘[ and ⌘] or Alt+← and Alt+→, or the bar's arrows) walk it, and steps of one kind in quick succession count as one. Back returns to a place and leaves the encoding and overlays as they are. The history list names each entry's range and level, and survives a reload.
+- **Views** (H) keeps named views in this browser for every tab: name the current view and save it (Shift+S). A view saved while it shows the latest data opens on the latest data, with the same span and the price range fitted again; any other opens where it was.
 - **Layout:** the inspector and the drawer resize and collapse, and the page remembers how you left them.
 
-The `?` button lists mouse, keyboard and touch gestures. Click or focus the chart before using keyboard shortcuts. On a phone the chart comes first and the controls open in a sheet.
+Keys work anywhere on the page except in text fields, and every control's tooltip names its key; `?` lists them all. On a phone the chart comes first and the controls open in a sheet.
 
 ## Live cube data
 
 On the Origo host the explorer runs beside the market state cube ([PRD-0022](https://github.com/Vaquum/Origo/issues/462)) and reads it live. The cube's query service answers with paths to Arrow files on its own volume, so `tools/cube_bridge.py` runs where that volume is mounted: it asks the service for tiles, reads the files through the cube's supported reader (`tools/market_state_reader.py`, a pinned copy from Origo 3.27.0) and serves `index.html` with a live pack in place of the recorded snapshot, behind HTTP Basic Auth.
 
-The live pack holds the same three tiers as the snapshot: the last seven days at base resolution, 30 completed days at 15 minutes, and the whole history at 64 hours × 1,000 USDT. Its cutoff is the last complete base column before the cube's data cutoff, fixed once per pack; every tier is bounded to it, the partitions the tiers share are checked to carry the same generation, revision and build id (the pack is read again once if the cube changed underneath), and the pack token digests every pin it read. It is rebuilt at most once a minute. When the requested level has no covering block, the page asks `GET /cube/tile?n&m&b0&b1&pack` for one tile of the visible window, at most 4,096 columns wide; a tile is refused unless every partition it read is one the page's pack read, at the same revision, and the page then asks for a reload rather than mixing two cube states. The top bar reads **LIVE** with the cutoff minute. Every value comes from the cube; nothing is substituted when a request fails, and the status line says why.
+The live pack holds the same three tiers as the snapshot: the last seven days at base resolution, 30 completed days at 15 minutes, and the whole history at 64 hours × 1,000 USDT. Its cutoff is the last complete base column before the cube's data cutoff, fixed once per pack; every tier is bounded to it, the partitions the tiers share are checked to carry the same generation, revision and build id (the pack is read again once if the cube changed underneath), and the pack token digests every pin it read. It is rebuilt at most once a minute. When the requested level has no covering block, the page asks `GET /cube/tile?n&m&b0&b1&pack` for one tile of the visible window, at most 4,096 columns wide; a tile is refused unless every partition it read is one the page's pack read, at the same revision, and the page then takes the cube's new data first and asks again, rather than mixing two cube states. Every value comes from the cube; nothing is substituted when a request fails, and the status line says why.
+
+An open page stays live. Just after each pack can be rebuilt, it asks `GET /cube/pack?since=<its pack token>` and puts the answer in place: nothing when it holds the current pack; the columns each tier gained when its pack is a prefix of the current one, every partition it read unchanged and every column it keeps identical; otherwise, after a revision or a backfill, the whole pack. A view that shows the cutoff follows it as data arrives, and a window keeps its length; any other view stays where it is, and **Latest** (End) brings it back. The top bar reads **LIVE** with how long ago the data last advanced, and says plainly when the cube has no new data or the server stops answering. The tab's title carries the latest POC.
 
 The committed `index.html` keeps the recorded snapshot, so the page also works from a plain static server and reads **RECORDED** there.
 
@@ -70,7 +74,7 @@ python3 -m py_compile tools/cube_bridge.py tools/market_state_reader.py
 Edit `src/`, then rebuild the committed `index.html`. The build uses Python's standard library and is deterministic; no installed Codex or Claude runtime is needed.
 
 - `src/view.html`, `src/explorer.css`, `src/explorer.js`: interface, rendering and interactions.
-- `src/state.js`: browser-local view persistence.
+- `src/state.js`: browser storage: the workspace, the last view and named views for every tab, and each tab's history.
 - `src/document.html`: standalone page shell.
 - `data/snapshot.json`: real recorded measures, compressed in three embedded blocks.
 - `vendor/`: pinned D3 7.9.0 and its license.

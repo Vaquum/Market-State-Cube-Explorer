@@ -2396,40 +2396,50 @@
     }
     el("window-menu").replaceChildren(...parts);
   }
+  // A choice's name over what it does, each with an id for the item to name
+  // and describe itself by.
+  function itemText(id, name, what) {
+    const text = document.createElement("span"),
+      head = document.createElement("span"),
+      desc = document.createElement("span");
+    text.className = "ol-item-text";
+    head.id = `ol-${id}-name`;
+    head.textContent = name;
+    desc.id = `ol-${id}-desc`;
+    desc.className = "ol-item-desc";
+    desc.textContent = what;
+    text.append(head, desc);
+    return text;
+  }
   // The price axis: how its range follows a time zoom, each mode with what it
   // does, and a fit of the range once.
   function buildFollowMenu() {
     const follow = followMode(),
       parts = FOLLOWS.map((mode) => {
         const info = FOLLOW_INFO[mode],
-          text = document.createElement("span"),
-          desc = document.createElement("span");
-        text.className = "ol-item-text";
-        desc.className = "ol-item-desc";
-        desc.textContent = info.desc;
-        text.append(info.name, desc);
-        const b = menuItem(
-          "menuitemradio",
-          [svgIcon(mode), text, ...(info.keys ? [keyCap(info.keys)] : [])],
-          () => setFollow(mode),
-        );
+          text = itemText(`follow-${mode}`, info.name, info.desc),
+          b = menuItem(
+            "menuitemradio",
+            [svgIcon(mode), text, ...(info.keys ? [keyCap(info.keys)] : [])],
+            () => setFollow(mode),
+          );
+        // Its name is the mode; what it does is its description.
+        b.setAttribute("aria-labelledby", `ol-follow-${mode}-name`);
+        b.setAttribute("aria-describedby", `ol-follow-${mode}-desc`);
         if (info.keys) b.setAttribute("aria-keyshortcuts", info.keys);
         b.dataset.follow = mode;
         b.setAttribute("aria-checked", String(mode === follow));
         return b;
       }),
       rule = document.createElement("div"),
-      text = document.createElement("span"),
-      desc = document.createElement("span");
+      text = itemText("fit", "Fit the price range", "Once, to the trades in view");
     rule.className = "ol-menu-rule";
     rule.setAttribute("role", "separator");
-    text.className = "ol-item-text";
-    desc.className = "ol-item-desc";
-    desc.textContent = "Once, to the trades in view";
-    text.append("Fit the price range", desc);
     const fitItem = menuItem("menuitem", [svgIcon("fit"), text, keyCap("F")], () =>
       fitPrice("Fit price"),
     );
+    fitItem.setAttribute("aria-labelledby", "ol-fit-name");
+    fitItem.setAttribute("aria-describedby", "ol-fit-desc");
     fitItem.setAttribute("aria-keyshortcuts", "F");
     parts.push(rule, fitItem);
     el("follow-menu").replaceChildren(...parts);

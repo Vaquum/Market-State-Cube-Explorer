@@ -49,10 +49,12 @@ jobs:
           EXPLORER_AUTH_USER: ${{ secrets.EXPLORER_AUTH_USER }}
           EXPLORER_AUTH_PASS: ${{ secrets.EXPLORER_AUTH_PASS }}
         run: |
+          check() { ssh "$DEPLOY_USER@$DEPLOY_HOST" "curl -s -o /dev/null -w '%{http_code}' --max-time 120 $1 http://127.0.0.1:8487/"; }
           for attempt in 1 2 3 4 5 6; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 120 -u "$EXPLORER_AUTH_USER:$EXPLORER_AUTH_PASS" "http://$DEPLOY_HOST:8487/")
+            code=$(check "-u '$EXPLORER_AUTH_USER:$EXPLORER_AUTH_PASS'")
             test "$code" = "200" && break
             sleep 10
           done
           test "$code" = "200"
-          test "$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "http://$DEPLOY_HOST:8487/")" = "401"
+          test "$(check "")" = "401"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_DIR' && docker compose ps --format '{{.Name}} {{.Status}}'"

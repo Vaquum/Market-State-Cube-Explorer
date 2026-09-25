@@ -3930,6 +3930,10 @@
     tiles.timer = setTimeout(fetchTile, 250);
   }
   async function fetchTile() {
+    // A failure skips only the re-check it triggers itself, whatever view that
+    // re-check finds; the next navigation, level change or import asks again.
+    const skipped = tiles.skip;
+    tiles.skip = null;
     if (
       tiles.pending ||
       tiles.stale ||
@@ -3937,13 +3941,7 @@
     )
       return;
     const t = tileSpec(S.n, S.m);
-    if (!t) return;
-    // A failure skips only the re-check it triggers itself; the next navigation,
-    // level change or import asks the cube again.
-    if (t.id === tiles.skip) {
-      tiles.skip = null;
-      return;
-    }
+    if (!t || t.id === skipped) return;
     tiles.pending = t.id;
     PACK.blocks[t.id] = { n: t.n, m: t.m, b0: t.b0, b1: t.b1 };
     loadState[t.id] = "loading";

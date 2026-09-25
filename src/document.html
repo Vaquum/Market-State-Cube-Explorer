@@ -8,8 +8,10 @@
     <title>Market State Cube Explorer</title>
     <style>
       :root { color-scheme: light dark; }
-      body { margin: 0; padding: 16px; background: light-dark(#f7f9f7, #0c110e); }
-      main { max-width: 1480px; margin: 0 auto; }
+      html, body { height: 100%; }
+      body { margin: 0; background: light-dark(#f7f9f7, #101713); }
+      /* The app fills the window; its panels scroll, the page does not. Phones scroll. */
+      @media (min-width: 761px) { body { overflow: hidden; } }
       .cursor-interaction:not(:disabled) { cursor: pointer; }
       __EXPLORER_STYLE__
     </style>

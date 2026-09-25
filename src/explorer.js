@@ -17,6 +17,17 @@
     M_MAX = 9,
     TILE_COLUMNS = 4096;
   const diagonalM = (n) => clamp(Math.round(ISO_A + ISO_B * n), 0, M_MAX);
+  // Sortable columns of the drawer's cells and cases tables.
+  const CELL_SORTS = [
+      "time",
+      "price",
+      "volume",
+      "trades",
+      "buyvol",
+      "buytrades",
+      "state",
+    ],
+    CASE_SORTS = ["date", "outcome", "change", "poc", "excursion", "buy"];
   const canvas = el("canvas"),
     ctx = canvas.getContext("2d"),
     reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -44,18 +55,29 @@
       coupled: false,
       refit: true,
       lens: false,
-      table: false,
       diagonal: false,
       lensDepth: 2,
       evidenceKind: "poc",
       barrier: 1,
       caseFilter: "all",
       casePage: 0,
+      // Workspace layout: the inspector and the drawer under the chart.
+      sideOpen: true,
+      sideWidth: 312,
+      drawer: "cells",
+      drawerOpen: false,
+      drawerHeight: 260,
+      cellSort: "time",
+      cellDir: -1,
+      caseSort: "date",
+      caseDir: -1,
     };
   let sources = {},
     G = {},
     colors = {},
     hover = null,
+    tableHover = null,
+    coverageGap = false,
     drag = null,
     transition = null,
     last = null,
@@ -391,6 +413,7 @@
     );
     for (const p of pt)
       text(price(p), G.x - 8, G.Y(p / PR), colors.muted, "right");
+    text("USDT", G.x - 8, G.y - 5, colors.muted, "right", 9);
     const count = G.width < 400 ? 3 : G.width < 650 ? 4 : 5;
     const times = d3
         .scaleUtc()
@@ -463,7 +486,8 @@
       const ev = calcEvidence();
       drawCone(ev);
       evidenceUI(ev);
-    }
+    } else if (S.drawerOpen && S.drawer === "cases")
+      evidenceCases(calcEvidence());
     if (S.selection) {
       ctx.strokeStyle = colors.volume;
       ctx.lineWidth = 1.5;
@@ -510,6 +534,18 @@
         );
       }
     }
+    // The cell of the table row under the pointer, outlined on the chart.
+    if (tableHover) {
+      const { c, r } = tableHover;
+      ctx.strokeStyle = colors.ink;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        G.X(c * ts) - 1,
+        G.Y((r + 1) * ps) - 1,
+        G.X((c + 1) * ts) - G.X(c * ts) + 2,
+        G.Y(r * ps) - G.Y((r + 1) * ps) + 2,
+      );
+    }
     drawResolutionLens();
     ctx.restore();
     axes();
@@ -519,9 +555,8 @@
     el("legend-text").textContent = legendText(full);
     el("ramp").style.background = legendRamp();
     const marks = marksReadout(b);
-    el("ray-count").textContent = S.untested
-      ? marks.rayCount + " untested levels"
-      : "";
+    el("ray-count").textContent = marks.rayCount + " untested levels";
+    el("ray-count").hidden = !S.untested;
     el("va-value").textContent =
       marks.vaLow === null
         ? "—"
@@ -706,9 +741,23 @@
       "diagonal",
       "refit",
       "lens",
-      "table",
+      "sideOpen",
+      "drawerOpen",
     ])
       if (typeof x[k] === "boolean") S[k] = x[k];
+    // A view saved before the drawer kept its table open as `table`.
+    if (x.table === true && typeof x.drawerOpen !== "boolean") {
+      S.drawerOpen = true;
+      S.drawer = "cells";
+    }
+    if (Number.isFinite(x.sideWidth)) S.sideWidth = clamp(x.sideWidth, 260, 560);
+    if (Number.isFinite(x.drawerHeight))
+      S.drawerHeight = clamp(x.drawerHeight, 120, 900);
+    if (["cells", "cases", "query"].includes(x.drawer)) S.drawer = x.drawer;
+    if (CELL_SORTS.includes(x.cellSort)) S.cellSort = x.cellSort;
+    if (CASE_SORTS.includes(x.caseSort)) S.caseSort = x.caseSort;
+    if (x.cellDir === 1 || x.cellDir === -1) S.cellDir = x.cellDir;
+    if (x.caseDir === 1 || x.caseDir === -1) S.caseDir = x.caseDir;
     if (Array.isArray(x.crumbs)) {
       nav.crumbs = x.crumbs
         .filter(
@@ -767,7 +816,9 @@
     } catch (error) {
       copyFallbackActive = true;
       el("query-text").value = textToCopy;
-      el("query-panel").open = true;
+      S.drawer = "query";
+      S.drawerOpen = true;
+      applyPanels();
       el("query-text").focus();
       el("query-text").select();
       el("copy-status").textContent = "Selected for copy · ⌘C / Ctrl+C";
@@ -909,6 +960,12 @@
     if (S.replay && G.x + G.w - xc > 70)
       text("FUTURE HIDDEN", xc + 8, G.y + G.h - 12, colors.muted, "left", 9);
     const r = requestedBounds();
+    // The status bar keys "Unavailable / hidden" only while such a region shows.
+    coverageGap =
+      x0 - G.x > 1 ||
+      xc - xe > 1 ||
+      (S.replay && G.x + G.w - xc > 1) ||
+      b.some((x, i) => x !== r[i]);
     if (b[0] > r[0])
       hatchRect(
         Math.max(G.x, G.X(r[0])),
@@ -989,8 +1046,18 @@
       : S.selection
         ? "Selected rectangle"
         : "Visible rectangle";
-    el("bounds").textContent =
-      `${stamp(b[0])} → ${stamp(b[1])} UTC · ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`;
+    // Each date and the price range stay whole; lines break only between them.
+    el("bounds").replaceChildren(
+      ...[
+        `${stamp(b[0])} →`,
+        `${stamp(b[1])} UTC`,
+        `· ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`,
+      ].flatMap((part, i) => {
+        const span = document.createElement("span");
+        span.textContent = part;
+        return i ? [" ", span] : [span];
+      }),
+    );
     for (const [id, v, exact] of [
       ["vol", query.v, usdt(query.v) + " USDT"],
       ["count", query.ct, integer(query.ct) + " trades"],
@@ -1045,35 +1112,72 @@
       zero = Math.max(0, total - query.cells.length - openRows + unfinished);
     el("open-count").textContent = integer(openRows);
     el("zero-count").textContent = integer(zero);
-    el("data-zero").textContent = `${integer(zero)} completed zero-trade`;
-    el("data-open").textContent = `${integer(openRows)} unfinished`;
+    // The key names each state; its count lives with the cell counts.
+    el("key-zero").hidden = zero === 0;
+    el("key-open").hidden = openRows === 0;
+    el("key-unavailable").hidden = !coverageGap;
     el("data-coarse").hidden = !(renderN() > S.n || renderM() > S.m);
-    el("resolution-state").textContent =
-      renderN() > S.n || renderM() > S.m
-        ? `Requested ${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)} · rendered ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT`
-        : `${((G.w * stepT()) / (S.tB - S.tA)).toFixed(1)} × ${((G.h * stepP()) / (S.pB - S.pA)).toFixed(1)} px per cell · n ${renderN()} / m ${renderM()}`;
     queryUI(b);
-    renderTable(query, b);
+    renderCells(query, b);
   }
-  function renderTable(query, b) {
-    if (!S.table) return;
-    const key = [S.n, S.m, b.join(","), S.mode].join("|");
+  // The drawer's cells table: sortable, a hundred rows a page, and linked to
+  // the chart both ways through the cell under the pointer. It is rebuilt a
+  // moment after the view settles, so panning never waits on it.
+  const CELLS_PAGE = 100;
+  let cellRows = new Map(),
+    hoverRow = null,
+    cellsTimer = 0;
+  function cellState(c, b) {
+    const open = !S.replay && (c.c + 1) * stepT() > CUT,
+      portion =
+        c.c * stepT() < b[0] ||
+        (c.c + 1) * stepT() > b[1] ||
+        c.r * stepP() < b[2] ||
+        (c.r + 1) * stepP() > b[3];
+    return [open ? "unfinished" : "complete", portion ? "portion" : ""]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  function renderCells(query, b) {
+    if (!(S.drawerOpen && S.drawer === "cells")) return;
+    clearTimeout(cellsTimer);
+    cellsTimer = setTimeout(() => buildCells(query, b), 80);
+  }
+  function buildCells(query, b) {
+    const key = [S.n, S.m, b.join(","), S.cellSort, S.cellDir].join("|");
     if (key !== tableKey) {
       tablePage = 0;
       tableKey = key;
     }
-    const cells = query.cells.slice().sort((a, b) => b.c - a.c || a.r - b.r),
-      pages = Math.max(1, Math.ceil(cells.length / 10));
+    const value = {
+        time: (c) => c.c,
+        price: (c) => c.r,
+        volume: (c) => c.v,
+        trades: (c) => c.ct,
+        buyvol: (c) => c.bv,
+        buytrades: (c) => c.bt,
+        state: (c) => cellState(c, b),
+      }[S.cellSort],
+      cells = query.cells
+        .slice()
+        .sort(
+          (x, y) =>
+            (value(x) < value(y) ? -1 : value(x) > value(y) ? 1 : 0) *
+              S.cellDir ||
+            y.c - x.c ||
+            x.r - y.r,
+        ),
+      pages = Math.max(1, Math.ceil(cells.length / CELLS_PAGE));
     tablePage = clamp(tablePage, 0, pages - 1);
     const frag = document.createDocumentFragment();
-    for (const c of cells.slice(tablePage * 10, tablePage * 10 + 10)) {
-      const tr = document.createElement("tr"),
-        open = !S.replay && (c.c + 1) * stepT() > CUT,
-        portion =
-          c.c * stepT() < b[0] ||
-          (c.c + 1) * stepT() > b[1] ||
-          c.r * stepP() < b[2] ||
-          (c.r + 1) * stepP() > b[3];
+    cellRows = new Map();
+    for (const c of cells.slice(
+      tablePage * CELLS_PAGE,
+      (tablePage + 1) * CELLS_PAGE,
+    )) {
+      const tr = document.createElement("tr");
+      tr.dataset.c = c.c;
+      tr.dataset.r = c.r;
       const values = [
         stamp(Math.max(c.c * stepT(), b[0])) +
           " → " +
@@ -1085,29 +1189,44 @@
         integer(c.ct),
         usdt(c.bv),
         integer(c.bt),
-        [open ? "unfinished" : "complete", portion ? "portion" : ""]
-          .filter(Boolean)
-          .join(" · "),
+        cellState(c, b),
       ];
-      for (const value of values) {
+      for (const v of values) {
         const td = document.createElement("td");
-        td.textContent = value;
+        td.textContent = v;
         tr.append(td);
       }
+      cellRows.set(c.c + "," + c.r, tr);
       frag.append(tr);
     }
     el("table-body").replaceChildren(frag);
+    hoverRow = null;
     el("table-caption").textContent =
-      `${integer(cells.length)} occupied cells · newest first · zero cells omitted`;
+      `${integer(cells.length)} occupied cells in view · zero cells omitted`;
     el("table-page").textContent = `${tablePage + 1} / ${pages}`;
     el("table-back").disabled = tablePage === 0;
     el("table-next").disabled = tablePage === pages - 1;
+    for (const button of qsa("[data-sort]")) {
+      const th = button.parentElement;
+      if (button.dataset.sort === S.cellSort)
+        th.setAttribute("aria-sort", S.cellDir > 0 ? "ascending" : "descending");
+      else th.removeAttribute("aria-sort");
+    }
+  }
+  // Outline the table row of the cell under the chart pointer.
+  function syncRowHover(key) {
+    const tr = key ? cellRows.get(key) || null : null;
+    if (tr === hoverRow) return;
+    hoverRow?.classList.remove("is-hover");
+    tr?.classList.add("is-hover");
+    hoverRow = tr;
   }
   function tooltip(p) {
     hover = p;
     const tip = el("tip");
     if (!last || !inPlot(p)) {
       tip.hidden = true;
+      syncRowHover(null);
       requestDraw();
       return;
     }
@@ -1157,17 +1276,14 @@
       }),
     );
     tip.hidden = false;
-    const field = root.querySelector(".ol-field"),
-      fr = field.getBoundingClientRect(),
-      cr = canvas.getBoundingClientRect(),
-      tw = tip.offsetWidth;
-    tip.style.left = clamp(p.x + 17, 4, fr.width - tw - 5) + "px";
+    syncRowHover(z ? c + "," + r : null);
+    // The tip shares the canvas box: above the pointer, or below it at the top.
+    const tw = tip.offsetWidth,
+      th = tip.offsetHeight,
+      above = p.y - th - 12;
+    tip.style.left = clamp(p.x + 17, 4, G.width - tw - 5) + "px";
     tip.style.top =
-      clamp(
-        p.y + cr.top - fr.top - tip.offsetHeight - 12,
-        30,
-        fr.height - tip.offsetHeight - 5,
-      ) + "px";
+      clamp(above >= 4 ? above : p.y + 18, 4, G.height - th - 5) + "px";
     requestDraw();
   }
   function update() {
@@ -1190,7 +1306,29 @@
       b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)),
     );
     for (const f of ["poc", "area", "untested"]) el(f).checked = S[f];
-    el("select").setAttribute("aria-pressed", String(S.select));
+    el("key-poc").hidden = el("key-bpoc").hidden = !S.poc;
+    el("key-area").hidden = !S.area;
+    const coarse = renderN() > S.n || renderM() > S.m;
+    el("res-text").textContent =
+      `${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)} USDT`;
+    el("res").dataset.auto = String(S.auto);
+    el("res").dataset.coarse = String(coarse);
+    el("res").title =
+      (S.auto ? "Auto level" : "Level locked") +
+      (coarse
+        ? ` · showing ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT, the finest recorded here`
+        : "");
+    el("span").hidden = Boolean(S.window);
+    el("span").textContent = dur((S.tB - S.tA) * BASE);
+    qsa("[data-follow]").forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset.follow === followMode())),
+    );
+    qsa("[data-tool]").forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset.tool === tool())),
+    );
+    el("lens-depth").hidden = !S.lens;
+    // Replay and the lens add controls to the bar; its labels make room.
+    root.dataset.busy = String(S.replay || S.lens);
     el("clear").hidden = !S.selection;
     for (const t of ["context", "evidence"]) {
       el(t + "-tab").setAttribute("aria-pressed", String(S.tab === t));
@@ -1203,8 +1341,7 @@
     el("scope").textContent =
       `${Object.keys(sources).length}/${Object.keys(PACK.blocks).length} ${PACK.live ? "live cube" : "recorded"} blocks ready · ${dateShort(displaySource().b0)} onward`;
     el("cutoff").textContent = "Cutoff " + iso(CUT);
-    el("table").setAttribute("aria-pressed", String(S.table));
-    el("table-section").hidden = !S.table;
+    applyPanels();
     updateNavigation();
     requestDraw();
     requestTile();
@@ -1244,19 +1381,301 @@
       el("import").hidden = !el("import").hidden;
     });
     el("import-apply").addEventListener("click", applyImportedView);
-    el("table").addEventListener("click", () => {
-      S.table = !S.table;
-      update();
-      save();
-    });
     for (const [id, d] of [
       ["table-back", -1],
       ["table-next", 1],
     ])
       el(id).addEventListener("click", () => {
         tablePage += d;
-        requestDraw();
+        if (last) buildCells(last.query, last.b);
       });
+    for (const button of qsa("[data-sort]"))
+      button.addEventListener("click", () => {
+        const key = button.dataset.sort;
+        if (S.cellSort === key) S.cellDir = -S.cellDir;
+        else {
+          S.cellSort = key;
+          S.cellDir = key === "state" ? 1 : -1;
+        }
+        if (last) buildCells(last.query, last.b);
+        save();
+      });
+    // A table row and its cell on the chart light up together.
+    el("table-body").addEventListener("pointerover", (e) => {
+      const tr = e.target.closest("tr");
+      if (!tr) return;
+      tableHover = { c: Number(tr.dataset.c), r: Number(tr.dataset.r) };
+      requestDraw();
+    });
+    el("table-body").addEventListener("pointerleave", () => {
+      tableHover = null;
+      requestDraw();
+    });
+    bindPanels();
+    bindTopBar();
+  }
+
+  function followMode() {
+    return S.diagonal
+      ? "diagonal"
+      : S.coupled
+        ? "coupled"
+        : S.refit
+          ? "refit"
+          : "free";
+  }
+  function tool() {
+    return S.lens ? "lens" : S.select ? "select" : "pan";
+  }
+  // How the price range follows a time zoom: one of four, never two at once.
+  function setFollow(mode) {
+    const was = followMode();
+    if (mode === was) return;
+    S.refit = mode === "refit";
+    S.coupled = mode === "coupled";
+    S.diagonal = mode === "diagonal";
+    if (mode === "refit") {
+      fit();
+      autoLevel();
+    }
+    if (mode === "diagonal") {
+      if (S.auto) autoLevel();
+      else if (S.m !== diagonalM(S.n)) {
+        transition = reduce
+          ? null
+          : { n: renderN(), m: renderM(), start: performance.now() };
+        S.m = diagonalM(S.n);
+      }
+    }
+    update();
+    recordCrumb(
+      { free: "Free axes", refit: "Refit", coupled: "Coupled", diagonal: "Diagonal" }[
+        mode
+      ],
+    );
+    save();
+  }
+  function setTool(next) {
+    S.select = next === "select";
+    S.lens = next === "lens";
+    if (S.select) S.tab = "context";
+    if (S.lens) el("tip").hidden = true;
+    update();
+    save();
+  }
+  // The largest inspector and drawer this window leaves room for: the chart
+  // keeps at least 480px of width, and its column keeps the chart header,
+  // 220px of plot, the drawer's tab bar and the status bar, however they wrap.
+  const sideMax = () => clamp(innerWidth - 520, 260, 560),
+    drawerMax = () => {
+      const part = (s) => root.querySelector(s).offsetHeight,
+        used =
+          part(".ol-chart-head") +
+          part(".ol-drawer-bar") +
+          part(".ol-status") +
+          part("#ol-loading") +
+          8;
+      return Math.max(120, part(".ol-chart") - used - 220);
+    };
+  // Inspector and drawer: open state and sizes, from S, within the window.
+  function applyPanels() {
+    const main = el("main"),
+      drawer = el("drawer"),
+      side = el("side-toggle"),
+      sideLabel = S.sideOpen ? "Collapse the inspector" : "Expand the inspector";
+    main.dataset.side = S.sideOpen ? "open" : "closed";
+    main.style.setProperty("--side-w", clamp(S.sideWidth, 260, sideMax()) + "px");
+    side.setAttribute("aria-expanded", String(S.sideOpen));
+    side.setAttribute("aria-label", sideLabel);
+    side.title = sideLabel;
+    drawer.dataset.open = String(S.drawerOpen);
+    drawer.style.setProperty(
+      "--drawer-h",
+      clamp(S.drawerHeight, 120, drawerMax()) + "px",
+    );
+    // A closed or switched drawer leaves no row outlined on the chart.
+    if (!(S.drawerOpen && S.drawer === "cells")) tableHover = null;
+    for (const tab of qsa("[data-drawer]")) {
+      const on = tab.dataset.drawer === S.drawer;
+      tab.setAttribute("aria-selected", String(on));
+      tab.tabIndex = on ? 0 : -1;
+      el("panel-" + tab.dataset.drawer).hidden = !on;
+    }
+    el("drawer-toggle").setAttribute("aria-expanded", String(S.drawerOpen));
+    el("drawer-toggle").setAttribute(
+      "aria-label",
+      S.drawerOpen ? "Close the drawer" : "Open the drawer",
+    );
+  }
+  function openDrawer(tab, open = true) {
+    S.drawer = tab;
+    S.drawerOpen = open;
+    update();
+    save();
+  }
+  // Drag, or arrow keys on a focused grip, resize the inspector and the drawer.
+  function bindGrip(grip, begin, onMove, onKey) {
+    grip.addEventListener("pointerdown", (e) => {
+      grip.setPointerCapture(e.pointerId);
+      grip.dataset.active = "true";
+      const start = { x: e.clientX, y: e.clientY };
+      const move = (ev) => onMove(ev.clientX - start.x, ev.clientY - start.y);
+      const end = () => {
+        grip.dataset.active = "false";
+        grip.removeEventListener("pointermove", move);
+        grip.removeEventListener("pointerup", end);
+        grip.removeEventListener("pointercancel", end);
+        save();
+      };
+      begin();
+      grip.addEventListener("pointermove", move);
+      grip.addEventListener("pointerup", end);
+      grip.addEventListener("pointercancel", end);
+    });
+    grip.addEventListener("keydown", (e) => {
+      if (onKey(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        applyPanels();
+        save();
+      }
+    });
+  }
+  function bindPanels() {
+    let width0 = 0,
+      height0 = 0;
+    bindGrip(
+      el("side-grip"),
+      () => (width0 = clamp(S.sideWidth, 260, sideMax())),
+      (dx) => {
+        S.sideWidth = clamp(width0 - dx, 260, sideMax());
+        applyPanels();
+      },
+      (key) => {
+        if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
+        S.sideWidth = clamp(
+          S.sideWidth + (key === "ArrowLeft" ? 16 : -16),
+          260,
+          sideMax(),
+        );
+        return true;
+      },
+    );
+    bindGrip(
+      el("drawer-grip"),
+      () => (height0 = clamp(S.drawerHeight, 120, drawerMax())),
+      (dx, dy) => {
+        S.drawerHeight = clamp(height0 - dy, 120, drawerMax());
+        applyPanels();
+      },
+      (key) => {
+        if (key !== "ArrowUp" && key !== "ArrowDown") return false;
+        S.drawerHeight = clamp(
+          S.drawerHeight + (key === "ArrowUp" ? 24 : -24),
+          120,
+          drawerMax(),
+        );
+        return true;
+      },
+    );
+    el("side-toggle").addEventListener("click", () => {
+      S.sideOpen = !S.sideOpen;
+      applyPanels();
+      save();
+    });
+    el("drawer-toggle").addEventListener("click", () =>
+      openDrawer(S.drawer, !S.drawerOpen),
+    );
+    const tabs = [...qsa("[data-drawer]")];
+    for (const tab of tabs) {
+      // A tab opens its panel; the open tab, clicked again, closes the drawer.
+      tab.addEventListener("click", () =>
+        openDrawer(
+          tab.dataset.drawer,
+          !(S.drawerOpen && S.drawer === tab.dataset.drawer),
+        ),
+      );
+      tab.addEventListener("keydown", (e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        e.stopPropagation();
+        const next =
+          tabs[
+            (tabs.indexOf(tab) + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+              tabs.length
+          ];
+        openDrawer(next.dataset.drawer, S.drawerOpen);
+        next.focus();
+      });
+    }
+    el("open-cases").addEventListener("click", () => openDrawer("cases"));
+  }
+
+  // Popovers: one open at a time; outside clicks and Escape close them.
+  const pop = { open: null };
+  function closePop(restoreFocus = false) {
+    if (!pop.open) return false;
+    const { button, panel } = pop.open;
+    panel.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    pop.open = null;
+    if (restoreFocus) button.focus();
+    return true;
+  }
+  function bindPop(buttonId, panelId, onOpen) {
+    const button = el(buttonId),
+      panel = el(panelId);
+    button.addEventListener("click", () => {
+      if (pop.open?.panel === panel) {
+        closePop();
+        return;
+      }
+      closePop();
+      panel.hidden = false;
+      button.setAttribute("aria-expanded", "true");
+      pop.open = { button, panel };
+      if (onOpen) onOpen();
+    });
+  }
+  function setSheet(open) {
+    root.dataset.sheet = open ? "open" : "closed";
+    el("sheet-toggle").setAttribute("aria-expanded", String(open));
+    if (!open) closePop();
+  }
+  function bindTopBar() {
+    bindPop("res", "res-pop", () => {
+      nav.planeKey = "";
+      refreshPlane();
+    });
+    bindPop("hist", "hist-pop");
+    bindPop("help", "help-pop");
+    bindPop("evidence-info", "evidence-more");
+    document.addEventListener("pointerdown", (e) => {
+      if (
+        !pop.open ||
+        pop.open.panel.contains(e.target) ||
+        pop.open.button.contains(e.target) ||
+        // In the phone sheet a popover is part of the sheet's flow: closing it on
+        // pointerdown would shrink the sheet and move the control being tapped.
+        (root.dataset.sheet === "open" && el("controls").contains(e.target))
+      )
+        return;
+      closePop();
+    });
+    el("sheet-toggle").addEventListener("click", () =>
+      setSheet(root.dataset.sheet !== "open"),
+    );
+    el("sheet-close").addEventListener("click", () => setSheet(false));
+    for (const button of qsa("[data-follow]"))
+      button.addEventListener("click", () => setFollow(button.dataset.follow));
+    for (const button of qsa("[data-tool]"))
+      button.addEventListener("click", () => setTool(button.dataset.tool));
+    el("hist-back").addEventListener("click", () =>
+      goToCrumb(nav.crumbIndex - 1),
+    );
+    el("hist-fwd").addEventListener("click", () =>
+      goToCrumb(nav.crumbIndex + 1),
+    );
   }
 
   let markState = {
@@ -1898,21 +2317,30 @@
           down: "Lower POC first",
         }
       : { up: "Higher POC", flat: "Same price row", down: "Lower POC" };
+    // One row per outcome: matching share, all-states share, their difference
+    // in points, and the two as paired bars on the same 0–100% scale.
     for (const kind of ["up", "flat", "down"]) {
-      const p = supported ? sample[kind] / sample.n : 0,
-        bp = base?.n ? base[kind] / base.n : 0;
+      const baseOk = Boolean(base && base.n >= 30),
+        p = supported ? sample[kind] / sample.n : 0,
+        bp = baseOk ? base[kind] / base.n : 0,
+        diff = Math.round(p * 100) - Math.round(bp * 100);
       el("label-" + kind).textContent = labels[kind];
       el("prob-" + kind).textContent = supported
         ? Math.round(p * 100) + "%"
         : sample
           ? sample[kind] + " cases"
           : "—";
-      el("bar-" + kind).style.width = p * 100 + "%";
-      el("base-" + kind).style.width =
-        (base && base.n >= 30 ? bp * 100 : 0) + "%";
       el("base-prob-" + kind).textContent = base
-        ? `All states ${base.n >= 30 ? Math.round(bp * 100) + "%" : base[kind] + " cases"}`
-        : "All states —";
+        ? baseOk
+          ? Math.round(bp * 100) + "%"
+          : base[kind] + " cases"
+        : "—";
+      el("diff-" + kind).textContent =
+        supported && baseOk
+          ? (diff > 0 ? "+" : diff < 0 ? "−" : "±") + Math.abs(diff)
+          : "—";
+      el("bar-" + kind).style.width = p * 100 + "%";
+      el("base-" + kind).style.width = bp * 100 + "%";
       root
         .querySelector('[data-case-direction="' + kind + '"]')
         .setAttribute(
@@ -1921,7 +2349,10 @@
             (sample
               ? " · " + sample[kind] + " of " + sample.n + " matching cases"
               : "") +
-            " · inspect evidence",
+            (supported && baseOk
+              ? ` · ${Math.round(p * 100)}% against ${Math.round(bp * 100)}% in all states`
+              : "") +
+            " · inspect these cases",
         );
     }
     el("case-n").textContent = sample ? integer(sample.n) : "—";
@@ -1943,12 +2374,42 @@
           ? " Barriers use the first column-end POC crossing; trade first-touch is not observable here."
           : " Both cones show historical POC movement.") +
         " Every outcome ends by the anchor.";
+    el("evidence-brief").textContent = e.error
+      ? "Choose a completed column containing trades."
+      : supported
+        ? "Empirical shares, not calibrated odds."
+        : "Below 30 matches: percentages withheld.";
     evidenceCases(e);
   }
+  // The drawer's cases table: sortable, fifty to a page, each date a jump
+  // into replay. Rebuilt only when the evidence or the table's own state moves.
+  const CASES_PAGE = 50;
+  let casesKey = "",
+    casesEvidence = null;
   function evidenceCases(e) {
+    if (!(S.drawerOpen && S.drawer === "cases")) return;
+    const key = [
+      S.caseFilter,
+      S.casePage,
+      S.caseSort,
+      S.caseDir,
+      S.horizon,
+      S.evidenceKind,
+      stepT(),
+      stepP(),
+    ].join("|");
+    if (e === casesEvidence && key === casesKey) return;
+    casesEvidence = e;
+    casesKey = key;
     const list = el("case-list"),
       { sample, field } = evidenceTotals(e);
     el("case-filter").value = S.caseFilter || "all";
+    for (const button of qsa("[data-case-sort]")) {
+      const th = button.parentElement;
+      if (button.dataset.caseSort === S.caseSort)
+        th.setAttribute("aria-sort", S.caseDir > 0 ? "ascending" : "descending");
+      else th.removeAttribute("aria-sort");
+    }
     if (e.error) {
       list.replaceChildren();
       el("case-definition").textContent = e.error;
@@ -1970,33 +2431,49 @@
         (c) => c[field] === { up: 1, flat: 0, down: -1 }[filter],
       );
     if (filter === "failure") rows = rows.filter((c) => c[field] !== modalSign);
-    rows = rows.slice().reverse();
-    const pageSize = 5,
-      pages = Math.max(1, Math.ceil(rows.length / pageSize));
+    const barrier = S.evidenceKind === "barrier",
+      value = {
+        date: (c) => c.c,
+        outcome: (c) => (barrier ? c.first : c.direction),
+        change: (c) => c.delta,
+        poc: (c) => c.poc,
+        excursion: (c) => c.max - c.min,
+        buy: (c) => c.buyShare,
+      }[S.caseSort];
+    rows = rows
+      .slice()
+      .sort(
+        (x, y) =>
+          (value(x) < value(y) ? -1 : value(x) > value(y) ? 1 : 0) *
+            S.caseDir || y.c - x.c,
+      );
+    const pages = Math.max(1, Math.ceil(rows.length / CASES_PAGE));
     S.casePage = clamp(S.casePage || 0, 0, pages - 1);
     el("case-definition").textContent =
       filter === "failure"
         ? `Cases opposing the matching sample’s most common outcome (${modal}). This is a retrospective comparison.`
-        : "Open a date to inspect its recorded starting state in replay. Excursions use column-end POCs.";
-    const fragment = document.createDocumentFragment();
+        : "Open a date to replay its recorded starting state. Excursions use column-end POCs.";
+    const fragment = document.createDocumentFragment(),
+      cell = (tr, content) => {
+        const td = document.createElement("td");
+        td.append(content);
+        tr.append(td);
+      };
     for (const c of rows.slice(
-      S.casePage * pageSize,
-      (S.casePage + 1) * pageSize,
+      S.casePage * CASES_PAGE,
+      (S.casePage + 1) * CASES_PAGE,
     )) {
-      const row = document.createElement("div");
-      row.className = "ol-case-row";
-      const button = document.createElement("button");
+      const tr = document.createElement("tr"),
+        button = document.createElement("button");
       button.type = "button";
       button.className = "cursor-interaction";
       button.dataset.caseAnchor = String((c.c + 1) * stepT());
-      button.textContent = dateShort((c.c + 1) * stepT()) + " UTC";
-      row.append(button);
-      const result = document.createElement("div");
-      result.className = "ol-case-result";
-      const outcome = document.createElement("span"),
-        amount = document.createElement("span");
-      outcome.textContent =
-        S.evidenceKind === "barrier"
+      button.textContent = dateShort((c.c + 1) * stepT());
+      button.title = "Replay this case";
+      cell(tr, button);
+      cell(
+        tr,
+        barrier
           ? (c.first > 0
               ? "Upper first"
               : c.first < 0
@@ -2009,26 +2486,28 @@
             ? "Higher"
             : c.delta < 0
               ? "Lower"
-              : "Same row";
-      amount.textContent =
-        (c.delta > 0 ? "+" : "") + price(c.delta * stepP() * PR) + " USDT";
-      result.append(outcome, amount);
-      row.append(result);
-      const range = document.createElement("div");
-      range.className = "ol-muted";
-      range.textContent = `POC ${price((c.poc + 0.5) * stepP() * PR)} → ${price((c.finalPoc + 0.5) * stepP() * PR)} · ${Math.round(c.buyShare * 100)}% buy`;
-      row.append(range);
-      const adverse = document.createElement("div");
-      adverse.className = "ol-muted";
-      adverse.textContent = `Excursion ${c.min > 0 ? "+" : ""}${price(c.min * stepP() * PR)} / +${price(c.max * stepP() * PR)} USDT`;
-      row.append(adverse);
-      fragment.append(row);
+              : "Same row",
+      );
+      cell(tr, (c.delta > 0 ? "+" : "") + price(c.delta * stepP() * PR));
+      cell(
+        tr,
+        `${price((c.poc + 0.5) * stepP() * PR)} → ${price((c.finalPoc + 0.5) * stepP() * PR)}`,
+      );
+      cell(
+        tr,
+        `${c.min > 0 ? "+" : ""}${price(c.min * stepP() * PR)} / +${price(c.max * stepP() * PR)}`,
+      );
+      cell(tr, Math.round(c.buyShare * 100) + "%");
+      fragment.append(tr);
     }
     if (!rows.length) {
-      const empty = document.createElement("div");
-      empty.className = "ol-evidence-note";
-      empty.textContent = "No qualifying cases in this loaded history.";
-      fragment.append(empty);
+      const tr = document.createElement("tr"),
+        td = document.createElement("td");
+      td.colSpan = 6;
+      td.className = "ol-muted";
+      td.textContent = "No qualifying cases in this loaded history.";
+      tr.append(td);
+      fragment.append(tr);
     }
     list.replaceChildren(fragment);
     el("case-page").textContent = rows.length
@@ -2114,15 +2593,15 @@
         save();
         return;
       }
+      // An outcome row opens its cases in the drawer.
       const direction = event.target.closest("[data-case-direction]");
       if (direction) {
         S.caseFilter = direction.dataset.caseDirection;
         S.casePage = 0;
-        el("cases").open = true;
-        evidenceUI(calcEvidence());
-        save();
-        return;
+        openDrawer("cases");
       }
+    });
+    el("case-list").addEventListener("click", (event) => {
       const anchor = event.target.closest("[data-case-anchor]");
       if (anchor) {
         const base = Number(anchor.dataset.caseAnchor),
@@ -2160,7 +2639,7 @@
     el("case-filter").addEventListener("change", () => {
       S.caseFilter = el("case-filter").value;
       S.casePage = 0;
-      evidenceUI(calcEvidence());
+      evidenceCases(calcEvidence());
       save();
     });
     for (const [id, step] of [
@@ -2169,7 +2648,19 @@
     ])
       el(id).addEventListener("click", () => {
         S.casePage = (S.casePage || 0) + step;
-        evidenceUI(calcEvidence());
+        evidenceCases(calcEvidence());
+      });
+    for (const button of qsa("[data-case-sort]"))
+      button.addEventListener("click", () => {
+        const key = button.dataset.caseSort;
+        if (S.caseSort === key) S.caseDir = -S.caseDir;
+        else {
+          S.caseSort = key;
+          S.caseDir = -1;
+        }
+        S.casePage = 0;
+        evidenceCases(calcEvidence());
+        save();
       });
   }
 
@@ -2372,6 +2863,7 @@
         b.addEventListener("mouseenter", show);
         b.addEventListener("focus", show);
         b.addEventListener("click", () => changeResolution(n, m));
+        b.tabIndex = -1;
         nav.planeButtons.push(b);
         frag.append(b);
       }
@@ -2380,6 +2872,31 @@
     for (let n = 0; n <= N_MAX; n++)
       frag.append(label(n % 4 === 0 ? String(n) : ""));
     el("plane").replaceChildren(frag);
+  }
+  // The plane is one tab stop: arrow keys move through it, Enter chooses.
+  function planeButton(n, m) {
+    return nav.planeButtons[(M_MAX - m) * (N_MAX + 1) + n];
+  }
+  function focusPlaneCell(n, m) {
+    const target = planeButton(n, m);
+    for (const b of nav.planeButtons) b.tabIndex = b === target ? 0 : -1;
+    target.focus();
+  }
+  function planeKeys(e) {
+    const b = e.target.closest("button");
+    if (!b || !nav.planeButtons) return;
+    let n = Number(b.dataset.n),
+      m = Number(b.dataset.m);
+    if (e.key === "ArrowLeft") n--;
+    else if (e.key === "ArrowRight") n++;
+    else if (e.key === "ArrowUp") m++;
+    else if (e.key === "ArrowDown") m--;
+    else if (e.key === "Home") n = 0;
+    else if (e.key === "End") n = N_MAX;
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+    focusPlaneCell(clamp(n, 0, N_MAX), clamp(m, 0, M_MAX));
   }
   // Cell size for the plane's hover text: whole pixels, or words at the extremes,
   // per axis when the two disagree (a sliver can be taller than the view).
@@ -2449,6 +2966,11 @@
         b.setAttribute("aria-label", text);
       }
     }
+    // The tab stop is the current level, unless focus is already in the plane.
+    const focused = el("plane").contains(document.activeElement)
+      ? document.activeElement
+      : planeButton(S.n, S.m);
+    for (const b of nav.planeButtons) b.tabIndex = b === focused ? 0 : -1;
   }
   function changeResolution(n, m, timeOnly = false) {
     n = clamp(Math.round(n), 0, N_MAX);
@@ -2523,41 +3045,55 @@
       s.replay,
     ].join("|");
   }
+  function crumbLabel(c) {
+    return c.label === "Level"
+      ? dur(BASE * 2 ** c.state.n) + " / " + price(PR * 2 ** c.state.m)
+      : c.label === "Zoom"
+        ? "Zoom " + dur((c.state.tB - c.state.tA) * BASE)
+        : c.label;
+  }
+  function crumbTitle(c) {
+    return `${dateShort(c.state.tA)} UTC · ${dur((c.state.tB - c.state.tA) * BASE)} · ${dur(BASE * 2 ** c.state.n)} × ${price(PR * 2 ** c.state.m)} USDT`;
+  }
+  function goToCrumb(i) {
+    const c = nav.crumbs[i];
+    if (!c) return;
+    Object.assign(S, c.state, {
+      selection: c.state.selection?.slice() || null,
+    });
+    nav.crumbIndex = i;
+    confine();
+    hover = null;
+    el("tip").hidden = true;
+    update();
+    renderCrumbs();
+    save();
+  }
+  // History: back and forward in the bar, the whole trail in its popover.
   function renderCrumbs() {
     const frag = document.createDocumentFragment();
     nav.crumbs.forEach((c, i) => {
-      if (i) {
-        const s = document.createElement("span");
-        s.textContent = "›";
-        s.setAttribute("aria-hidden", "true");
-        frag.append(s);
-      }
       const b = document.createElement("button");
       b.type = "button";
       b.className = "cursor-interaction";
-      b.textContent =
-        c.label === "Level"
-          ? dur(BASE * 2 ** c.state.n) + " / " + price(PR * 2 ** c.state.m)
-          : c.label === "Zoom"
-            ? "Zoom " + dur((c.state.tB - c.state.tA) * BASE)
-            : c.label;
+      b.textContent = crumbLabel(c);
       b.setAttribute("aria-current", i === nav.crumbIndex ? "step" : "false");
-      b.title = `${dateShort(c.state.tA)} UTC · ${dur((c.state.tB - c.state.tA) * BASE)} · ${dur(BASE * 2 ** c.state.n)} × ${price(PR * 2 ** c.state.m)} USDT`;
+      b.title = crumbTitle(c);
       b.addEventListener("click", () => {
-        Object.assign(S, c.state, {
-          selection: c.state.selection?.slice() || null,
-        });
-        nav.crumbIndex = i;
-        confine();
-        hover = null;
-        el("tip").hidden = true;
-        update();
-        renderCrumbs();
-        save();
+        goToCrumb(i);
+        closePop();
       });
       frag.append(b);
     });
     el("breadcrumbs").replaceChildren(frag);
+    const back = nav.crumbs[nav.crumbIndex - 1],
+      forward = nav.crumbs[nav.crumbIndex + 1];
+    el("hist-back").disabled = !back;
+    el("hist-fwd").disabled = !forward;
+    el("hist-back").title = back ? `Back to ${crumbLabel(back)}` : "Back";
+    el("hist-fwd").title = forward
+      ? `Forward to ${crumbLabel(forward)}`
+      : "Forward";
   }
   function recordCrumb(label) {
     if (!ready) return;
@@ -2571,22 +3107,21 @@
     renderCrumbs();
   }
   function updateNavigation() {
-    for (const field of ["auto", "coupled", "diagonal", "refit", "lens"])
-      el(field).setAttribute("aria-pressed", String(S[field]));
+    el("auto").setAttribute("aria-pressed", String(S.auto));
     el("lens-depth").value = String(clamp(Math.round(S.lensDepth) || 2, 1, 4));
     el("lens-pin").hidden = !S.lens;
-    el("auto").textContent = S.auto ? "Auto level" : "Level locked";
     const g = navGeometry(),
       px = (stepT() * g.w) / (S.tB - S.tA),
       py = (stepP() * g.h) / (S.pB - S.pA),
       fmt = (x) => (x < 1 ? x.toFixed(1) : Math.round(x));
-    el("pixel-state").textContent = `${fmt(px)} × ${fmt(py)} px / cell`;
+    // The one pixels-per-cell readout, in the status bar.
+    el("pixel-state").textContent = `${fmt(px)} × ${fmt(py)} px per cell`;
     nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)`;
     if (!nav.planeHover) setPlaneStatus(nav.planeStatus);
     el("gesture").textContent = S.lens
-      ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · L releases"
+      ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · V: pan"
       : S.select
-        ? "Drag a rectangle · base-cell edges"
+        ? "Drag a rectangle on base-cell edges · then back to pan"
         : S.coupled
           ? "Wheel / pinch: time + price · Alt: lens"
           : S.diagonal
@@ -2884,50 +3419,6 @@
       recordCrumb(S.auto ? "Auto" : "Locked");
       save();
     });
-    el("coupled").addEventListener("click", () => {
-      S.coupled = !S.coupled;
-      if (S.coupled) {
-        S.refit = false;
-        S.diagonal = false;
-      }
-      update();
-      save();
-    });
-    el("diagonal").addEventListener("click", () => {
-      S.diagonal = !S.diagonal;
-      if (S.diagonal) {
-        S.refit = false;
-        S.coupled = false;
-        if (S.auto) autoLevel();
-        else if (S.m !== diagonalM(S.n)) {
-          transition = reduce
-            ? null
-            : { n: renderN(), m: renderM(), start: performance.now() };
-          S.m = diagonalM(S.n);
-        }
-      }
-      update();
-      recordCrumb(S.diagonal ? "Diagonal" : "Free axes");
-      save();
-    });
-    el("refit").addEventListener("click", () => {
-      S.refit = !S.refit;
-      if (S.refit) {
-        S.coupled = false;
-        S.diagonal = false;
-        fit();
-        autoLevel();
-      }
-      update();
-      recordCrumb("Refit");
-      save();
-    });
-    el("lens").addEventListener("click", () => {
-      S.lens = !S.lens;
-      if (S.lens) el("tip").hidden = true;
-      update();
-      save();
-    });
     el("lens-depth").addEventListener("change", () => {
       S.lensDepth = clamp(Number(el("lens-depth").value) || 2, 1, 4);
       requestDraw();
@@ -2944,6 +3435,7 @@
     el("plane").addEventListener("focusout", (e) => {
       if (!el("plane").contains(e.relatedTarget)) leavePlane();
     });
+    el("plane").addEventListener("keydown", planeKeys);
     canvas.addEventListener("pointerdown", (e) => {
       if (!ready) return;
       const p = at(e);
@@ -3078,6 +3570,8 @@
             ? "Selection"
             : "Pan"
           : "Anchor";
+      // A finished selection hands the pointer back to Pan; the selection stays.
+      if (!held && drag.moved && S.select) S.select = false;
       drag = null;
       nav.hold = false;
       if (
@@ -3102,6 +3596,7 @@
         nav.last = null;
         nav.alt = false;
         el("tip").hidden = true;
+        syncRowHover(null);
         requestDraw();
       }
     });
@@ -3164,12 +3659,22 @@
       }
       if (k === "l") {
         e.preventDefault();
-        el("lens").click();
+        setTool(S.lens ? "pan" : "lens");
+        return;
+      }
+      if (k === "s") {
+        e.preventDefault();
+        setTool(S.select ? "pan" : "select");
+        return;
+      }
+      if (k === "v") {
+        e.preventDefault();
+        setTool("pan");
         return;
       }
       if (k === "d") {
         e.preventDefault();
-        el("diagonal").click();
+        setFollow(S.diagonal ? "free" : "diagonal");
         return;
       }
       if (k === "enter" && e.target === canvas && (S.lens || nav.alt || nav.hold)) {
@@ -3214,6 +3719,13 @@
       }
       if (k === "escape") {
         e.preventDefault();
+        // Escape closes what is open first, then clears the lens and selection.
+        if (closePop(true)) return;
+        if (root.dataset.sheet === "open") {
+          setSheet(false);
+          el("sheet-toggle").focus();
+          return;
+        }
         S.lens = false;
         nav.hold = false;
         nav.alt = false;
@@ -3293,15 +3805,6 @@
       update();
       save();
     });
-  el("select").addEventListener("click", () => {
-    S.select = !S.select;
-    if (S.select) {
-      S.tab = "context";
-      S.lens = false;
-    }
-    update();
-    save();
-  });
   el("clear").addEventListener("click", () => {
     S.selection = null;
     recordCrumb("Selection cleared");
@@ -3352,7 +3855,7 @@
   bindNavigation();
   try {
     qsa("button,input,select").forEach((control) => (control.disabled = true));
-    el("market").textContent = PACK.live ? "LIVE MARKET" : "RECORDED MARKET";
+    el("market").textContent = PACK.live ? "LIVE" : "RECORDED";
     el("snapshot").textContent = PACK.live
       ? stamp(CUT).slice(0, 16) + " UTC"
       : date(CUT).toLocaleDateString("en-GB", {
@@ -3360,7 +3863,7 @@
           day: "2-digit",
           month: "short",
           year: "numeric",
-        }) + " · UTC";
+        });
     getColors();
     sources.recent = await unpack(PACK.blocks.recent, "recent");
     loadState.recent = "ready";

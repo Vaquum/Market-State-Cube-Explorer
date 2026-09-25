@@ -3972,13 +3972,15 @@
       el("loading").textContent = `Cube tile unavailable: ${error.message}`;
       el("loading").setAttribute("role", "alert");
     }
-    const failed = !sources[t.id];
     tiles.pending = null;
     chooseSource();
     evidenceCache.clear();
-    // A failure's own refresh asks for nothing; the next navigation, level
-    // change or import asks the cube again.
-    tiles.quiet = failed;
+    // After a failure the view that failed is not asked for again by itself: any
+    // timer armed meanwhile is dropped and this refresh schedules nothing. A view
+    // that moved on while the tile was pending is fetched by this refresh.
+    const same = !sources[t.id] && tileSpec(S.n, S.m)?.id === t.id;
+    if (same) clearTimeout(tiles.timer);
+    tiles.quiet = same;
     update();
     tiles.quiet = false;
   }

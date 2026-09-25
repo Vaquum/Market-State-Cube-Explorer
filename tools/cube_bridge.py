@@ -134,9 +134,9 @@ def tile(n: int, m: int, b0: float, b1: float) -> tuple[dict, dict, dict]:
 def pack() -> tuple[dict, dict]:
     """The three tiers as one consistent pack, plus every pin the pack read.
 
-    One empty query fixes the cutoff and every tier is bounded to that base edge; the
-    partitions the tiers share must then carry the same generation, revision and build id,
-    or the cube changed under the pack and it is read again once.
+    One empty query fixes the cutoff and every tier is bounded to that base edge; every
+    partition a later tier reads must then be one the overview read, at the same generation,
+    revision and build id, or the cube changed under the pack and it is read again once.
     """
     for _attempt in range(2):
         state = dict(query(t1=edge(0), t2=edge(0.001), url=CUBE_URL).response)
@@ -149,7 +149,12 @@ def pack() -> tuple[dict, dict]:
             b1 = (cutoff // step) * step if tier.get("complete") else cutoff
             b0 = 0 if "days" not in tier else (b1 - tier["days"] * DAY) // step * step
             blocks[tier["id"]], _, pins = tile(tier["n"], tier["m"], b0, b1)
-            conflict = conflict or next((key for key, identity in pins.items() if pinned.setdefault(key, identity) != identity), None)
+            if not pinned:
+                pinned = pins  # the overview comes first and reads every partition up to the cutoff
+            else:
+                # Every partition a later tier read must be one the overview read, at the same
+                # revision; a provisional minute replaced by an archive day appears as a new key.
+                conflict = conflict or next((key for key, identity in pins.items() if pinned.get(key) != identity), None)
         if conflict is None:
             break
     else:
@@ -261,6 +266,8 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as error:  # the page shows the message; nothing is substituted for the data
             self.reply(502, "application/json", json.dumps({"error": f"{type(error).__name__}: {error}"}).encode())
 
+    do_HEAD = do_GET
+
     def tile(self, args: dict) -> dict:
         n, m, b0, b1 = (float(args[key][0]) for key in ("n", "m", "b0", "b1"))
         token = args.get("pack", [""])[0]
@@ -280,7 +287,8 @@ class Handler(BaseHTTPRequestHandler):
         for name, value in (headers or {}).items():
             self.send_header(name, value)
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def log_message(self, format: str, *args: object) -> None:
         sys.stderr.write("%s %s\n" % (self.address_string(), format % args))

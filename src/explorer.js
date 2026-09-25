@@ -4479,7 +4479,20 @@
         // The level keys go by the character typed, [ ] for time cells and
         // { } for price cells, which some layouts type with AltGr or Option.
         bracket = { "[": [-1, 0], "]": [1, 0], "{": [0, -1], "}": [0, 1] }[e.key],
-        typed = Boolean(bracket) && (e.altKey || e.getModifierState?.("AltGraph"));
+        typed = Boolean(bracket) && (e.altKey || e.getModifierState?.("AltGraph")),
+        id = e.code || e.key,
+        step =
+          Boolean(bracket) ||
+          e.key.startsWith("Arrow") ||
+          ["+", "=", "-", "_", ",", "."].includes(e.key);
+      // A held key repeats only steps: the arrows, zoom, levels and the anchor.
+      // Any other key the chart took acts once a press, wherever the focus has
+      // gone since: a held toggle doesn't flicker, a held Space doesn't stall a
+      // replay, and a held Shift+S doesn't type into the name field it opened.
+      if (e.repeat && !step && nav.pressed && nav.pressed === id) {
+        e.preventDefault();
+        return;
+      }
       if (
         !ready ||
         e.defaultPrevented ||
@@ -4506,18 +4519,6 @@
         return;
       }
       if (e.altKey && !typed) return;
-      // A held key repeats only steps: the arrows, zoom, levels and the anchor.
-      // Any other key the chart took acts once a press, so a held toggle
-      // doesn't flicker and a held Space doesn't stall a replay.
-      const id = e.code || e.key,
-        step =
-          Boolean(bracket) ||
-          e.key.startsWith("Arrow") ||
-          ["+", "=", "-", "_", ",", "."].includes(e.key);
-      if (e.repeat && !step && nav.pressed && nav.pressed === id) {
-        e.preventDefault();
-        return;
-      }
       // The key list is a modal dialog: it handles Escape, and ? closes it.
       if (el("keys").open) {
         if (e.key === "?") {

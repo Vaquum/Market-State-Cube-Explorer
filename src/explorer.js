@@ -31,6 +31,16 @@
   const canvas = el("canvas"),
     ctx = canvas.getContext("2d"),
     reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // The canvas's share of the design tokens: its type sizes, and the plot's
+  // margins. The gutter is the page's; the widest price label ("120,000")
+  // fills the label column, so it starts on the same edge as every band.
+  const TYPE = { s: 11, m: 12, l: 14, xl: 20 },
+    GUTTER = 12,
+    PRICE_LABELS = 43,
+    PLOT_LEFT = GUTTER + PRICE_LABELS + 8,
+    PLOT_TOP = 12,
+    PLOT_BOTTOM = 90,
+    profileWidth = (width) => (width > 470 ? 79 : 52);
   const design = { grid: 0.32, gap: 1 },
     S = {
       dataset: "recent",
@@ -88,46 +98,78 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)),
     stepT = () => 2 ** renderN(),
     stepP = () => 2 ** renderM();
-  const dur = (s) =>
-    s < 60
-      ? `${s} s`
-      : s < 3600
-        ? `${+(s / 60).toFixed(3)} min`
-        : s < 86400
-          ? `${+(s / 3600).toFixed(2)} h`
-          : `${+(s / 86400).toFixed(2)} d`;
-  const compact = (x) =>
-    x >= 1e12
-      ? (x / 1e12).toFixed(2) + " T"
-      : x >= 1e9
-        ? (x / 1e9).toFixed(2) + " B"
-        : x >= 1e6
-          ? (x / 1e6).toFixed(2) + " M"
-          : x >= 1e3
-            ? (x / 1e3).toFixed(1) + " k"
-            : x.toFixed(0);
+  // Formats: the one place for how durations, numbers and times read.
+  //
+  // Durations use their two largest whole units: "1 min 52.5 s", "21 d 8 h";
+  // past a year, years to one decimal.
+  const DAY = 86400,
+    YEAR = 365.25 * DAY;
+  const dur = (s) => {
+    if (s >= YEAR) return `${+(s / YEAR).toFixed(1)} y`;
+    if (s < 60) return `${+s.toFixed(2)} s`;
+    const [big, small, bigUnit, smallUnit] =
+      s < 3600 ? [60, 1, "min", "s"] : s < DAY ? [3600, 60, "h", "min"] : [DAY, 3600, "d", "h"];
+    let whole = Math.floor(s / big),
+      rest = +((s - whole * big) / small).toFixed(smallUnit === "s" ? 2 : 0);
+    if (rest * small >= big) {
+      whole++;
+      rest = 0;
+    }
+    return `${whole} ${bigUnit}` + (rest ? ` ${rest} ${smallUnit}` : "");
+  };
+  // Compact numbers carry three significant digits: "96.0 k", "32.0 M", "1.92 B".
+  const compact = (x) => {
+    const sign = x < 0 ? "−" : "",
+      a = Math.abs(x);
+    if (a < 1000)
+      return sign + (Number.isInteger(a) ? String(a) : String(+a.toPrecision(3)));
+    let i = Math.min(4, Math.floor(Math.log10(a) / 3));
+    if (+(a / 1000 ** i).toPrecision(3) >= 1000 && i < 4) i++;
+    return sign + (a / 1000 ** i).toPrecision(3) + " " + " kMBT"[i];
+  };
+  // A signed value with a true minus sign: "+125", "−125".
+  const signed = (x, f) => (x > 0 ? "+" : x < 0 ? "−" : "") + f(Math.abs(x));
   const integer = (x) => Math.round(x).toLocaleString("en-US"),
     price = (x) => x.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-    date = (b) => new Date((T0 + b * BASE) * 1000),
-    dateShort = (b) =>
-      date(b).toLocaleString("en-GB", {
-        timeZone: "UTC",
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }),
-    iso = (b) => date(b).toISOString(),
-    stamp = (b) => {
-      const s = iso(b);
-      return s.slice(0, 10) + " " + s.slice(11, s.endsWith(".000Z") ? 19 : 23);
-    },
     usdt = (x) =>
       x.toLocaleString("en-US", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
-      });
+      }),
+    date = (b) => new Date((T0 + b * BASE) * 1000),
+    // ISO is for the query and view codes only.
+    iso = (b) => date(b).toISOString();
+  // Times read one way everywhere, matching the axis: "24 Sep 12:02", with the
+  // year only when it differs from the cutoff's and seconds only when set.
+  const CUT_YEAR = date(CUT).getUTCFullYear(),
+    dayMonth = d3.utcFormat("%-d %b"),
+    clock = (d) =>
+      d3.utcFormat(
+        d.getUTCMilliseconds()
+          ? "%H:%M:%S.%L"
+          : d.getUTCSeconds()
+            ? "%H:%M:%S"
+            : "%H:%M",
+      )(d),
+    dayOf = (d, year = d.getUTCFullYear() !== CUT_YEAR) =>
+      dayMonth(d) + (year ? " " + d.getUTCFullYear() : ""),
+    // "24 Sep 2026"
+    day = (b) => dayOf(date(b), true),
+    // "24 Sep 12:02:48.750"
+    when = (b) => {
+      const d = date(b);
+      return `${dayOf(d)} ${clock(d)}`;
+    },
+    // A range names its day once: ["21 Sep 14:00–16:00"], or across days
+    // ["23 Sep 12:02 →", "24 Sep 12:02"], as parts that wrap between them.
+    rangeParts = (a, b) => {
+      const x = date(a),
+        y = date(b);
+      return dayOf(x) === dayOf(y)
+        ? [`${dayOf(x)} ${clock(x)}–${clock(y)}`]
+        : [`${dayOf(x)} ${clock(x)} →`, `${dayOf(y)} ${clock(y)}`];
+    },
+    range = (a, b) => rangeParts(a, b).join(" ");
   async function unpack(block, id) {
     const bytes = Uint8Array.from(atob(block.gzip_base64), (c) =>
       c.charCodeAt(0),
@@ -321,6 +363,7 @@
       "sell",
       "poc",
       "evidence",
+      "accent",
     ]) {
       probe.style.color = `var(--ol-${key})`;
       colors[key] = getComputedStyle(probe).color;
@@ -342,14 +385,14 @@
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const profile = width > 470 ? 79 : 52;
+    const profile = profileWidth(width);
     G = {
       width,
       height,
-      x: 61,
-      y: 12,
-      w: width - 61 - profile - 12,
-      h: height - 90,
+      x: PLOT_LEFT,
+      y: PLOT_TOP,
+      w: width - PLOT_LEFT - profile - GUTTER,
+      h: height - PLOT_BOTTOM,
       profile,
     };
     G.X = d3
@@ -362,7 +405,7 @@
       .range([G.y + G.h, G.y]);
   }
   const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
-  function text(s, x, y, color = colors.muted, align = "left", size = 11) {
+  function text(s, x, y, color = colors.muted, align = "left", size = TYPE.s) {
     ctx.fillStyle = color;
     ctx.textAlign = align;
     ctx.textBaseline = "middle";
@@ -394,15 +437,14 @@
   // Time labels follow the tick step rather than the visible span, so two
   // adjacent labels never repeat; a tick at midnight UTC names its day.
   function timeFormat(step) {
-    const day = 86400e3;
-    if (step < day) {
-      const dayLabel = d3.utcFormat("%d %b"),
-        clock = d3.utcFormat(step < 60e3 ? "%H:%M:%S" : "%H:%M");
-      return (d) => (+d % day === 0 ? dayLabel(d) : clock(d));
+    const dayMs = DAY * 1000;
+    if (step < dayMs) {
+      const time = d3.utcFormat(step < 60e3 ? "%H:%M:%S" : "%H:%M");
+      return (d) => (+d % dayMs === 0 ? dayMonth(d) : time(d));
     }
-    return d3.utcFormat(
-      step < 28 * day ? "%d %b" : step < 365 * day ? "%b %Y" : "%Y",
-    );
+    return step < 28 * dayMs
+      ? dayMonth
+      : d3.utcFormat(step < 365 * dayMs ? "%b %Y" : "%Y");
   }
   function axes() {
     ctx.globalAlpha = 1;
@@ -489,7 +531,7 @@
     } else if (S.drawerOpen && S.drawer === "cases")
       evidenceCases(calcEvidence());
     if (S.selection) {
-      ctx.strokeStyle = colors.volume;
+      ctx.strokeStyle = colors.accent;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(
         G.X(b[0]),
@@ -553,6 +595,7 @@
     activity(query, cut);
     querySummary(query, b);
     el("legend-text").textContent = legendText(full);
+    el("legend-text").title = LEGEND_TITLES[S.mode];
     el("ramp").style.background = legendRamp();
     const marks = marksReadout(b);
     el("ray-count").textContent = marks.rayCount + " untested levels";
@@ -805,7 +848,7 @@
       renderN() !== S.n ||
       renderM() !== S.m;
     el("query-ready").textContent = changed
-      ? `Rendered coverage: ${iso(b[0])} → ${iso(b[1])}; ${price(b[2] * PR)}–${price(b[3] * PR)} USDT; ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT. Finer bounds remain unavailable in this snapshot.`
+      ? `Rendered coverage: ${range(b[0], b[1])} UTC; ${price(b[2] * PR)}–${price(b[3] * PR)} USDT; ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT. Finer bounds remain unavailable in this snapshot.`
       : "The rendered rectangle matches these six parameters.";
   }
   async function copyText(textToCopy, label) {
@@ -1042,21 +1085,24 @@
     const requested = requestedBounds(),
       partialCoverage = b.some((x, i) => x !== requested[i]);
     el("focus-title").textContent = partialCoverage
-      ? "Ready portion"
+      ? "Ready part"
       : S.selection
-        ? "Selected rectangle"
-        : "Visible rectangle";
+        ? "Selection"
+        : "In view";
+    el("focus-title").title = partialCoverage
+      ? "Only this part of the requested rectangle is recorded at this level"
+      : "";
     // Each date and the price range stay whole; lines break only between them.
+    const times = rangeParts(b[0], b[1]);
+    times[times.length - 1] += " UTC";
     el("bounds").replaceChildren(
-      ...[
-        `${stamp(b[0])} →`,
-        `${stamp(b[1])} UTC`,
-        `· ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`,
-      ].flatMap((part, i) => {
-        const span = document.createElement("span");
-        span.textContent = part;
-        return i ? [" ", span] : [span];
-      }),
+      ...[...times, `· ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`].flatMap(
+        (part, i) => {
+          const span = document.createElement("span");
+          span.textContent = part;
+          return i ? [" ", span] : [span];
+        },
+      ),
     );
     for (const [id, v, exact] of [
       ["vol", query.v, usdt(query.v) + " USDT"],
@@ -1076,9 +1122,7 @@
       ? ((100 * query.bv) / query.v).toFixed(1) + "%"
       : "—";
     el("delta-value").textContent =
-      (2 * query.bv - query.v >= 0 ? "+" : "−") +
-      compact(Math.abs(2 * query.bv - query.v)) +
-      " USDT";
+      signed(2 * query.bv - query.v, compact) + " USDT";
     el("cells").textContent = integer(query.cells.length);
     let partials = 0,
       unfinished = 0;
@@ -1179,9 +1223,10 @@
       tr.dataset.c = c.c;
       tr.dataset.r = c.r;
       const values = [
-        stamp(Math.max(c.c * stepT(), b[0])) +
-          " → " +
-          stamp(Math.min((c.c + 1) * stepT(), b[1])),
+        range(
+          Math.max(c.c * stepT(), b[0]),
+          Math.min((c.c + 1) * stepT(), b[1]),
+        ),
         price(Math.max(c.r * stepP(), b[2]) * PR) +
           "–" +
           price(Math.min((c.r + 1) * stepP(), b[3]) * PR),
@@ -1243,7 +1288,7 @@
         p.t < src.b0 || p.t >= Math.min(src.b1, last.cut) || !inside;
     const open = !S.replay && c * stepT() < CUT && (c + 1) * stepT() > CUT;
     let rows = [
-      `${stamp(c * stepT())} UTC`,
+      `${when(c * stepT())} UTC`,
       `${price(r * stepP() * PR)}–${price((r + 1) * stepP() * PR)} USDT`,
     ];
     if (unavailable)
@@ -1258,14 +1303,14 @@
       );
     else if (!z)
       rows.push(
-        open ? "Unfinished · no accepted trades" : "Zero trades · covered cell",
+        open ? "Unfinished · no trades yet" : "No trades in this cell",
       );
     else
       rows.push(
         `${usdt(z.v)} USDT · ${integer(z.ct)} trades`,
         `Buy ${usdt(z.bv)} USDT · ${integer(z.bt)} trades`,
-        `Δ ${usdt(2 * z.bv - z.v)} USDT · ${((z.bv / z.v) * 100).toFixed(1)}% buy`,
-        open ? "Unfinished cell" : "Completed source coverage",
+        `Δ ${signed(2 * z.bv - z.v, usdt)} USDT · ${((z.bv / z.v) * 100).toFixed(1)}% buy`,
+        open ? "Unfinished cell" : "Complete cell",
       );
     if (renderN() > S.n || renderM() > S.m) rows.push("Coarser than requested");
     tip.replaceChildren(
@@ -1336,11 +1381,11 @@
     }
     el("replay").setAttribute("aria-pressed", String(S.replay));
     el("back").hidden = el("next").hidden = el("replay-at").hidden = !S.replay;
-    el("replay-at").textContent = S.replay ? dateShort(activeCutoff()) : "";
+    el("replay-at").textContent = S.replay ? when(activeCutoff()) : "";
     el("horizon").value = S.horizon;
     el("scope").textContent =
-      `${Object.keys(sources).length}/${Object.keys(PACK.blocks).length} ${PACK.live ? "live cube" : "recorded"} blocks ready · ${dateShort(displaySource().b0)} onward`;
-    el("cutoff").textContent = "Cutoff " + iso(CUT);
+      `${Object.keys(sources).length}/${Object.keys(PACK.blocks).length} ${PACK.live ? "live cube" : "recorded"} blocks ready · ${when(displaySource().b0)} onward`;
+    el("cutoff").textContent = `Cutoff ${when(CUT)} UTC`;
     applyPanels();
     updateNavigation();
     requestDraw();
@@ -1781,9 +1826,18 @@
     if (S.mode === "delta")
       return `Δ ${signedCompact(-markState.deltaMax)} · 0 · ${signedCompact(markState.deltaMax)} USDT`;
     if (S.mode === "density")
-      return `${densityNumber(Math.exp(markState.densityLo))}–${densityNumber(Math.exp(markState.densityHi))} USDT/(s·USDT) · log`;
+      return `Density ${densityNumber(Math.exp(markState.densityLo))}–${densityNumber(Math.exp(markState.densityHi))} · log`;
     return `${compact(Math.exp(full.lo))}–${compact(Math.exp(full.hi))} USDT · log`;
   }
+  // The legend's precise unit, one hover away.
+  const LEGEND_TITLES = {
+    volume: "USDT traded per cell, on a log scale",
+    flow: "Share of volume bought by takers",
+    density:
+      "USDT traded per second per USDT of price range, USDT/(s·USDT), on a log scale",
+    delta: "Taker-buy minus taker-sell volume per cell, in USDT",
+    geometry: "The grid's occupied cells",
+  };
   function legendRamp() {
     return S.mode === "flow" || S.mode === "delta"
       ? "linear-gradient(to right,var(--ol-sell),var(--ol-line),var(--ol-buy))"
@@ -2296,7 +2350,7 @@
       barriers = S.evidenceKind === "barrier";
     el("anchor-time").textContent = e.error
       ? ""
-      : `${dateShort((e.a + 1) * stepT())} UTC · ${dur(BASE * stepT() * S.horizon)} ahead`;
+      : `${when((e.a + 1) * stepT())} UTC · ${dur(BASE * stepT() * S.horizon)} ahead`;
     el("state").textContent =
       e.error ||
       [
@@ -2476,7 +2530,7 @@
       button.type = "button";
       button.className = "cursor-interaction";
       button.dataset.caseAnchor = String((c.c + 1) * stepT());
-      button.textContent = dateShort((c.c + 1) * stepT());
+      button.textContent = when((c.c + 1) * stepT());
       button.title = "Replay this case";
       cell(tr, button);
       cell(
@@ -2496,14 +2550,14 @@
               ? "Lower"
               : "Same row",
       );
-      cell(tr, (c.delta > 0 ? "+" : "") + price(c.delta * stepP() * PR));
+      cell(tr, signed(c.delta * stepP() * PR, price));
       cell(
         tr,
         `${price((c.poc + 0.5) * stepP() * PR)} → ${price((c.finalPoc + 0.5) * stepP() * PR)}`,
       );
       cell(
         tr,
-        `${c.min > 0 ? "+" : ""}${price(c.min * stepP() * PR)} / +${price(c.max * stepP() * PR)}`,
+        `${signed(c.min * stepP() * PR, price)} / ${signed(c.max * stepP() * PR, price)}`,
       );
       cell(tr, Math.round(c.buyShare * 100) + "%");
       fragment.append(tr);
@@ -2716,8 +2770,8 @@
   function navGeometry() {
     const r = canvas.getBoundingClientRect();
     return {
-      w: Math.max(1, r.width - 61 - (r.width > 470 ? 79 : 52) - 12),
-      h: Math.max(1, r.height - 90),
+      w: Math.max(1, r.width - PLOT_LEFT - profileWidth(r.width) - GUTTER),
+      h: Math.max(1, r.height - PLOT_BOTTOM),
     };
   }
   function autoLevel() {
@@ -3061,7 +3115,7 @@
         : c.label;
   }
   function crumbTitle(c) {
-    return `${dateShort(c.state.tA)} UTC · ${dur((c.state.tB - c.state.tA) * BASE)} · ${dur(BASE * 2 ** c.state.n)} × ${price(PR * 2 ** c.state.m)} USDT`;
+    return `${when(c.state.tA)} UTC · ${dur((c.state.tB - c.state.tA) * BASE)} · ${dur(BASE * 2 ** c.state.n)} × ${price(PR * 2 ** c.state.m)} USDT`;
   }
   function goToCrumb(i) {
     const c = nav.crumbs[i];
@@ -3283,7 +3337,7 @@
           deltaMax = d3.quantileSorted(deltas, 0.995) || 1;
         localLegend =
           S.mode === "density"
-            ? `${densityNumber(Math.exp(densityLo))}–${densityNumber(Math.exp(densityHi))} USDT/(s·USDT) · log`
+            ? `Density ${densityNumber(Math.exp(densityLo))}–${densityNumber(Math.exp(densityHi))} · log`
             : S.mode === "delta"
               ? `Δ −${compact(deltaMax)} · 0 · +${compact(deltaMax)} USDT`
               : S.mode === "flow"
@@ -3379,7 +3433,7 @@
       }
     }
     ctx.restore();
-    ctx.strokeStyle = colors.volume;
+    ctx.strokeStyle = colors.accent;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     lensCaption(x, y, h, [
@@ -3391,7 +3445,7 @@
   // The caption sits on a tab outside the lens, so the lens shows only data:
   // above it when there is room, otherwise below. The tab is sized to its text.
   function lensCaption(x, y, lensHeight, lines) {
-    ctx.font = `11px ${FONT}`;
+    ctx.font = `${TYPE.s}px ${FONT}`;
     const room = G.w - 8,
       fitted = lines.map(([s, color]) => [fitText(s, room - 14), color]),
       w = Math.min(
@@ -3404,7 +3458,7 @@
       top = y - h >= G.y + 4 ? y - h : y + lensHeight - 1;
     ctx.fillStyle = colors.surface;
     ctx.fillRect(left, top, w, h);
-    ctx.strokeStyle = colors.volume;
+    ctx.strokeStyle = colors.accent;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h);
     fitted.forEach(([s, color], i) =>
@@ -3865,13 +3919,8 @@
     qsa("button,input,select").forEach((control) => (control.disabled = true));
     el("market").textContent = PACK.live ? "LIVE" : "RECORDED";
     el("snapshot").textContent = PACK.live
-      ? stamp(CUT).slice(0, 16) + " UTC"
-      : date(CUT).toLocaleDateString("en-GB", {
-          timeZone: "UTC",
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        });
+      ? `${day(CUT)} ${d3.utcFormat("%H:%M")(date(CUT))} UTC`
+      : day(CUT);
     getColors();
     sources.recent = await unpack(PACK.blocks.recent, "recent");
     loadState.recent = "ready";
@@ -3910,7 +3959,7 @@
     );
     for (const id of ["overview", "reference"]) {
       el("loading").textContent =
-        `Recent base cells ready · loading ${id === "overview" ? "full history" : "reference history"}${PACK.live ? " from the cube" : ""}`;
+        `Loading ${id === "overview" ? "the full history" : "the 30-day archive"}${PACK.live ? " from the cube" : ""}…`;
       try {
         sources[id] = await unpack(PACK.blocks[id], id);
         loadState[id] = "ready";

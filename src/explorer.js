@@ -773,17 +773,28 @@
       el("copy-status").textContent = "Selected for copy · ⌘C / Ctrl+C";
     }
   }
-  function applyImportedView() {
-    // Only messages written for the user reach the status line; anything else,
-    // such as a parser error, gets one plain explanation of what to paste.
-    const unreadable =
-      "That isn't a cube query or a view code. Paste the JSON from Copy query, or a view code (it starts with origo-cube:).";
+  // Pasted text as a query or view-code object; null when it is neither, so
+  // the parser's own error never reaches the status line.
+  function readImport(text) {
     try {
-      let raw = el("import-text").value.trim();
-      if (raw.startsWith("origo-cube:"))
-        raw = decodeURIComponent(raw.slice(11));
-      const obj = JSON.parse(raw);
-      if (!obj || typeof obj !== "object") throw Error(unreadable);
+      const obj = JSON.parse(
+        text.startsWith("origo-cube:")
+          ? decodeURIComponent(text.slice(11))
+          : text,
+      );
+      return obj && typeof obj === "object" ? obj : null;
+    } catch {
+      return null;
+    }
+  }
+  function applyImportedView() {
+    const obj = readImport(el("import-text").value.trim());
+    if (!obj) {
+      el("copy-status").textContent =
+        "That isn't a cube query or a view code. Paste the JSON from Copy query, or a view code (it starts with origo-cube:).";
+      return;
+    }
+    try {
       const q = obj.query || obj;
       const n = Math.log2(Number(q.tR) / BASE),
         m = Math.log2(Number(q.pR) / PR),
@@ -803,11 +814,8 @@
         b > CUT ||
         p < 0
       )
-        throw Object.assign(
-          Error(
-            "Use ordered bounds inside this snapshot and dyadic resolutions.",
-          ),
-          { user: true },
+        throw Error(
+          "Use ordered bounds inside this snapshot and dyadic resolutions.",
         );
       S.auto = false;
       S.n = n;
@@ -856,7 +864,7 @@
       el("copy-status").textContent = "View restored";
       el("import").hidden = true;
     } catch (error) {
-      el("copy-status").textContent = error.user ? error.message : unreadable;
+      el("copy-status").textContent = error.message;
     }
   }
   function hatchRect(x, y, w, h, color, spacing = 10, alpha = 0.22) {
@@ -2619,7 +2627,8 @@
     settleNavigation(null, !priceOnly);
     return p;
   }
-  // Room above the lens for its caption tab: up to three 15px lines.
+  // Room for the lens caption tab: up to three 15px lines. The lens leaves twice
+  // this free, so the tab fits above or below it wherever the lens goes.
   const LENS_CAPTION = 8 + 3 * 15;
   function lensFrame() {
     if (!G.w) return null;
@@ -2633,9 +2642,9 @@
               p: (S.pA + S.pB) / 2,
             },
       w = Math.min(230, G.w - 8),
-      h = Math.min(170, G.h - 8 - LENS_CAPTION),
+      h = Math.min(170, G.h - 8 - 2 * LENS_CAPTION),
       x = clamp(p.x - w / 2, G.x + 4, G.x + G.w - w - 4),
-      y = clamp(p.y - h / 2, G.y + 4 + LENS_CAPTION, G.y + G.h - h - 4),
+      y = clamp(p.y - h / 2, G.y + 4, G.y + G.h - h - 4),
       ta = G.X.invert(x),
       tbRaw = G.X.invert(x + w),
       tb = Math.min(tbRaw, activeCutoff()),
@@ -2830,15 +2839,15 @@
     ctx.strokeStyle = colors.volume;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    lensCaption(x, y, [
+    lensCaption(x, y, h, [
       [label, colors.ink],
       [sub, colors.muted],
       ...(localLegend ? [[localLegend, colors.muted]] : []),
     ]);
   }
-  // The caption sits on a tab above the lens, so the lens shows only data; the
-  // tab is sized to its text and stays inside the plot.
-  function lensCaption(x, y, lines) {
+  // The caption sits on a tab outside the lens, so the lens shows only data:
+  // above it when there is room, otherwise below. The tab is sized to its text.
+  function lensCaption(x, y, lensHeight, lines) {
     ctx.font = `11px ${FONT}`;
     const room = G.w - 8,
       fitted = lines.map(([s, color]) => [fitText(s, room - 14), color]),
@@ -2849,7 +2858,7 @@
       ),
       h = 8 + 15 * fitted.length,
       left = clamp(x, G.x + 4, G.x + G.w - w - 4),
-      top = y - h;
+      top = y - h >= G.y + 4 ? y - h : y + lensHeight - 1;
     ctx.fillStyle = colors.surface;
     ctx.fillRect(left, top, w, h);
     ctx.strokeStyle = colors.volume;

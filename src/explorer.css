@@ -661,6 +661,10 @@
     flex: none;
     padding: 3px 5px;
   }
+  /* The switcher may scroll here, which would clip an outside focus ring. */
+  #origo-lens .ol-modes button:focus-visible {
+    outline-offset: -2px;
+  }
   #origo-lens .ol-query-mini {
     display: block;
   }

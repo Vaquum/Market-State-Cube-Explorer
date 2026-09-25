@@ -41,7 +41,7 @@ The lattice the explorer can reach is `n = 0..20` (56.25 seconds to about 683 da
 
 ## Portable views
 
-The page's address holds the view: `w` for a window (`24h`, `7d`, `all`), or `t` and `p` for a rectangle as UTC times and USDT prices; `r` for the level when it is locked; then each setting that differs from its default (`f`, `mode`, `marks`, `sel`, `at`, `replay`, `tab`, `outcome`, `h`, `dist`). A window is relative to the cutoff; a rectangle is absolute. Unreadable parts fall back to their defaults, and a replay or selection outside the page's history is dropped.
+The page's address holds the view: `w` for a window (`15m`, `30m`, `1h`, `4h`, `12h`, `24h`, `7d`, `30d`, `1y`, `ytd`, `lastyear`, `all`), or `t` and `p` for a rectangle as UTC times and USDT prices; `r` for the level when it is locked; then each setting that differs from its default (`f`, `mode`, `marks`, `sel`, `at`, `replay`, `tab`, `outcome`, `h`, `dist`). A window is relative to the cutoff; a rectangle is absolute. Unreadable parts fall back to their defaults, and a replay or selection outside the page's history is dropped.
 
 The JSON query can be copied and reapplied, and an `origo-cube:` code also preserves selected visual settings and replay context; both are still accepted. Named views and the workspace are saved only in the local browser, and each tab's history only in that tab; no telemetry or external storage is used.
 

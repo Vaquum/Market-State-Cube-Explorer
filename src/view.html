@@ -4,28 +4,58 @@
 >
   <header class="ol-bar">
     <div class="ol-id">
-      <div class="ol-brand" title="Market State Cube Explorer">
-        <span class="ol-org">ORIGO</span>Cube Explorer<span
-          class="ol-state-pill"
-          id="ol-state-pill"
-          data-state="live"
-          ><span id="ol-market">RECORDED</span> <span id="ol-snapshot"></span
-          ><span id="ol-fresh" class="ol-fresh" hidden></span
-        ></span>
-      </div>
-      <div class="ol-market">
-        BTC / USDT <span aria-hidden="true">·</span> Binance spot
-      </div>
+      <span class="ol-pair">BTC / USDT</span
+      ><span class="ol-venue">Binance spot</span
+      ><span class="ol-state-pill" id="ol-state-pill" data-state="live"
+        ><span id="ol-market">RECORDED</span
+        ><span id="ol-snapshot" class="ol-snapshot"></span
+        ><span id="ol-fresh" class="ol-fresh" hidden></span
+      ></span>
+    </div>
+    <div class="ol-group ol-window-group">
+      <button
+        type="button"
+        id="ol-window"
+        class="ol-pick ol-l cursor-interaction"
+        aria-haspopup="menu"
+        aria-expanded="false"
+        aria-controls="ol-window-menu"
+        aria-label="Time window"
+        aria-keyshortcuts="W"
+        data-keys="W"
+        data-hint="Or 1–9 and 0 for the presets in order"
+      >
+        <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="5.5" />
+          <path d="M8 5v3l2 1.5" />
+        </svg>
+        <span id="ol-window-text" class="ol-num">24h</span>
+        <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+        </svg>
+      </button>
+      <div
+        class="ol-pop ol-menu"
+        id="ol-window-menu"
+        role="menu"
+        aria-label="Time window"
+        hidden
+      ></div>
     </div>
     <button
       type="button"
       id="ol-sheet-toggle"
-      class="ol-sheet-toggle ol-action ol-l cursor-interaction"
+      class="ol-sheet-toggle ol-icon-button ol-l cursor-interaction"
       aria-expanded="false"
       aria-controls="ol-controls"
-      title="Show the controls"
+      aria-label="Controls"
+      data-hint=""
     >
-      Controls
+      <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2.5 5h2M7.5 5h6M2.5 11h6M11.5 11h2" />
+        <circle cx="6" cy="5" r="1.5" />
+        <circle cx="10" cy="11" r="1.5" />
+      </svg>
     </button>
     <div class="ol-controls" id="ol-controls">
       <div class="ol-sheet-head">
@@ -35,241 +65,199 @@
           id="ol-sheet-close"
           class="ol-icon-button cursor-interaction"
           aria-label="Close controls"
-          title="Close the controls (Esc)"
+          data-keys="Esc"
+          data-hint=""
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
             <path d="m4 4 8 8M12 4l-8 8" />
           </svg>
         </button>
       </div>
-      <div class="ol-group ol-range" role="group" aria-label="Time window">
-        <div class="ol-seg">
+      <div class="ol-group ol-view-group" role="group" aria-label="View">
+        <div class="ol-group ol-res-group">
           <button
             type="button"
-            class="cursor-interaction"
-            data-window="1"
-            aria-pressed="true"
-            title="The last 24 hours (1)"
+            id="ol-res"
+            class="ol-pick ol-res ol-l cursor-interaction"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="ol-res-pop"
+            aria-label="Resolution"
+            aria-keyshortcuts="A"
+            data-keys="A"
+            data-hint=""
+            data-auto="true"
           >
-            24h</button
-          ><button
-            type="button"
-            class="cursor-interaction"
-            data-window="7"
-            aria-pressed="false"
-            title="The last 7 days (2)"
-          >
-            7d</button
-          ><button
-            type="button"
-            class="cursor-interaction"
-            data-window="all"
-            aria-pressed="false"
-            title="All history from 2021 (3)"
-          >
-            All
+            <svg class="ol-icon ol-lock-open" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
+              <path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7" />
+            </svg>
+            <svg class="ol-icon ol-lock-shut" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
+              <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+            </svg>
+            <span id="ol-res-text" class="ol-num">15 min × 125</span
+            ><i class="ol-res-coarse" aria-hidden="true"></i>
+            <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+            </svg>
           </button>
-        </div>
-        <output
-          id="ol-span"
-          class="ol-span ol-num"
-          title="The time span in view"
-          hidden
-        ></output>
-      </div>
-      <div class="ol-group ol-res-group">
-        <button
-          type="button"
-          id="ol-res"
-          class="ol-res ol-action ol-l cursor-interaction"
-          aria-haspopup="dialog"
-          aria-expanded="false"
-          aria-controls="ol-res-pop"
-          data-auto="true"
-        >
-          <svg class="ol-icon ol-lock-open" viewBox="0 0 16 16" aria-hidden="true">
-            <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
-            <path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7" />
-          </svg>
-          <svg class="ol-icon ol-lock-shut" viewBox="0 0 16 16" aria-hidden="true">
-            <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
-            <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-          </svg>
-          <span id="ol-res-text" class="ol-num">15 min × 125 USDT</span
-          ><i class="ol-res-coarse" aria-hidden="true"></i>
-          <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
-          </svg>
-        </button>
-        <div
-          class="ol-pop ol-res-pop"
-          id="ol-res-pop"
-          role="dialog"
-          aria-label="Resolution"
-          hidden
-        >
-          <div class="ol-pop-head">
-            <span>Resolution</span
-            ><button
-              type="button"
-              id="ol-auto"
-              class="ol-action ol-toggle cursor-interaction"
-              aria-pressed="true"
-              title="Choose the level from the cell size on screen (A)"
-            >
-              Auto level
-            </button>
-          </div>
-          <div class="ol-step">
-            <div class="ol-step-label">
-              <span>Time · <span id="ol-n">n 4</span></span
-              ><output id="ol-tr">15 min</output>
-            </div>
-            <button
-              type="button"
-              id="ol-tminus"
-              class="ol-action cursor-interaction"
-              aria-label="Finer time resolution"
-              title="Finer time cells ( [ )"
-            >
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="3" y="3" width="4" height="4" />
-                <rect x="9" y="3" width="4" height="4" />
-                <rect x="3" y="9" width="4" height="4" />
-                <rect x="9" y="9" width="4" height="4" />
-              </svg></button
-            ><button
-              type="button"
-              id="ol-tplus"
-              class="ol-action cursor-interaction"
-              aria-label="Coarser time resolution"
-              title="Coarser time cells ( ] )"
-            >
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="3" y="3" width="10" height="10" rx="1" />
-              </svg>
-            </button>
-          </div>
-          <div class="ol-step">
-            <div class="ol-step-label">
-              <span>Price · <span id="ol-m">m 0</span></span
-              ><output id="ol-pr">125 USDT</output>
-            </div>
-            <button
-              type="button"
-              id="ol-pminus"
-              class="ol-action cursor-interaction"
-              aria-label="Finer price resolution"
-              title="Finer price cells ( { )"
-            >
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="3" y="3" width="4" height="4" />
-                <rect x="9" y="3" width="4" height="4" />
-                <rect x="3" y="9" width="4" height="4" />
-                <rect x="9" y="9" width="4" height="4" />
-              </svg></button
-            ><button
-              type="button"
-              id="ol-pplus"
-              class="ol-action cursor-interaction"
-              aria-label="Coarser price resolution"
-              title="Coarser price cells ( } )"
-            >
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="3" y="3" width="10" height="10" rx="1" />
-              </svg>
-            </button>
-          </div>
-          <div class="ol-plane-cap">Resolution plane · m price ↑ · n time →</div>
           <div
-            class="ol-plane"
-            id="ol-plane"
-            role="group"
-            aria-label="Time and price resolution lattice; arrow keys move, Enter chooses; the outlined cells are the diagonal"
-          ></div>
-          <div class="ol-plane-key">
-            <span><i class="ol-plane-ready"></i>Ready · usable</span
-            ><span><i class="ol-plane-small"></i>Too small</span
-            ><span><i class="ol-plane-large"></i>Too large</span
-            ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
-            ><span><i class="ol-plane-loading"></i>Loading</span
-            ><span><i class="ol-plane-path"></i>Diagonal</span>
+            class="ol-pop ol-res-pop"
+            id="ol-res-pop"
+            role="dialog"
+            aria-label="Resolution"
+            hidden
+          >
+            <div class="ol-pop-head">
+              <span>Resolution</span
+              ><button
+                type="button"
+                id="ol-auto"
+                class="ol-action ol-toggle cursor-interaction"
+                aria-pressed="true"
+                data-keys="A"
+                data-hint="Choose the level from the cell size on screen"
+              >
+                Auto level
+              </button>
+            </div>
+            <div class="ol-step">
+              <div class="ol-step-label">
+                <span>Time · <span id="ol-n">n 4</span></span
+                ><output id="ol-tr">15 min</output>
+              </div>
+              <button
+                type="button"
+                id="ol-tminus"
+                class="ol-action cursor-interaction"
+                aria-label="Finer time cells"
+                data-keys="["
+                data-hint=""
+              >
+                <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="3" y="3" width="4" height="4" />
+                  <rect x="9" y="3" width="4" height="4" />
+                  <rect x="3" y="9" width="4" height="4" />
+                  <rect x="9" y="9" width="4" height="4" />
+                </svg></button
+              ><button
+                type="button"
+                id="ol-tplus"
+                class="ol-action cursor-interaction"
+                aria-label="Coarser time cells"
+                data-keys="]"
+                data-hint=""
+              >
+                <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="3" y="3" width="10" height="10" rx="1" />
+                </svg>
+              </button>
+            </div>
+            <div class="ol-step">
+              <div class="ol-step-label">
+                <span>Price · <span id="ol-m">m 0</span></span
+                ><output id="ol-pr">125 USDT</output>
+              </div>
+              <button
+                type="button"
+                id="ol-pminus"
+                class="ol-action cursor-interaction"
+                aria-label="Finer price cells"
+                data-keys="{"
+                data-hint=""
+              >
+                <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="3" y="3" width="4" height="4" />
+                  <rect x="9" y="3" width="4" height="4" />
+                  <rect x="3" y="9" width="4" height="4" />
+                  <rect x="9" y="9" width="4" height="4" />
+                </svg></button
+              ><button
+                type="button"
+                id="ol-pplus"
+                class="ol-action cursor-interaction"
+                aria-label="Coarser price cells"
+                data-keys="}"
+                data-hint=""
+              >
+                <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="3" y="3" width="10" height="10" rx="1" />
+                </svg>
+              </button>
+            </div>
+            <div class="ol-plane-cap">Resolution plane · m price ↑ · n time →</div>
+            <div
+              class="ol-plane"
+              id="ol-plane"
+              role="group"
+              aria-label="Time and price resolution lattice; arrow keys move, Enter chooses; the outlined cells are the diagonal"
+            ></div>
+            <div class="ol-plane-key">
+              <span><i class="ol-plane-ready"></i>Ready · usable</span
+              ><span><i class="ol-plane-small"></i>Too small</span
+              ><span><i class="ol-plane-large"></i>Too large</span
+              ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
+              ><span><i class="ol-plane-loading"></i>Loading</span
+              ><span><i class="ol-plane-path"></i>Diagonal</span>
+            </div>
+            <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
           </div>
-          <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
         </div>
-      </div>
-      <div class="ol-group ol-follow" role="group" aria-label="Price follows zoom">
-        <span class="ol-cap">Price</span>
-        <div class="ol-seg">
+        <div class="ol-group ol-follow-group">
           <button
             type="button"
-            id="ol-free"
-            class="cursor-interaction"
-            data-follow="free"
-            aria-pressed="false"
-            title="Zooming time leaves the price range alone"
+            id="ol-follow"
+            class="ol-pick ol-l cursor-interaction"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="ol-follow-menu"
+            aria-label="Price axis"
+            data-hint=""
           >
-            Free</button
-          ><button
-            type="button"
-            id="ol-refit"
-            class="cursor-interaction"
-            data-follow="refit"
-            aria-pressed="true"
-            title="Zooming time refits the price range to the visible trades"
-          >
-            Refit</button
-          ><button
-            type="button"
-            id="ol-coupled"
-            class="cursor-interaction"
-            data-follow="coupled"
-            aria-pressed="false"
-            title="Zooming time zooms price by the same factor"
-          >
-            Coupled</button
-          ><button
-            type="button"
-            id="ol-diagonal"
-            class="cursor-interaction"
-            data-follow="diagonal"
-            aria-pressed="false"
-            title="Zooming time by k zooms price by the square root of k; the price level follows the measured diagonal (D)"
-          >
-            Diagonal
+            <svg id="ol-follow-icon" class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"></svg>
+            <span class="ol-label" id="ol-follow-label">Price axis</span>
+            <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+            </svg>
           </button>
+          <div
+            class="ol-pop ol-menu ol-follow-menu"
+            id="ol-follow-menu"
+            role="menu"
+            aria-label="Price axis"
+            hidden
+          ></div>
         </div>
-        <button
-          type="button"
-          id="ol-fit"
-          class="ol-action ol-l cursor-interaction"
-          title="Fit the price range to the visible trades once (F)"
-        >
-          Fit now
-        </button>
       </div>
       <div class="ol-group ol-tools" role="group" aria-label="Pointer tool">
         <div class="ol-seg">
           <button
             type="button"
             id="ol-pan"
-            class="cursor-interaction"
+            class="ol-icon-button cursor-interaction"
             data-tool="pan"
             aria-pressed="true"
-            title="Pan: drag to move, click to anchor (V)"
+            aria-label="Pan"
+            aria-keyshortcuts="V"
+            data-keys="V"
+            data-hint="Drag to move the view; click a column to anchor"
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path
                 d="M8 2v12M2 8h12M8 2 6.3 3.7M8 2l1.7 1.7M8 14l-1.7-1.7M8 14l1.7-1.7M2 8l1.7-1.7M2 8l1.7 1.7M14 8l-1.7-1.7M14 8l-1.7 1.7"
               /></svg
-            ><span class="ol-tool-label">Pan</span></button
+            ><span class="ol-label">Pan</span></button
           ><button
             type="button"
             id="ol-select"
-            class="cursor-interaction"
+            class="ol-icon-button cursor-interaction"
             data-tool="select"
             aria-pressed="false"
-            title="Select: drag a rectangle on base-cell edges (S)"
+            aria-label="Select"
+            aria-keyshortcuts="S"
+            data-keys="S"
+            data-hint="Drag a rectangle to measure it; click to clear it"
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <rect
@@ -280,49 +268,40 @@
                 rx="1"
                 stroke-dasharray="2 1.6"
               /></svg
-            ><span class="ol-tool-label">Select</span></button
+            ><span class="ol-label">Select</span></button
           ><button
             type="button"
             id="ol-lens"
-            class="cursor-interaction"
+            class="ol-icon-button cursor-interaction"
             data-tool="lens"
             aria-pressed="false"
-            title="Lens: finer cells inside a region (L; hold Alt to peek)"
+            aria-label="Lens"
+            aria-keyshortcuts="L"
+            data-keys="L"
+            data-hint="Finer cells inside a region; hold Alt to peek"
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <circle cx="7" cy="7" r="4.2" />
               <path d="m10.2 10.2 3.3 3.3" /></svg
-            ><span class="ol-tool-label">Lens</span>
+            ><span class="ol-label">Lens</span>
           </button>
         </div>
-        <select
-          id="ol-lens-depth"
-          aria-label="Lens depth in levels finer"
-          title="Lens depth (Shift+L)"
-        >
-          <option value="1">−1 level</option>
-          <option value="2" selected>−2 levels</option>
-          <option value="3">−3 levels</option>
-          <option value="4">−4 levels</option></select
-        ><button
-          type="button"
-          id="ol-lens-pin"
-          class="ol-solid ol-l cursor-interaction"
-          hidden
-          title="Make the lens rectangle and resolution the view (Enter)"
-        >
-          Pin lens
-        </button>
       </div>
       <div class="ol-group ol-replay">
         <button
           type="button"
           id="ol-replay"
-          class="ol-action ol-toggle ol-l cursor-interaction"
+          class="ol-icon-button ol-toggle ol-l cursor-interaction"
           aria-pressed="false"
-          title="Replay: hide the trades after an anchor (R); its controls sit on the chart"
+          aria-label="Replay"
+          aria-keyshortcuts="R"
+          data-keys="R"
+          data-hint="Hide the trades after an anchor; its controls sit on the chart"
         >
-          Replay
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 3v10" />
+            <path d="M7 4.8v6.4l5-3.2z" /></svg
+          ><span class="ol-label">Replay</span>
         </button>
       </div>
       <div class="ol-group ol-history" role="group" aria-label="History">
@@ -331,17 +310,21 @@
           id="ol-hist-back"
           class="ol-icon-button ol-l cursor-interaction"
           aria-label="Back"
+          data-hint=""
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M10 3.5 5.5 8l4.5 4.5" /></svg></button
+            <path d="M10 3.5 5.5 8l4.5 4.5" /></svg
+          ><span class="ol-label">Back</span></button
         ><button
           type="button"
           id="ol-hist-fwd"
           class="ol-icon-button ol-l cursor-interaction"
           aria-label="Forward"
+          data-hint=""
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="m6 3.5 4.5 4.5L6 12.5" /></svg></button
+            <path d="m6 3.5 4.5 4.5L6 12.5" /></svg
+          ><span class="ol-label">Forward</span></button
         ><button
           type="button"
           id="ol-hist"
@@ -350,12 +333,13 @@
           aria-expanded="false"
           aria-controls="ol-hist-pop"
           aria-label="Views and history"
-          title="Views and history (H)"
+          aria-keyshortcuts="H"
+          data-keys="H"
+          data-hint="Save this view, open a saved one, or go back to an earlier place"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="5.5" />
-            <path d="M8 5v3l2 1.5" />
-          </svg>
+            <path d="M4.5 2.5h7v11L8 11l-3.5 2.5z" /></svg
+          ><span class="ol-label">Views and history</span>
         </button>
         <div
           class="ol-pop ol-pop-end ol-views-pop"
@@ -411,9 +395,13 @@
           aria-haspopup="dialog"
           aria-controls="ol-keys"
           aria-label="Keyboard shortcuts"
-          title="Keyboard shortcuts (?)"
+          data-keys="?"
+          data-hint=""
         >
-          ?
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="1.5" y="4" width="13" height="8" rx="1.5" />
+            <path d="M4.2 6.8h.01M6.7 6.8h.01M9.3 6.8h.01M11.8 6.8h.01M5 9.3h6" /></svg
+          ><span class="ol-label">Keyboard shortcuts</span>
         </button>
       </div>
     </div>
@@ -493,7 +481,8 @@
             id="ol-back"
             class="ol-icon-button ol-s cursor-interaction"
             aria-label="Previous column"
-            title="Previous column ( , )"
+            data-keys=","
+            data-hint=""
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M10 3.5 5.5 8l4.5 4.5" />
@@ -504,7 +493,8 @@
             class="ol-icon-button ol-s cursor-interaction"
             aria-label="Play"
             aria-pressed="false"
-            title="Play (Space)"
+            data-keys="Space"
+            data-hint=""
           >
             <svg class="ol-icon ol-play-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M5 3.5v9l7.5-4.5z" />
@@ -516,12 +506,17 @@
             id="ol-next"
             class="ol-icon-button ol-s cursor-interaction"
             aria-label="Next column"
-            title="Next column ( . )"
+            data-keys="."
+            data-hint=""
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="m6 3.5 4.5 4.5L6 12.5" />
             </svg></button
-          ><select id="ol-speed" aria-label="Replay speed" title="Columns a second while playing">
+          ><select
+            id="ol-speed"
+            aria-label="Replay speed"
+            data-hint="Columns a second while playing"
+          >
             <option value="0.5">½×</option>
             <option value="1" selected>1×</option>
             <option value="2">2×</option>
@@ -531,9 +526,42 @@
             type="button"
             id="ol-replay-now"
             class="ol-s cursor-interaction"
-            title="End replay at the latest data (End)"
+            aria-label="Now"
+            data-keys="End"
+            data-hint="End replay at the latest data"
           >
             Now
+          </button>
+        </div>
+        <div
+          class="ol-lensbar"
+          id="ol-lensbar"
+          role="group"
+          aria-label="Lens"
+          hidden
+        >
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.2" />
+            <path d="m10.2 10.2 3.3 3.3" /></svg
+          ><select
+            id="ol-lens-depth"
+            aria-label="Lens depth"
+            data-keys="Shift+L"
+            data-hint="How many levels finer the lens shows"
+          >
+            <option value="1">1 level finer</option>
+            <option value="2" selected>2 levels finer</option>
+            <option value="3">3 levels finer</option>
+            <option value="4">4 levels finer</option></select
+          ><button
+            type="button"
+            id="ol-lens-pin"
+            class="ol-s cursor-interaction"
+            aria-label="Pin lens"
+            data-keys="Enter"
+            data-hint="Make the lens region and its finer cells the view"
+          >
+            Pin
           </button>
         </div>
         <button
@@ -1147,8 +1175,16 @@
               <dd>Hold <kbd>Shift</kbd></dd>
             </div>
             <div>
-              <dt>Last 24 hours, 7 days, all</dt>
-              <dd><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dd>
+              <dt>Time window: 15 min, 30 min, 1 h, 4 h, 12 h, 24 h, 7 d, 30 d, 1 y</dt>
+              <dd><kbd>1</kbd> … <kbd>9</kbd></dd>
+            </div>
+            <div>
+              <dt>All history</dt>
+              <dd><kbd>0</kbd></dd>
+            </div>
+            <div>
+              <dt>Every window, this year and last year too</dt>
+              <dd><kbd>W</kbd></dd>
             </div>
           </dl>
         </section>
@@ -1193,7 +1229,7 @@
               <dd><kbd>Enter</kbd></dd>
             </div>
             <div>
-              <dt>Close, leave the lens, clear the selection</dt>
+              <dt>Close; clear the selection; then back to pan</dt>
               <dd><kbd>Esc</kbd></dd>
             </div>
           </dl>

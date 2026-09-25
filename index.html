@@ -3765,7 +3765,7 @@
       );
       // While a selection is dragged the rectangle under the pointer shows
       // too, dashed; the solid outline is the cells it takes in.
-      if (S.select && drag?.moved) {
+      if (S.select && drag?.moved && !drag.lens) {
         const [ta, tb, pa, pb] = S.selection;
         ctx.setLineDash([4, 3]);
         ctx.lineWidth = 1;
@@ -5506,7 +5506,12 @@
     hint.target = null;
   }
   function showHint(target) {
-    if (!target.isConnected || target.closest("[hidden]")) return;
+    if (
+      !target.isConnected ||
+      target.closest("[hidden]") ||
+      target.getAttribute("aria-expanded") === "true"
+    )
+      return;
     if (!hint.box) {
       hint.box = document.createElement("div");
       hint.box.className = "ol-hint";
@@ -5540,6 +5545,8 @@
   }
   function armHint(target) {
     clearTimeout(hint.timer);
+    // A button whose list or popover is open needs no label over it.
+    if (target.getAttribute("aria-expanded") === "true") return;
     if (hint.target || performance.now() - hint.hiddenAt < 600) showHint(target);
     else hint.timer = setTimeout(() => showHint(target), HINT_DELAY);
   }

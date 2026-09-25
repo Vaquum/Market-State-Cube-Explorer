@@ -3227,6 +3227,7 @@
     zoomTime: false,
     // The zoom keys held: a key zoom lasts until the last of them comes up.
     zoomKeys: new Set(),
+    zoomLabel: "Zoom",
     // The keys whose presses the chart took, while they are held.
     pressed: new Set(),
     planeKey: "",
@@ -4073,27 +4074,27 @@
     if (S.auto) autoLevel();
     update();
   }
-  // A zoom gesture runs while any zoom input does: a held zoom key, a pinch,
-  // or the wheel until 220 ms after its last tick. (A held key's first repeat
-  // can come later than that, so a key zooms on until it comes up.) When the
-  // last input ends, the price range refits once, if time was zoomed, and the
-  // zoom is recorded.
+  // A zoom gesture runs while any zoom input does: a held zoom key, a pinch
+  // or the wheel's ticks. It ends 220 ms after the last of them (a wheel tick,
+  // a key's release, a pinch's lift, a double-click), so inputs that follow
+  // one another closely make one gesture; a held key's first repeat can come
+  // later than that, so a key zooms on until it comes up. Then the price range
+  // refits once, if time was zoomed, and the zoom is recorded under the name
+  // of its last input.
   function zoomStep(timeZoomed) {
     nav.zoomTime = nav.zoomTime || timeZoomed;
     clearTimeout(nav.zoomTimer);
   }
-  // A wheel tick or a key's release ends the gesture after the pause, unless a
-  // held key or a pinch keeps it going.
-  function endZoom(timeZoomed) {
+  function endZoom(timeZoomed, label = "Zoom") {
     zoomStep(timeZoomed);
+    nav.zoomLabel = label;
     if (nav.zoomKeys.size || nav.pinch) return;
-    nav.zoomTimer = setTimeout(() => finishZoom("Zoom"), 220);
-  }
-  function finishZoom(label) {
-    if (nav.zoomTime) refitAfterGesture();
-    nav.zoomTime = false;
-    recordView(label);
-    save();
+    nav.zoomTimer = setTimeout(() => {
+      if (nav.zoomTime) refitAfterGesture();
+      nav.zoomTime = false;
+      recordView(nav.zoomLabel);
+      save();
+    }, 220);
   }
   // Room for the lens caption tab: up to three 15px lines. The lens leaves twice
   // this free, so the tab fits above or below it wherever the lens goes.
@@ -4442,7 +4443,7 @@
           drag = null;
           nav.hold = false;
           settleNavigation(null, false);
-          if (!nav.zoomKeys.size) finishZoom("Pinch");
+          endZoom(true, "Pinch");
         }
         return;
       }
@@ -4518,10 +4519,8 @@
       if (!inPlot(p)) return;
       zoomNavigation(0.5, p, e.shiftKey);
       if (!S.replay) S.anchor = null;
-      // A drill is a zoom gesture of one step: it ends at once, unless a held
-      // key or a pinch keeps one going.
-      zoomStep(!e.shiftKey);
-      if (!nav.zoomKeys.size && !nav.pinch) finishZoom("Drill");
+      // A drill is a zoom gesture of one step.
+      endZoom(!e.shiftKey, "Drill");
     });
     // Keys work anywhere on the page except in text fields and lists, which
     // keep their own; the browser keeps its shortcuts, and Alt with an arrow is

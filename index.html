@@ -3611,13 +3611,18 @@
     }
     // The time goes to the finest round step no shorter than a pixel: seconds,
     // minutes and hours in steps of 1, 5, 15 and 30 (hours 1, 3, 6 and 12),
-    // then whole days.
+    // then whole days. A time rounds to the nearest step; a day is the one the
+    // pointer is in.
     const secondsPerPx = ((S.tB - S.tA) * BASE) / G.w,
       unit =
         [1, 5, 15, 30, 60, 300, 900, 1800, 3600, 10800, 21600, 43200].find(
           (u) => u >= secondsPerPx,
         ) ?? 86400,
-      d = new Date(Math.round(+date(hover.t) / (unit * 1000)) * unit * 1000),
+      d = new Date(
+        (unit >= 86400 ? Math.floor : Math.round)(+date(hover.t) / (unit * 1000)) *
+          unit *
+          1000,
+      ),
       label =
         unit >= 86400
           ? dayOf(d, true)

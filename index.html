@@ -3611,22 +3611,25 @@
     }
     // The time goes to the finest round step no shorter than a pixel: seconds,
     // minutes and hours in steps of 1, 5, 15 and 30 (hours 1, 3, 6 and 12),
-    // then whole days. A time rounds to the nearest step; a day is the one the
-    // pointer is in.
+    // then a day, a week (Monday to Sunday), a month and a year. A time rounds
+    // to the nearest step; a day or longer is the one the pointer is in.
     const secondsPerPx = ((S.tB - S.tA) * BASE) / G.w,
-      unit =
-        [1, 5, 15, 30, 60, 300, 900, 1800, 3600, 10800, 21600, 43200].find(
-          (u) => u >= secondsPerPx,
-        ) ?? 86400,
-      d = new Date(
-        (unit >= 86400 ? Math.floor : Math.round)(+date(hover.t) / (unit * 1000)) *
-          unit *
-          1000,
+      at = date(hover.t),
+      unit = [1, 5, 15, 30, 60, 300, 900, 1800, 3600, 10800, 21600, 43200].find(
+        (u) => u >= secondsPerPx,
       ),
-      label =
-        unit >= 86400
-          ? dayOf(d, true)
-          : `${dayOf(d)} ${d3.utcFormat(unit < 60 ? "%H:%M:%S" : "%H:%M")(d)}`;
+      d = unit && new Date(Math.round(+at / (unit * 1000)) * unit * 1000),
+      monday = d3.utcMonday.floor(at),
+      sunday = d3.utcDay.offset(monday, 6),
+      label = unit
+        ? `${dayOf(d)} ${d3.utcFormat(unit < 60 ? "%H:%M:%S" : "%H:%M")(d)}`
+        : secondsPerPx <= DAY
+          ? dayOf(at, true)
+          : secondsPerPx <= 7 * DAY
+            ? (monday.getUTCMonth() === sunday.getUTCMonth()
+                ? `${monday.getUTCDate()}–`
+                : `${dayMonth(monday)} – `) + dayOf(sunday, true)
+            : d3.utcFormat(secondsPerPx <= 31 * DAY ? "%b %Y" : "%Y")(at);
     ctx.font = `${TYPE.s}px ${FONT}`;
     const half = ctx.measureText(label).width / 2 + 4;
     chip(label, clamp(hover.x, G.x + half, G.x + G.w - half), G.axis);

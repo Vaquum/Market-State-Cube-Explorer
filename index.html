@@ -3593,10 +3593,14 @@
     line(x, G.y, x, G.y + G.h, colors.muted, 1, 0.6);
     line(x, G.ay, x, G.ay + G.ah, colors.muted, 1, 0.6);
     if (inPlot(hover)) {
+      // The price goes to the finest round step (1, 2 or 5 × 10ⁿ USDT) no
+      // smaller than a pixel.
       const perPx = ((S.pB - S.pA) * PR) / G.h,
-        digits = perPx < 0.1 ? 2 : perPx < 1 ? 1 : 0;
+        power = 10 ** Math.floor(Math.log10(perPx)),
+        step = [1, 2, 5, 10].map((m) => m * power).find((s) => s >= perPx),
+        digits = clamp(-Math.floor(Math.log10(step)), 0, 2);
       chip(
-        (hover.p * PR).toLocaleString("en-US", {
+        (Math.round((hover.p * PR) / step) * step).toLocaleString("en-US", {
           minimumFractionDigits: digits,
           maximumFractionDigits: digits,
         }),
@@ -3605,10 +3609,19 @@
         "right",
       );
     }
+    // The time goes to the finest round step no shorter than a pixel: seconds,
+    // minutes and hours in steps of 1, 5, 15 and 30 (hours 1, 3, 6 and 12),
+    // then whole days.
     const secondsPerPx = ((S.tB - S.tA) * BASE) / G.w,
-      unit = secondsPerPx < 30 ? 1000 : 60000,
-      d = new Date(Math.round(+date(hover.t) / unit) * unit),
-      label = `${dayOf(d)} ${d3.utcFormat(unit === 1000 ? "%H:%M:%S" : "%H:%M")(d)}`;
+      unit =
+        [1, 5, 15, 30, 60, 300, 900, 1800, 3600, 10800, 21600, 43200].find(
+          (u) => u >= secondsPerPx,
+        ) ?? 86400,
+      d = new Date(Math.round(+date(hover.t) / (unit * 1000)) * unit * 1000),
+      label =
+        unit >= 86400
+          ? dayOf(d, true)
+          : `${dayOf(d)} ${d3.utcFormat(unit < 60 ? "%H:%M:%S" : "%H:%M")(d)}`;
     ctx.font = `${TYPE.s}px ${FONT}`;
     const half = ctx.measureText(label).width / 2 + 4;
     chip(label, clamp(hover.x, G.x + half, G.x + G.w - half), G.axis);
@@ -6025,6 +6038,8 @@
     zoomTimer: 0,
     zoomTime: false,
     zoomKey: "",
+    // The key whose press the chart took, while it is held.
+    pressed: "",
     planeKey: "",
     planeStatus: "",
     planeHover: false,
@@ -7343,10 +7358,23 @@
         return;
       }
       if (e.altKey && !typed) return;
+      // A held key repeats only steps: the arrows, zoom, levels and the anchor.
+      // Any other key the chart took acts once a press, so a held toggle
+      // doesn't flicker and a held Space doesn't stall a replay.
+      const id = e.code || e.key,
+        step =
+          Boolean(bracket) ||
+          e.key.startsWith("Arrow") ||
+          ["+", "=", "-", "_", ",", "."].includes(e.key);
+      if (e.repeat && !step && nav.pressed && nav.pressed === id) {
+        e.preventDefault();
+        return;
+      }
       // The key list is a modal dialog: it handles Escape, and ? closes it.
       if (el("keys").open) {
         if (e.key === "?") {
           e.preventDefault();
+          nav.pressed = id;
           el("keys").close();
         }
         return;
@@ -7371,7 +7399,7 @@
         zoomNavigation(k === "-" || k === "_" ? 1.4 : 1 / 1.4, centre, shift);
         // Held, the key zooms on until it comes up (see the keyup below).
         zoomStep(!shift);
-        nav.zoomKey = e.code || e.key;
+        nav.zoomKey = id;
       } else if (k.startsWith("Arrow")) {
         const dt = (S.tB - S.tA) * 0.15,
           dp = (S.pB - S.pA) * 0.15,
@@ -7437,6 +7465,7 @@
       else if (k === "h") el("hist").click();
       else return;
       e.preventDefault();
+      nav.pressed = id;
     });
     window.addEventListener("keyup", (e) => {
       if (e.key === "Alt") {
@@ -7448,7 +7477,9 @@
         nav.shift = false;
         if (hover && !el("tip").hidden) tooltip(hover);
       }
-      if (nav.zoomKey && nav.zoomKey === (e.code || e.key)) {
+      const id = e.code || e.key;
+      if (nav.pressed === id) nav.pressed = "";
+      if (nav.zoomKey && nav.zoomKey === id) {
         nav.zoomKey = "";
         endZoom(false);
       }
@@ -7458,6 +7489,7 @@
         nav.zoomKey = "";
         endZoom(false);
       }
+      nav.pressed = "";
       nav.alt = false;
       nav.shift = false;
       nav.hold = false;

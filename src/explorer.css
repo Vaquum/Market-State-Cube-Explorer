@@ -651,7 +651,15 @@
     gap: 5px 10px;
   }
   #origo-lens .ol-modes {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    gap: 2px;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  #origo-lens .ol-modes button {
+    flex: none;
+    padding: 3px 5px;
   }
   #origo-lens .ol-query-mini {
     display: block;
@@ -875,7 +883,7 @@
 }
 #origo-lens .ol-plane {
   display: grid !important;
-  grid-template-columns: 12px repeat(21, 11px);
+  grid-template-columns: 12px repeat(21, minmax(0, 1fr));
   gap: 1px;
   margin: 0;
   align-items: center;
@@ -883,9 +891,10 @@
   max-width: none;
 }
 #origo-lens .ol-plane button {
-  width: 11px;
-  height: 11px;
-  min-height: 11px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  min-height: 0;
   padding: 0;
   border-radius: 2px;
   border: 1px solid transparent;
@@ -897,19 +906,23 @@
 #origo-lens .ol-plane button::after {
   display: none !important;
 }
-#origo-lens .ol-plane button.ol-plane-ready {
+#origo-lens .ol-plane button.ol-plane-ready,
+#origo-lens .ol-plane-key i.ol-plane-ready {
   background: var(--ol-volume);
   opacity: 0.85;
 }
-#origo-lens .ol-plane button.ol-plane-small {
+#origo-lens .ol-plane button.ol-plane-small,
+#origo-lens .ol-plane-key i.ol-plane-small {
   background: var(--ol-volume);
   opacity: 0.3;
 }
-#origo-lens .ol-plane button.ol-plane-large {
+#origo-lens .ol-plane button.ol-plane-large,
+#origo-lens .ol-plane-key i.ol-plane-large {
   background: var(--ol-poc);
   opacity: 0.6;
 }
-#origo-lens .ol-plane button.ol-plane-unavailable {
+#origo-lens .ol-plane button.ol-plane-unavailable,
+#origo-lens .ol-plane-key i.ol-plane-unavailable {
   background: repeating-linear-gradient(
     135deg,
     var(--ol-line),
@@ -919,7 +932,8 @@
   );
   opacity: 0.8;
 }
-#origo-lens .ol-plane button.ol-plane-loading {
+#origo-lens .ol-plane button.ol-plane-loading,
+#origo-lens .ol-plane-key i.ol-plane-loading {
   background: var(--ol-evidence);
   opacity: 0.5;
 }
@@ -960,22 +974,10 @@
   min-height: 29px;
   font-size: 12px;
 }
-@media (pointer: coarse) {
-  #origo-lens .ol-plane {
-    display: grid !important;
-    grid-template-columns: 12px repeat(21, 14px);
-  }
-  #origo-lens .ol-plane button {
-    width: 14px;
-    height: 14px;
-    min-height: 14px;
-  }
-}
-
 /* Navigation: controls, breadcrumbs and help beside the resolution lattice. */
 #origo-lens .ol-navigation {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 272px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px 24px;
   align-items: stretch;
   padding: 8px 18px;
@@ -1018,7 +1020,7 @@
 }
 @media (max-width: 760px) {
   #origo-lens .ol-navigation {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   #origo-lens .ol-nav-main {
     justify-content: flex-start;
@@ -1038,5 +1040,9 @@
   #origo-lens .ol-nav-help summary {
     min-height: 44px;
     padding: 11px 0;
+  }
+  /* Wider column, not wider cells: the plane's cells scale to fit it. */
+  #origo-lens .ol-plane-map {
+    width: 327px;
   }
 }

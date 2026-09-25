@@ -15,6 +15,21 @@
   --ol-evidence: light-dark(#7664a9, #b4a1df);
   /* Taker flow's midpoint: an even share, distinct from gridlines and both sides */
   --ol-neutral: light-dark(#b9c2bc, #5f6b64);
+  /* POC lines: one colour each for the periods, apart from the cells' ramp and
+     from each other; the days chosen share one family, told apart by date */
+  --ol-line-1d: light-dark(#c2255c, #f783ac);
+  --ol-line-wk: light-dark(#e8590c, #ffa94d);
+  --ol-line-7d: light-dark(#c92a2a, #ff8787);
+  --ol-line-mo: light-dark(#862e9c, #e599f7);
+  --ol-line-30d: light-dark(#5f3dc4, #b197fc);
+  --ol-line-90d: light-dark(#5c940d, #a9e34b);
+  --ol-line-yr: light-dark(#1971c2, #74c0fc);
+  --ol-line-1y: light-dark(#212529, #f1f3f5);
+  --ol-line-3y: light-dark(#868e96, #adb5bd);
+  --ol-line-day1: light-dark(#0b7285, #66d9e8);
+  --ol-line-day2: light-dark(#087f5b, #63e6be);
+  --ol-line-day3: light-dark(#1098ad, #99e9f2);
+  --ol-line-day4: light-dark(#0ca678, #96f2d7);
   /* Interface: focus, selection, controls; never data */
   --ol-accent: var(--ol-ink);
   --ol-border: light-dark(#768d7e, #667f6f);
@@ -286,8 +301,10 @@
   margin-right: auto;
   padding-right: var(--sp-4);
   white-space: nowrap;
+  overflow: hidden;
 }
 #origo-lens .ol-pair {
+  flex: none;
   font-size: var(--fs-l);
   font-weight: 500;
 }
@@ -298,6 +315,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
+  min-width: 0;
   height: 20px;
   padding: 0 var(--sp-2);
   border: 1px solid var(--ol-line);
@@ -305,6 +323,16 @@
   font-size: var(--fs-s);
   color: var(--ol-muted);
   font-variant-numeric: tabular-nums;
+}
+/* Where the bar is tight the pill's detail is cut short, never laid over the
+   controls; its title says it whole. */
+#origo-lens .ol-state-pill > :is(.ol-snapshot, .ol-fresh) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#origo-lens .ol-state-pill > #ol-market {
+  flex: none;
 }
 #origo-lens #ol-market {
   color: var(--ol-ink);
@@ -342,7 +370,7 @@
   position: relative;
 }
 /* A thin rule between the groups, in the middle of the gap. */
-#origo-lens .ol-controls > :is(.ol-tools, .ol-replay, .ol-history, .ol-help)::before {
+#origo-lens .ol-controls > :is(.ol-lines-group, .ol-tools, .ol-replay, .ol-history, .ol-help)::before {
   content: "";
   position: absolute;
   left: calc(var(--sp-5) / -2);
@@ -407,21 +435,39 @@
 #origo-lens .ol-res[data-coarse="true"] .ol-res-coarse {
   display: inline-block;
 }
-/* Narrower bars keep one row: the venue goes first, then the snapshot's day
-   (the title and the status bar keep both), then the resolution's text (its
-   lock stays, and the drawer's bar names the level). */
-@container (max-width: 1000px) {
+/* Narrower bars keep one row: the POC lines' dots give way to their count
+   first, then the venue goes, then the snapshot's day (the title and the
+   status bar keep both) and the groups draw closer; then the resolution's text
+   (its lock stays, and the drawer's bar names the level) and the lines' count
+   (the button's name keeps them). */
+@container (max-width: 1150px) {
+  #origo-lens .ol-bar .ol-lines-dots {
+    display: none;
+  }
+  #origo-lens .ol-bar .ol-lines-count:not(:empty) {
+    display: inline;
+  }
+}
+@container (max-width: 1100px) {
   #origo-lens .ol-venue {
     display: none;
   }
 }
-@container (max-width: 900px) {
+@container (max-width: 1000px) {
   #origo-lens .ol-snapshot {
     display: none;
   }
+  #origo-lens .ol-controls {
+    gap: var(--sp-3);
+  }
+  #origo-lens .ol-controls > :is(.ol-lines-group, .ol-tools, .ol-replay, .ol-history, .ol-help)::before {
+    left: calc(var(--sp-3) / -2);
+  }
 }
-@container (max-width: 820px) {
-  #origo-lens #ol-res-text {
+@container (max-width: 860px) {
+  #origo-lens #ol-res-text,
+  #origo-lens .ol-bar .ol-lines-count:not(:empty),
+  #origo-lens .ol-state-pill[data-state="live"] .ol-fresh {
     display: none;
   }
 }
@@ -487,21 +533,127 @@
   color: var(--ol-muted);
   font-weight: 400;
 }
-/* The price axis's choices say what each does, under its name. */
-#origo-lens .ol-follow-menu {
+/* The price axis's and the encoding's choices say what each does, under its name. */
+#origo-lens :is(.ol-follow-menu, .ol-mode-menu) {
   width: 300px;
 }
-#origo-lens .ol-follow-menu button.ol-item {
+#origo-lens :is(.ol-follow-menu, .ol-mode-menu) button.ol-item {
   align-items: flex-start;
   min-height: 0;
   padding-top: 6px;
   padding-bottom: 6px;
 }
-#origo-lens .ol-follow-menu .ol-item > .ol-icon {
+#origo-lens :is(.ol-follow-menu, .ol-mode-menu) .ol-item > .ol-icon {
   margin-top: 1px;
 }
-#origo-lens .ol-follow-menu .ol-item[aria-checked="true"] {
+#origo-lens :is(.ol-follow-menu, .ol-mode-menu) .ol-item[aria-checked="true"] {
   background: var(--ol-on);
+}
+
+/* POC lines: the bar's button shows a dot per line on, in its colour. */
+#origo-lens .ol-lines-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--fs-s);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-lines-dots:empty,
+#origo-lens .ol-lines-count {
+  display: none;
+}
+#origo-lens .ol-lines-count {
+  font-size: var(--fs-s);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-lines-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--ol-surface);
+}
+/* The popover: periods to tick, days to add and remove, each with its colour
+   and, when on, its POC. */
+#origo-lens .ol-lines-pop {
+  width: 300px;
+  max-height: min(78vh, 640px);
+  overflow: auto;
+}
+#origo-lens .ol-lines-note {
+  margin: 0 0 var(--sp-2);
+  color: var(--ol-muted);
+  line-height: 1.4;
+}
+#origo-lens .ol-lines-list {
+  display: flex;
+  flex-direction: column;
+}
+#origo-lens .ol-line-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-m);
+  padding: 0 var(--sp-1);
+  border-radius: var(--r-m);
+  font-size: var(--fs-m);
+}
+#origo-lens label.ol-line-row:hover {
+  background: var(--ol-hover);
+}
+#origo-lens .ol-line-row input {
+  margin: 0;
+}
+#origo-lens .ol-line-swatch {
+  flex: none;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line, var(--ol-muted));
+}
+#origo-lens .ol-line-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#origo-lens .ol-line-value {
+  color: var(--ol-muted);
+  font-size: var(--fs-s);
+  white-space: nowrap;
+}
+#origo-lens .ol-lines-add {
+  display: flex;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+#origo-lens .ol-lines-add input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--h-s);
+  padding: 0 var(--sp-1);
+  font: inherit;
+  color: var(--ol-ink);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+  color-scheme: light dark;
+}
+#origo-lens .ol-lines-status {
+  min-height: 1.4em;
+  margin-top: var(--sp-1);
+  color: var(--ol-muted);
+}
+/* The encoding: its name on a menu button in the chart header. */
+#origo-lens .ol-mode-group {
+  position: relative;
+}
+#origo-lens .ol-mode-group .ol-pick {
+  font-weight: 500;
+}
+/* While the cube measures a rectangle, the stand-in numbers are dimmed. */
+#origo-lens .ol-side-context.ol-measuring :is(.ol-metrics strong, .ol-row > span:last-child) {
+  opacity: 0.45;
 }
 #origo-lens .ol-item-text {
   display: flex;
@@ -795,6 +947,12 @@
   color: var(--ol-muted);
   background: var(--ol-panel);
   border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-update {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--ol-ink);
 }
 #origo-lens .ol-chart-head {
   display: flex;
@@ -1654,20 +1812,6 @@
   #origo-lens .ol-legend {
     margin-left: 0;
   }
-  #origo-lens .ol-modes {
-    flex-wrap: nowrap;
-    max-width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  #origo-lens .ol-modes button {
-    flex: none;
-    padding: 0 var(--sp-1);
-  }
-  /* The switcher may scroll here, which would clip an outside focus ring. */
-  #origo-lens .ol-modes button:focus-visible {
-    outline-offset: -2px;
-  }
 }
 @media (pointer: coarse) {
   /* Touch targets win over every size class. */
@@ -1683,10 +1827,13 @@
     min-width: 44px;
   }
   #origo-lens .ol-query-body textarea,
-  #origo-lens input[type="text"] {
+  #origo-lens input[type="text"],
+  #origo-lens input[type="date"] {
     font-size: 16px;
   }
-  #origo-lens input[type="text"] {
+  #origo-lens input[type="text"],
+  #origo-lens input[type="date"],
+  #origo-lens .ol-line-row {
     min-height: 44px;
   }
   /* Wider popover, not wider cells: the plane's cells scale to fit it. */

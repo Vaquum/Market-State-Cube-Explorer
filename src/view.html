@@ -230,6 +230,76 @@
           ></div>
         </div>
       </div>
+      <div class="ol-group ol-lines-group">
+        <button
+          type="button"
+          id="ol-lines"
+          class="ol-pick ol-l cursor-interaction"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="ol-lines-pop"
+          aria-label="POC lines"
+          aria-keyshortcuts="P"
+          data-keys="P"
+          data-hint="A line at the price each chosen period traded the most"
+        >
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M1.5 4.5h13M1.5 8h9M1.5 11.5h11" />
+          </svg>
+          <span class="ol-lines-dots" id="ol-lines-dots" aria-hidden="true"></span
+          ><span class="ol-lines-count ol-num" id="ol-lines-count" aria-hidden="true"></span
+          ><span class="ol-label">POC lines</span>
+          <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+          </svg>
+        </button>
+        <div
+          class="ol-pop ol-lines-pop"
+          id="ol-lines-pop"
+          role="dialog"
+          aria-labelledby="ol-lines-title"
+          hidden
+        >
+          <div class="ol-pop-head">
+            <span id="ol-lines-title">POC lines</span
+            ><button
+              type="button"
+              id="ol-lines-clear"
+              class="ol-action ol-s cursor-interaction"
+            >
+              Clear
+            </button>
+          </div>
+          <p class="ol-lines-note" id="ol-lines-note">
+            Each line is the 125 USDT price row where its period traded the most
+            USDT, drawn across the period and on to the right.
+          </p>
+          <div
+            class="ol-lines-list"
+            id="ol-lines-list"
+            role="group"
+            aria-label="Periods up to the latest data"
+          ></div>
+          <div class="ol-list-head" id="ol-lines-days-head">Days</div>
+          <div
+            class="ol-lines-list"
+            id="ol-lines-days"
+            role="group"
+            aria-labelledby="ol-lines-days-head"
+          ></div>
+          <form class="ol-lines-add" id="ol-lines-add">
+            <input
+              type="date"
+              id="ol-lines-date"
+              aria-label="A day to add, in UTC"
+              required
+            /><button type="submit" class="ol-action ol-s cursor-interaction">
+              Add day
+            </button>
+          </form>
+          <div class="ol-lines-status" id="ol-lines-status" role="status"></div>
+        </div>
+      </div>
       <div class="ol-group ol-tools" role="group" aria-label="Pointer tool">
         <div class="ol-seg">
           <button
@@ -411,45 +481,42 @@
       <div id="ol-loading" class="ol-loading" role="status">
         Loading the last seven days…
       </div>
+      <div id="ol-update" class="ol-loading ol-update" role="status" hidden>
+        <span>A newer version of the explorer is ready.</span
+        ><button type="button" id="ol-reload" class="ol-action ol-s cursor-interaction">
+          Reload
+        </button>
+      </div>
       <div class="ol-chart-head">
-        <div class="ol-seg ol-modes" role="group" aria-label="Cell encoding">
+        <div class="ol-group ol-mode-group">
           <button
             type="button"
-            data-mode="volume"
-            class="cursor-interaction"
-            title="Volume: USDT traded per cell (M cycles the encodings)"
-            aria-pressed="true"
+            id="ol-mode"
+            class="ol-pick cursor-interaction"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="ol-mode-menu"
+            aria-label="Encoding: Volume"
+            aria-keyshortcuts="M"
+            data-keys="M"
+            data-hint="What the cells' colour shows; M steps to the next, Shift+M back"
           >
-            Volume</button
-          ><button
-            type="button"
-            data-mode="flow"
-            class="cursor-interaction"
-            title="Taker flow: Share of each cell's volume bought by takers (M cycles the encodings)"
-            aria-pressed="false"
-          >
-            Taker flow</button
-          ><button
-            type="button"
-            data-mode="delta"
-            class="cursor-interaction"
-            title="Delta: Taker-buy minus taker-sell volume per cell (M cycles the encodings)"
-            aria-pressed="false"
-          >
-            Delta</button
-          ><button
-            type="button"
-            data-mode="geometry"
-            class="cursor-interaction"
-            title="Geometry: The grid's occupied cells (M cycles the encodings)"
-            aria-pressed="false"
-          >
-            Geometry
+            <span id="ol-mode-text">Volume</span>
+            <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+            </svg>
           </button>
+          <div
+            class="ol-pop ol-menu ol-mode-menu"
+            id="ol-mode-menu"
+            role="menu"
+            aria-label="Encoding"
+            hidden
+          ></div>
         </div>
         <div class="ol-marks" role="group" aria-label="Overlays">
-          <label title="Each column's point of control, and the profile's (P)"
-            ><input type="checkbox" id="ol-poc" checked />POC</label
+          <label title="Each column's point of control, and the profile's (P and B) · Shift+P"
+            ><input type="checkbox" id="ol-poc" checked />Column POCs</label
           ><label title="Each column's value area: the rows around its POC that hold 70% of its volume"
             ><input type="checkbox" id="ol-area" />70% area</label
           ><label title="Column POCs that no later column in view has traded at"
@@ -1242,8 +1309,12 @@
               <dd><kbd>M</kbd> <kbd>Shift</kbd> <kbd>M</kbd></dd>
             </div>
             <div>
-              <dt>POC marks</dt>
+              <dt>POC lines</dt>
               <dd><kbd>P</kbd></dd>
+            </div>
+            <div>
+              <dt>Column POCs</dt>
+              <dd><kbd>Shift</kbd> <kbd>P</kbd></dd>
             </div>
             <div>
               <dt>Measures or continuations</dt>

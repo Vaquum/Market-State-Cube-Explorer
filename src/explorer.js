@@ -8,8 +8,15 @@
     PR = PACK.base_price,
     T0 = PACK.t0,
     INSTRUMENT = "BTC/USDT";
-  // On the live host the cutoff advances in place as new data arrives.
+  // On the live host the cutoff advances in place as new data arrives. It is
+  // the cube's data cutoff, a minute edge, so the base column that holds it is
+  // open: it has the latest trades and still gains more.
   let CUT = (Date.parse(PACK.cutoff) / 1000 - T0) / BASE;
+  // Where the cube's archived days end; after it, provisional minutes that the
+  // day's archive later replaces. The recorded snapshot has no such edge.
+  const canonOf = (pack) =>
+    pack.canonical_through ? (Date.parse(pack.canonical_through) / 1000 - T0) / BASE : null;
+  let CANON = canonOf(PACK);
   // Diagonal through the resolution lattice: least-squares fit of
   // log2(median column price range / 125) against n over the full history,
   // n = 6..13, measured on the 2026-09-24 extraction (exponent 0.49).
@@ -72,6 +79,8 @@
       poc: true,
       area: false,
       untested: false,
+      // POC lines: the periods and days chosen, in list order.
+      lines: [],
       tab: "context",
       select: false,
       selection: null,
@@ -219,32 +228,46 @@
           : `${Math.floor(s / 3600)} h`;
     },
     ago = (ms) => (ms < 5000 ? "just now" : `${elapsed(ms)} ago`);
-  async function unpack(block, id) {
+  async function inflate(block) {
     const bytes = Uint8Array.from(atob(block.gzip_base64), (c) =>
       c.charCodeAt(0),
     );
     const stream = new Blob([bytes])
       .stream()
       .pipeThrough(new DecompressionStream("gzip"));
-    const buf = await new Response(stream).arrayBuffer(),
-      v = new DataView(buf);
-    if (String.fromCharCode(...new Uint8Array(buf, 0, 4)) !== "MSC1")
-      throw Error("Invalid recorded tile");
+    return new Response(stream).arrayBuffer();
+  }
+  // A block of cells: MSC1 in the recorded snapshot (counts as 32 bits), MSC2
+  // from the live cube (counts as 64-bit floats, exact to 2⁵³).
+  async function unpack(block, id) {
+    const buf = await inflate(block),
+      v = new DataView(buf),
+      magic = String.fromCharCode(...new Uint8Array(buf, 0, 4));
+    if (magic !== "MSC1" && magic !== "MSC2") throw Error("Invalid block of cells");
     const n = v.getUint8(4),
       m = v.getUint8(5),
-      count = v.getUint32(16, true);
+      count = v.getUint32(16, true),
+      wide = magic === "MSC2";
     let o = 32;
-    const vol = new Float64Array(buf, o, count);
-    o += 8 * count;
-    const bv = new Float64Array(buf, o, count);
-    o += 8 * count;
-    const cs = new Uint32Array(buf, o, count);
-    o += 4 * count;
-    const rs = new Uint32Array(buf, o, count);
-    o += 4 * count;
-    const ct = new Uint32Array(buf, o, count);
-    o += 4 * count;
-    const bt = new Uint32Array(buf, o, count);
+    const take = (Type) => {
+      const a = new Type(buf, o, count);
+      o += Type.BYTES_PER_ELEMENT * count;
+      return a;
+    };
+    const vol = take(Float64Array),
+      bv = take(Float64Array);
+    let cs, rs, ct, bt;
+    if (wide) {
+      ct = take(Float64Array);
+      bt = take(Float64Array);
+      cs = take(Uint32Array);
+      rs = take(Uint32Array);
+    } else {
+      cs = take(Uint32Array);
+      rs = take(Uint32Array);
+      ct = take(Uint32Array);
+      bt = take(Uint32Array);
+    }
     const cells = Array.from({ length: count }, (_, i) => ({
       c: cs[i],
       r: rs[i],
@@ -296,36 +319,44 @@
       a.ct += z.ct;
       a.bt += z.bt;
     }
-    const cells = [...map.values()].sort((a, b) => a.c - b.c || a.r - b.r),
+    const out = summarize([...map.values()], n, m);
+    if (!bounds) groups.set(key, out);
+    return out;
+  }
+  // A sum of floats that carries its rounding error (Neumaier's), so totals
+  // and row sums match the exact sums the cube reports.
+  function exactSum(values) {
+    let sum = 0,
+      carry = 0;
+    for (const x of values) {
+      const t = sum + x;
+      carry += Math.abs(sum) >= Math.abs(x) ? sum - t + x : x - t + sum;
+      sum = t;
+    }
+    return sum + carry;
+  }
+  // Level-(n, m) cells as the chart reads them: sorted, by column with each
+  // column's POC and 70% area, by row, and the totals and both POCs of them all.
+  // A POC is the row with the most volume, the lower row winning a tie.
+  function summarize(list, n, m) {
+    const cells = list.sort((a, b) => a.c - b.c || a.r - b.r),
+      map = new Map(),
       cols = [],
       rows = new Map();
-    let col = null,
-      v = 0,
-      bv = 0,
-      ct = 0,
-      bt = 0;
+    let col = null;
     for (const z of cells) {
-      v += z.v;
-      bv += z.bv;
-      ct += z.ct;
-      bt += z.bt;
+      map.set(z.c + "," + z.r, z);
       let row = rows.get(z.r);
       if (!row) {
-        row = { r: z.r, v: 0, bv: 0, ct: 0, bt: 0 };
+        row = { r: z.r, vs: [], bvs: [], ct: 0, bt: 0 };
         rows.set(z.r, row);
       }
-      for (const f of ["v", "bv", "ct", "bt"]) row[f] += z[f];
+      row.vs.push(z.v);
+      row.bvs.push(z.bv);
+      row.ct += z.ct;
+      row.bt += z.bt;
       if (!col || col.c !== z.c) {
-        col = {
-          c: z.c,
-          v: 0,
-          bv: 0,
-          ct: 0,
-          bt: 0,
-          poc: null,
-          best: 0,
-          rows: [],
-        };
+        col = { c: z.c, v: 0, bv: 0, ct: 0, bt: 0, poc: null, best: 0, rows: [] };
         cols.push(col);
       }
       for (const f of ["v", "bv", "ct", "bt"]) col[f] += z[f];
@@ -359,9 +390,17 @@
     let poc = null,
       bpoc = null,
       max = 0,
-      bmax = 0;
+      bmax = 0,
+      ct = 0,
+      bt = 0;
     const rowList = [...rows.values()].sort((a, b) => a.r - b.r);
     for (const row of rowList) {
+      row.v = exactSum(row.vs);
+      row.bv = exactSum(row.bvs);
+      delete row.vs;
+      delete row.bvs;
+      ct += row.ct;
+      bt += row.bt;
       if (row.v > max) {
         poc = row.r;
         max = row.v;
@@ -371,32 +410,31 @@
         bmax = row.bv;
       }
     }
-    const logs = cells
-        .filter((z) => z.v > 0)
-        .map((z) => Math.log(z.v))
-        .sort((a, b) => a - b),
-      out = {
-        cells,
-        cols,
-        rows: rowList,
-        map,
-        poc,
-        bpoc,
-        v,
-        bv,
-        ct,
-        bt,
-        lo: d3.quantileSorted(logs, 0.02) || 0,
-        hi: d3.quantileSorted(logs, 0.995) || 1,
-      };
-    if (!bounds) groups.set(key, out);
-    return out;
+    return {
+      n,
+      m,
+      cells,
+      cols,
+      rows: rowList,
+      map,
+      poc,
+      bpoc,
+      v: exactSum(cells.map((z) => z.v)),
+      bv: exactSum(cells.map((z) => z.bv)),
+      ct,
+      bt,
+      scales: {},
+    };
   }
   function activeCutoff() {
     return S.replay && S.anchor !== null
       ? Math.min(CUT, Math.floor(S.anchor / stepT()) * stepT())
       : CUT;
   }
+  // The base edge that closes the data: the end of the open column, which
+  // holds the latest trades (the cube's cutoff is a minute edge, not a base
+  // one), or the replay's edge.
+  const cutEdge = () => Math.ceil(activeCutoff());
   function getColors() {
     const probe = document.createElement("span");
     root.append(probe);
@@ -418,7 +456,13 @@
       probe.style.color = `var(--ol-${key})`;
       colors[key] = getComputedStyle(probe).color;
     }
+    colors.lines = {};
+    for (const key of [...LINE_KEYS, ...DAY_COLOURS]) {
+      probe.style.color = `var(--ol-line-${key})`;
+      colors.lines[key] = getComputedStyle(probe).color;
+    }
     probe.remove();
+    buildRamp();
   }
   function requestDraw() {
     if (!raf)
@@ -610,14 +654,21 @@
         renderM(),
         S.replay ? [src.col0 * 2 ** src.n, cut, 0, Infinity] : null,
       ),
-      b = bounds(),
-      query = aggregate(src, renderN(), renderM(), b),
+      meas = measurement(),
+      b = meas.b,
+      query = meas.query,
+      // What the chart draws in the rectangle: the measure's own cells when they
+      // are at the drawn level, or else the display block's cells that overlap it.
+      shown =
+        query.n === renderN()
+          ? query
+          : aggregate(src, renderN(), renderM(), outwardBounds(meas.r)),
       ts = stepT(),
       ps = stepP(),
       u = transition
         ? clamp((performance.now() - transition.start) / 170, 0, 1)
         : 1;
-    prepareMeasures(full, query, b);
+    prepareMeasures(full, shown, query, b);
     labelsTaken = [];
     // Latest sits over the plot's top right when it shows, and the replay
     // transport on the replay line: labels keep clear of both.
@@ -671,14 +722,15 @@
     ctx.beginPath();
     ctx.rect(x1, y1, x2 - x1, y2 - y1);
     ctx.clip();
-    for (const z of query.cells) fillCell(z, full, u);
+    for (const z of shown.cells) fillCell(z, full, u);
     ctx.restore();
-    markings(query, cut);
-    paintUnfinished(query);
+    markings(shown, cut);
+    paintUnfinished(shown);
+    drawLines(cut);
     if (S.tab === "evidence") {
       const ev = settledEvidence();
       // Busy until a result for this view is up: the panel may still show the last one.
-      el("evidence").setAttribute("aria-busy", String(!ev || ev !== evidence.ready));
+      el("evidence").setAttribute("aria-busy", String(!ev || ev !== evidence.ready || Boolean(ev.loading)));
       if (ev) {
         drawCone(ev);
         evidenceUI(ev);
@@ -712,6 +764,17 @@
       if (xc < G.x + G.w - 50)
         chartLabel(S.replay ? "Replay" : "Cutoff", xc + 6, G.y + 12);
     }
+    // Where the cube's archived days end: after it, provisional minutes, which
+    // the day's archive may still revise. A view that is all provisional says so.
+    if (PACK.live && CANON !== null && CANON < cut) {
+      const xp = G.X(CANON);
+      if (xp > G.x && xp < G.x + G.w) {
+        ctx.setLineDash([2, 3]);
+        line(xp, G.y, xp, G.y + G.h, colors.muted, 1, 0.8);
+        ctx.setLineDash([]);
+        if (Math.min(xc, G.x + G.w) - xp > 90) chartLabel("Provisional", xp + 6, G.y + 12);
+      } else if (xp <= G.x && xc > G.x + 90) chartLabel("Provisional", G.x + 8, G.y + 12);
+    }
     if (
       S.anchor !== null &&
       !S.replay &&
@@ -727,7 +790,7 @@
     if (hover && inPlot(hover) && hover.t < cut) {
       const y = Math.round(hover.y) + 0.5;
       line(G.x, y, G.x + G.w, y, colors.muted, 1, 0.6);
-      const z = query.map.get(
+      const z = shown.map.get(
         Math.floor(hover.t / ts) + "," + Math.floor(hover.p / ps),
       );
       if (z) {
@@ -767,9 +830,9 @@
     const ro = readouts(cut);
     axes(ro);
     profile(query, b);
-    activity(query, cut);
+    activity(shown, cut);
     crosshair(ro);
-    querySummary(query, b);
+    querySummary(meas);
     el("legend-text").textContent = legendText(full);
     el("legend-text").title = LEGEND_TITLES[S.mode];
     el("ramp").style.background = legendRamp();
@@ -777,10 +840,10 @@
     el("ray-count").textContent = marks.rayCount + " untested levels";
     el("ray-count").hidden = !S.untested;
     el("va-value").textContent =
-      marks.vaLow === null
+      marks.vaLow === null || meas.state === "pending" || meas.state === "failed"
         ? "—"
         : price(marks.vaLow) + "–" + price(marks.vaHigh);
-    last = { full, query, b, cut };
+    last = { full, query, shown, meas, b, cut };
     if (transition) {
       if (u >= 1) transition = null;
       else requestDraw();
@@ -914,16 +977,33 @@
     groups.clear();
     evidenceCache.clear();
   }
+  // The time the view shows data for: from its start to the latest data, or
+  // to the replay's edge.
+  function viewRange() {
+    return [Math.max(0, S.tA), Math.max(Math.max(0, S.tA), Math.min(S.tB, activeCutoff()))];
+  }
+  // The level the view is drawn at: the requested one, coarser in time only
+  // while the view spans more columns than a tile holds.
+  function viewLevel() {
+    const [a, b] = viewRange();
+    let n = S.n;
+    while (n < N_MAX && Math.ceil(b / 2 ** n) - Math.floor(a / 2 ** n) > TILE_COLUMNS)
+      n++;
+    return [n, S.m];
+  }
+  // The block the view is drawn from: one that covers the view's time and can
+  // show its level, the finest first; failing that, the finest that covers it.
   function chooseSource() {
-    const target = S.selection || [S.tA, S.tB],
-      start = Math.max(0, target[0]),
-      end = Math.min(CUT, target[1]);
-    let candidates = Object.values(sources).filter(
-      (s) => s.b0 <= start && s.b1 >= end - 2 ** s.n,
-    );
-    candidates.sort((a, b) => a.n - b.n || a.m - b.m);
-    if (candidates.length) S.dataset = candidates[0].id;
+    const [start, end] = viewRange(),
+      [wn, wm] = viewLevel(),
+      covering = Object.values(sources).filter(
+        (s) => s.b0 <= start && s.b1 >= end - 2 ** s.n,
+      ),
+      able = covering.filter((s) => s.n <= wn && s.m <= wm),
+      pick = (able.length ? able : covering).sort((a, b) => a.n - b.n || a.m - b.m)[0];
+    if (pick) S.dataset = pick.id;
     else if (!sources[S.dataset]) S.dataset = Object.keys(sources)[0];
+    if (sources[S.dataset]) sources[S.dataset].used = performance.now();
     return sources[S.dataset];
   }
   function limits() {
@@ -931,21 +1011,35 @@
     S.m = clamp(Math.round(S.m), 0, M_MAX);
     S.horizon = [1, 2, 4, 8].includes(S.horizon) ? S.horizon : 1;
   }
+  // The rectangle measured: the selection, or the view up to the latest data,
+  // each bound on the nearest base edge with midpoints up, as the cube rounds
+  // them. It ends at most at the edge that closes the data, so the open column
+  // and its latest trades are in it.
   function requestedBounds() {
-    const b = S.selection || [S.tA, Math.min(S.tB, activeCutoff()), S.pA, S.pB];
-    const r = [
-      Math.max(0, Math.floor(b[0] + 0.5)),
-      Math.min(activeCutoff(), Math.floor(b[1] + 0.5)),
-      Math.max(0, Math.floor(b[2] + 0.5)),
-      Math.max(0, Math.floor(b[3] + 0.5)),
-    ];
+    const b = S.selection || [S.tA, S.tB, S.pA, S.pB],
+      end = cutEdge(),
+      edge = (x) => Math.floor(x + 0.5),
+      r = [
+        clamp(edge(b[0]), 0, end),
+        clamp(edge(b[1]), 0, end),
+        Math.max(0, edge(b[2])),
+        Math.max(0, edge(b[3])),
+      ];
     r[1] = Math.max(r[0], r[1]);
     r[3] = Math.max(r[2], r[3]);
     return r;
   }
+  // The rectangle the numbers describe: the requested one, which the live cube
+  // measures exactly; in the recorded snapshot, where no block tiles it, only
+  // the whole recorded cells inside it.
   function bounds() {
+    const r = requestedBounds();
+    return PACK.live || exactSource(r, renderN(), renderM()) ? r : inwardBounds(r);
+  }
+  // The display block's whole cells inside the rectangle, and those that
+  // overlap it.
+  function inwardBounds(r) {
     const src = displaySource(),
-      r = requestedBounds(),
       ts = 2 ** src.n,
       ps = 2 ** src.m,
       end = Math.min(src.b1, activeCutoff());
@@ -956,6 +1050,110 @@
     const p = Math.ceil(r[2] / ps) * ps,
       q = Math.max(p, Math.floor(r[3] / ps) * ps);
     return [a, b, p, q];
+  }
+  function outwardBounds(r) {
+    const src = displaySource(),
+      ts = 2 ** src.n,
+      ps = 2 ** src.m;
+    return [
+      Math.floor(r[0] / ts) * ts,
+      // Never past a replay's edge: a cell across it holds trades after it.
+      Math.min(Math.ceil(r[1] / ts) * ts, S.replay ? activeCutoff() : Infinity),
+      Math.floor(r[2] / ps) * ps,
+      Math.ceil(r[3] / ps) * ps,
+    ];
+  }
+  // A loaded block whose cells tile the rectangle: as fine as the level or
+  // finer, over the rectangle's whole time, with every edge of the rectangle
+  // on its cell edges (its end may instead lie past the block's latest data).
+  // Its cells then sum to exactly what the cube answers for the rectangle.
+  // The coarsest such block has the fewest cells to sum.
+  function exactSource(r, n, m) {
+    const end = Math.min(r[1], activeCutoff()),
+      blocks = Object.values(sources).concat(referenceView ? [referenceView] : []);
+    return (
+      blocks
+        .filter((s) => {
+          const ts = 2 ** s.n,
+            ps = 2 ** s.m,
+            [start, stop] = sourceRange(s);
+          return (
+            s.n <= n &&
+            s.m <= m &&
+            start <= r[0] &&
+            stop >= end &&
+            r[0] % ts === 0 &&
+            (r[1] % ts === 0 || r[1] >= stop) &&
+            r[2] % ps === 0 &&
+            r[3] % ps === 0
+          );
+        })
+        .sort((a, b) => b.n - a.n || b.m - a.m)[0] || null
+    );
+  }
+  // The rectangle's measures at the drawn level, exactly: summed from loaded
+  // cells that tile it, or the cube's own answer (live). Until the cube
+  // answers, the cells that overlap it stand in, marked as measuring; the
+  // recorded snapshot counts its whole cells inside the rectangle only.
+  const measured = new Map();
+  function measurement() {
+    const r = requestedBounds(),
+      n = renderN(),
+      m = renderM(),
+      empty = r[1] <= r[0] || r[3] <= r[2],
+      exact = empty ? displaySource() : exactSource(r, n, m);
+    if (exact) return { r, b: r, query: aggregate(exact, n, m, r), state: "exact" };
+    if (!PACK.live) {
+      const b = inwardBounds(r);
+      return { r, b, query: aggregate(displaySource(), n, m, b), state: "recorded" };
+    }
+    const spec = measureSpec(r, n, m),
+      hit = measured.get(spec.key);
+    if (hit) return { r, b: r, query: hit.query, summary: hit.summary, state: "cube" };
+    return {
+      r,
+      b: r,
+      query: aggregate(displaySource(), n, m, outwardBounds(r)),
+      state: cube.failed.has(spec.key) ? "failed" : "pending",
+      error: cube.failed.get(spec.key),
+    };
+  }
+  // The cube read for a rectangle: at the drawn level, or coarser in time when
+  // the rectangle spans more columns than one read holds (totals and POCs are
+  // the same at any column width).
+  function measureSpec(r, n, m) {
+    let nq = n;
+    while (nq < 24 && Math.ceil(r[1] / 2 ** nq) - Math.floor(r[0] / 2 ** nq) > TILE_COLUMNS)
+      nq++;
+    const key = ["measure", live.generation, nq, m, ...r, r[1] > Math.floor(CUT) ? CUT : ""].join("|");
+    return {
+      key,
+      path: `/cube/query?n=${nq}&m=${m}&b0=${r[0]}&b1=${r[1]}&r0=${r[2]}&r1=${r[3]}`,
+      done: async (body) => {
+        const block = await unpack(body.block, key),
+          q = summarize(block.cells, nq, m),
+          s = body.summary,
+          row = (p) => (p == null ? null : Math.round(p / (PR * 2 ** m) - 0.5));
+        // The cube's own totals and POCs, summed exactly.
+        q.v = s.volume;
+        q.bv = s.taker_buy_volume;
+        q.ct = s.trade_count;
+        q.bt = s.taker_buy_trade_count;
+        q.poc = row(s.poc);
+        q.bpoc = row(s.taker_buy_poc);
+        measured.delete(key);
+        measured.set(key, { query: q, summary: s });
+        while (measured.size > 48) measured.delete(measured.keys().next().value);
+      },
+    };
+  }
+  function measureWant() {
+    const r = requestedBounds(),
+      n = renderN(),
+      m = renderM();
+    if (r[1] <= r[0] || r[3] <= r[2] || exactSource(r, n, m)) return null;
+    const spec = measureSpec(r, n, m);
+    return measured.has(spec.key) ? null : spec;
   }
   function fit() {
     const src = displaySource();
@@ -1184,13 +1382,25 @@
       diagonal: '<path d="M3 13h3v-3h3V7h3V4"/>',
       fit: '<path d="M3 5.5V3h2.5M10.5 3H13v2.5M13 10.5V13h-2.5M5.5 13H3v-2.5"/>',
     },
-    MODES = ["volume", "flow", "delta", "geometry"],
-    MODE_NAMES = {
-      volume: "Volume",
-      flow: "Taker flow",
-      delta: "Delta",
-      geometry: "Geometry",
-    };
+    // The encodings, in the order M steps through them: each one's name, what
+    // it shows and the measure it reads. The cube has four measures per cell,
+    // and each reaches the chart: volume, trades, and their taker-buy parts.
+    MODES = ["volume", "flow", "delta", "trades", "flowtrades", "size", "geometry"],
+    MODE_INFO = {
+      volume: { name: "Volume", desc: "USDT traded in each cell" },
+      flow: { name: "Taker flow", desc: "Share of each cell's USDT bought by takers" },
+      delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT in each cell" },
+      trades: { name: "Trades", desc: "Trades in each cell" },
+      flowtrades: { name: "Taker trades", desc: "Share of each cell's trades that were taker buys" },
+      size: { name: "Trade size", desc: "Average USDT per trade in each cell" },
+      geometry: { name: "Geometry", desc: "The grid's occupied cells" },
+    },
+    MODE_GROUPS = [
+      ["USDT", ["volume", "flow", "delta"]],
+      ["Trades", ["trades", "flowtrades", "size"]],
+      ["Grid", ["geometry"]],
+    ],
+    MODE_NAMES = Object.fromEntries(MODES.map((k) => [k, MODE_INFO[k].name]));
   function svgIcon(name, className = "ol-icon") {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", className);
@@ -1216,6 +1426,7 @@
     if (S.mode !== "volume") add("mode", S.mode);
     const marks = ["poc", "area", "untested"].filter((k) => S[k]).join(",");
     if (marks !== "poc") add("marks", marks || "none");
+    if (S.lines.length) add("lines", S.lines.join(","));
     if (S.selection) {
       const [a, b, p, q] = S.selection;
       add("sel", `${stamp(a)}~${stamp(b)},${usd(p)}~${usd(q)}`);
@@ -1266,6 +1477,7 @@
       poc: marks.includes("poc"),
       area: marks.includes("area"),
       untested: marks.includes("untested"),
+      lines: String(q.get("lines") ?? "").split(",").filter(Boolean),
       selection: q.has("sel")
         ? [...pair(selT, time), ...pair(selP, rows)].map(Math.round)
         : null,
@@ -1314,6 +1526,7 @@
       poc: v.poc !== false,
       area: v.area === true,
       untested: v.untested === true,
+      lines: normalizeLines(v.lines),
       selection:
         sel.length === 4 &&
         ok(...sel) &&
@@ -1322,7 +1535,7 @@
         sel[0] < CUT &&
         sel[2] >= 0 &&
         sel[3] > sel[2]
-          ? [sel[0], Math.min(sel[1], Math.floor(CUT)), sel[2], sel[3]]
+          ? [sel[0], Math.min(sel[1], Math.ceil(CUT)), sel[2], sel[3]]
           : null,
       anchor,
       replay: v.replay === true && anchor !== null,
@@ -1352,6 +1565,7 @@
       "poc",
       "area",
       "untested",
+      "lines",
       "selection",
       "anchor",
       "replay",
@@ -1366,18 +1580,27 @@
     confine();
     if (S.auto) autoLevel();
   }
-  function queryUI(b) {
-    const q = cubeQuery();
-    if (!copyFallbackActive)
-      el("query-text").value = JSON.stringify(q, null, 2);
+  // The Query tab: the six parameters of the rectangle, and what the numbers
+  // shown are for them.
+  function queryUI(meas) {
+    const q = cubeQuery(),
+      b = meas.b;
+    if (!copyFallbackActive) el("query-text").value = JSON.stringify(q, null, 2);
     el("query-mini").textContent = ` · ${dur(q.tR)} × ${price(q.pR)} USDT`;
-    const changed =
-      b.some((x, i) => x !== requestedBounds()[i]) ||
-      renderN() !== S.n ||
-      renderM() !== S.m;
-    el("query-ready").textContent = changed
-      ? `Rendered coverage: ${range(b[0], b[1])} UTC; ${price(b[2] * PR)}–${price(b[3] * PR)} USDT; ${dur(BASE * stepT())} × ${price(PR * stepP())} USDT. Finer bounds remain unavailable in this snapshot.`
-      : "The rendered rectangle matches these six parameters.";
+    const shown = `${dur(BASE * stepT())} × ${price(PR * stepP())} USDT`,
+      level = `${dur(BASE * 2 ** meas.query.n)} columns`;
+    el("query-ready").textContent =
+      meas.state === "recorded" && b.some((x, i) => x !== meas.r[i])
+        ? `The recorded snapshot counts only its whole cells inside these bounds: ${range(b[0], b[1])} UTC; ${price(b[2] * PR)}–${price(b[3] * PR)} USDT; ${shown}. The live cube measures the six parameters exactly.`
+        : meas.state === "pending"
+          ? "Measuring these six parameters in the cube…"
+          : meas.state === "failed"
+            ? `The cube didn't answer for these six parameters: ${meas.error}.`
+            : renderM() !== S.m
+              ? `Shown and measured at ${shown}, the finest ${PACK.live ? "loaded so far" : "recorded here"}: the POC is per ${price(PR * stepP())} USDT row until finer cells load.`
+              : meas.query.n !== S.n
+                ? `The cube's answer to these six parameters, in ${level} (the finest this span shows at once); totals and POCs don't depend on the column width.`
+                : "The cube's answer to these six parameters.";
   }
   async function copyText(textToCopy, label) {
     try {
@@ -1433,7 +1656,7 @@
         b <= a ||
         r <= p ||
         a < 0 ||
-        b > CUT ||
+        b > Math.ceil(CUT) ||
         p < 0
       )
         throw Error(
@@ -1460,6 +1683,7 @@
         if (MODES.includes(mode)) S.mode = mode;
         for (const k of ["poc", "area", "untested", "replay"])
           if (typeof v[k] === "boolean") S[k] = v[k];
+        if (Array.isArray(v.lines)) S.lines = normalizeLines(v.lines);
         if (["context", "evidence"].includes(v.tab)) S.tab = v.tab;
         if (["poc", "barrier"].includes(v.evidenceKind))
           S.evidenceKind = v.evidenceKind;
@@ -1599,19 +1823,36 @@
       }
     }
   }
-  function querySummary(query, b) {
-    const requested = requestedBounds(),
-      partialCoverage = b.some((x, i) => x !== requested[i]);
+  // The inspector's measures of the rectangle: the four totals, both POCs and
+  // the cell counts. While the cube measures a rectangle the loaded cells can't
+  // sum exactly, the numbers wait for it: the chart draws the overlapping cells
+  // meanwhile, but no number is shown that isn't the rectangle's own.
+  function querySummary(meas) {
+    const { query, b, state } = meas,
+      partialCoverage = state === "recorded" && b.some((x, i) => x !== meas.r[i]),
+      measuring = state === "pending" || state === "failed",
+      ts = 2 ** query.n,
+      ps = 2 ** query.m;
     el("focus-title").textContent = partialCoverage
       ? "Ready part"
-      : S.selection
-        ? "Selection"
-        : "In view";
+      : state === "failed"
+        ? "Not measured"
+        : measuring
+          ? "Measuring…"
+          : S.selection
+            ? "Selection"
+            : "In view";
     el("focus-title").title = partialCoverage
-      ? "Only this part of the requested rectangle is recorded at this level"
-      : "";
+      ? "The recorded snapshot counts only its whole cells inside the rectangle; the live cube measures the rectangle exactly"
+      : state === "failed"
+        ? `The cube didn't answer: ${meas.error}`
+        : measuring
+          ? "The cube is measuring the rectangle exactly"
+          : "";
+    el("context").classList.toggle("ol-measuring", measuring);
+    el("context").setAttribute("aria-busy", String(state === "pending"));
     // Each date and the price range stay whole; lines break only between them.
-    const times = rangeParts(b[0], b[1]);
+    const times = rangeParts(b[0], Math.min(b[1], Math.max(b[0], activeCutoff())));
     times[times.length - 1] += " UTC";
     el("bounds").replaceChildren(
       ...[...times, `· ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`].flatMap(
@@ -1628,60 +1869,59 @@
       ["buyvol", query.bv, usdt(query.bv) + " USDT"],
       ["buycount", query.bt, integer(query.bt) + " trades"],
     ]) {
-      el(id).textContent = compact(v);
-      el(id).setAttribute("aria-label", exact);
-      el(id).title = exact;
+      el(id).textContent = measuring ? "—" : compact(v);
+      el(id).setAttribute("aria-label", measuring ? "not measured yet" : exact);
+      el(id).title = measuring ? "" : exact;
     }
-    el("poc-value").textContent =
-      query.poc === null ? "—" : price((query.poc + 0.5) * stepP() * PR);
-    el("buypoc-value").textContent =
-      query.bpoc === null ? "—" : price((query.bpoc + 0.5) * stepP() * PR);
-    el("share").textContent = query.v
-      ? ((100 * query.bv) / query.v).toFixed(1) + "%"
-      : "—";
-    el("delta-value").textContent =
-      signed(2 * query.bv - query.v, compact) + " USDT";
-    el("cells").textContent = integer(query.cells.length);
+    const wait = (text) => (measuring ? "—" : text);
+    el("poc-value").textContent = wait(
+      query.poc === null ? "—" : price((query.poc + 0.5) * ps * PR),
+    );
+    el("buypoc-value").textContent = wait(
+      query.bpoc === null ? "—" : price((query.bpoc + 0.5) * ps * PR),
+    );
+    el("share").textContent = wait(
+      query.v ? ((100 * query.bv) / query.v).toFixed(1) + "%" : "—",
+    );
+    el("delta-value").textContent = wait(
+      signed(2 * query.bv - query.v, compact) + " USDT",
+    );
+    el("cells").textContent = wait(integer(query.cells.length));
     let partials = 0,
       unfinished = 0;
     for (const c of query.cells) {
       if (
-        c.c * stepT() < b[0] ||
-        (c.c + 1) * stepT() > b[1] ||
-        c.r * stepP() < b[2] ||
-        (c.r + 1) * stepP() > b[3]
+        c.c * ts < b[0] ||
+        (c.c + 1) * ts > b[1] ||
+        c.r * ps < b[2] ||
+        (c.r + 1) * ps > b[3]
       )
         partials++;
-      if (!S.replay && c.c * stepT() < CUT && (c.c + 1) * stepT() > CUT)
-        unfinished++;
+      if (!S.replay && c.c * ts < CUT && (c.c + 1) * ts > CUT) unfinished++;
     }
-    el("partials").textContent = integer(partials);
-    const rows = Math.max(
-        0,
-        Math.ceil(b[3] / stepP()) - Math.floor(b[2] / stepP()),
-      ),
+    el("partials").textContent = wait(integer(partials));
+    // The open column's cells without a trade yet are open, not zero-trade.
+    const rows = Math.max(0, Math.ceil(b[3] / ps) - Math.floor(b[2] / ps)),
       total =
         b[1] <= b[0] || b[3] <= b[2]
           ? 0
-          : Math.max(
-              0,
-              Math.ceil(b[1] / stepT()) - Math.floor(b[0] / stepT()),
-            ) * rows,
+          : Math.max(0, Math.ceil(b[1] / ts) - Math.floor(b[0] / ts)) * rows,
       openRows =
-        total > 0 && !S.replay && CUT % stepT() !== 0 && b[1] === CUT
-          ? rows
-          : 0,
+        total > 0 && !S.replay && CUT % ts !== 0 && b[1] >= CUT ? rows : 0,
       zero = Math.max(0, total - query.cells.length - openRows + unfinished);
-    el("open-count").textContent = integer(openRows);
-    el("zero-count").textContent = integer(zero);
+    el("open-count").textContent = wait(integer(openRows));
+    el("zero-count").textContent = wait(integer(zero));
     // The key names each state; its count lives with the cell counts.
     el("key-zero").hidden = zero === 0;
     el("key-open").hidden = openRows === 0;
     el("key-unavailable").hidden = !coverageGap;
     el("data-coarse").hidden = !(renderN() > S.n || renderM() > S.m);
-    queryUI(b);
-    renderCells(query, b);
+    queryUI(meas);
+    renderCells(measuring ? null : query, b);
   }
+  // The rectangle's measured cells, or none while the cube measures them.
+  const measuredCells = (l) =>
+    l.meas.state === "pending" || l.meas.state === "failed" ? null : l.query;
   // The drawer's cells table: sortable, a hundred rows a page, and linked to
   // the chart both ways through the cell under the pointer. It is rebuilt a
   // moment after the view settles, so panning never waits on it.
@@ -1689,13 +1929,13 @@
   let cellRows = new Map(),
     hoverRow = null,
     cellsTimer = 0;
-  function cellState(c, b) {
-    const open = !S.replay && (c.c + 1) * stepT() > CUT,
+  function cellState(c, b, ts = stepT(), ps = stepP()) {
+    const open = !S.replay && (c.c + 1) * ts > CUT,
       portion =
-        c.c * stepT() < b[0] ||
-        (c.c + 1) * stepT() > b[1] ||
-        c.r * stepP() < b[2] ||
-        (c.r + 1) * stepP() > b[3];
+        c.c * ts < b[0] ||
+        (c.c + 1) * ts > b[1] ||
+        c.r * ps < b[2] ||
+        (c.r + 1) * ps > b[3];
     return [open ? "unfinished" : "complete", portion ? "portion" : ""]
       .filter(Boolean)
       .join(" · ");
@@ -1706,7 +1946,18 @@
     cellsTimer = setTimeout(() => buildCells(query, b), 80);
   }
   function buildCells(query, b) {
-    const key = [S.n, S.m, b.join(","), S.cellSort, S.cellDir].join("|");
+    if (!query) {
+      el("table-body").replaceChildren();
+      el("table-caption").textContent = "Measuring the rectangle in the cube…";
+      el("table-page").textContent = "";
+      el("table-back").disabled = el("table-next").disabled = true;
+      return;
+    }
+    // The cells at the measure's own level, which a very wide rectangle reads
+    // coarser in time than the view shows.
+    const ts = 2 ** query.n,
+      ps = 2 ** query.m,
+      key = [query.n, query.m, b.join(","), S.cellSort, S.cellDir].join("|");
     if (key !== tableKey) {
       tablePage = 0;
       tableKey = key;
@@ -1718,7 +1969,7 @@
         trades: (c) => c.ct,
         buyvol: (c) => c.bv,
         buytrades: (c) => c.bt,
-        state: (c) => cellState(c, b),
+        state: (c) => cellState(c, b, ts, ps),
       }[S.cellSort],
       cells = query.cells
         .slice()
@@ -1741,18 +1992,15 @@
       tr.dataset.c = c.c;
       tr.dataset.r = c.r;
       const values = [
-        range(
-          Math.max(c.c * stepT(), b[0]),
-          Math.min((c.c + 1) * stepT(), b[1]),
-        ),
-        price(Math.max(c.r * stepP(), b[2]) * PR) +
+        range(Math.max(c.c * ts, b[0]), Math.min((c.c + 1) * ts, b[1])),
+        price(Math.max(c.r * ps, b[2]) * PR) +
           "–" +
-          price(Math.min((c.r + 1) * stepP(), b[3]) * PR),
+          price(Math.min((c.r + 1) * ps, b[3]) * PR),
         usdt(c.v),
         integer(c.ct),
         usdt(c.bv),
         integer(c.bt),
-        cellState(c, b),
+        cellState(c, b, ts, ps),
       ];
       for (const v of values) {
         const td = document.createElement("td");
@@ -1817,7 +2065,13 @@
       note = exact ? "" : "Hold Shift for exact values",
       ps = stepP(),
       priceRow = (r) => `${price(r * ps * PR)}–${price((r + 1) * ps * PR)} USDT`;
-    if (last && onProfile(p)) {
+    // A POC line or its tag under the pointer names the line.
+    const onLine = last && inPlot(p) ? lineAt(p) : null;
+    hover.line = onLine?.key || null;
+    if (onLine) {
+      lineTip(tip, onLine);
+      syncRowHover(null);
+    } else if (last && onProfile(p)) {
       const r = Math.floor(p.p / ps),
         row = last.query.rows.find((x) => x.r === r);
       hover.row = row ? r : null;
@@ -1836,6 +2090,7 @@
             ["Of the profile", share(row.v / last.query.v)],
             ["Trades", count(row.ct)],
             ["Taker buys", `${money(row.bv)} · ${share(row.bv / row.v)}`],
+            ["Taker-buy trades", `${count(row.bt)} · ${share(row.ct ? row.bt / row.ct : 0)}`],
           ],
           note,
         );
@@ -1848,7 +2103,7 @@
       const ts = stepT(),
         c = Math.floor(p.t / ts),
         r = Math.floor(p.p / ps),
-        z = last.query.map.get(c + "," + r),
+        z = last.shown.map.get(c + "," + r),
         src = displaySource(),
         inside =
           p.t >= last.b[0] && p.t < last.b[1] && p.p >= last.b[2] && p.p < last.b[3],
@@ -1856,6 +2111,12 @@
         open = !S.replay && c * ts < CUT && (c + 1) * ts > CUT,
         head = `${range(c * ts, (c + 1) * ts)} UTC · ${dur(ts * BASE)}`,
         coarse = renderN() > S.n || renderM() > S.m ? ["Detail", "coarser than requested"] : null;
+      // Cells after the last archived day come from provisional minutes, which
+      // the day's archive may still revise.
+      const provisional =
+        PACK.live && CANON !== null && (c + 1) * ts > CANON
+          ? ["Source", "provisional minutes"]
+          : null;
       if (unavailable)
         tipRows(tip, head, priceRow(r), [], S.replay && p.t >= last.cut
           ? "Hidden in replay"
@@ -1863,9 +2124,17 @@
             ? "After the data cutoff"
             : S.selection
               ? "Outside the selection"
-              : "Not recorded at this level");
+              : PACK.live
+                ? "Loading this level from the cube"
+                : "Not recorded at this level");
       else if (!z)
-        tipRows(tip, head, priceRow(r), coarse ? [coarse] : [], open ? "Still open: no trades yet" : "No trades in this cell");
+        tipRows(
+          tip,
+          head,
+          priceRow(r),
+          [...(coarse ? [coarse] : []), ...(provisional ? [provisional] : [])],
+          open ? "Still open: no trades yet" : "No trades in this cell",
+        );
       else
         tipRows(
           tip,
@@ -1874,9 +2143,12 @@
           [
             ["Volume", money(z.v)],
             ["Trades", count(z.ct)],
+            ["Trade size", z.ct ? money(z.v / z.ct) : "—"],
             ["Taker buys", `${money(z.bv)} · ${share(z.bv / z.v)}`],
+            ["Taker-buy trades", `${count(z.bt)} · ${share(z.ct ? z.bt / z.ct : 0)}`],
             ["Buy − sell", signed(2 * z.bv - z.v, money)],
             ["Column", open ? "Still open" : "Complete"],
+            ...(provisional ? [provisional] : []),
             ...(coarse ? [coarse] : []),
           ],
           note,
@@ -1925,9 +2197,12 @@
     qsa("#ol-window-menu [data-window]").forEach((b) =>
       b.setAttribute("aria-checked", String(b.dataset.window === S.window)),
     );
-    qsa("[data-mode]").forEach((b) =>
-      b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)),
+    el("mode-text").textContent = MODE_NAMES[S.mode];
+    el("mode").setAttribute("aria-label", `Encoding: ${MODE_NAMES[S.mode]}`);
+    qsa("#ol-mode-menu [data-mode]").forEach((b) =>
+      b.setAttribute("aria-checked", String(b.dataset.mode === S.mode)),
     );
+    renderLines();
     for (const f of ["poc", "area", "untested"]) el(f).checked = S[f];
     el("key-poc").hidden = el("key-bpoc").hidden = !S.poc;
     el("key-area").hidden = !S.area;
@@ -1985,7 +2260,7 @@
     applyPanels();
     updateNavigation();
     requestDraw();
-    requestTile();
+    scheduleCube();
   }
   function bindRoot() {
     el("query-text").addEventListener("blur", () => {
@@ -2005,6 +2280,7 @@
                 poc: S.poc,
                 area: S.area,
                 untested: S.untested,
+                lines: S.lines,
                 tab: S.tab,
                 replay: S.replay,
                 anchor: S.anchor,
@@ -2028,7 +2304,7 @@
     ])
       el(id).addEventListener("click", () => {
         tablePage += d;
-        if (last) buildCells(last.query, last.b);
+        if (last) buildCells(measuredCells(last), last.b);
       });
     for (const button of qsa("[data-sort]"))
       button.addEventListener("click", () => {
@@ -2038,7 +2314,7 @@
           S.cellSort = key;
           S.cellDir = key === "state" ? 1 : -1;
         }
-        if (last) buildCells(last.query, last.b);
+        if (last) buildCells(measuredCells(last), last.b);
         save();
       });
     // A table row and its cell on the chart light up together.
@@ -2450,6 +2726,36 @@
     el("follow-menu").replaceChildren(...parts);
   }
 
+  // The encodings, grouped by the measure they read, each with what it shows.
+  function buildModeMenu() {
+    const parts = [];
+    for (const [cap, keys] of MODE_GROUPS) {
+      const group = document.createElement("div"),
+        head = document.createElement("div");
+      group.setAttribute("role", "group");
+      head.className = "ol-menu-cap";
+      head.id = `ol-mode-cap-${parts.length}`;
+      head.textContent = cap;
+      group.setAttribute("aria-labelledby", head.id);
+      group.append(head);
+      for (const key of keys) {
+        const info = MODE_INFO[key],
+          b = menuItem(
+            "menuitemradio",
+            [svgIcon("check", "ol-icon ol-check"), itemText(`mode-${key}`, info.name, info.desc)],
+            () => setMode(key),
+          );
+        b.setAttribute("aria-labelledby", `ol-mode-${key}-name`);
+        b.setAttribute("aria-describedby", `ol-mode-${key}-desc`);
+        b.dataset.mode = key;
+        b.setAttribute("aria-checked", String(key === S.mode));
+        group.append(b);
+      }
+      parts.push(group);
+    }
+    el("mode-menu").replaceChildren(...parts);
+  }
+
   // Labels: a control's name and key, and what it does, a second after the
   // pointer rests on it, a finger holds it or the keyboard reaches it; once
   // one has shown, the next shows at once. A hold that shows a label doesn't
@@ -2640,6 +2946,8 @@
     bindHints();
     bindMenu("window", "window-menu", buildWindowMenu);
     bindMenu("follow", "follow-menu", buildFollowMenu);
+    bindMenu("mode", "mode-menu", buildModeMenu);
+    bindLines();
     bindPop("res", "res-pop", () => {
       nav.planeKey = "";
       refreshPlane();
@@ -2754,20 +3062,21 @@
     }
     return { r0: low, r1: high + 1, volume, share: volume / total };
   }
-  function prepareMeasures(full, query, b) {
+  function prepareMeasures(full, shown, query, b) {
     const src = displaySource(),
       ts = stepT(),
       ps = stepP(),
+      whole = ts * BASE * ps * PR,
       sourceBounds = [src.b0, Math.min(src.b1, activeCutoff()), 0, Infinity];
     const metrics = new WeakMap(),
       deltas = [];
     for (const z of full.cells) {
       const delta = 2 * z.bv - z.v;
-      metrics.set(z, { ...cellExposure(z, sourceBounds, ts, ps), delta });
+      metrics.set(z, { ...cellExposure(z, sourceBounds, ts, ps), whole, delta });
       if (delta !== 0) deltas.push(Math.abs(delta));
     }
-    for (const z of query.cells)
-      metrics.set(z, { ...cellExposure(z, b, ts, ps), delta: 2 * z.bv - z.v });
+    for (const z of shown.cells)
+      metrics.set(z, { ...cellExposure(z, b, ts, ps), whole, delta: 2 * z.bv - z.v });
     deltas.sort((a, b) => a - b);
     markState = {
       metrics,
@@ -2777,42 +3086,95 @@
     };
     return markState;
   }
+  // A cell's amount for an encoding: USDT, trades or USDT a trade. Volume and
+  // trades grow with the cell, so an edge portion or the open column counts at
+  // its full-cell rate and compares with whole cells; the values shown stay
+  // the cell's own.
+  function amount(z, mode = S.mode) {
+    const m = markState.metrics.get(z),
+      rate = m?.area > 0 ? m.whole / m.area : 1;
+    if (mode === "trades" || mode === "flowtrades") return z.ct * rate;
+    if (mode === "size") return z.ct > 0 ? z.v / z.ct : 0;
+    return z.v * rate;
+  }
+  // Amounts shade by rank among the drawn block's cells: each step of the ramp
+  // holds as many cells as any other, so the colour tells cells apart wherever
+  // they crowd. Sorted once per block, level and encoding.
+  function amountScale(full, mode = S.mode) {
+    const key = mode === "flowtrades" ? "trades" : mode === "flow" || mode === "delta" || mode === "geometry" ? "volume" : mode;
+    if (!full.scales[key])
+      full.scales[key] = Float64Array.from(
+        full.cells.map((z) => amount(z, key)).filter((x) => x > 0),
+      ).sort();
+    return full.scales[key];
+  }
+  // A value's place in a sorted scale, from 0 to 1; ties share the middle of
+  // their run.
+  function rank(sorted, x) {
+    if (!sorted.length) return 0.5;
+    const lo = d3.bisectLeft(sorted, x),
+      hi = d3.bisectRight(sorted, x);
+    return clamp((lo + hi) / 2 / sorted.length, 0, 1);
+  }
+  // The ramp amounts shade on: from near the surface to deep in the light
+  // theme and to bright in the dark one, through yellow, green and blue, with
+  // lightness changing evenly (interpolated in Lab).
+  const RAMP = {
+    light: ["#f2f9c4", "#d6efb3", "#a9dcb6", "#73c6bd", "#41b0c3", "#2390bd", "#2a6aac", "#283f94", "#15205e"],
+    dark: ["#1b2c33", "#18405a", "#1a5b7d", "#1f7896", "#2c969c", "#4db493", "#86cd83", "#c6e27c", "#f4f1a6"],
+  };
+  let rampColours = [];
+  function buildRamp() {
+    const stops = d3.lab(colors.surface).l < 50 ? RAMP.dark : RAMP.light,
+      f = d3.piecewise(d3.interpolateLab, stops);
+    rampColours = Array.from({ length: 256 }, (_, i) => d3.rgb(f(i / 255)).formatHex());
+  }
+  const ramp = (t) => rampColours[Math.round(clamp(t, 0, 1) * 255)];
+  const AMOUNT_UNITS = { volume: "USDT", trades: "trades", size: "USDT a trade" };
   function legendText(full) {
     if (S.mode === "geometry") return "Occupied cells";
-    if (S.mode === "flow") return "Buy share 25% · 50% · 75%";
+    if (S.mode === "flow") return "Taker buys 25% · 50% · 75% of USDT";
+    if (S.mode === "flowtrades") return "Taker buys 25% · 50% · 75% of trades";
     if (S.mode === "delta")
       return `Δ ${signedCompact(-markState.deltaMax)} · 0 · ${signedCompact(markState.deltaMax)} USDT`;
-    return `${compact(Math.exp(full.lo))}–${compact(Math.exp(full.hi))} USDT · log`;
+    const sorted = amountScale(full),
+      unit = AMOUNT_UNITS[S.mode];
+    if (!sorted.length) return unit;
+    return `${compact(d3.quantileSorted(sorted, 0.05))} → ${compact(d3.quantileSorted(sorted, 0.95))} ${unit}`;
   }
   // The legend's precise meaning, one hover away.
   const LEGEND_TITLES = {
     volume:
-      "USDT traded per cell, on a log scale. An edge cell or the open column is shaded at its full-cell rate.",
+      "USDT traded per cell, shaded by rank: each step of the ramp holds as many of the drawn cells as any other, from the least traded to the most. An edge cell or the open column is shaded at its full-cell rate. The numbers are the 5th and 95th percentiles.",
+    trades:
+      "Trades per cell, shaded by rank like volume, at the full-cell rate. The numbers are the 5th and 95th percentiles.",
+    size: "Average USDT per trade in each cell, shaded by rank. The numbers are the 5th and 95th percentiles.",
     flow: "The share of each cell's volume bought by takers: buy colour above half, sell colour below, full at 75% and 25%. Paler cells traded less.",
+    flowtrades:
+      "The share of each cell's trades that were taker buys: buy colour above half, sell colour below, full at 75% and 25%. Paler cells had fewer trades.",
     delta: "Taker-buy minus taker-sell volume per cell, in USDT",
     geometry: "The grid's occupied cells",
   };
   function legendRamp() {
-    return S.mode === "flow"
-      ? "linear-gradient(to right,var(--ol-sell),var(--ol-neutral),var(--ol-buy))"
-      : S.mode === "delta"
-        ? "linear-gradient(to right,var(--ol-sell),var(--ol-line),var(--ol-buy))"
-        : S.mode === "geometry"
-          ? "var(--ol-line)"
-          : "linear-gradient(to right,var(--ol-panel),var(--ol-volume))";
+    if (S.mode === "flow" || S.mode === "flowtrades")
+      return "linear-gradient(to right,var(--ol-sell),var(--ol-neutral),var(--ol-buy))";
+    if (S.mode === "delta")
+      return "linear-gradient(to right,var(--ol-sell),var(--ol-line),var(--ol-buy))";
+    if (S.mode === "geometry") return "var(--ol-line)";
+    return `linear-gradient(to right,${[0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1].map(ramp).join(",")})`;
   }
-  // A cell's colour. Volume shades each cell at its full-cell rate, so an edge
-  // portion or the open column compares with whole cells. Taker flow diverges
-  // from a neutral midpoint to buy and sell, full at 75% and 25%, paler where
-  // less traded. Delta shades signed taker volume.
-  function cellColour(z, lo, hi, deltaMax, full) {
-    const level = clamp(
-      (Math.log(full) - lo) / Math.max(0.1, hi - lo),
-      0,
-      1,
-    );
-    if (S.mode === "flow") {
-      const t = clamp(((z.v ? z.bv / z.v : 0.5) - 0.5) / 0.25, -1, 1),
+  // A cell's colour. Amounts take the ramp by rank. Taker flow, by USDT or by
+  // trades, diverges from a neutral midpoint to buy and sell, full at 75% and
+  // 25%, paler where less traded. Delta shades signed taker volume.
+  function cellColour(z, full, deltaMax = markState.deltaMax) {
+    if (S.mode === "flow" || S.mode === "flowtrades") {
+      const byTrades = S.mode === "flowtrades",
+        share = byTrades ? (z.ct ? z.bt / z.ct : 0.5) : z.v ? z.bv / z.v : 0.5,
+        t = clamp((share - 0.5) / 0.25, -1, 1),
+        sorted = amountScale(full),
+        lo = Math.log(d3.quantileSorted(sorted, 0.02) || 1),
+        hi = Math.log(d3.quantileSorted(sorted, 0.995) || Math.E),
+        level = clamp((Math.log(Math.max(amount(z), 1e-9)) - lo) / Math.max(0.1, hi - lo), 0, 1),
         hue = d3.interpolateRgb(colors.neutral, t >= 0 ? colors.buy : colors.sell)(Math.abs(t));
       return d3.interpolateRgb(colors.surface, hue)(0.3 + 0.7 * level);
     }
@@ -2823,7 +3185,7 @@
         delta >= 0 ? colors.buy : colors.sell,
       )(clamp(Math.log1p(Math.abs(delta)) / Math.log1p(deltaMax), 0, 1));
     }
-    return d3.interpolateRgb(colors.surface, colors.volume)(0.2 + 0.8 * level);
+    return ramp(rank(amountScale(full), amount(z)));
   }
   function marksReadout(b) {
     const va = markState.va,
@@ -2854,8 +3216,6 @@
       yb = G.Y(ob) + (yb - G.Y(ob)) * u;
     }
     if (xb < G.x || xa > G.x + G.w || yb < G.y || ya > G.y + G.h) return;
-    const measure = markState.metrics.get(z),
-      area = ts * BASE * ps * PR;
     if (S.mode === "geometry") {
       const alpha = ctx.globalAlpha;
       ctx.strokeStyle = colors.volume;
@@ -2869,13 +3229,7 @@
       );
       ctx.globalAlpha = alpha;
     } else {
-      ctx.fillStyle = cellColour(
-        z,
-        full.lo,
-        full.hi,
-        markState.deltaMax,
-        measure?.area > 0 ? (z.v * area) / measure.area : z.v,
-      );
+      ctx.fillStyle = cellColour(z, full);
       const gap = xb - xa > 4 && yb - ya > 4 ? design.gap : 0;
       ctx.fillRect(
         xa + gap / 2,
@@ -3068,22 +3422,487 @@
         else ctx.lineTo(x, y);
         prev = c.c;
       }
+      // Haloed, since it runs through the most traded cells, the ramp's far end.
+      ctx.strokeStyle = colors.surface;
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
       ctx.strokeStyle = colors.poc;
       ctx.lineWidth = 1.7;
       ctx.stroke();
     }
     ctx.restore();
   }
-  // Activity: each column's volume, or its signed taker volume in the flow and
-  // delta encodings, in a pane under the prices that shares their time axis.
+  // POC lines: for each period chosen, a line at the centre of the 125 USDT
+  // price row where that period traded the most USDT, the cube's POC at its
+  // finest rows (the lower row wins a tie). Periods end at the latest data, or
+  // at a replay's edge, so a replay never draws a line with trades after it; a
+  // day chosen by date is that UTC day. Each line is solid across its period
+  // and dashed on to the right edge, where a tag names it.
+  const LINES = [
+      { key: "1d", name: "1 day", tag: "1D", days: 1 },
+      { key: "wk", name: "This week", tag: "Week" },
+      { key: "7d", name: "7 days", tag: "7D", days: 7 },
+      { key: "mo", name: "This month" },
+      { key: "30d", name: "30 days", tag: "30D", days: 30 },
+      { key: "90d", name: "90 days", tag: "90D", days: 90 },
+      { key: "yr", name: "This year" },
+      { key: "1y", name: "1 year", tag: "1Y", days: 365 },
+      { key: "3y", name: "3 years", tag: "3Y", days: 1095 },
+    ],
+    LINE_KEYS = LINES.map((l) => l.key),
+    DAY_COLOURS = ["day1", "day2", "day3", "day4"],
+    DAYS_KEPT = 12,
+    lineInfo = (key) => LINES.find((l) => l.key === key),
+    isDay = (key) =>
+      typeof key === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(key) &&
+      new Date(key + "T00:00:00Z").toISOString().startsWith(key),
+    dayStart = (key) => (Date.parse(key + "T00:00:00Z") / 1000 - T0) / BASE;
+  // A line's name, in lists and its tooltip; its tag, on the chart. The
+  // calendar periods are named by what they are now: the month, the year.
+  function lineName(key) {
+    return isDay(key) ? day(dayStart(key)) : lineInfo(key).name;
+  }
+  function lineTag(key) {
+    const now = date(Math.max(0, activeCutoff() - 1e-6));
+    if (isDay(key)) return dayOf(date(dayStart(key)));
+    if (key === "mo") return d3.utcFormat("%b")(now);
+    if (key === "yr") return String(now.getUTCFullYear());
+    return lineInfo(key).tag;
+  }
+  function lineColour(key) {
+    if (!isDay(key)) return colors.lines[key];
+    const days = S.lines.filter(isDay);
+    return colors.lines[DAY_COLOURS[Math.max(0, days.indexOf(key)) % DAY_COLOURS.length]];
+  }
+  // The lines kept in order: the periods as listed, then the days by date.
+  function normalizeLines(list) {
+    const keys = new Set((Array.isArray(list) ? list : []).filter((k) => LINE_KEYS.includes(k) || isDay(k)));
+    return [
+      ...LINE_KEYS.filter((k) => keys.has(k)),
+      ...[...keys].filter(isDay).sort().slice(-DAYS_KEPT),
+    ];
+  }
+  // A line's period in base columns, ending at the edge that closes the data;
+  // null when it has no time before that edge.
+  function lineSpan(key) {
+    const end = cutEdge(),
+      now = date(Math.max(0, activeCutoff() - 1e-6)),
+      base = (d) => Math.max(0, Math.round((+d / 1000 - T0) / BASE));
+    let a;
+    if (isDay(key)) {
+      a = Math.round(dayStart(key));
+      return a >= 0 && a < end ? [a, Math.min(a + 1536, end)] : null;
+    }
+    if (key === "wk") a = base(d3.utcMonday.floor(now));
+    else if (key === "mo") a = base(d3.utcMonth.floor(now));
+    else if (key === "yr") a = base(d3.utcYear.floor(now));
+    else a = Math.max(0, end - lineInfo(key).days * 1536);
+    return a < end ? [a, end] : null;
+  }
+  const lineResults = new Map(),
+    lineLatest = new Map(),
+    lineId = (key, span) =>
+      ["line", live.generation, key, span[0], span[1], span[1] > Math.floor(CUT) ? CUT : ""].join("|");
+  // A POC from row sums: the row with the most volume, the lower row winning a
+  // tie, with its volume and the period's.
+  function linePOC(key, span, q, exact, rowPrice) {
+    const row = q.poc,
+      volume = row === null ? 0 : q.rows.find((x) => x.r === row)?.v || 0;
+    return { key, span, state: "ready", exact, row, rowPrice, volume, total: q.v };
+  }
+  // A line's POC: from loaded cells at 125 USDT rows that tile its period; from
+  // the cube (live); or, in the recorded snapshot, from its finest cells that
+  // cover the period, marked as approximate.
+  function lineResult(key) {
+    const span = lineSpan(key);
+    if (!span) return { key, span: null, state: "none" };
+    const id = lineId(key, span);
+    if (lineResults.has(id)) return lineResults.get(id);
+    const tiled = exactSource([span[0], span[1], 0, 2 ** 32], 24, 0);
+    let result = null;
+    if (tiled) result = linePOC(key, span, aggregate(tiled, tiled.n, 0, [span[0], span[1], 0, Infinity]), true, 1);
+    else if (!PACK.live) {
+      const blocks = Object.values(sources)
+        .concat(referenceView ? [referenceView] : [])
+        .filter((s) => {
+          const [start, stop] = sourceRange(s);
+          return start <= span[0] && stop >= Math.min(span[1], activeCutoff());
+        })
+        .sort((a, b) => a.m - b.m || a.n - b.n);
+      const src = blocks[0];
+      if (src) {
+        const ts = 2 ** src.n,
+          a = Math.ceil(span[0] / ts) * ts,
+          b = span[1] >= Math.min(src.b1, activeCutoff()) ? span[1] : Math.floor(span[1] / ts) * ts;
+        result = linePOC(key, span, aggregate(src, src.n, src.m, [a, Math.max(a, b), 0, Infinity]), false, 2 ** src.m);
+      }
+    }
+    if (!result)
+      return { key, span, state: cube.failed.has(id) ? "failed" : "pending", id, error: cube.failed.get(id) };
+    lineResults.set(id, result);
+    lineLatest.set(key, result);
+    return result;
+  }
+  // What a line draws: its own result, or while that is read, the latest one
+  // that ends no later than the data shown, so no line runs ahead of a replay.
+  function lineShown(key) {
+    const r = lineResult(key);
+    if (r.state === "ready") return r;
+    const was = lineLatest.get(key);
+    return was && r.span && was.span[1] <= cutEdge() ? { ...was, stale: true } : r;
+  }
+  function linesWant() {
+    for (const key of S.lines) {
+      const r = lineResult(key);
+      if (r.state !== "pending") continue;
+      const [a, b] = r.span,
+        nq = clamp(Math.ceil(Math.log2(Math.max(1, (b - a) / 16))), 0, 24),
+        id = r.id;
+      return {
+        key: id,
+        path: `/cube/query?n=${nq}&m=0&b0=${a}&b1=${b}`,
+        done: async (body) => {
+          const block = await unpack(body.block, id),
+            q = summarize(block.cells, nq, 0),
+            s = body.summary;
+          q.poc = s.poc == null ? null : Math.round(s.poc / PR - 0.5);
+          q.v = s.volume;
+          const result = linePOC(key, r.span, q, true, 1);
+          lineResults.set(id, result);
+          lineLatest.set(key, result);
+          while (lineResults.size > 200) lineResults.delete(lineResults.keys().next().value);
+        },
+      };
+    }
+    return null;
+  }
+  function setLines(next) {
+    S.lines = normalizeLines(next);
+    update();
+    save();
+  }
+  // The lines and their tags. Longer periods are drawn first, so shorter ones
+  // lie on top; each line is haloed in the surface colour to stand clear of
+  // the cells under it.
+  let lineHits = [];
+  function drawLines(cut) {
+    lineHits = [];
+    const shown = S.lines
+      .map((key) => ({ key, r: lineShown(key), colour: lineColour(key) }))
+      .filter((l) => l.r.state === "ready" && l.r.row !== null);
+    if (!shown.length) return;
+    const right = G.x + G.w;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(G.x, G.y, G.w, G.h);
+    ctx.clip();
+    for (const l of shown.slice().sort((a, b) => b.r.span[1] - b.r.span[0] - (a.r.span[1] - a.r.span[0]))) {
+      const y = Math.round(G.Y((l.r.row + 0.5) * l.r.rowPrice)) + 0.5,
+        xa = clamp(G.X(l.r.span[0]), G.x - 2, right),
+        xb = clamp(G.X(Math.min(l.r.span[1], cut)), G.x - 2, right),
+        hot = hover?.line === l.key,
+        width = hot ? 3 : 2;
+      l.y = y;
+      ctx.globalAlpha = l.r.stale ? 0.55 : 1;
+      // The halo, then the period solid and the rest of the way dashed.
+      line(xa, y, right, y, colors.surface, width + 3, 0.85 * (l.r.stale ? 0.55 : 1));
+      line(xa, y, xb, y, l.colour, width, l.r.stale ? 0.55 : 1);
+      ctx.setLineDash([5, 4]);
+      line(xb, y, right, y, l.colour, hot ? 2 : 1.4, l.r.stale ? 0.45 : 0.85);
+      ctx.setLineDash([]);
+      // Where the period starts, when it starts in view.
+      if (G.X(l.r.span[0]) > G.x + 1 && G.X(l.r.span[0]) < right - 1) {
+        line(xa, y - 5, xa, y + 5, colors.surface, 4, 0.85);
+        line(xa, y - 5, xa, y + 5, l.colour, 2, l.r.stale ? 0.55 : 1);
+      }
+      ctx.globalAlpha = 1;
+      lineHits.push({ key: l.key, y, xa, xb: right, r: l.r, colour: l.colour });
+    }
+    ctx.restore();
+    drawLineTags(shown);
+  }
+  // Tags at the plot's right edge, one per line, level with it or pushed apart
+  // just enough to read, with a leader back to the line; a line above or below
+  // the view keeps its tag at that edge, with an arrow.
+  function drawLineTags(shown) {
+    ctx.font = `500 ${TYPE.s}px ${FONT}`;
+    const right = G.x + G.w - 6,
+      pad = 5,
+      height = 16,
+      // Below the Latest button when it shows at the plot's top right.
+      top0 = el("latest").hidden ? G.y + 2 : 16 + el("latest").offsetHeight + 4,
+      tags = shown
+        .map((l) => {
+          const y = G.Y((l.r.row + 0.5) * l.r.rowPrice),
+            off = y < G.y ? -1 : y > G.y + G.h ? 1 : 0,
+            name = lineTag(l.key) + (off < 0 ? " ↑" : off > 0 ? " ↓" : ""),
+            value = (l.r.exact ? "" : "≈ ") + price((l.r.row + 0.5) * l.r.rowPrice * PR);
+          ctx.font = `500 ${TYPE.s}px ${FONT}`;
+          const nameW = Math.ceil(ctx.measureText(name).width) + 2 * pad;
+          ctx.font = `${TYPE.s}px ${FONT}`;
+          const valueW = Math.ceil(ctx.measureText(value).width) + 2 * pad;
+          return { ...l, y: clamp(y, top0 + height / 2, G.y + G.h - height / 2 - 2), line: y, off, name, value, nameW, valueW };
+        })
+        .sort((a, b) => a.y - b.y);
+    // Apart by a tag's height, top down, then back up from the bottom edge.
+    for (let i = 0; i < tags.length; i++)
+      tags[i].ty = Math.max(tags[i].y, i ? tags[i - 1].ty + height + 2 : -Infinity);
+    for (let i = tags.length - 1; i >= 0; i--)
+      tags[i].ty = Math.min(tags[i].ty, i < tags.length - 1 ? tags[i + 1].ty - height - 2 : G.y + G.h - height / 2 - 2);
+    for (const t of tags) {
+      const w = t.nameW + t.valueW,
+        x = right - w,
+        top = t.ty - height / 2;
+      if (Math.abs(t.ty - t.line) > 1 && !t.off) {
+        // A leader from the line to its tag.
+        line(x - 6, t.line, x, t.ty, t.colour, 1, 0.8);
+      }
+      ctx.fillStyle = colors.surface;
+      ctx.globalAlpha = 0.92;
+      ctx.beginPath();
+      ctx.roundRect(x, top, w, height, 3);
+      ctx.fill();
+      ctx.globalAlpha = t.r.stale ? 0.6 : 1;
+      ctx.fillStyle = t.colour;
+      ctx.beginPath();
+      ctx.roundRect(x, top, t.nameW, height, [3, 0, 0, 3]);
+      ctx.fill();
+      ctx.strokeStyle = t.colour;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(x + 0.5, top + 0.5, w - 1, height - 1, 3);
+      ctx.stroke();
+      const light = d3.lab(t.colour).l > 62;
+      ctx.font = `500 ${TYPE.s}px ${FONT}`;
+      ctx.fillStyle = light ? "#15191c" : "#fff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(t.name, x + t.nameW / 2, t.ty + 0.5);
+      ctx.font = `${TYPE.s}px ${FONT}`;
+      ctx.fillStyle = colors.ink;
+      ctx.fillText(t.value, x + t.nameW + t.valueW / 2, t.ty + 0.5);
+      ctx.globalAlpha = 1;
+      labelsTaken.push([x - 3, top - 2, x + w + 3, top + height + 2]);
+      const hit = lineHits.find((h) => h.key === t.key);
+      if (hit) hit.tag = [x, top, x + w, top + height];
+    }
+  }
+  // The line or tag under the pointer: a tag's box, or within 4 pixels of a
+  // line where it is drawn.
+  function lineAt(p) {
+    return (
+      lineHits.find((h) => h.tag && p.x >= h.tag[0] && p.x <= h.tag[2] && p.y >= h.tag[1] && p.y <= h.tag[3]) ||
+      lineHits.find((h) => Math.abs(p.y - h.y) <= 4 && p.x >= h.xa - 2 && p.x <= h.xb) ||
+      null
+    );
+  }
+  function lineTip(tip, h) {
+    const r = h.r,
+      rowTop = (r.row + 1) * r.rowPrice * PR,
+      rowBottom = r.row * r.rowPrice * PR,
+      periodEnd = Math.min(r.span[1], activeCutoff());
+    tipRows(
+      tip,
+      `${lineName(h.key)} · POC ${price((r.row + 0.5) * r.rowPrice * PR)} USDT`,
+      `Row ${price(rowBottom)}–${price(rowTop)} USDT`,
+      [
+        ["Period", range(r.span[0], periodEnd) + " UTC"],
+        ["In the row", `${compact(r.volume)} USDT · ${r.total ? ((100 * r.volume) / r.total).toFixed(1) : "0"}%`],
+        ["Period volume", `${compact(r.total)} USDT`],
+      ],
+      r.exact
+        ? r.stale
+          ? "Updating to the latest data…"
+          : "Where the period traded the most USDT, per 125 USDT row"
+        : `Approximate: the recorded snapshot has ${price(r.rowPrice * PR)} USDT rows here`,
+    );
+  }
+  // The POC lines' popover: the periods as checkboxes, each with its colour and,
+  // when on, its POC; the days chosen, each removable; and a day to add. The
+  // bar's button shows the lines on as dots in their colours.
+  function lineValue(key) {
+    const r = lineShown(key);
+    if (r.state === "ready")
+      return r.row === null
+        ? "no trades"
+        : (r.exact ? "" : "≈ ") + price((r.row + 0.5) * r.rowPrice * PR) + (r.stale ? " …" : "");
+    if (r.state === "none") return isDay(key) ? "after the data" : "no trades yet";
+    if (r.state === "failed") return "unavailable";
+    return "…";
+  }
+  function lineRow(key, removable) {
+    const row = document.createElement(removable ? "div" : "label"),
+      swatch = document.createElement("i"),
+      name = document.createElement("span"),
+      value = document.createElement("span");
+    row.className = "ol-line-row" + (removable ? "" : " cursor-interaction");
+    swatch.className = "ol-line-swatch";
+    swatch.setAttribute("aria-hidden", "true");
+    swatch.dataset.lineSwatch = key;
+    name.className = "ol-line-name";
+    name.textContent = lineName(key);
+    value.className = "ol-line-value ol-num";
+    value.dataset.lineValue = key;
+    if (removable) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "ol-icon-button ol-s cursor-interaction";
+      remove.dataset.lineRemove = key;
+      remove.setAttribute("aria-label", `Remove ${lineName(key)}`);
+      remove.innerHTML =
+        '<svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>';
+      row.append(swatch, name, value, remove);
+    } else {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.dataset.line = key;
+      row.append(box, swatch, name, value);
+    }
+    return row;
+  }
+  function renderLines() {
+    const on = new Set(S.lines),
+      days = S.lines.filter(isDay);
+    if (!el("lines-list").childElementCount)
+      el("lines-list").replaceChildren(...LINE_KEYS.map((key) => lineRow(key, false)));
+    if (el("lines-days").dataset.keys !== days.join(",")) {
+      el("lines-days").dataset.keys = days.join(",");
+      el("lines-days").replaceChildren(...days.map((key) => lineRow(key, true)));
+    }
+    for (const box of qsa("#ol-lines-list input[data-line]")) {
+      const key = box.dataset.line;
+      if (box.checked !== on.has(key)) box.checked = on.has(key);
+      // The names of the calendar periods say which month and year they are.
+      const name = box.parentElement.querySelector(".ol-line-name"),
+        named = key === "mo" || key === "yr" ? `${lineInfo(key).name} · ${lineTag(key)}` : lineInfo(key).name;
+      if (name.textContent !== named) name.textContent = named;
+    }
+    for (const swatch of qsa("[data-line-swatch]"))
+      swatch.style.setProperty("--line", lineColour(swatch.dataset.lineSwatch));
+    for (const value of qsa("[data-line-value]")) {
+      const key = value.dataset.lineValue,
+        text = on.has(key) ? lineValue(key) : "";
+      if (value.textContent !== text) value.textContent = text;
+    }
+    el("lines-clear").disabled = !S.lines.length;
+    el("lines-days-head").textContent = days.length ? "Days" : "Days · none yet";
+    const last = date(Math.max(0, activeCutoff() - 1e-6)).toISOString().slice(0, 10);
+    el("lines-date").min = "2021-01-01";
+    el("lines-date").max = last;
+    // The bar's button: a dot for each line on, in its colour, and its name.
+    const dots = el("lines-dots"),
+      shown = S.lines.slice(0, 5),
+      want = shown.map(lineColour).join(",") + (S.lines.length > 5 ? `+${S.lines.length - 5}` : "");
+    if (dots.dataset.dots !== want) {
+      dots.dataset.dots = want;
+      dots.replaceChildren(
+        ...shown.map((key) => {
+          const dot = document.createElement("i");
+          dot.style.background = lineColour(key);
+          return dot;
+        }),
+        ...(S.lines.length > 5 ? [`+${S.lines.length - 5}`] : []),
+      );
+    }
+    const count = S.lines.length ? String(S.lines.length) : "";
+    if (el("lines-count").textContent !== count) el("lines-count").textContent = count;
+    const label = S.lines.length
+      ? `POC lines: ${S.lines.map(lineName).join(", ")}`
+      : "POC lines: none";
+    if (el("lines").getAttribute("aria-label") !== label) el("lines").setAttribute("aria-label", label);
+  }
+  function linesStatus(text) {
+    el("lines-status").textContent = text;
+  }
+  function openLines() {
+    if (el("lines-pop").hidden) el("lines").click();
+    else closePop(true);
+  }
+  function bindLines() {
+    bindPop("lines", "lines-pop", () => {
+      hideHint();
+      linesStatus("");
+      renderLines();
+      // Into the list: the first line on, or the first period.
+      (root.querySelector("#ol-lines-list input:checked") ||
+        root.querySelector("#ol-lines-list input"))?.focus();
+    });
+    el("lines-list").addEventListener("change", (e) => {
+      const key = e.target.dataset?.line;
+      if (!key) return;
+      setLines(e.target.checked ? [...S.lines, key] : S.lines.filter((k) => k !== key));
+      linesStatus(`${lineName(key)} ${e.target.checked ? "on" : "off"}`);
+    });
+    el("lines-days").addEventListener("click", (e) => {
+      const key = e.target.closest("[data-line-remove]")?.dataset.lineRemove;
+      if (!key) return;
+      const buttons = [...qsa("[data-line-remove]")],
+        at = buttons.findIndex((b) => b.dataset.lineRemove === key);
+      setLines(S.lines.filter((k) => k !== key));
+      linesStatus(`${lineName(key)} removed`);
+      // Focus stays in the list: the next day's button, or else the date.
+      const rest = [...qsa("[data-line-remove]")];
+      (rest[Math.min(at, rest.length - 1)] || el("lines-date")).focus();
+    });
+    el("lines-add").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const key = el("lines-date").value,
+        days = S.lines.filter(isDay);
+      if (!isDay(key)) return linesStatus("Choose a day to add.");
+      const start = dayStart(key);
+      if (start < 0 || start >= activeCutoff())
+        return linesStatus(`Choose a day from 1 Jan 2021 to ${day(Math.max(0, activeCutoff() - 1e-6))}.`);
+      if (S.lines.includes(key)) return linesStatus(`${lineName(key)} is already drawn.`);
+      if (days.length >= DAYS_KEPT) return linesStatus(`Up to ${DAYS_KEPT} days; remove one first.`);
+      setLines([...S.lines, key]);
+      el("lines-date").value = "";
+      linesStatus(`${lineName(key)} added`);
+    });
+    el("lines-date").addEventListener("input", () => linesStatus(""));
+    // Text fields keep their keys, so the date field closes its popover itself.
+    el("lines-date").addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      closePop(true);
+    });
+    el("lines-clear").addEventListener("click", () => {
+      setLines([]);
+      linesStatus("Every line is off");
+      root.querySelector("#ol-lines-list input")?.focus();
+    });
+  }
+  // Activity: each column's amount in a pane under the prices that shares
+  // their time axis: its volume, its trades or its average trade size, or its
+  // signed taker volume (taker flow and delta) or signed taker trades (taker
+  // trades).
   function activity(full, cut) {
     const ts = stepT(),
       b = bounds(),
       cols = full.cols.filter(
         (c) => (c.c + 1) * ts > S.tA && c.c * ts < S.tB && c.c * ts < cut,
       ),
-      signed = S.mode === "delta" || S.mode === "flow",
-      value = (c) => (signed ? 2 * c.bv - c.v : c.v),
+      signed = ["delta", "flow", "flowtrades"].includes(S.mode),
+      value = (c) =>
+        S.mode === "flowtrades"
+          ? 2 * c.bt - c.ct
+          : signed
+            ? 2 * c.bv - c.v
+            : S.mode === "trades"
+              ? c.ct
+              : S.mode === "size"
+                ? c.ct > 0
+                  ? c.v / c.ct
+                  : 0
+                : c.v,
+      unit =
+        S.mode === "trades" || S.mode === "flowtrades"
+          ? "trades"
+          : S.mode === "size"
+            ? "per trade"
+            : "USDT",
       max = d3.max(cols, (c) => Math.abs(value(c))) || 1,
       top = G.ay,
       h = G.ah,
@@ -3119,19 +3938,29 @@
     // The scale in the price labels' column: the largest value, then the unit.
     if (!cols.length) return;
     text((signed ? "±" : "") + compact(max), G.x - 8, top + 7, colors.muted, "right");
-    if (h >= 34) text("USDT", G.x - 8, top + 21, colors.muted, "right");
+    if (h >= 34) text(unit, G.x - 8, top + 21, colors.muted, "right");
   }
 
+  // The columns the continuations compare, at level (n, m), up to `end`: the
+  // loaded tiers that can represent the level, the finest owning each column,
+  // and live the cube's history of the level. Tiles fetched for views are not
+  // among them, so where the view has been never changes the result.
   function evidenceColumns(n, m, end) {
     const ts = 2 ** n,
       owners = new Map(),
       byColumn = new Map(),
-      used = new Map();
-    const candidates = Object.values(sources)
-      .filter((src) => src.n <= n && src.m <= m)
+      used = new Map(),
+      history = PACK.live ? histories.get(historyKey(n, m)) : null;
+    const candidates = TIERS.map((id) => sources[id])
+      .filter((src) => src && src.n <= n && src.m <= m)
       .sort((a, b) => a.n - b.n || a.m - b.m);
+    // The cube's history owns what the finer tiers don't, before the overview.
+    if (history) {
+      const at = candidates.findIndex((s) => s.id === "overview");
+      candidates.splice(at < 0 ? candidates.length : at, 0, history);
+    }
     for (const src of candidates) {
-      const meta = PACK.blocks[src.id],
+      const meta = src === history ? src : PACK.blocks[src.id],
         start = meta?.b0 ?? src.col0 * 2 ** src.n,
         stop = Math.min(end, meta?.b1 ?? src.col1 * 2 ** src.n);
       const c0 = Math.ceil(start / ts),
@@ -3144,9 +3973,12 @@
           owned.add(c);
         }
       if (!owned.size) continue;
-      const grouped = aggregate(src, n, m, [c0 * ts, c1 * ts, 0, Infinity]);
+      const grouped =
+        src === history
+          ? history.cols
+          : aggregate(src, n, m, [c0 * ts, c1 * ts, 0, Infinity]).cols;
       let accepted = 0;
-      for (const col of grouped.cols)
+      for (const col of grouped)
         if (owned.has(col.c) && col.v > 0 && col.poc !== null) {
           byColumn.set(col.c, { ...col, source: src.id });
           accepted++;
@@ -3179,11 +4011,17 @@
     return Math.floor(end / stepT()) - 1;
   }
   function evidenceKey() {
-    const loaded = Object.values(sources)
-      .map((src) => src.id + ":" + src.cells.length)
-      .sort()
-      .join(",");
-    return ["v4", renderN(), renderM(), evidenceAnchor(), S.barrier || 1, loaded].join("|");
+    const loaded = TIERS.map((id) => id + ":" + (sources[id]?.cells.length ?? "-")).join(","),
+      history = PACK.live ? histories.get(historyKey(renderN(), renderM())) : null;
+    return [
+      "v5",
+      renderN(),
+      renderM(),
+      evidenceAnchor(),
+      S.barrier || 1,
+      loaded,
+      history ? `${history.b0}-${history.b1}-${history.cols.length}` : "none",
+    ].join("|");
   }
   // Continuations wait for the view to settle: a level change mid-gesture would
   // otherwise recompute them inside the frame. Meanwhile the last result at the
@@ -3214,6 +4052,11 @@
       barrier = S.barrier || 1,
       key = evidenceKey();
     if (evidenceCache.has(key)) return evidenceCache.get(key);
+    // Live, the level's history comes from the cube; until it has, nothing is
+    // compared on a partial history. One that can't be read leaves the loaded
+    // tiers, which say so.
+    if (PACK.live && !histories.has(historyKey(n, m)) && !cube.failed.has(historyKey(n, m)))
+      return { a, n, m, barrier, loading: true, error: "Reading this level's history from the cube…" };
     const history = evidenceColumns(n, m, (a + 1) * ts),
       cols = history.cols,
       ai = cols.findIndex((c) => c.c === a);
@@ -3400,11 +4243,17 @@
       recent: "7-day base",
       reference: "30-day archive",
       overview: "full-history overview",
+      history: "the cube's history",
     };
-    el("evidence-provenance").textContent = e.sources?.length
-      ? `${e.sources.map((s) => sourceNames[s.id] || s.id).join(" + ")} · deduplicated · all price rows, independent of the visible window`
-      : "No loaded history represents this grid.";
-    el("evidence-note").textContent = e.error
+    el("evidence-provenance").textContent = e.loading
+      ? ""
+      : e.sources?.length
+        ? `${e.sources.map((s) => sourceNames[s.id] || s.id).join(" + ")} · ${integer(e.sources.reduce((sum, s) => sum + s.columns, 0))} columns · all price rows, independent of the visible window` +
+          (PACK.live && cube.failed.has(historyKey(e.n, e.m)) ? " · the cube's history couldn't be read" : "")
+        : "No loaded history represents this grid.";
+    el("evidence-note").textContent = e.loading
+      ? ""
+      : e.error
       ? "Choose a completed column containing trades."
       : (supported
           ? "Empirical shares; overlapping cases, not calibrated odds."
@@ -3413,7 +4262,9 @@
           ? " Barriers use the first column-end POC crossing; trade first-touch is not observable here."
           : " The boxes show where the POC moved in history.") +
         " Every outcome ends by the anchor.";
-    el("evidence-brief").textContent = e.error
+    el("evidence-brief").textContent = e.loading
+      ? "Reading history…"
+      : e.error
       ? "Choose a completed column containing trades."
       : supported
         ? "Empirical shares, not calibrated odds."
@@ -3804,9 +4655,7 @@
     ];
   }
   function resolutionReadiness(n, m) {
-    const b = requestedBounds(),
-      a = Math.min(b[0], CUT),
-      end = Math.min(b[1], CUT),
+    const [a, end] = viewRange(),
       shown = displaySource();
     if (shown) {
       const [start, stop] = sourceRange(shown);
@@ -3835,91 +4684,215 @@
     }
     return { status: "unavailable", source: shown?.id || S.dataset };
   }
-  const tiles = { pending: null, timer: 0, quiet: false, stale: false };
-  function tileSpec(n, m) {
+  // A tile: level-(n, m) cells over whole columns of the given time, at most
+  // TILE_COLUMNS of them, up to the edge that closes the data.
+  function tileSpec(n, m, a, b) {
     const step = 2 ** n,
-      r = requestedBounds(),
-      b0 = Math.floor(Math.min(r[0], CUT) / step) * step,
-      b1 = Math.min(Math.ceil(Math.min(r[1], CUT) / step) * step, CUT);
-    if (b1 <= b0 || (b1 - b0) / step > TILE_COLUMNS) return null;
+      b0 = Math.floor(Math.min(a, CUT) / step) * step,
+      b1 = Math.min(Math.ceil(Math.min(b, CUT) / step) * step, Math.ceil(CUT));
+    if (b1 <= b0 || Math.ceil(b1 / step) - b0 / step > TILE_COLUMNS) return null;
     return { id: `tile:${n}:${m}:${b0}:${b1}`, n, m, b0, b1 };
   }
-  function requestTile() {
-    if (!PACK.live || !ready || tiles.quiet) return;
-    clearTimeout(tiles.timer);
-    tiles.timer = setTimeout(fetchTile, 250);
+  // Tiles past the newest few, least recently drawn first, are let go; those
+  // the view and the lens draw now stay.
+  const TILES_KEPT = 8;
+  function trimTiles(keep) {
+    const tiles = Object.values(sources)
+      .filter((s) => s.id.startsWith("tile:") && !keep.includes(s.id))
+      .sort((a, b) => (a.used || 0) - (b.used || 0));
+    while (tiles.length > TILES_KEPT) {
+      const t = tiles.shift();
+      delete sources[t.id];
+      delete loadState[t.id];
+      delete PACK.blocks[t.id];
+    }
   }
-  async function fetchTile() {
-    if (
-      tiles.pending ||
-      tiles.stale ||
-      resolutionReadiness(S.n, S.m).status !== "unavailable"
-    )
-      return;
-    const t = tileSpec(S.n, S.m);
-    if (!t) return;
-    tiles.pending = t.id;
+  function tileRead(t, label) {
+    return {
+      key: ["tile", live.generation, t.id].join("|"),
+      path: `/cube/tile?n=${t.n}&m=${t.m}&b0=${t.b0}&b1=${t.b1}`,
+      loading: label,
+      start: () => {
+        PACK.blocks[t.id] = { n: t.n, m: t.m, b0: t.b0, b1: t.b1 };
+        loadState[t.id] = "loading";
+      },
+      drop: () => {
+        delete PACK.blocks[t.id];
+        delete loadState[t.id];
+      },
+      done: async (body) => {
+        const tile = await unpack(body.block, t.id);
+        const meta = { ...body.block };
+        delete meta.gzip_base64;
+        PACK.blocks[t.id] = meta;
+        tile.used = performance.now();
+        sources[t.id] = tile;
+        loadState[t.id] = "ready";
+        trimTiles([t.id, S.dataset, lensSource]);
+      },
+    };
+  }
+  // The view's tile, when no loaded block can show the view at its level.
+  function tileWant() {
+    const [n, m] = viewLevel();
+    if (resolutionReadiness(n, m).status !== "unavailable") return null;
+    const [a, b] = viewRange(),
+      t = tileSpec(n, m, a, b);
+    return t && !loadState[t.id]
+      ? tileRead(t, `Fetching ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT cells from the cube`)
+      : null;
+  }
+  // The lens's finer cells, over the view, or around the lens where the view
+  // is too wide for one tile.
+  let lensSource = null;
+  function lensTile() {
+    if (!PACK.live || !(S.lens || nav.alt || nav.hold)) return null;
+    const f = lensFrame();
+    if (!f) return null;
+    const n = Math.max(0, renderN() - f.depth),
+      m = Math.max(0, renderM() - f.depth);
+    if (f.src && f.src.n <= n && f.src.m <= m) return null;
+    const step = 2 ** n,
+      [a, b] = viewRange();
+    let t = tileSpec(n, m, a, b);
+    if (!t) {
+      const mid = Math.floor(clamp(f.p.t, 0, CUT) / step) * step,
+        from = Math.max(0, mid - (TILE_COLUMNS / 2) * step);
+      t = tileSpec(n, m, from, from + (TILE_COLUMNS - 1) * step);
+    }
+    return t;
+  }
+  function lensWant() {
+    const t = lensTile();
+    return t && !loadState[t.id] ? tileRead(t, "") : null;
+  }
+  // The continuations' history at the drawn level: each column's POC, volume
+  // and taker-buy volume, for up to the last 100,000 columns.
+  const histories = new Map(),
+    historyKey = (n, m) => ["history", live.generation, n, m].join("|");
+  function historyWant() {
+    if (!(S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases"))) return null;
+    const n = renderN(),
+      m = renderM(),
+      key = historyKey(n, m);
+    if (histories.has(key)) return null;
+    return {
+      key,
+      path: `/cube/columns?n=${n}&m=${m}`,
+      done: async (body) => {
+        histories.set(key, await unpackHistory(body.columns));
+        while (histories.size > 6) histories.delete(histories.keys().next().value);
+        evidenceCache.clear();
+      },
+    };
+  }
+  async function unpackHistory(block) {
+    const buf = await inflate(block),
+      v = new DataView(buf);
+    if (String.fromCharCode(...new Uint8Array(buf, 0, 4)) !== "MSCC")
+      throw Error("Invalid column history");
+    const count = v.getUint32(16, true),
+      cs = new Uint32Array(buf, 32, count),
+      pocs = new Uint32Array(buf, 32 + 4 * count, count),
+      vol = new Float32Array(buf, 32 + 8 * count, count),
+      bv = new Float32Array(buf, 32 + 12 * count, count);
+    return {
+      id: "history",
+      n: v.getUint8(4),
+      m: v.getUint8(5),
+      b0: block.b0,
+      b1: block.b1,
+      cols: Array.from({ length: count }, (_, i) => ({
+        c: cs[i],
+        poc: pocs[i],
+        v: vol[i],
+        bv: bv[i],
+      })),
+    };
+  }
+  // Reads from the cube, for the live page: the rectangle's measures, the
+  // view's tile, the lens's tile, the POC lines and the continuations' history.
+  // One goes at a time, in that order of need, and each kind asks only for
+  // what the page needs now, so a view that moved on is read once it settles.
+  // A read for a pack the page has since replaced is dropped. One the cube
+  // refuses as changed waits for the page to take the cube's new data; one
+  // that fails is not asked again until new data arrives.
+  const CUBE_KINDS = ["measure", "tile", "lens", "lines", "history"],
+    cube = { busy: null, stale: false, timer: 0, failed: new Map() };
+  function scheduleCube() {
+    if (!PACK.live || !ready) return;
+    clearTimeout(cube.timer);
+    cube.timer = setTimeout(pumpCube, 200);
+  }
+  function cubeWant() {
+    const wants = { measure: measureWant, tile: tileWant, lens: lensWant, lines: linesWant, history: historyWant };
+    for (const kind of CUBE_KINDS) {
+      const want = wants[kind]();
+      if (want && !cube.failed.has(want.key)) return { kind, ...want };
+    }
+    return null;
+  }
+  async function pumpCube() {
+    if (!PACK.live || !ready || cube.busy || cube.stale) return;
+    const want = cubeWant();
+    if (!want) return;
     const generation = live.generation;
-    PACK.blocks[t.id] = { n: t.n, m: t.m, b0: t.b0, b1: t.b1 };
-    loadState[t.id] = "loading";
-    el("loading").hidden = false;
-    el("loading").textContent =
-      `Fetching ${dur(BASE * 2 ** t.n)} by ${price(PR * 2 ** t.m)} USDT cells from the cube`;
-    update();
+    cube.busy = want;
+    want.start?.();
+    if (want.loading) {
+      el("loading").textContent = want.loading;
+      el("loading").removeAttribute("role");
+      el("loading").hidden = false;
+    }
+    requestDraw();
     try {
       // Resolved against the page but without any credentials the page's own URL
       // may carry; the browser attaches the session's Basic credentials itself.
       const target = new URL(
-        `/cube/tile?n=${t.n}&m=${t.m}&b0=${t.b0}&b1=${t.b1}&pack=${encodeURIComponent(PACK.state_token)}`,
+        `${want.path}&pack=${encodeURIComponent(PACK.state_token)}`,
         location.href,
       );
       target.username = "";
       target.password = "";
-      // A tile that hangs would hold every later one back: it fails instead.
-      const response = await fetch(target, { signal: AbortSignal.timeout(120000) }),
-        body = await response.json();
-      if (body.error === "cube_changed") {
+      // A read that hangs would hold every later one back: it fails instead.
+      const response = await fetch(target, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(120000),
+        }),
+        body = await response.json().catch(() => null);
+      if (body?.error === "cube_changed") {
         // The cube holds another revision of history than this page. Nothing is
-        // mixed: the page takes the new data first, then asks for the tile again.
-        tiles.stale = true;
+        // mixed: the page takes the new data first, then asks again.
+        cube.stale = true;
         throw Error("the cube changed; taking its new data first");
       }
-      if (!response.ok) throw Error(body.error || response.statusText);
-      const tile = await unpack(body.block, t.id);
-      // Read for a pack the page has replaced since, even while it decoded: dropped,
-      // and asked for again. Nothing awaits between this check and the tile's use.
-      if (generation !== live.generation) {
-        delete PACK.blocks[t.id];
-        delete loadState[t.id];
-        tiles.pending = null;
-        el("loading").hidden = true;
-        update();
-        return;
-      }
-      PACK.blocks[t.id] = body.block;
-      sources[t.id] = tile;
-      loadState[t.id] = "ready";
-      el("loading").hidden = true;
+      if (!response.ok) throw Error(body?.error || `the server answered ${response.status}`);
+      // Read for a pack the page has replaced since, even while it decoded:
+      // dropped, and asked for again.
+      if (generation === live.generation) await want.done(body);
+      else want.drop?.();
+      if (want.loading) el("loading").hidden = true;
     } catch (error) {
-      delete PACK.blocks[t.id];
-      delete loadState[t.id];
-      el("loading").textContent = `Cube tile unavailable: ${
-        error.name === "TimeoutError" ? "the server didn't answer within two minutes" : error.message
-      }`;
-      el("loading").setAttribute("role", "alert");
+      want.drop?.();
+      // The server's own words end a sentence the page continues.
+      const message = (
+        error.name === "TimeoutError"
+          ? "the server didn't answer within two minutes"
+          : error instanceof TypeError
+            ? "the server can't be reached"
+            : error.message
+      ).replace(/\.+$/, "");
+      if (!cube.stale) cube.failed.set(want.key, message);
+      if (want.loading || want.kind === "tile") {
+        el("loading").textContent = `Cube tile unavailable: ${message}`;
+        el("loading").setAttribute("role", "alert");
+        el("loading").hidden = false;
+      }
     }
-    tiles.pending = null;
-    if (tiles.stale && PACK.live) pollLive();
-    chooseSource();
-    evidenceCache.clear();
-    // After a failure the view that failed is not asked for again by itself: any
-    // timer armed meanwhile is dropped and this refresh schedules nothing. A view
-    // that moved on while the tile was pending is fetched by this refresh.
-    const same = !sources[t.id] && tileSpec(S.n, S.m)?.id === t.id;
-    if (same) clearTimeout(tiles.timer);
-    tiles.quiet = same;
+    cube.busy = null;
+    if (cube.stale) pollLive();
     update();
-    tiles.quiet = false;
+    pumpCube();
   }
   // The plane status is a live region, so it is written only when its text
   // changes; a rewrite with the same words would be announced again.
@@ -4619,6 +5592,8 @@
       src = candidates[0] || null,
       n = src ? Math.max(src.n, renderN() - depth) : renderN(),
       m = src ? Math.max(src.m, renderM() - depth) : renderM();
+    lensSource = src?.id || null;
+    if (src) src.used = performance.now();
     return { p, w, h, x, y, ta, tb, tbRaw, pa, pb, depth, src, n, m };
   }
   function pinLens() {
@@ -4681,33 +5656,36 @@
             Math.ceil(pb / 2 ** src.m) * 2 ** src.m,
           ],
           q = aggregate(src, n, m, lensBounds),
-          area = ts * BASE * ps * PR,
+          whole = ts * BASE * ps * PR,
           deltas = q.cells
             .map((z) => Math.abs(2 * z.bv - z.v))
             .filter(Boolean)
             .sort((x, y) => x - y),
           deltaMax = d3.quantileSorted(deltas, 0.995) || 1;
+        // The lens's cells shade against each other, at their full-cell rates.
+        for (const z of q.cells)
+          markState.metrics.set(z, {
+            ...cellExposure(z, lensBounds, ts, ps),
+            whole,
+            delta: 2 * z.bv - z.v,
+          });
+        const sorted = amountScale(q);
         localLegend =
           S.mode === "delta"
             ? `Δ −${compact(deltaMax)} · 0 · +${compact(deltaMax)} USDT`
-            : S.mode === "flow"
-              ? "Buy share 25% · 50% · 75%"
+            : S.mode === "flow" || S.mode === "flowtrades"
+              ? "Taker buys 25% · 50% · 75%"
               : S.mode === "geometry"
                 ? "Occupied cells"
-                : `${compact(Math.exp(q.lo))}–${compact(Math.exp(q.hi))} USDT · log`;
+                : sorted.length
+                  ? `${compact(d3.quantileSorted(sorted, 0.05))} → ${compact(d3.quantileSorted(sorted, 0.95))} ${AMOUNT_UNITS[S.mode]}`
+                  : "";
         for (const z of q.cells) {
           const xa = G.X(z.c * ts),
             xb = G.X(Math.min((z.c + 1) * ts, b)),
             ya = G.Y((z.r + 1) * ps),
-            yb = G.Y(z.r * ps),
-            exposure = cellExposure(z, lensBounds, ts, ps);
-          ctx.fillStyle = cellColour(
-            z,
-            q.lo,
-            q.hi,
-            deltaMax,
-            exposure.area > 0 ? (z.v * area) / exposure.area : z.v,
-          );
+            yb = G.Y(z.r * ps);
+          ctx.fillStyle = cellColour(z, q, deltaMax);
           if (S.mode === "geometry") {
             ctx.strokeStyle = colors.volume;
             ctx.globalAlpha = 0.65;
@@ -4737,16 +5715,30 @@
             else ctx.lineTo(cx, cy);
             prev = c.c;
           }
+          ctx.strokeStyle = colors.surface;
+          ctx.globalAlpha = 0.7;
+          ctx.lineWidth = 3.3;
+          ctx.stroke();
+          ctx.globalAlpha = 1;
           ctx.strokeStyle = colors.poc;
           ctx.lineWidth = 1.5;
           ctx.stroke();
         }
-        label = `${fine ? `Lens −${depth}` : "Finest recorded"} · ${dur(BASE * ts)} × ${price(PR * ps)} USDT`;
+        // Live, finer cells come from the cube: say so while they are read,
+        // and why when they can't be.
+        const wanted = fine ? null : lensTile(),
+          reading = wanted && loadState[wanted.id] === "loading",
+          failed = wanted && cube.failed.has(["tile", live.generation, wanted.id].join("|"));
+        label = `${fine ? `Lens −${depth}` : src.n === 0 && src.m === 0 ? "Base cells" : "Finest loaded"} · ${dur(BASE * ts)} × ${price(PR * ps)} USDT`;
         sub = fine
           ? "Finer cells · surroundings unchanged · Enter pins"
           : src.n === 0 && src.m === 0
             ? "Base cells · no finer level exists"
-            : "Finer detail unavailable in this region";
+            : failed
+              ? "The cube's finer cells couldn't be read"
+              : reading || wanted
+                ? "Reading finer cells from the cube…"
+                : "The recorded snapshot has no finer cells here";
         if (ta < start || tb > end) {
           label += " · partial";
           sub = "Finer coverage ends inside lens";
@@ -4852,6 +5844,7 @@
             nav.hold = true;
             drag.lens = true;
             requestDraw();
+            scheduleCube();
           }
         }, 400);
     });
@@ -4886,6 +5879,7 @@
         el("tip").hidden = true;
         hover = null;
         requestDraw();
+        scheduleCube();
         return;
       }
       if (!drag) {
@@ -4901,9 +5895,9 @@
       if (!drag.moved) return;
       if (S.select) {
         const snap = (x) => Math.floor(x + 0.5),
-          ta = clamp(snap(p.t), 0, activeCutoff()),
+          ta = clamp(snap(p.t), 0, cutEdge()),
           pa = Math.max(0, snap(p.p)),
-          t0 = clamp(snap(drag.start.t), 0, activeCutoff()),
+          t0 = clamp(snap(drag.start.t), 0, cutEdge()),
           p0 = Math.max(0, snap(drag.start.p));
         S.selection = [
           Math.min(ta, t0),
@@ -5060,6 +6054,7 @@
         el("tip").hidden = true;
         setCursor();
         requestDraw();
+        scheduleCube();
         return;
       }
       // Shift, held, shows the tooltip's values exact.
@@ -5145,11 +6140,12 @@
       else if (k === "m") {
         const i = MODES.indexOf(S.mode) + (shift ? -1 : 1);
         setMode(MODES[(i + MODES.length) % MODES.length]);
-      } else if (k === "p") {
+      } else if (k === "p" && shift) {
         S.poc = !S.poc;
         update();
         save();
-      } else if (k === "r") toggleReplay();
+      } else if (k === "p") openLines();
+      else if (k === "r") toggleReplay();
       // Space plays and pauses a replay, where no control takes it.
       else if (
         k === " " &&
@@ -5277,9 +6273,6 @@
     } else if (S.select || S.lens) setTool("pan");
     else update();
   }
-  qsa("[data-mode]").forEach((b) =>
-    b.addEventListener("click", () => setMode(b.dataset.mode)),
-  );
   for (const [id, dn, dm] of [
     ["tminus", -1, 0],
     ["tplus", 1, 0],
@@ -5325,6 +6318,7 @@
     if (player.timer) setPlaying(true);
   });
   el("replay-now").addEventListener("click", jumpLatest);
+  el("reload").addEventListener("click", () => location.reload());
 
   // The tab's title carries the market: the latest POC and the instrument, and
   // the snapshot's day, or that live updates have stopped.
@@ -5332,10 +6326,13 @@
     const src = sources.recent;
     let poc = null;
     if (src?.cells.length) {
-      const last = src.cells.at(-1).c;
+      // The last complete base column's: the open one may hold a trade or two.
+      const closed = Math.floor(CUT),
+        at = src.cells.findLastIndex((z) => z.c < closed),
+        last = at >= 0 ? src.cells[at].c : -1;
       let best = -1;
       // Ties choose the lower row, as every POC does.
-      for (let i = src.cells.length - 1; i >= 0 && src.cells[i].c === last; i--)
+      for (let i = at; i >= 0 && src.cells[i].c === last; i--)
         if (src.cells[i].v >= best) {
           best = src.cells[i].v;
           poc = src.cells[i].r;
@@ -5419,6 +6416,10 @@
       if (!response.ok)
         throw Error(body?.error || `the server answered ${response.status}`);
       checkUpdate(body);
+      // A server deployed since this page loaded serves a newer page: say so,
+      // and leave the reload to the reader.
+      if (typeof body.page === "string" && PACK.page && body.page !== PACK.page)
+        el("update").hidden = false;
       if (body.status === "delta") await applyLive(body, false);
       else if (body.status === "pack") await applyLive(body.pack, true);
       if (Number.isFinite(body.quiet)) live.updated = Date.now() - body.quiet * 1000;
@@ -5456,8 +6457,13 @@
           delete PACK.blocks[id];
         }
       live.generation++;
-      tiles.stale = false;
+      measured.clear();
+      histories.clear();
+      lineResults.clear();
     }
+    // New data: reads the cube refused or failed are asked for again.
+    cube.stale = false;
+    cube.failed.clear();
     for (const [id, part] of Object.entries(parts)) {
       const src = sources[id],
         meta = { ...body.blocks[id] };
@@ -5488,6 +6494,7 @@
     ])
       if (key in body) PACK[key] = body[key];
     CUT = (Date.parse(PACK.cutoff) / 1000 - T0) / BASE;
+    CANON = canonOf(PACK);
     CUT_YEAR = date(CUT).getUTCFullYear();
     groups.clear();
     evidenceCache.clear();
@@ -5538,7 +6545,11 @@
     pill.title =
       state === "stopped"
         ? `No answer from the server for ${elapsed(now - live.ok)}: ${live.error}. The page keeps asking.`
-        : `Data through ${when(CUT)} UTC. The page asks for new data about once a minute` +
+        : `Data through ${when(CUT)} UTC` +
+          (CANON !== null && CANON < CUT
+            ? `; archived days through ${when(CANON)}, provisional minutes after, which the day's archive may revise`
+            : "") +
+          `. The page asks for new data about once a minute` +
           (state === "stale" ? "; the cube has had none since." : ".");
     if (state === live.state) return;
     live.state = state;
@@ -5618,6 +6629,9 @@
         sources[id] = await unpack(PACK.blocks[id], id);
         delete PACK.blocks[id].gzip_base64;
         loadState[id] = "ready";
+        // Lines summed from coarser blocks are summed again from finer ones.
+        lineResults.clear();
+        lineLatest.clear();
         rebuildReference();
         chooseSource();
         limits();

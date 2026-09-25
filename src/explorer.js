@@ -121,8 +121,10 @@
   const compact = (x) => {
     const sign = x < 0 ? "−" : "",
       a = Math.abs(x);
-    if (a < 1000)
+    // Below a thousand, unless rounding to three digits reaches it.
+    if (a < 1000 && +a.toPrecision(3) < 1000)
       return sign + (Number.isInteger(a) ? String(a) : String(+a.toPrecision(3)));
+    if (a < 1000) return sign + "1.00 k";
     let i = Math.min(4, Math.floor(Math.log10(a) / 3));
     if (+(a / 1000 ** i).toPrecision(3) >= 1000 && i < 4) i++;
     return sign + (a / 1000 ** i).toPrecision(3) + " " + " kMBT"[i];

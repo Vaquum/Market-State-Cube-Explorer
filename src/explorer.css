@@ -132,7 +132,7 @@
   min-width: var(--h-l);
 }
 /* A toggle that is on gets an accent tint; a chosen option, a raised surface. */
-#origo-lens .ol-toggle[aria-pressed="true"] {
+#origo-lens button.ol-toggle[aria-pressed="true"] {
   background: var(--ol-on);
   border-color: var(--ol-accent);
 }
@@ -159,7 +159,7 @@
   outline: 2px solid var(--ol-accent);
   outline-offset: 2px;
 }
-#origo-lens canvas:focus-visible {
+#origo-lens canvas#ol-canvas:focus-visible {
   outline: 2px solid var(--ol-accent);
   outline-offset: -2px;
 }

@@ -14,7 +14,8 @@
   const ISO_A = -1.06,
     ISO_B = 0.486,
     N_MAX = 20,
-    M_MAX = 9;
+    M_MAX = 9,
+    TILE_COLUMNS = 4096;
   const diagonalM = (n) => clamp(Math.round(ISO_A + ISO_B * n), 0, M_MAX);
   const canvas = el("canvas"),
     ctx = canvas.getContext("2d"),
@@ -1160,12 +1161,13 @@
     el("replay-at").textContent = S.replay ? dateShort(activeCutoff()) : "";
     el("horizon").value = S.horizon;
     el("scope").textContent =
-      `${Object.keys(sources).length}/3 recorded blocks ready · ${dateShort(displaySource().b0)} onward`;
+      `${Object.keys(sources).length}/${Object.keys(PACK.blocks).length} ${PACK.live ? "live cube" : "recorded"} blocks ready · ${dateShort(displaySource().b0)} onward`;
     el("cutoff").textContent = "Cutoff " + iso(CUT);
     el("table").setAttribute("aria-pressed", String(S.table));
     el("table-section").hidden = !S.table;
     updateNavigation();
     requestDraw();
+    requestTile();
   }
   function bindRoot() {
     el("query-text").addEventListener("blur", () => {
@@ -2207,7 +2209,11 @@
       if (shown.n <= n && shown.m <= m && start <= a && stop >= end)
         return { status: "ready", source: shown.id };
     }
-    for (const id of ["recent", "reference", "overview"]) {
+    const ids = Object.keys(PACK.blocks).sort(
+      (a, b) =>
+        PACK.blocks[a].n - PACK.blocks[b].n || PACK.blocks[a].m - PACK.blocks[b].m,
+    );
+    for (const id of ids) {
       const raw = PACK.blocks[id],
         range = raw ? [raw.b0, raw.b1] : null;
       if (
@@ -2224,6 +2230,54 @@
       if (loadState[id] === "loading") return { status: "loading", source: id };
     }
     return { status: "unavailable", source: shown?.id || S.dataset };
+  }
+  const tiles = { pending: null, timer: 0, tried: new Set() };
+  function tileSpec(n, m) {
+    const step = 2 ** n,
+      r = requestedBounds(),
+      b0 = Math.floor(Math.min(r[0], CUT) / step) * step,
+      b1 = Math.ceil(Math.min(r[1], CUT) / step) * step;
+    if (b1 <= b0 || (b1 - b0) / step > TILE_COLUMNS) return null;
+    return { id: `tile:${n}:${m}:${b0}:${b1}`, n, m, b0, b1 };
+  }
+  function requestTile() {
+    if (!PACK.live || !ready) return;
+    clearTimeout(tiles.timer);
+    tiles.timer = setTimeout(fetchTile, 250);
+  }
+  async function fetchTile() {
+    if (tiles.pending || resolutionReadiness(S.n, S.m).status !== "unavailable")
+      return;
+    const t = tileSpec(S.n, S.m);
+    if (!t || tiles.tried.has(t.id)) return;
+    tiles.tried.add(t.id);
+    tiles.pending = t.id;
+    PACK.blocks[t.id] = { n: t.n, m: t.m, b0: t.b0, b1: t.b1 };
+    loadState[t.id] = "loading";
+    el("loading").hidden = false;
+    el("loading").textContent =
+      `Fetching ${dur(BASE * 2 ** t.n)} by ${price(PR * 2 ** t.m)} USDT cells from the cube`;
+    update();
+    try {
+      const response = await fetch(
+          `/cube/tile?n=${t.n}&m=${t.m}&b0=${t.b0}&b1=${t.b1}`,
+        ),
+        body = await response.json();
+      if (!response.ok) throw Error(body.error || response.statusText);
+      PACK.blocks[t.id] = body.block;
+      sources[t.id] = await unpack(body.block, t.id);
+      loadState[t.id] = "ready";
+      el("loading").hidden = true;
+    } catch (error) {
+      delete PACK.blocks[t.id];
+      loadState[t.id] = "unavailable";
+      el("loading").textContent = `Cube tile unavailable: ${error.message}`;
+      el("loading").setAttribute("role", "alert");
+    }
+    tiles.pending = null;
+    chooseSource();
+    evidenceCache.clear();
+    update();
   }
   function buildPlane() {
     const frag = document.createDocumentFragment(),
@@ -3183,13 +3237,15 @@
   bindNavigation();
   try {
     qsa("button,input,select").forEach((control) => (control.disabled = true));
-    el("snapshot").textContent =
-      date(CUT).toLocaleDateString("en-GB", {
-        timeZone: "UTC",
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }) + " · UTC";
+    el("market").textContent = PACK.live ? "LIVE MARKET" : "RECORDED MARKET";
+    el("snapshot").textContent = PACK.live
+      ? stamp(CUT).slice(0, 16) + " UTC"
+      : date(CUT).toLocaleDateString("en-GB", {
+          timeZone: "UTC",
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }) + " · UTC";
     getColors();
     sources.recent = await unpack(PACK.blocks.recent, "recent");
     loadState.recent = "ready";
@@ -3228,7 +3284,7 @@
     );
     for (const id of ["overview", "reference"]) {
       el("loading").textContent =
-        `Recent base cells ready · loading ${id === "overview" ? "full history" : "reference history"}`;
+        `Recent base cells ready · loading ${id === "overview" ? "full history" : "reference history"}${PACK.live ? " from the cube" : ""}`;
       try {
         sources[id] = await unpack(PACK.blocks[id], id);
         loadState[id] = "ready";
@@ -3247,7 +3303,9 @@
     if (Object.values(loadState).every((x) => x === "ready"))
       el("loading").hidden = true;
   } catch (error) {
-    el("loading").textContent = "Recorded data unavailable: " + error.message;
+    el("loading").textContent =
+      (PACK.live ? "Cube data unavailable: " : "Recorded data unavailable: ") +
+      error.message;
     el("loading").setAttribute("role", "alert");
   }
 })();

@@ -19,4 +19,5 @@ jobs:
       - run: node --check src/explorer.js
       - run: node --check src/state.js
       - run: node --check worker.js
+      - run: python3 -m py_compile tools/cube_bridge.py
       - run: npx --yes wrangler@4 deploy --dry-run --outdir /tmp/dry-run

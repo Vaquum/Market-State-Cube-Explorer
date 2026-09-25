@@ -42,3 +42,9 @@ The lattice the explorer can reach is `n = 0..20` (56.25 seconds to about 683 da
 ## Portable views
 
 The JSON query can be copied and reapplied. An `origo-cube:` code also preserves selected visual settings and replay context. It is a portable import code, not a hosted URL or browser permalink. State is saved only in the local browser; no telemetry or external storage is used.
+
+## Live cube blocks
+
+Served through `tools/cube_bridge.py`, every block is a cube query at one level: `time_index` and `price_index` are the block's column and row, `volume`, `trade_count`, `taker_buy_volume` and `taker_buy_trade_count` its four measures. The cutoff is the cube's `data_cutoff`, the end of contiguous coverage; it falls on a minute, so the base column holding it is unfinished and rendered as such. Cells after `canonical_through` come from provisional minutes that the day's archive later replaces. Row sums, totals and POCs are reproducible from the cells, so a selection's readouts equal the cube's own `summary.arrow` for the same rectangle.
+
+On-demand tiles register like the three tiers: the finest block covering a column owns it, evidence runs over every loaded block, and a tile that fails to load leaves the level unavailable rather than silently coarser.

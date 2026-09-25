@@ -14,8 +14,9 @@ Routes, all behind HTTP Basic Auth except ``/healthz``:
   token digests every pin it read and the cutoff. It is rebuilt at most once a minute.
 - ``/cube/pack?since``: what a page holding pack ``since`` needs to hold the current one:
   nothing, the columns each tier gained when its pack is a prefix of the current one, or else
-  the whole pack; with the current pack's age and when to ask again. An open page asks for
-  this on its own, so the data advances without a reload.
+  the whole pack; with the current pack's age, how long the cube has had no new data, and
+  when to ask again. An open page asks for this on its own, so the data advances without a
+  reload.
 - ``/vendor/<file>``: the vendored scripts, flat file names only.
 - ``/cube/tile?n&m&b0&b1&pack``: one finer tile, at most 4,096 columns, for the page holding
   pack ``pack``; refused unless every partition it read is one that pack read, at the same
@@ -225,6 +226,11 @@ class Explorer:
         self.pack: dict | None = None
         self.held: dict[str, dict] = {}  # pack token -> the pins that pack read and its tiers
         self.packed_at = 0.0
+        # When the cube's data cutoff last moved, on this server's clock. The first pack
+        # starts it at the cutoff itself: a cube that stalled before the server started is
+        # already quiet, rather than fresh.
+        self.data_cutoff: str | None = None
+        self.advanced_at = 0.0
 
     def allows(self, header: str | None) -> bool:
         match = CREDENTIALS.match(header or "")
@@ -249,6 +255,10 @@ class Explorer:
             }
             with self.lock:
                 self.pack = built
+                if built["data_cutoff"] != self.data_cutoff:
+                    cutoff = datetime.fromisoformat(built["data_cutoff"].replace("Z", "+00:00")).timestamp()
+                    self.advanced_at = time.time() if self.data_cutoff else cutoff
+                    self.data_cutoff = built["data_cutoff"]
                 # A token built again moves to the end, so the oldest held pack is always first.
                 self.held.pop(built["state_token"], None)
                 self.held[built["state_token"]] = {"pins": pinned, "tiers": tiers}
@@ -259,10 +269,15 @@ class Explorer:
             print(f"pack built in {self.packed_at - started:.1f} s, cutoff {built['cutoff']}, {count} cells", flush=True)
             return built, 0.0
 
-    @staticmethod
-    def timing(age: float) -> dict:
-        """The pack's age, and when a page should next ask: just after it can be rebuilt."""
-        return {"age": round(age, 1), "next": round(max(1.0, PACK_MAX_AGE_SECONDS - age + 1), 1)}
+    def timing(self, age: float) -> dict:
+        """The pack's age, how long the cube has had no new data, and when a page should
+        next ask: just after the pack can be rebuilt."""
+        with self.lock:
+            quiet = max(0.0, time.time() - self.advanced_at)
+        return {
+            "age": round(age, 1), "quiet": round(quiet, 1),
+            "next": round(max(1.0, PACK_MAX_AGE_SECONDS - age + 1), 1),
+        }
 
     def update(self, since: str) -> dict:
         """What a page holding pack ``since`` needs to hold the current pack."""

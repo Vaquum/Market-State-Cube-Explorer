@@ -1016,6 +1016,9 @@
 #origo-lens canvas#ol-canvas[data-cursor="zoom-in"] {
   cursor: zoom-in;
 }
+#origo-lens canvas#ol-canvas[data-cursor="ns-resize"] {
+  cursor: ns-resize;
+}
 #origo-lens .ol-tip {
   position: absolute;
   z-index: 4;

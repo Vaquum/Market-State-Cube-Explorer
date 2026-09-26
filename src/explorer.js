@@ -919,17 +919,21 @@
     chip(ro.time.s, ro.time.box);
   }
   // Each tool's cursor over the prices: grab to pan, grabbing while dragging, a
-  // crosshair to select, zoom for the lens (held Alt and a touch hold too).
+  // crosshair to select, zoom for the lens (held Alt and a touch hold too); on
+  // the price labels, and while they're dragged, a vertical resize.
   function setCursor(p = nav.last) {
-    const cursor = !p || !inPlot(p)
-      ? ""
-      : S.lens || nav.alt || nav.hold || drag?.lens
-        ? "zoom-in"
-        : S.select
-          ? "crosshair"
-          : drag
-            ? "grabbing"
-            : "grab";
+    const cursor =
+      drag?.axis || (!drag && p && onPriceAxis(p))
+        ? "ns-resize"
+        : !p || !inPlot(p)
+          ? ""
+          : S.lens || nav.alt || nav.hold || drag?.lens
+            ? "zoom-in"
+            : S.select
+              ? "crosshair"
+              : drag
+                ? "grabbing"
+                : "grab";
     if (canvas.dataset.cursor !== cursor) canvas.dataset.cursor = cursor;
   }
   function inActivity(p) {
@@ -5961,8 +5965,9 @@
     el("plane").addEventListener("keydown", planeKeys);
     canvas.addEventListener("pointerdown", (e) => {
       if (!ready) return;
-      const p = at(e);
-      if (!inPlot(p)) return;
+      const p = at(e),
+        axis = onPriceAxis(p);
+      if (!inPlot(p) && !axis) return;
       canvas.setPointerCapture(e.pointerId);
       nav.pointers.set(e.pointerId, p);
       nav.last = p;
@@ -5989,10 +5994,13 @@
         start: p,
         view: [S.tA, S.tB, S.pA, S.pB],
         moved: false,
-        lens: S.lens || e.altKey,
+        lens: !axis && (S.lens || e.altKey),
+        // A drag on the price labels scales the price range, whatever the tool:
+        // around the price where it began, from where the pointer last was.
+        axis: axis ? { price: clamp(p.p, S.pA, S.pB), y: p.y } : null,
       };
       setCursor(p);
-      if (e.pointerType === "touch")
+      if (e.pointerType === "touch" && !axis)
         nav.holdTimer = setTimeout(() => {
           if (drag && !drag.moved) {
             nav.hold = true;
@@ -6027,6 +6035,22 @@
         S.window = "";
         // The price range refits once, when a finger lifts (see finish).
         settleNavigation(null, false);
+        return;
+      }
+      if (drag?.axis) {
+        // Only up and down scale: a drag sideways changes nothing.
+        if (Math.abs(p.y - drag.start.y) > 4) drag.moved = true;
+        if (!drag.moved || p.y === drag.axis.y) return;
+        // Up zooms in and down out, each move by its own step, so the wheel,
+        // keys or new data moving the view meanwhile aren't undone.
+        priceByHand();
+        zoomNavigation(
+          Math.exp((p.y - drag.axis.y) * 0.005),
+          { t: (S.tA + S.tB) / 2, p: drag.axis.price },
+          false,
+          true,
+        );
+        drag.axis.y = p.y;
         return;
       }
       if (S.lens || nav.alt || nav.hold || drag?.lens) {
@@ -6089,6 +6113,14 @@
         nav.hold = false;
         return;
       }
+      // A drag on the price axis ends as a price scale; a click there does nothing.
+      if (drag.axis) {
+        const scaled = drag.moved;
+        drag = null;
+        setCursor(at(e));
+        settleNavigation(scaled ? "Price scale" : null, false);
+        return;
+      }
       const p = at(e),
         held = drag.lens || nav.hold,
         click = !held && !drag.moved,
@@ -6123,8 +6155,9 @@
     };
     canvas.addEventListener("pointerup", finish);
     canvas.addEventListener("pointercancel", (e) => {
-      // A cancelled pinch has already moved the view: it ends as a lifted one.
-      if (nav.pinch) return finish(e);
+      // A cancelled pinch or price scale has already moved the view: it ends as
+      // a lifted one.
+      if (nav.pinch || drag?.axis) return finish(e);
       clearTimeout(nav.holdTimer);
       nav.pointers.delete(e.pointerId);
       nav.hold = false;
@@ -6366,8 +6399,9 @@
     });
     window.addEventListener("blur", () => {
       // Losing focus lets go of every key and pointer, and ends a zoom gesture
-      // under the name of the input it cut short.
-      const label = nav.pinch ? "Pinch" : nav.zoomKeys.size ? "Zoom" : "";
+      // or a price scale under the name of the input it cut short.
+      const label = nav.pinch ? "Pinch" : nav.zoomKeys.size ? "Zoom" : "",
+        scaled = Boolean(drag?.axis && drag.moved);
       nav.zoomKeys.clear();
       nav.pinch = null;
       if (label) endZoom(false, label);
@@ -6378,6 +6412,7 @@
       drag = null;
       nav.pointers.clear();
       clearTimeout(nav.holdTimer);
+      if (scaled) settleNavigation("Price scale", false);
       requestDraw();
     });
   }

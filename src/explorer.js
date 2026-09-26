@@ -947,6 +947,14 @@
   function inPlot(p) {
     return p.x >= G.x && p.x <= G.x + G.w && p.y >= G.y && p.y <= G.y + G.h;
   }
+  // The price labels beside the price pane, and the time labels under the
+  // chart: the wheel over one zooms that axis.
+  function onPriceAxis(p) {
+    return p.x < G.x && p.y >= G.y && p.y <= G.y + G.h;
+  }
+  function onTimeAxis(p) {
+    return p.x >= G.x && p.x <= G.x + G.w && p.y > G.ay + G.ah;
+  }
   const loadState = {
     recent: "loading",
     reference: "loading",
@@ -4704,6 +4712,8 @@
     // The zoom keys held: a key zoom lasts until the last of them comes up.
     zoomKeys: new Set(),
     zoomLabel: "Zoom",
+    // What a wheel gesture zooms, and when its last tick came: see the wheel.
+    wheel: null,
     // The keys whose presses the chart took, while they are held.
     pressed: new Set(),
     planeKey: "",
@@ -5627,10 +5637,10 @@
       : S.select
         ? "Drag a rectangle to measure it · click to clear it · Esc: back to pan"
         : S.coupled
-          ? "Wheel / pinch: time + price · Alt: lens"
+          ? "Wheel / pinch: time + price · on the price axis: price · Alt: lens"
           : S.diagonal
-            ? "Wheel / pinch: time ×k, price ×√k · Alt: lens"
-            : "Wheel / pinch: time · Shift-wheel: price · Alt: lens";
+            ? "Wheel / pinch: time ×k, price ×√k · on the price axis: price · Alt: lens"
+            : "Wheel / pinch: time · on the price axis or with Shift: price · Alt: lens";
     refreshPlane();
   }
   function settleNavigation(label, refit = false) {
@@ -5646,18 +5656,19 @@
     }
   }
   // A zoom leaves the price range alone: refit mode fits it once, when the
-  // zoom gesture ends (see endZoom).
-  function zoomNavigation(k, p, priceOnly = false) {
+  // zoom gesture ends (see endZoom). With Shift it zooms the price range (and
+  // time too when coupled); from the price axis, the price range alone.
+  function zoomNavigation(k, p, priceOnly = false, priceAlone = false) {
     const tspan = S.tB - S.tA,
       pspan = S.pB - S.pA;
-    if (!priceOnly || S.coupled) {
+    if (!priceAlone && (!priceOnly || S.coupled)) {
       const span = clamp(tspan * k, 2, CUT * 1.2),
         u = (p.t - S.tA) / tspan;
       S.tA = p.t - u * span;
       S.tB = S.tA + span;
     }
     const priceFactor =
-      priceOnly || S.coupled ? k : S.diagonal ? Math.sqrt(k) : null;
+      priceOnly || priceAlone || S.coupled ? k : S.diagonal ? Math.sqrt(k) : null;
     if (priceFactor !== null) {
       const span = clamp(pspan * priceFactor, 1, 400000 / PR),
         u = (p.p - S.pA) / pspan;
@@ -5695,6 +5706,12 @@
       recordView(nav.zoomLabel);
       save();
     }, 220);
+  }
+  // A price range zoomed by hand leaves Refit, which would fit it again after
+  // the next time zoom and as new data arrives: the price axis is then Free,
+  // as its control shows, until another mode is chosen.
+  function priceByHand() {
+    S.refit = false;
   }
   // Room for the lens caption tab: up to three 15px lines. The lens leaves twice
   // this free, so the tab fits above or below it wherever the lens goes.
@@ -6128,16 +6145,41 @@
       "wheel",
       (e) => {
         if (!ready) return;
-        const p = at(e);
-        if (!inPlot(p)) return;
+        const now = performance.now(),
+          p = at(e),
+          // What a wheel gesture zooms is chosen at its first tick, where it
+          // begins and with Shift as it is then, and holds until 220 ms pass
+          // without a tick, wherever the pointer drifts and whatever Shift does:
+          // over the price axis the price range alone, over the time axis time,
+          // over the chart time, or the price range with Shift.
+          target =
+            (nav.wheel && now - nav.wheel.at < 220 && nav.wheel.target) ||
+            (onPriceAxis(p)
+              ? "price-axis"
+              : onTimeAxis(p)
+                ? "time-axis"
+                : inPlot(p)
+                  ? e.shiftKey
+                    ? "chart-price"
+                    : "chart-time"
+                  : null);
+        if (!target) return;
         e.preventDefault();
-        gestureAt = performance.now();
-        zoomNavigation(
-          Math.exp(clamp(e.deltaY, -120, 120) * 0.003),
-          p,
-          e.shiftKey,
-        );
-        endZoom(!e.shiftKey);
+        // A sideways scroll zooms nothing and changes nothing.
+        if (!e.deltaY) return;
+        nav.wheel = { target, at: now };
+        gestureAt = now;
+        const alone = target === "price-axis",
+          priceOnly = target === "chart-price",
+          // Around the pointer, kept within the view; an axis's own zoom is
+          // around the middle of the other axis.
+          anchor = {
+            t: alone ? (S.tA + S.tB) / 2 : clamp(p.t, S.tA, S.tB),
+            p: target === "time-axis" ? (S.pA + S.pB) / 2 : clamp(p.p, S.pA, S.pB),
+          };
+        if (alone || priceOnly) priceByHand();
+        zoomNavigation(Math.exp(clamp(e.deltaY, -120, 120) * 0.003), anchor, priceOnly, alone);
+        endZoom(!alone && !priceOnly);
       },
       { passive: false },
     );
@@ -6145,6 +6187,7 @@
       if (!ready) return;
       const p = at(e);
       if (!inPlot(p)) return;
+      if (e.shiftKey) priceByHand();
       zoomNavigation(0.5, p, e.shiftKey);
       if (!S.replay) S.anchor = null;
       // A drill is a zoom gesture of one step.
@@ -6232,6 +6275,7 @@
       else if (bracket)
         changeResolution(S.n + bracket[0], S.m + bracket[1], !bracket[1]);
       else if (["+", "=", "-", "_"].includes(k)) {
+        if (shift) priceByHand();
         zoomNavigation(k === "-" || k === "_" ? 1.4 : 1 / 1.4, centre, shift);
         // Held, zoom keys zoom on until the last of them comes up (see the
         // keyup below).

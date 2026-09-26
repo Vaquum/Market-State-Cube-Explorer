@@ -9325,8 +9325,9 @@
         return;
       }
       if (drag?.axis) {
-        if (Math.abs(p.x - drag.start.x) + Math.abs(p.y - drag.start.y) > 4) drag.moved = true;
-        if (!drag.moved) return;
+        // Only up and down scale: a drag sideways changes nothing.
+        if (Math.abs(p.y - drag.start.y) > 4) drag.moved = true;
+        if (!drag.moved || p.y === drag.axis.y) return;
         // Up zooms in and down out, each move by its own step, so the wheel,
         // keys or new data moving the view meanwhile aren't undone.
         priceByHand();

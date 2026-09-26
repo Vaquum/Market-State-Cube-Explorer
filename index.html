@@ -7955,8 +7955,7 @@
     // The zoom keys held: a key zoom lasts until the last of them comes up.
     zoomKeys: new Set(),
     zoomLabel: "Zoom",
-    // What the wheel zooms until its gesture ends, chosen where it began: the
-    // price axis ("price"), the time axis ("time") or the chart ("chart").
+    // What a wheel gesture zooms, and when its last tick came: see the wheel.
     wheel: null,
     // The keys whose presses the chart took, while they are held.
     pressed: new Set(),
@@ -8947,7 +8946,6 @@
     nav.zoomTimer = setTimeout(() => {
       if (nav.zoomTime) refitAfterGesture();
       nav.zoomTime = false;
-      nav.wheel = null;
       recordView(nav.zoomLabel);
       save();
     }, 220);
@@ -9390,25 +9388,37 @@
       "wheel",
       (e) => {
         if (!ready) return;
-        const p = at(e),
-          // What a wheel gesture zooms is chosen where it begins and holds until
-          // it ends, wherever the pointer drifts: over the price axis the price
-          // range alone, over the time axis time, over the chart time, or the
-          // price range with Shift.
+        const now = performance.now(),
+          p = at(e),
+          // What a wheel gesture zooms is chosen at its first tick, where it
+          // begins and with Shift as it is then, and holds until 220 ms pass
+          // without a tick, wherever the pointer drifts and whatever Shift does:
+          // over the price axis the price range alone, over the time axis time,
+          // over the chart time, or the price range with Shift.
           target =
-            nav.wheel ||
-            (onPriceAxis(p) ? "price" : onTimeAxis(p) ? "time" : inPlot(p) ? "chart" : null);
+            (nav.wheel && now - nav.wheel.at < 220 && nav.wheel.target) ||
+            (onPriceAxis(p)
+              ? "price-axis"
+              : onTimeAxis(p)
+                ? "time-axis"
+                : inPlot(p)
+                  ? e.shiftKey
+                    ? "chart-price"
+                    : "chart-time"
+                  : null);
         if (!target) return;
         e.preventDefault();
-        nav.wheel = target;
-        gestureAt = performance.now();
-        const alone = target === "price",
-          priceOnly = target === "chart" && e.shiftKey,
+        // A sideways scroll zooms nothing and changes nothing.
+        if (!e.deltaY) return;
+        nav.wheel = { target, at: now };
+        gestureAt = now;
+        const alone = target === "price-axis",
+          priceOnly = target === "chart-price",
           // Around the pointer, kept within the view; an axis's own zoom is
           // around the middle of the other axis.
           anchor = {
             t: alone ? (S.tA + S.tB) / 2 : clamp(p.t, S.tA, S.tB),
-            p: target === "time" ? (S.pA + S.pB) / 2 : clamp(p.p, S.pA, S.pB),
+            p: target === "time-axis" ? (S.pA + S.pB) / 2 : clamp(p.p, S.pA, S.pB),
           };
         if (alone || priceOnly) priceByHand();
         zoomNavigation(Math.exp(clamp(e.deltaY, -120, 120) * 0.003), anchor, priceOnly, alone);

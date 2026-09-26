@@ -2148,7 +2148,7 @@
             role="group"
             aria-label="Periods up to the latest data"
           ></div>
-          <div class="ol-list-head" id="ol-lines-days-head">Days</div>
+          <div class="ol-list-head" id="ol-lines-days-head">Since a day</div>
           <div
             class="ol-lines-list"
             id="ol-lines-days"
@@ -2159,7 +2159,7 @@
             <input
               type="date"
               id="ol-lines-date"
-              aria-label="A day to add, in UTC"
+              aria-label="A day in UTC: its line runs from that day to the latest data"
               required
             /><button type="submit" class="ol-action ol-s cursor-interaction">
               Add day
@@ -6787,8 +6787,9 @@
   // price row where that period traded the most USDT, the cube's POC at its
   // finest rows (the lower row wins a tie). Periods end at the latest data, or
   // at a replay's edge, so a replay never draws a line with trades after it; a
-  // day chosen by date is that UTC day. Each line is solid across its period
-  // and dashed on to the right edge, where a tag names it.
+  // day chosen by date starts a period at that UTC day's start. Each line is
+  // solid across its period and dashed on to the right edge, where a tag names
+  // it.
   const LINES = [
       { key: "1d", name: "1 day", tag: "1D", days: 1 },
       { key: "wk", name: "This week", tag: "Week" },
@@ -6813,13 +6814,14 @@
     },
     dayStart = (key) => (Date.parse(key + "T00:00:00Z") / 1000 - T0) / BASE;
   // A line's name, in lists and its tooltip; its tag, on the chart. The
-  // calendar periods are named by what they are now: the month, the year.
+  // calendar periods are named by what they are now: the month, the year; a
+  // day's by the day it runs since.
   function lineName(key) {
-    return isDay(key) ? day(dayStart(key)) : lineInfo(key).name;
+    return isDay(key) ? `Since ${day(dayStart(key))}` : lineInfo(key).name;
   }
   function lineTag(key) {
     const now = date(Math.max(0, activeCutoff() - 1e-6));
-    if (isDay(key)) return dayOf(date(dayStart(key)));
+    if (isDay(key)) return `Since ${dayOf(date(dayStart(key)))}`;
     if (key === "mo") return d3.utcFormat("%b")(now);
     if (key === "yr") return String(now.getUTCFullYear());
     return lineInfo(key).tag;
@@ -6844,11 +6846,8 @@
       now = date(Math.max(0, activeCutoff() - 1e-6)),
       base = (d) => Math.max(0, Math.round((+d / 1000 - T0) / BASE));
     let a;
-    if (isDay(key)) {
-      a = Math.round(dayStart(key));
-      return a >= 0 && a < end ? [a, Math.min(a + 1536, end)] : null;
-    }
-    if (key === "wk") a = base(d3.utcMonday.floor(now));
+    if (isDay(key)) a = Math.round(dayStart(key));
+    else if (key === "wk") a = base(d3.utcMonday.floor(now));
     else if (key === "mo") a = base(d3.utcMonth.floor(now));
     else if (key === "yr") a = base(d3.utcYear.floor(now));
     else a = Math.max(0, end - lineInfo(key).days * 1536);
@@ -6856,6 +6855,8 @@
   }
   const lineResults = new Map(),
     lineLatest = new Map(),
+    // The cube's rows for the part of a period before its split (lineSplit).
+    lineParts = new Map(),
     lineId = (key, span) =>
       ["line", live.generation, key, span[0], span[1], span[1] > Math.floor(CUT) ? CUT : ""].join("|");
   // A POC from row sums: the row with the most volume, the lower row winning a
@@ -6865,18 +6866,53 @@
       volume = row === null ? 0 : q.rows.find((x) => x.r === row)?.v || 0;
     return { key, span, state: "ready", exact, row, rowPrice, columns, volume, total: q.v };
   }
+  // A period from a fixed start (a chosen day, this week, month or year) that
+  // begins before the loaded base cells is split at their first UTC midnight.
+  // The part before it is read from the cube once and kept until that midnight
+  // moves on, once a day; the part after it is summed from the base cells as
+  // new data arrives. Row sums add, so the POC is the cube's own.
+  function lineSplit(key, span) {
+    if (!PACK.live || !sources.recent || !(isDay(key) || ["wk", "mo", "yr"].includes(key)))
+      return null;
+    const at = Math.ceil(sourceRange(sources.recent)[0] / 1536) * 1536,
+      src = at > span[0] && at < span[1] ? exactSource([at, span[1], 0, 2 ** 32], 0, 0) : null;
+    return src && { id: ["line-part", live.generation, span[0], at].join("|"), at, src };
+  }
+  // The base cells' rows from a split to a period's end, shared by every line
+  // split there.
+  let splitRows = null;
+  function lineRecent(split, end) {
+    const key = [split.src.id, split.src.cells.length, split.at, end, CUT, live.generation].join("|");
+    if (splitRows?.key !== key)
+      splitRows = { key, q: aggregate(split.src, 24, 0, [split.at, end, 0, Infinity]) };
+    return splitRows.q;
+  }
+  // A period's two parts as one: their rows summed row by row, and the POC of
+  // the sums.
+  function joinRows(before, after) {
+    const cell = (c) => (x) => ({ c, r: x.r, v: x.v, bv: x.bv, ct: x.ct, bt: x.bt });
+    return summarize(before.map(cell(0)).concat(after.rows.map(cell(1))), 24, 0);
+  }
   // A line's POC: from loaded cells at 125 USDT rows that tile its period; from
-  // the cube (live); or, in the recorded snapshot, from its finest cells that
-  // cover the period, marked as approximate.
+  // the cube and the loaded cells together, split as above; from the cube
+  // (live); or, in the recorded snapshot, from its finest cells that cover the
+  // period, marked as approximate.
   function lineResult(key) {
     const span = lineSpan(key);
     if (!span) return { key, span: null, state: "none" };
     const id = lineId(key, span);
     if (lineResults.has(id)) return lineResults.get(id);
-    const tiled = exactSource([span[0], span[1], 0, 2 ** 32], 24, 0);
-    let result = null;
+    const tiled = exactSource([span[0], span[1], 0, 2 ** 32], 24, 0),
+      split = tiled ? null : lineSplit(key, span);
+    // What the cube is asked for while the line can't be summed here.
+    let result = null,
+      read = { id, a: span[0], b: span[1] };
     if (tiled) result = linePOC(key, span, aggregate(tiled, tiled.n, 0, [span[0], span[1], 0, Infinity]), true, 1);
-    else if (!PACK.live) {
+    else if (split) {
+      const before = lineParts.get(split.id);
+      if (before) result = linePOC(key, span, joinRows(before, lineRecent(split, span[1])), true, 1);
+      else read = { id: split.id, a: span[0], b: split.at, part: true };
+    } else if (!PACK.live) {
       const blocks = Object.values(sources)
         .concat(referenceView ? [referenceView] : [])
         .filter((s) => {
@@ -6902,7 +6938,7 @@
       } else result = { key, span, state: "unrecorded" };
     }
     if (!result)
-      return { key, span, state: cube.failed.has(id) ? "failed" : "pending", id, error: cube.failed.get(id) };
+      return { key, span, state: cube.failed.has(read.id) ? "failed" : "pending", read, error: cube.failed.get(read.id) };
     lineResults.set(id, result);
     if (result.state === "ready") lineLatest.set(key, result);
     return result;
@@ -6921,15 +6957,20 @@
     for (const key of S.lines) {
       const r = lineResult(key);
       if (r.state !== "pending") continue;
-      const [a, b] = r.span,
-        nq = clamp(Math.ceil(Math.log2(Math.max(1, (b - a) / 16))), 0, 24),
-        id = r.id;
+      const { id, a, b, part } = r.read,
+        nq = clamp(Math.ceil(Math.log2(Math.max(1, (b - a) / 16))), 0, 24);
       return {
         key: id,
         path: `/cube/query?n=${nq}&m=0&b0=${a}&b1=${b}`,
         decode: async (body) => ({ block: await unpack(body.block, id), s: body.summary }),
         apply: ({ block, s }) => {
           const q = summarize(block.cells, nq, 0);
+          // The part before a split: its rows, kept while the split holds.
+          if (part) {
+            lineParts.set(id, q.rows.map(({ r, v, bv, ct, bt }) => ({ r, v, bv, ct, bt })));
+            while (lineParts.size > 40) lineParts.delete(lineParts.keys().next().value);
+            return;
+          }
           q.poc = s.poc == null ? null : Math.round(s.poc / PR - 0.5);
           q.v = s.volume;
           const result = linePOC(key, r.span, q, true, 1);
@@ -7123,7 +7164,7 @@
       remove.type = "button";
       remove.className = "ol-icon-button ol-s cursor-interaction";
       remove.dataset.lineRemove = key;
-      remove.setAttribute("aria-label", `Remove ${lineName(key)}`);
+      remove.setAttribute("aria-label", `Remove the line since ${day(dayStart(key))}`);
       remove.innerHTML =
         '<svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>';
       row.append(swatch, name, value, remove);
@@ -7163,7 +7204,7 @@
       if (value.title !== why) value.title = why;
     }
     el("lines-clear").disabled = !S.lines.length;
-    el("lines-days-head").textContent = days.length ? "Days" : "Days · none yet";
+    el("lines-days-head").textContent = days.length ? "Since a day" : "Since a day · none yet";
     const last = date(Math.max(0, activeCutoff() - 1e-6)).toISOString().slice(0, 10);
     el("lines-date").min = "2021-01-01";
     el("lines-date").max = last;
@@ -9850,6 +9891,7 @@
       histories.clear();
       lineResults.clear();
       lineLatest.clear();
+      lineParts.clear();
     }
     // New data: reads the cube refused or failed are asked for again.
     cube.stale = false;

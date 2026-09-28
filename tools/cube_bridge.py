@@ -28,6 +28,15 @@ Routes, all behind HTTP Basic Auth except ``/healthz``:
 - ``/cube/tile?n&m&b0&b1&pack``: the same without price bounds or summary.
 - ``/cube/columns?n&m&pack``: each column's POC, volume and taker-buy volume at level (n, m),
   for up to the last 100,000 complete columns: the history the continuations compare.
+- ``/cube/motion?tier&pack[&from]``: one tier of pack ``pack`` again, with how the price moved
+  inside each cell (MSC3), up to the pack's last complete base column: the whole tier, or with
+  ``from`` (a base edge) its columns from the one holding that edge on, for a page that holds
+  the rest. A page asks for it only while it shows path or dwell.
+- ``/cube/tile`` and ``/cube/query`` with ``motion=1``: the same rectangle's cells in MSC3, up to
+  the pack's last complete base column, and for ``/cube/query`` its path and dwell totals.
+  Every answer with motion names where its measures end (``end``, a base position, and
+  ``through``): the open column is measured once it completes, and while the cube is still
+  measuring its history the measures end where the cube's do.
 - ``/vendor/<file>``: the vendored scripts, flat file names only.
 
 Every ``/cube/`` route takes ``proto=2``, the page's protocol. A page loaded before it names
@@ -41,6 +50,12 @@ arrays volume f64, taker-buy volume f64, trades f64, taker-buy trades f64, colum
 cells sorted by (column, row). Columns and rows are absolute indices at the block's own level
 (n, m), anchored at 2021-01-01T00:00:00Z. Trade counts travel as f64, exact below 2**53.
 MSCC: the same header, then column u32, POC row u32, volume f32, taker-buy volume f32.
+MSC3: MSC2 with four more f64 arrays after the trade counts: path length (USDT), dwell (seconds),
+high and low (the cell's highest and lowest trade price; NaN in a cell without trades). It holds
+the cells the price moved through or held in without trading as well: trades 0.
+
+Reads with motion ask the cube for path length, dwell, high and low (PRD-0023). They take the
+cube service's second query slot, so a tile never waits behind one.
 """
 
 from __future__ import annotations
@@ -74,6 +89,11 @@ DAY = 1536  # base columns per day
 PACK_MAX_AGE_SECONDS = 60
 PACKS_HELD = 16
 FIELDS = ("vol", "tbvol", "cnt", "tbcnt", "col", "row")  # MSC2 order
+MOTION_FIELDS = ("vol", "tbvol", "cnt", "tbcnt", "path", "dwell", "high", "low", "col", "row")  # MSC3 order
+MOTION_MEASURES = ("path_length", "dwell", "high", "low")
+MOTION_HELD = 8
+# How far two reads of the same cells' volume may differ: the last bits of a float sum.
+VOLUME_ROUNDING = 1e-12
 MAX_COLUMNS = 4096
 MAX_CELLS = 1_000_000
 HISTORY_COLUMNS = 100_000
@@ -84,10 +104,12 @@ MAX_PRICE_EXPONENT = 12
 # told to reload, in words its status line shows as they are.
 PROTOCOL = "2"
 OUTDATED = "the explorer was updated; reload the page to see the latest data"
-# The service runs two queries at once for every consumer: this server takes one at a time,
-# and waits out a busy service this long before it gives up.
+# The service runs two queries at once: this server takes one at a time for tiles, rectangles
+# and packs, and one for motion, which only a page showing it asks for. So a tile never waits
+# behind a motion read. It waits out a busy service this long before it gives up.
 BUSY_WAIT_SECONDS = 20.0
 CUBE_SLOT = threading.Lock()
+MOTION_SLOT = threading.Lock()
 CUBE_URL = os.environ.get("MARKET_STATE_URL", "http://127.0.0.1:8486")
 SOURCE = "Binance BTCUSDT spot · Origo market state cube"
 CHALLENGE = 'Basic realm="Market State Cube", charset="UTF-8"'
@@ -122,16 +144,20 @@ class CubeChanged(Exception):
     """A read found a partition at a different revision than the pack the page holds."""
 
 
-def cube_query(t1: str, t2: str | None, p1: int | None, p2: int | None, tR: float, pR: int) -> tuple[dict, Any, dict]:
+def cube_query(
+    t1: str, t2: str | None, p1: int | None, p2: int | None, tR: float, pR: int, motion: bool = False,
+) -> tuple[dict, Any, dict]:
     """One cube query and its two files, read through the supported reader.
 
-    Queries go one at a time; a busy service is asked again for up to BUSY_WAIT_SECONDS.
+    Queries go one at a time in each slot; a busy service is asked again for up to
+    BUSY_WAIT_SECONDS.
     """
     deadline = time.monotonic() + BUSY_WAIT_SECONDS
+    measures = MOTION_MEASURES if motion else None
     while True:
         try:
-            with CUBE_SLOT:
-                result = query(t1=t1, t2=t2, p1=p1, p2=p2, tR=tR, pR=pR, url=CUBE_URL)
+            with MOTION_SLOT if motion else CUBE_SLOT:
+                result = query(t1=t1, t2=t2, p1=p1, p2=p2, tR=tR, pR=pR, measures=measures, url=CUBE_URL)
             break
         except MarketStateError as error:
             if error.status != 503 or time.monotonic() >= deadline:
@@ -142,8 +168,8 @@ def cube_query(t1: str, t2: str | None, p1: int | None, p2: int | None, tR: floa
     return dict(result.response), cells, summary
 
 
-def arrays(table: Any) -> dict:
-    """A cells table as columnar arrays in MSC2 order, sorted by (column, row)."""
+def arrays(table: Any, motion: bool = False) -> dict:
+    """A cells table as columnar arrays in MSC2 order, or MSC3 with motion, sorted by (column, row)."""
     import numpy as np
 
     col = table.column("time_index").to_numpy().astype(np.uint64)
@@ -155,7 +181,7 @@ def arrays(table: Any) -> dict:
     if cnt.size and int(cnt.max()) >= 2**53:
         raise RuntimeError("A cell's trade count is beyond 2**53.")
     order = np.lexsort((row, col))
-    return {
+    out = {
         "vol": table.column("volume").to_numpy()[order].astype("<f8"),
         "tbvol": table.column("taker_buy_volume").to_numpy()[order].astype("<f8"),
         "cnt": cnt[order].astype("<f8"),
@@ -163,12 +189,20 @@ def arrays(table: Any) -> dict:
         "col": col[order].astype("<u4"),
         "row": row[order].astype("<u4"),
     }
+    if motion:
+        # A cell without trades has no highest or lowest trade: NaN travels for the cube's null.
+        for key, name in (("path", "path_length"), ("dwell", "dwell"), ("high", "high"), ("low", "low")):
+            out[key] = table.column(name).to_numpy(zero_copy_only=False)[order].astype("<f8")
+    return out
 
 
-def read(n: int, m: int, b0: int, b1: int | None, r0: int | None = None, r1: int | None = None) -> tuple[dict, dict, dict, dict]:
+def read(
+    n: int, m: int, b0: int, b1: int | None, r0: int | None = None, r1: int | None = None, motion: bool = False,
+) -> tuple[dict, dict, dict, dict]:
     """The cube's level-(n, m) cells over base columns [b0, b1), and base rows [r0, r1) when
     given: its response, its cells, its summary and the pins it read. Without ``b1`` the
-    time runs to the cube's data cutoff; without rows the prices are automatic."""
+    time runs to the cube's data cutoff; without rows the prices are automatic. With motion
+    the cells carry path length, dwell, high and low too, and include those without trades."""
     response, table, summary = cube_query(
         t1=edge(b0),
         t2=None if b1 is None else edge(b1),
@@ -176,12 +210,13 @@ def read(n: int, m: int, b0: int, b1: int | None, r0: int | None = None, r1: int
         p2=None if r1 is None else r1 * BASE_PRICE,
         tR=BASE_SECONDS * 2**n,
         pR=BASE_PRICE * 2**m,
+        motion=motion,
     )
     meta = json.loads(table.schema.metadata[b"origo.market_state"])
     grid = meta["grid"]
     if (grid["time_exponent"], grid["price_exponent"]) != (n, m):
         raise RuntimeError(f"Cube answered level {grid} for requested ({n}, {m}).")
-    cells = arrays(table)
+    cells = arrays(table, motion)
     if len(cells["col"]) > MAX_CELLS:
         raise ValueError(f"{len(cells['col'])} cells is more than {MAX_CELLS}; ask for coarser cells")
     # A pin is [partition_key, generation, revision, build_id]. Only its revision and build id
@@ -190,20 +225,29 @@ def read(n: int, m: int, b0: int, b1: int | None, r0: int | None = None, r1: int
     return response, cells, summary, {pin[0]: list(pin[2:]) for pin in meta["pins"]}
 
 
-def msc2(n: int, m: int, col0: int, col1: int, cells: dict, first: int = 0) -> str:
-    """The cells from index ``first`` on as one MSC2 payload, gzipped and base64-encoded."""
-    header = struct.pack("<4sBBHIII12x", b"MSC2", n, m, 0, col0, col1, len(cells["col"]) - first)
-    payload = header + b"".join(cells[key][first:].tobytes() for key in FIELDS)
+def no_cells() -> dict:
+    """No cells, as MSC3's arrays."""
+    import numpy as np
+
+    return {key: np.zeros(0, "<u4" if key in ("col", "row") else "<f8") for key in MOTION_FIELDS}
+
+
+def msc2(n: int, m: int, col0: int, col1: int, cells: dict, first: int = 0, motion: bool = False) -> str:
+    """The cells from index ``first`` on as one MSC2 payload, or MSC3 with motion, gzipped and
+    base64-encoded."""
+    magic, fields = (b"MSC3", MOTION_FIELDS) if motion else (b"MSC2", FIELDS)
+    header = struct.pack("<4sBBHIII12x", magic, n, m, 0, col0, col1, len(cells["col"]) - first)
+    payload = header + b"".join(cells[key][first:].tobytes() for key in fields)
     return base64.b64encode(gzip.compress(payload, compresslevel=6)).decode()
 
 
-def block(n: int, m: int, b0: float, b1: float, cells: dict) -> dict:
+def block(n: int, m: int, b0: float, b1: float, cells: dict, motion: bool = False) -> dict:
     """A level-(n, m) block over base time [b0, b1): its columns, its cells and their range."""
     col0, col1 = int(b0 // 2**n), int(-(-b1 // 2**n))
     return {
         "n": n, "m": m, "b0": b0, "b1": b1, "start": edge(b0), "end": edge(b1),
-        "count": len(cells["col"]), "col0": col0, "col1": col1, "encoding": "gzip+base64", "layout": "MSC2",
-        "gzip_base64": msc2(n, m, col0, col1, cells),
+        "count": len(cells["col"]), "col0": col0, "col1": col1, "encoding": "gzip+base64",
+        "layout": "MSC3" if motion else "MSC2", "gzip_base64": msc2(n, m, col0, col1, cells, motion=motion),
     }
 
 
@@ -329,10 +373,12 @@ def tails(old: dict, new: dict) -> dict | None:
 
     The old pack must be a prefix of the new: every partition it read is unchanged, and the
     columns the page keeps, from the new tier's first column up to the one holding the old
-    tier's end edge, hold the same cells in both. A backfill or a revision fails one of the
-    two, and the page then takes the whole pack. Each tier travels as its cells from that
-    column on, which the page puts in place of its own from the same column; the old open
-    column is among them.
+    tier's end edge, hold the same cells in both: the same trade counts, and the same volumes
+    to within VOLUME_ROUNDING. The cube sums a cell's volume in whatever order its read runs,
+    so two reads of unchanged data can differ in the last bits; new trades always change the
+    counts. A backfill or a revision fails one of the two, and the page then takes the whole
+    pack. Each tier travels as its cells from that column on, which the page puts in place of
+    its own from the same column; the old open column is among them.
     """
     import numpy as np
 
@@ -344,9 +390,13 @@ def tails(old: dict, new: dict) -> dict | None:
         meta = after["block"]
         first = int(before["block"]["b1"] // 2 ** tier["n"])
         kept = [np.searchsorted(side["cells"]["col"], [meta["col0"], first]) for side in (before, after)]
-        if not all(
-            np.array_equal(before["cells"][key][kept[0][0]:kept[0][1]], after["cells"][key][kept[1][0]:kept[1][1]])
-            for key in FIELDS
+        was, now = (
+            {key: side["cells"][key][k[0]:k[1]] for key in FIELDS}
+            for side, k in ((before, kept[0]), (after, kept[1]))
+        )
+        if not (
+            all(np.array_equal(was[key], now[key]) for key in ("col", "row", "cnt", "tbcnt"))
+            and all(np.allclose(was[key], now[key], rtol=VOLUME_ROUNDING, atol=0.0) for key in ("vol", "tbvol"))
         ):
             return None
         tail = msc2(tier["n"], tier["m"], meta["col0"], meta["col1"], after["cells"], int(kept[1][1]))
@@ -366,6 +416,8 @@ class Explorer:
         self.pack: dict | None = None
         self.stale = False  # a read found the current pack behind the cube: rebuild it now
         self.held: dict[str, dict] = {}  # pack token -> the pins that pack read, its tiers, its cutoff
+        self.motions: dict[tuple, dict] = {}  # (token, tier, first column's base edge) -> motion answer
+        self.motion_building = threading.Lock()  # one motion tier read at a time; others then share it
         self.packed_at = 0.0
         # When the cube's data cutoff last moved, on this server's clock. The first pack
         # starts it at the cutoff itself: a cube that stalled before the server started is
@@ -527,6 +579,87 @@ class Explorer:
             },
         }
 
+    def motion_read(
+        self, n: int, m: int, b0: int, b1: int, held: dict, token: str, r0: int | None = None, r1: int | None = None,
+    ) -> tuple[dict, dict | None, dict | None, float]:
+        """Level-(n, m) cells with path, dwell, high and low over base columns [b0, b1), checked
+        against the page's pack: the cells, the cube's response and summary, and where the
+        measures end: ``b1``, or earlier where the cube's coverage of them ends."""
+        empty = no_cells()
+        if b0 >= b1:
+            return empty, None, None, float(b0)
+        try:
+            response, cells, summary, pins = read(n, m, b0, b1, r0, r1, motion=True)
+        except MarketStateError as error:
+            # The cube hasn't measured this time yet: nothing, measured up to where it has.
+            if error.status == 409 and error.body.get("error") == "outside_coverage":
+                return empty, None, None, min(float(b0), base_units(str(error.body["data_cutoff"])))
+            raise
+        self.check(pins, held, token)
+        return cells, response, summary, min(float(b1), base_units(response["data_cutoff"]))
+
+    def motion(self, tier_id: str, token: str, start: int | None) -> dict:
+        """One tier of the page's pack with path, dwell, high and low (MSC3), up to the pack's
+        last complete base column: the whole tier, or its columns from the one holding base
+        edge ``start`` on, which the page puts in place of its own from that column.
+
+        A page holding a tier's motion read under an earlier pack in the same line of packs
+        (each a prefix of the next) keeps the columns before ``start``: they read the same
+        partitions at the same revision and build.
+        """
+        tier = next((t for t in TIERS if t["id"] == tier_id), None)
+        if tier is None:
+            raise ValueError("tier must be overview, recent or reference")
+        held = self.holding(token)
+        n, m, step = tier["n"], tier["m"], 2 ** tier["n"]
+        meta = held["tiers"][tier_id]["block"]
+        closed = math.floor(held["cutoff"])
+        stop = closed // step * step if tier.get("complete") else closed
+        first = int(meta["b0"]) if start is None else max(int(meta["b0"]), start // step * step)
+        key = (token, tier_id, first)
+        with self.motion_building:
+            with self.lock:
+                hit = self.motions.get(key)
+            if hit is not None:
+                return hit
+            cells, _, _, end = self.motion_read(n, m, first, stop, held, token)
+            motion_block = block(n, m, float(first), max(float(first), end), cells, motion=True)
+            # Where the pack's archived days end: a page reads again what it read after it once
+            # the day's archive replaces those minutes, which the cube may measure differently.
+            answer = {
+                "tier": tier_id, "col0": meta["col0"], "from": first // step, "whole": start is None,
+                "end": end, "through": edge(end), "state_token": token,
+                "canonical_through": held["state"]["canonical_through"], "block": motion_block,
+            }
+            with self.lock:
+                self.motions[key] = answer
+                while len(self.motions) > MOTION_HELD:
+                    del self.motions[next(iter(self.motions))]
+        print(f"motion {tier_id} from {first} for {token[:8]}: {motion_block['count']} cells", flush=True)
+        return answer
+
+    def motion_measure(self, spec: dict, token: str, summarized: bool) -> dict:
+        """One rectangle's cells with path, dwell, high and low (MSC3), up to the last complete
+        base column before the pack's cutoff, and with ``summarized`` the cube's summary of them."""
+        n, m, b0, b1, r0, r1 = (spec[key] for key in ("n", "m", "b0", "b1", "r0", "r1"))
+        held = self.holding(token)
+        cutoff = held["cutoff"]
+        if b1 > math.ceil(cutoff):
+            raise ValueError("b1 is after the pack's cutoff")
+        cells, response, summary, end = self.motion_read(n, m, b0, min(b1, math.floor(cutoff)), held, token, r0, r1)
+        answer = {
+            "cutoff": held["state"]["cutoff"], "end": end, "through": edge(end),
+            "canonical_through": held["state"]["canonical_through"],
+            "block": block(n, m, float(b0), max(float(b0), end), cells, motion=True),
+        }
+        if summarized:
+            answer["summary"] = (
+                {**cube_summary(summary, response, n, m), "path_length": summary["path_length"], "dwell": summary["dwell"]}
+                if summary is not None
+                else {"path_length": 0.0, "dwell": 0.0, "cell_count": 0, "source": "cube"}
+            )
+        return answer
+
     def html(self) -> bytes:
         text = self.page.read_text(encoding="utf-8")
         current, age = self.current_pack()
@@ -632,10 +765,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(self.explorer.update(since))
             elif url.path in ("/cube/tile", "/cube/query"):
                 spec = rectangle(args, prices=url.path == "/cube/query")
-                answer = self.explorer.measure(spec, args.get("pack", [""])[0])
+                token = args.get("pack", [""])[0]
+                if args.get("motion", [""])[0] == "1":
+                    self.json(self.explorer.motion_measure(spec, token, summarized=url.path == "/cube/query"))
+                    return
+                answer = self.explorer.measure(spec, token)
                 if url.path == "/cube/tile":
                     answer.pop("summary")
                 self.json(answer)
+            elif url.path == "/cube/motion":
+                start = integer(args, "from") if "from" in args else None
+                if start is not None and start < 0:
+                    raise ValueError("from must be a base edge")
+                self.json(self.explorer.motion(args.get("tier", [""])[0], args.get("pack", [""])[0], start))
             elif url.path == "/cube/columns":
                 n, m = level(args)
                 self.json(self.explorer.history(n, m, args.get("pack", [""])[0]))

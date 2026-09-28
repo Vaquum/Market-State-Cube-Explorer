@@ -521,6 +521,8 @@
             ><input type="checkbox" id="ol-area" />70% area</label
           ><label title="Column POCs that no later column in view has traded at"
             ><input type="checkbox" id="ol-untested" />Untested</label
+          ><label title="Each row's share of the time the price spent in it, under the volume profile · live cube only"
+            ><input type="checkbox" id="ol-time" />Time at price</label
           >
         </div>
         <span class="ol-legend"
@@ -766,6 +768,16 @@
                       Buy trades
                     </button>
                   </th>
+                  <th class="ol-motion-col" hidden>
+                    <button type="button" class="cursor-interaction" data-sort="path" title="Sort by path length; again to reverse">
+                      Path · USDT
+                    </button>
+                  </th>
+                  <th class="ol-motion-col" hidden>
+                    <button type="button" class="cursor-interaction" data-sort="dwell" title="Sort by dwell; again to reverse">
+                      Dwell
+                    </button>
+                  </th>
                   <th>
                     <button type="button" class="cursor-interaction" data-sort="state" title="Sort by state; again to reverse">
                       State
@@ -919,9 +931,18 @@
           ><span id="ol-data-coarse" hidden
             ><i class="ol-data-key coarse" aria-hidden="true"></i>Coarser than
             requested</span
+          ><span id="ol-key-moved" hidden
+            ><i class="ol-data-key moved" aria-hidden="true"></i>Moved through, no
+            trade</span
+          ><span id="ol-key-plain" hidden
+            ><i class="ol-data-key plain" aria-hidden="true"></i>Not measured
+            yet</span
           ><span id="ol-key-poc">P · total POC</span
           ><span id="ol-key-bpoc">B · buy POC</span
           ><span id="ol-key-area" hidden>H/L · composite 70%</span
+          ><span id="ol-key-time" hidden
+            ><i class="ol-data-key time" aria-hidden="true"></i>Time at
+            price</span
           ><span id="ol-ray-count" hidden></span>
         </div>
         <span class="ol-gesture" id="ol-gesture"
@@ -1006,6 +1027,12 @@
             <div class="ol-metric">
               <label>Taker-buy trades</label><strong id="ol-buycount">—</strong>
             </div>
+            <div class="ol-metric" id="ol-path-metric" hidden>
+              <label>Path · USDT</label><strong id="ol-path">—</strong>
+            </div>
+            <div class="ol-metric" id="ol-dwell-metric" hidden>
+              <label>Dwell</label><strong id="ol-dwell">—</strong>
+            </div>
           </div>
           <div class="ol-rule"></div>
           <div class="ol-row">
@@ -1023,6 +1050,11 @@
           <div class="ol-row">
             <span>Buy share · volume</span><span id="ol-share">—</span>
           </div>
+          <div class="ol-row" id="ol-motion-to-row" hidden>
+            <span title="The open column's path and dwell are measured once it completes"
+              >Path and dwell to</span
+            ><span id="ol-motion-to">—</span>
+          </div>
           <details class="ol-diag">
             <summary class="cursor-interaction">Cell counts</summary>
             <div class="ol-row">
@@ -1035,6 +1067,11 @@
             </div>
             <div class="ol-row">
               <span>Zero-trade cells</span><span id="ol-zero-count">—</span>
+            </div>
+            <div class="ol-row" id="ol-moved-row" hidden>
+              <span title="Zero-trade cells the price moved through or held in"
+                >Moved through</span
+              ><span id="ol-moved">—</span>
             </div>
             <div class="ol-row">
               <span>Unfinished cells</span><span id="ol-open-count">—</span>

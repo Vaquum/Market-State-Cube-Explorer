@@ -184,7 +184,10 @@ def read(n: int, m: int, b0: int, b1: int | None, r0: int | None = None, r1: int
     cells = arrays(table)
     if len(cells["col"]) > MAX_CELLS:
         raise ValueError(f"{len(cells['col'])} cells is more than {MAX_CELLS}; ask for coarser cells")
-    return response, cells, summary, {pin[0]: list(pin[1:]) for pin in meta["pins"]}
+    # A pin is [partition_key, generation, revision, build_id]. Only its revision and build id
+    # identify the data read: attaching a component to a build moves its generation and
+    # changes no cell.
+    return response, cells, summary, {pin[0]: list(pin[2:]) for pin in meta["pins"]}
 
 
 def msc2(n: int, m: int, col0: int, col1: int, cells: dict, first: int = 0) -> str:
@@ -278,7 +281,7 @@ def pack() -> tuple[dict, dict, dict]:
 
     The overview reads the whole history up to the cube's data cutoff and so fixes it; every
     later tier is bounded to that cutoff, and every partition it reads must be one the overview
-    read, at the same generation, revision and build id, or the cube changed under the pack and
+    read, at the same revision and build id, or the cube changed under the pack and
     it is read again.
     """
     for _attempt in range(3):

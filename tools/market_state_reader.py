@@ -1,5 +1,5 @@
-# Pinned copy of origo/query/market_state_reader.py from Vaquum/Origo 3.27.0 (commit 69a3cad,
-# 2026-09-25), the cube's supported reader. It needs only the standard library and pyarrow.
+# Pinned copy of origo/query/market_state_reader.py from Vaquum/Origo 3.28.0 (commit 326fe02,
+# 2026-09-28), the cube's supported reader. It needs only the standard library and pyarrow.
 # Keep it identical to the Origo file apart from this header; replace it when Origo changes it.
 """Query the market state cube and read its results through the supported reader (PRD-0022).
 
@@ -34,7 +34,7 @@ import os
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -98,9 +98,15 @@ def query(
     p2: int | float | Decimal | str | None = None,
     tR: int | float | Decimal | None = None,
     pR: int | float | Decimal | None = None,
+    measures: Sequence[str] | None = None,
     url: str = DEFAULT_URL,
 ) -> MarketStateResult:
-    """Ask the service for one selection. Never retried: a retried POST could publish twice."""
+    """Ask the service for one selection. Never retried: a retried POST could publish twice.
+
+    ``measures`` names detail columns to add (PRD-0023); ``None`` leaves the key out.
+    """
+    if isinstance(measures, str):
+        raise TypeError('measures must be a sequence of measure names, not one string.')
     body: dict[str, object] = {}
     for key, value in (('t1', t1), ('t2', t2)):
         if value is not None:
@@ -111,6 +117,8 @@ def query(
     for key, value in (('tR', tR), ('pR', pR)):
         if value is not None:
             body[key] = _number(value)
+    if measures is not None:
+        body['measures'] = list(measures)
     response = _post(url, '/v1/market-state/query', body, QUERY_TIMEOUT_SECONDS)
     return MarketStateResult(
         str(response['result_id']),

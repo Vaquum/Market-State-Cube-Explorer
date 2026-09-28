@@ -6594,11 +6594,14 @@
       px = (stepT() * g.w) / (S.tB - S.tA),
       py = (stepP() * g.h) / (S.pB - S.pA),
       fmt = (x) => (x < 1 ? x.toFixed(1) : Math.round(x));
-    // The one pixels-per-cell readout, in the status bar.
-    el("pixel-state").textContent = `${fmt(px)} × ${fmt(py)} px per cell`;
+    // The one pixels-per-cell readout, in the status bar. It and the gesture
+    // line are written only when they change: the same words written again
+    // would lay the page out again, in the next frame's draw.
+    const pixels = `${fmt(px)} × ${fmt(py)} px per cell`;
+    if (el("pixel-state").textContent !== pixels) el("pixel-state").textContent = pixels;
     nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)`;
     if (!nav.planeHover) setPlaneStatus(nav.planeStatus);
-    el("gesture").textContent = S.lens
+    const gesture = S.lens
       ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · V: pan"
       : S.select
         ? "Drag a rectangle to measure it · click to clear it · Esc: back to pan"
@@ -6607,6 +6610,7 @@
           : S.diagonal
             ? "Wheel / pinch: time ×k, price ×√k · on the price axis: price · Alt: lens"
             : "Wheel / pinch: time · on the price axis or with Shift: price · Alt: lens";
+    if (el("gesture").textContent !== gesture) el("gesture").textContent = gesture;
     // The plane describes its 210 levels only while it shows, and brings them
     // up to date as it opens (see bindTopBar): navigating with it closed
     // rewrites none of them.

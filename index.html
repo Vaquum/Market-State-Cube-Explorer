@@ -3874,7 +3874,7 @@
     }
   }
   // Motion cells as the chart reads them: sorted, keyed, by column (its volume,
-  // trades, path, dwell and range) and how many had no trade. Its rows and
+  // trades, path, dwell and range) and those without a trade. Its rows and
   // totals are summed when first read (motionTotals): a frame that only draws
   // the cells never needs them.
   function motionSummary(list, n, m, map = null) {
@@ -3884,8 +3884,8 @@
       map = new Map();
       for (const z of cells) map.set(cellKey(z.c, z.r), z);
     }
-    let col = null,
-      moved = 0;
+    let col = null;
+    const moved = [];
     for (const z of cells) {
       if (!col || col.c !== z.c) {
         col = { c: z.c, v: 0, ct: 0, p: 0, w: 0, hi: -Infinity, lo: Infinity };
@@ -3898,7 +3898,7 @@
       if (z.ct > 0) {
         if (z.hi > col.hi) col.hi = z.hi;
         if (z.lo < col.lo) col.lo = z.lo;
-      } else moved++;
+      } else moved.push(z);
     }
     return { n, m, cells, cols, map, moved, rows: null, p: null, w: null, scales: {} };
   }
@@ -5455,10 +5455,10 @@
     // Path and dwell, while a movement view shows them: the rectangle's own, up
     // to where they end.
     const rect = mv?.rect,
-      moved = Boolean(rect?.query) && rect.end > b[0];
-    if (moved) motionTotals(rect.query);
+      reached = Boolean(rect?.query) && rect.end > b[0];
+    if (reached) motionTotals(rect.query);
     el("path-metric").hidden = el("dwell-metric").hidden = el("moved-row").hidden = !mv;
-    el("motion-to-row").hidden = !(moved && rect.end < Math.min(b[1], activeCutoff()));
+    el("motion-to-row").hidden = !(reached && rect.end < Math.min(b[1], activeCutoff()));
     if (mv) {
       const why = !rect.query
         ? rect.state === "failed"
@@ -5469,11 +5469,11 @@
           : "Not measured by the cube yet",
         span = Math.max(0, Math.min(b[1], rect.end) - b[0]) * BASE;
       for (const [id, text, exact] of [
-        ["path", moved ? compact(rect.query.p) : "—", moved ? usdt(rect.query.p) + " USDT" : why],
+        ["path", reached ? compact(rect.query.p) : "—", reached ? usdt(rect.query.p) + " USDT" : why],
         [
           "dwell",
-          moved ? dur(rect.query.w) : "—",
-          moved
+          reached ? dur(rect.query.w) : "—",
+          reached
             ? `${secondsExact(rect.query.w)} · ${(span > 0 ? (100 * rect.query.w) / span : 0).toFixed(1)}% of the time`
             : why,
         ],
@@ -5482,8 +5482,15 @@
         el(id).title = exact;
         el(id).setAttribute("aria-label", exact);
       }
-      el("motion-to").textContent = moved ? `${when(rect.end)} UTC` : "—";
-      el("moved").textContent = moved ? integer(rect.query.moved) : "—";
+      el("motion-to").textContent = reached ? `${when(rect.end)} UTC` : "—";
+      // Moved through: without a trade in the rectangle's own cells either.
+      el("moved").textContent = !reached
+        ? "—"
+        : integer(
+            rect.query.n === query.n && rect.query.m === query.m
+              ? rect.query.moved.filter((z) => !query.map.has(z.c + "," + z.r)).length
+              : rect.query.moved.length,
+          );
     }
     const wait = (text) => (measuring ? "—" : text);
     el("poc-value").textContent = wait(
@@ -5594,8 +5601,11 @@
         dwell: (c) => moves(c)?.w ?? -1,
         state: (c) => cellState(c, b, ts, ps),
       }[S.cellSort],
+      // Cells the price moved through or held in without a trade: without one
+      // here either, where a cell's trades can come after path and dwell end.
+      movedThrough = mq ? mq.moved.filter((z) => !query.map.has(z.c + "," + z.r)) : [],
       cells = query.cells
-        .concat(mq ? mq.cells.filter((z) => z.ct === 0) : [])
+        .concat(movedThrough)
         .sort(
           (x, y) =>
             (value(x) < value(y) ? -1 : value(x) > value(y) ? 1 : 0) *
@@ -5649,7 +5659,7 @@
     el("table-body").replaceChildren(frag);
     hoverRow = null;
     el("table-caption").textContent = mq
-      ? `${integer(query.cells.length)} occupied and ${integer(mq.moved)} moved-through cells in view · other zero cells omitted`
+      ? `${integer(query.cells.length)} occupied and ${integer(movedThrough.length)} moved-through cells in view · other zero cells omitted`
       : `${integer(cells.length)} occupied cells in view · zero cells omitted`;
     el("table-page").textContent = `${tablePage + 1} / ${pages}`;
     el("table-back").disabled = tablePage === 0;
@@ -5760,7 +5770,16 @@
           ? []
           : !time.query
             ? [["Time at price", time.state === "failed" ? "couldn't be read" : "reading from the cube…"]]
-            : [
+            : time.end <= last.b[0]
+              ? [
+                  [
+                    "Time at price",
+                    last.b[0] >= Math.floor(CUT)
+                      ? "measured once the column completes"
+                      : "not measured by the cube yet",
+                  ],
+                ]
+              : [
                 [
                   "Time at price",
                   `${exact ? secondsExact(trow?.w || 0) : dur(trow?.w || 0)} · ${share(time.query.w > 0 ? (trow?.w || 0) / time.query.w : 0)}`,
@@ -8772,6 +8791,7 @@
     failed: new Map(),
     timer: 0,
     memo: new Map(), // the latest bounded aggregates, which a still view's frames reuse
+    epoch: 0, // moves when what was read is let go: an answer asked for before is dropped
   };
   // The motion block of the block a view or the lens draws from.
   function motionOf(src) {
@@ -8866,7 +8886,10 @@
   // A loaded motion block whose cells tile the rectangle, as exactSource finds
   // one for the other measures: its sums are then the cube's answer. It reaches
   // as far into the rectangle as this pack can be measured, or it is a tier
-  // still reading the columns it gained, whose sums end where it does.
+  // still reading the columns it gained, whose sums end where it does. Of those,
+  // the one reaching furthest into the rectangle, then the coarsest: the
+  // reference tier ends at its last complete column, and the reference with the
+  // recent tier's later columns goes on from there.
   function motionExact(r, n, m) {
     const reach = Math.min(r[1], Math.floor(CUT));
     return (
@@ -8886,7 +8909,8 @@
             r[3] % ps === 0
           );
         })
-        .sort((a, b) => b.n - a.n || b.m - a.m)[0] || null
+        .sort((a, b) => Math.min(b.end, r[1]) - Math.min(a.end, r[1]) || b.n - a.n || b.m - a.m)[0] ||
+      null
     );
   }
   // The rectangle's sums from the block that tiles it, or, where a coarser block
@@ -9049,6 +9073,7 @@
   // them is read again: the tiles and rectangles past the old edge are let go,
   // and each tier reads its columns from that edge when next asked.
   function dropMotionAfter(edge) {
+    motion.epoch++;
     for (const [id, s] of Object.entries(motion.sources))
       if (id.startsWith("tile:") && s.end > edge) delete motion.sources[id];
     for (const [key, x] of motion.measured) if (x.r[1] > edge) motion.measured.delete(key);
@@ -9064,7 +9089,8 @@
     if (!PACK.live || !ready || motion.busy) return;
     const want = motionWant();
     if (!want) return;
-    const generation = live.generation;
+    const generation = live.generation,
+      epoch = motion.epoch;
     motion.busy = want;
     requestDraw();
     try {
@@ -9086,7 +9112,7 @@
       }
       if (!response.ok) throw Error(body?.error || `the server answered ${response.status}`);
       const decoded = await want.decode(body);
-      if (generation === live.generation) want.apply(decoded);
+      if (generation === live.generation && epoch === motion.epoch) want.apply(decoded);
     } catch (error) {
       const message = (
         error.name === "TimeoutError"
@@ -9166,8 +9192,9 @@
     }
   }
   // Path and dwell shade the cells the price traded in and outline those it
-  // only moved through or held in. A cell of `base` after where they end, or
-  // any while they are read, is drawn plain.
+  // only moved through or held in: with no trade in `base` either, where a
+  // cell's trades can come after they end. A cell of `base` after where they
+  // end, or any while they are read, is drawn plain.
   function paintMotion(base, q, mv, b, u) {
     const ts = stepT(),
       ps = stepP(),
@@ -9181,7 +9208,7 @@
           h = BOX.yb - BOX.ya;
         motionMark(
           ramp(rank(sorted, motionAmount(z, b, end, ts, ps))),
-          z.ct > 0,
+          z.ct > 0 || (base !== null && base.map.has(z.c + "," + z.r)),
           BOX.xa,
           BOX.ya,
           w,
@@ -10099,7 +10126,7 @@
         yb = G.Y(z.r * ps);
       motionMark(
         ramp(rank(sorted, motionAmount(z, lensBounds, end, ts, ps))),
-        z.ct > 0,
+        z.ct > 0 || q.map.has(z.c + "," + z.r),
         xa,
         ya,
         xb - xa,

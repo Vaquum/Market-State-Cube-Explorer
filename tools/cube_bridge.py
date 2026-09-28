@@ -626,8 +626,10 @@ class Explorer:
             motion_block = block(n, m, float(first), max(float(first), end), cells, motion=True)
             # Where the pack's archived days end: a page reads again what it read after it once
             # the day's archive replaces those minutes, which the cube may measure differently.
+            # From the tier's first column it is the whole tier, whether asked for whole or from an
+            # edge before it: one cache key, one answer.
             answer = {
-                "tier": tier_id, "col0": meta["col0"], "from": first // step, "whole": start is None,
+                "tier": tier_id, "col0": meta["col0"], "from": first // step, "whole": first == int(meta["b0"]),
                 "end": end, "through": edge(end), "state_token": token,
                 "canonical_through": held["state"]["canonical_through"], "block": motion_block,
             }

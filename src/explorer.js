@@ -6604,7 +6604,10 @@
           : S.diagonal
             ? "Wheel / pinch: time ×k, price ×√k · on the price axis: price · Alt: lens"
             : "Wheel / pinch: time · on the price axis or with Shift: price · Alt: lens";
-    refreshPlane();
+    // The plane describes its 210 levels only while it shows, and brings them
+    // up to date as it opens (see bindTopBar): navigating with it closed
+    // rewrites none of them.
+    if (!el("res-pop").hidden) refreshPlane();
   }
   function settleNavigation(label, refit = false) {
     confine();

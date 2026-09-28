@@ -165,13 +165,16 @@
   };
   // A signed value with a true minus sign: "+125", "−125".
   const signed = (x, f) => (x > 0 ? "+" : x < 0 ? "−" : "") + f(Math.abs(x));
+  // Prices and USDT amounts each keep one formatter: toLocaleString with
+  // options builds a new one every call, and labels format prices every frame.
+  const priceFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }),
+    usdtFormat = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   const integer = (x) => Math.round(x).toLocaleString("en-US"),
-    price = (x) => x.toLocaleString("en-US", { maximumFractionDigits: 2 }),
-    usdt = (x) =>
-      x.toLocaleString("en-US", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }),
+    price = (x) => priceFormat.format(x),
+    usdt = (x) => usdtFormat.format(x),
     // To the nearest millisecond, so a time read back from the address is the same time.
     date = (b) => new Date(Math.round((T0 + b * BASE) * 1000)),
     // ISO is for the query and view codes only.
@@ -3086,6 +3089,7 @@
 
   let markState = {
     metrics: new WeakMap(),
+    level: new WeakMap(),
     deltaMax: 1,
     va: null,
     rays: [],
@@ -3126,25 +3130,43 @@
     }
     return { r0: low, r1: high + 1, volume, share: volume / total };
   }
-  function prepareMeasures(full, shown, query, b) {
+  // The drawn level's metrics: each cell's exposure within its block, up to
+  // the cutoff, and the scale delta shades on. They change only with the
+  // level, the block or the cutoff, so the level keeps them, as it keeps its
+  // sorted amounts.
+  function levelMetrics(full) {
     const src = displaySource(),
-      ts = stepT(),
+      end = Math.min(src.b1, activeCutoff()),
+      key = src.b0 + "|" + end;
+    if (full.metrics?.key === key) return full.metrics;
+    const ts = stepT(),
       ps = stepP(),
       whole = ts * BASE * ps * PR,
-      sourceBounds = [src.b0, Math.min(src.b1, activeCutoff()), 0, Infinity];
-    const metrics = new WeakMap(),
+      sourceBounds = [src.b0, end, 0, Infinity],
+      cells = new WeakMap(),
       deltas = [];
     for (const z of full.cells) {
       const delta = 2 * z.bv - z.v;
-      metrics.set(z, { ...cellExposure(z, sourceBounds, ts, ps), whole, delta });
+      cells.set(z, { ...cellExposure(z, sourceBounds, ts, ps), whole, delta });
       if (delta !== 0) deltas.push(Math.abs(delta));
     }
+    deltas.sort((a, b) => a - b);
+    full.metrics = { key, cells, deltaMax: d3.quantileSorted(deltas, 0.995) || 1 };
+    return full.metrics;
+  }
+  // Only the rectangle's cells are measured every frame: its bounds cut them.
+  function prepareMeasures(full, shown, query, b) {
+    const level = levelMetrics(full),
+      ts = stepT(),
+      ps = stepP(),
+      whole = ts * BASE * ps * PR,
+      metrics = new WeakMap();
     for (const z of shown.cells)
       metrics.set(z, { ...cellExposure(z, b, ts, ps), whole, delta: 2 * z.bv - z.v });
-    deltas.sort((a, b) => a - b);
     markState = {
       metrics,
-      deltaMax: d3.quantileSorted(deltas, 0.995) || 1,
+      level: level.cells,
+      deltaMax: level.deltaMax,
       va: contiguousArea(query.rows, query.poc, query.v),
       rays: [],
     };
@@ -3153,9 +3175,10 @@
   // A cell's amount for an encoding: USDT, trades or USDT a trade. Volume and
   // trades grow with the cell, so an edge portion or the open column counts at
   // its full-cell rate and compares with whole cells; the values shown stay
-  // the cell's own.
+  // the cell's own. The rectangle's and the lens's cells are measured against
+  // their own bounds, before the level's.
   function amount(z, mode = S.mode) {
-    const m = markState.metrics.get(z),
+    const m = markState.metrics.get(z) || markState.level.get(z),
       rate = m?.area > 0 ? m.whole / m.area : 1;
     if (mode === "trades" || mode === "flowtrades") return z.ct * rate;
     if (mode === "size") return z.ct > 0 ? z.v / z.ct : 0;

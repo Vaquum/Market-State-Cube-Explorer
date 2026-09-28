@@ -3666,16 +3666,87 @@
       col1: v.getUint32(12, true),
     };
   }
+  // A block's cells summed into level-(n, m) cells, within bounds or all of
+  // them. A level's are kept until the blocks change (groups). The latest few
+  // bounded sums are kept too, each with the block and cells it summed: the
+  // rectangle is summed every frame, but moves only with the view or the
+  // selection. They are keyed by the level, the bounds and the cutoff, all
+  // else a sum reads.
+  //
+  // A new one sums only the columns it can take cells from, found by
+  // bisection where the cells run in column order, as the snapshot's and the
+  // cube's do. Where the level is summed and the bounds' prices lie on its
+  // rows, the cells of its columns wholly inside the bounds are the level's
+  // own, the same cells summed in the same order: only the part columns at
+  // either end are summed from the block.
+  const bounded = new Map(),
+    ordered = new WeakMap(),
+    summedFrom = new WeakMap();
   function aggregate(src, n, m, bounds = null) {
     const key = src.id + "|" + n + "|" + m;
     if (!bounds && groups.has(key)) return groups.get(key);
+    const held = bounds && [key, ...bounds, CUT].join("|"),
+      hit = held && bounded.get(held);
+    if (hit && hit.src === src && hit.cells === src.cells) {
+      bounded.delete(held);
+      bounded.set(held, hit);
+      return hit.out;
+    }
+    const cells = src.cells,
+      map = new Map();
+    if (!bounds || !inColumnOrder(cells)) sumCells(map, src, n, m, bounds, 0, cells.length);
+    else {
+      const ts = 2 ** src.n,
+        tn = 2 ** n,
+        pm = 2 ** m,
+        at = (c) => bisectColumn(cells, c),
+        // A cell after the bounds end is left out, unless the cutoff comes first.
+        stop = CUT > bounds[1] ? at(Math.ceil(bounds[1] / ts) + 1) : cells.length,
+        level = groups.get(key),
+        c0 = Math.ceil(bounds[0] / tn),
+        c1 = CUT > bounds[1] ? Math.floor(bounds[1] / tn) : Infinity;
+      if (
+        level &&
+        summedFrom.get(level) === cells &&
+        src.n <= n &&
+        src.m <= m &&
+        c0 < c1 &&
+        Math.ceil(bounds[2] / pm) * pm === bounds[2] &&
+        Math.floor(bounds[3] / pm) * pm === bounds[3]
+      ) {
+        const own = level.cells,
+          dt = tn / ts,
+          last = c1 < Infinity ? bisectColumn(own, c1) : own.length;
+        sumCells(map, src, n, m, bounds, at(Math.floor(bounds[0] / ts)), at(c0 * dt));
+        for (let j = bisectColumn(own, c0); j < last; j++) {
+          const z = own[j];
+          if (z.r * pm >= bounds[2] && (z.r + 1) * pm <= bounds[3])
+            map.set(cellKey(z.c, z.r), { c: z.c, r: z.r, v: z.v, bv: z.bv, ct: z.ct, bt: z.bt });
+        }
+        if (c1 < Infinity) sumCells(map, src, n, m, bounds, at(c1 * dt), stop);
+      } else sumCells(map, src, n, m, bounds, at(Math.floor(bounds[0] / ts)), stop);
+    }
+    const out = summarize([...map.values()], n, m);
+    if (!bounds) {
+      groups.set(key, out);
+      summedFrom.set(out, cells);
+    } else {
+      bounded.set(held, { src, cells, out });
+      while (bounded.size > 8) bounded.delete(bounded.keys().next().value);
+    }
+    return out;
+  }
+  // A block's cells from i to stop that the bounds hold, added into their
+  // level-(n, m) cells in the block's order.
+  function sumCells(map, src, n, m, bounds, i, stop) {
     const ts = 2 ** src.n,
       ps = 2 ** src.m,
       dt = 2 ** (n - src.n),
       dp = 2 ** (m - src.m),
-      map = new Map();
-    for (const z of src.cells) {
-      const t = z.c * ts,
+      cells = src.cells;
+    for (; i < stop; i++) {
+      const z = cells[i],
+        t = z.c * ts,
         p = z.r * ps;
       if (
         bounds &&
@@ -3687,7 +3758,7 @@
         continue;
       const c = Math.floor(z.c / dt),
         r = Math.floor(z.r / dp),
-        k = c + "," + r;
+        k = cellKey(c, r);
       let a = map.get(k);
       if (!a) {
         a = { c, r, v: 0, bv: 0, ct: 0, bt: 0 };
@@ -3698,9 +3769,16 @@
       a.ct += z.ct;
       a.bt += z.bt;
     }
-    const out = summarize([...map.values()], n, m);
-    if (!bounds) groups.set(key, out);
-    return out;
+  }
+  // Whether a block's cells run in column order: checked once for each.
+  function inColumnOrder(cells) {
+    let sorted = ordered.get(cells);
+    if (sorted === undefined) {
+      sorted = true;
+      for (let i = 1; sorted && i < cells.length; i++) sorted = cells[i - 1].c <= cells[i].c;
+      ordered.set(cells, sorted);
+    }
+    return sorted;
   }
   // A sum of floats that carries its rounding error (Neumaier's), so totals
   // and row sums match the exact sums the cube reports.
@@ -3738,7 +3816,10 @@
         col = { c: z.c, v: 0, bv: 0, ct: 0, bt: 0, poc: null, best: 0, rows: [] };
         cols.push(col);
       }
-      for (const f of ["v", "bv", "ct", "bt"]) col[f] += z[f];
+      col.v += z.v;
+      col.bv += z.bv;
+      col.ct += z.ct;
+      col.bt += z.bt;
       if (z.v > col.best) {
         col.poc = z.r;
         col.best = z.v;
@@ -3772,12 +3853,13 @@
       bmax = 0,
       ct = 0,
       bt = 0;
-    const rowList = [...rows.values()].sort((a, b) => a.r - b.r);
+    // Each row anew, its sums in place of its values: a moved rectangle is
+    // summarized every frame, and objects that lose properties are slower to
+    // build and to read.
+    const rowList = [...rows.values()]
+      .sort((a, b) => a.r - b.r)
+      .map((row) => ({ r: row.r, ct: row.ct, bt: row.bt, v: exactSum(row.vs), bv: exactSum(row.bvs) }));
     for (const row of rowList) {
-      row.v = exactSum(row.vs);
-      row.bv = exactSum(row.bvs);
-      delete row.vs;
-      delete row.bvs;
       ct += row.ct;
       bt += row.bt;
       if (row.v > max) {

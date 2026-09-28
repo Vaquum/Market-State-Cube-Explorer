@@ -30,6 +30,8 @@
   --ol-sell: light-dark(#b3624b, #d89777);
   --ol-poc: light-dark(#a87823, #dfb967);
   --ol-evidence: light-dark(#7664a9, #b4a1df);
+  /* Time at price: the profile of where the price spent its time */
+  --ol-time: light-dark(#8f4f86, #d59bcc);
   /* Taker flow's midpoint: an even share, distinct from gridlines and both sides */
   --ol-neutral: light-dark(#b9c2bc, #5f6b64);
   /* POC lines: one colour each for the periods, apart from the cells' ramp and
@@ -528,6 +530,11 @@
 #origo-lens .ol-item[aria-checked="true"] {
   font-weight: 500;
 }
+/* A choice this page can't make (path and dwell on the recorded page). */
+#origo-lens .ol-item[aria-disabled="true"] {
+  color: var(--ol-muted);
+  cursor: default;
+}
 #origo-lens .ol-item-note {
   color: var(--ol-muted);
   font-weight: 400;
@@ -992,6 +999,10 @@
   min-height: var(--h-m);
   cursor: pointer;
 }
+#origo-lens .ol-marks label:has(input:disabled) {
+  color: var(--ol-muted);
+  cursor: default;
+}
 #origo-lens .ol-legend {
   margin-left: auto;
   display: flex;
@@ -1410,6 +1421,16 @@
 #origo-lens .ol-data-key.coarse {
   background: var(--ol-panel);
   border-left: 3px solid var(--ol-poc);
+}
+#origo-lens .ol-data-key.moved {
+  background: transparent;
+  border: 1.5px solid var(--ol-muted);
+}
+#origo-lens .ol-data-key.plain {
+  background: var(--ol-line);
+}
+#origo-lens .ol-data-key.time {
+  background: var(--ol-time);
 }
 
 /* Inspector: its own scroll, so the chart stays in view. */
@@ -2392,6 +2413,8 @@
             ><input type="checkbox" id="ol-area" />70% area</label
           ><label title="Column POCs that no later column in view has traded at"
             ><input type="checkbox" id="ol-untested" />Untested</label
+          ><label title="Each row's share of the time the price spent in it, under the volume profile · live cube only"
+            ><input type="checkbox" id="ol-time" />Time at price</label
           >
         </div>
         <span class="ol-legend"
@@ -2637,6 +2660,16 @@
                       Buy trades
                     </button>
                   </th>
+                  <th class="ol-motion-col" hidden>
+                    <button type="button" class="cursor-interaction" data-sort="path" title="Sort by path length; again to reverse">
+                      Path · USDT
+                    </button>
+                  </th>
+                  <th class="ol-motion-col" hidden>
+                    <button type="button" class="cursor-interaction" data-sort="dwell" title="Sort by dwell; again to reverse">
+                      Dwell
+                    </button>
+                  </th>
                   <th>
                     <button type="button" class="cursor-interaction" data-sort="state" title="Sort by state; again to reverse">
                       State
@@ -2790,9 +2823,18 @@
           ><span id="ol-data-coarse" hidden
             ><i class="ol-data-key coarse" aria-hidden="true"></i>Coarser than
             requested</span
+          ><span id="ol-key-moved" hidden
+            ><i class="ol-data-key moved" aria-hidden="true"></i>Moved through, no
+            trade</span
+          ><span id="ol-key-plain" hidden
+            ><i class="ol-data-key plain" aria-hidden="true"></i>Not measured
+            yet</span
           ><span id="ol-key-poc">P · total POC</span
           ><span id="ol-key-bpoc">B · buy POC</span
           ><span id="ol-key-area" hidden>H/L · composite 70%</span
+          ><span id="ol-key-time" hidden
+            ><i class="ol-data-key time" aria-hidden="true"></i>Time at
+            price</span
           ><span id="ol-ray-count" hidden></span>
         </div>
         <span class="ol-gesture" id="ol-gesture"
@@ -2877,6 +2919,12 @@
             <div class="ol-metric">
               <label>Taker-buy trades</label><strong id="ol-buycount">—</strong>
             </div>
+            <div class="ol-metric" id="ol-path-metric" hidden>
+              <label>Path · USDT</label><strong id="ol-path">—</strong>
+            </div>
+            <div class="ol-metric" id="ol-dwell-metric" hidden>
+              <label>Dwell</label><strong id="ol-dwell">—</strong>
+            </div>
           </div>
           <div class="ol-rule"></div>
           <div class="ol-row">
@@ -2894,6 +2942,11 @@
           <div class="ol-row">
             <span>Buy share · volume</span><span id="ol-share">—</span>
           </div>
+          <div class="ol-row" id="ol-motion-to-row" hidden>
+            <span title="The open column's path and dwell are measured once it completes"
+              >Path and dwell to</span
+            ><span id="ol-motion-to">—</span>
+          </div>
           <details class="ol-diag">
             <summary class="cursor-interaction">Cell counts</summary>
             <div class="ol-row">
@@ -2906,6 +2959,11 @@
             </div>
             <div class="ol-row">
               <span>Zero-trade cells</span><span id="ol-zero-count">—</span>
+            </div>
+            <div class="ol-row" id="ol-moved-row" hidden>
+              <span title="Zero-trade cells the price moved through or held in"
+                >Moved through</span
+              ><span id="ol-moved">—</span>
             </div>
             <div class="ol-row">
               <span>Unfinished cells</span><span id="ol-open-count">—</span>
@@ -3325,6 +3383,8 @@
       "trades",
       "buyvol",
       "buytrades",
+      "path",
+      "dwell",
       "state",
     ],
     CASE_SORTS = ["date", "outcome", "change", "poc", "excursion", "buy"];
@@ -3370,6 +3430,8 @@
       poc: true,
       area: false,
       untested: false,
+      // Time at price: each row's share of the time, under the volume profile.
+      time: false,
       // POC lines: the periods and days chosen, in list order.
       lines: [],
       tab: "context",
@@ -3532,16 +3594,20 @@
     return new Response(stream).arrayBuffer();
   }
   // A block of cells: MSC1 in the recorded snapshot (counts as 32 bits), MSC2
-  // from the live cube (counts as 64-bit floats, exact to 2⁵³).
+  // from the live cube (counts as 64-bit floats, exact to 2⁵³), and MSC3, MSC2
+  // with how the price moved inside each cell: its path length (USDT), its
+  // dwell (seconds), and its highest and lowest trade (NaN without trades).
   async function unpack(block, id) {
     const buf = await inflate(block),
       v = new DataView(buf),
       magic = String.fromCharCode(...new Uint8Array(buf, 0, 4));
-    if (magic !== "MSC1" && magic !== "MSC2") throw Error("Invalid block of cells");
+    if (magic !== "MSC1" && magic !== "MSC2" && magic !== "MSC3")
+      throw Error("Invalid block of cells");
     const n = v.getUint8(4),
       m = v.getUint8(5),
       count = v.getUint32(16, true),
-      wide = magic === "MSC2";
+      wide = magic !== "MSC1",
+      moving = magic === "MSC3";
     let o = 32;
     const take = (Type) => {
       const a = new Type(buf, o, count);
@@ -3550,10 +3616,16 @@
     };
     const vol = take(Float64Array),
       bv = take(Float64Array);
-    let cs, rs, ct, bt;
+    let cs, rs, ct, bt, path, dwell, high, low;
     if (wide) {
       ct = take(Float64Array);
       bt = take(Float64Array);
+      if (moving) {
+        path = take(Float64Array);
+        dwell = take(Float64Array);
+        high = take(Float64Array);
+        low = take(Float64Array);
+      }
       cs = take(Uint32Array);
       rs = take(Uint32Array);
     } else {
@@ -3562,14 +3634,27 @@
       ct = take(Uint32Array);
       bt = take(Uint32Array);
     }
-    const cells = Array.from({ length: count }, (_, i) => ({
-      c: cs[i],
-      r: rs[i],
-      v: vol[i],
-      bv: bv[i],
-      ct: ct[i],
-      bt: bt[i],
-    }));
+    const cells = moving
+      ? Array.from({ length: count }, (_, i) => ({
+          c: cs[i],
+          r: rs[i],
+          v: vol[i],
+          bv: bv[i],
+          ct: ct[i],
+          bt: bt[i],
+          p: path[i],
+          w: dwell[i],
+          hi: high[i],
+          lo: low[i],
+        }))
+      : Array.from({ length: count }, (_, i) => ({
+          c: cs[i],
+          r: rs[i],
+          v: vol[i],
+          bv: bv[i],
+          ct: ct[i],
+          bt: bt[i],
+        }));
     return {
       id,
       n,
@@ -3720,6 +3805,137 @@
       scales: {},
     };
   }
+  // Path and dwell level by level (live only), summed like volume, each cell
+  // keeping its highest and lowest trade. A motion block's cells include those
+  // the price moved through or held in without a trade (trades 0). Its data
+  // ends where its measures do (b1), so a column across that edge counts. Its
+  // cells run in (column, row) order, so a rectangle's are found by bisection,
+  // and cells are keyed by number: a pan sums them again every frame.
+  const cellKey = (c, r) => c * 2097152 + r;
+  function bisectColumn(cells, c) {
+    let lo = 0,
+      hi = cells.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cells[mid].c < c) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+  function motionAggregate(src, n, m, bounds = null) {
+    const key = src.id + "|" + n + "|" + m;
+    if (!bounds && groups.has(key)) return groups.get(key);
+    const map = new Map(),
+      list = [];
+    accumulate(map, list, src, n, m, bounds);
+    const out = motionSummary(list, n, m, map);
+    if (!bounds) groups.set(key, out);
+    return out;
+  }
+  // A block's cells inside the bounds, added into their level-(n, m) cells.
+  function accumulate(map, list, src, n, m, bounds) {
+    const ts = 2 ** src.n,
+      ps = 2 ** src.m,
+      dt = 2 ** (n - src.n),
+      dp = 2 ** (m - src.m),
+      cells = src.cells;
+    let i = 0,
+      stop = cells.length;
+    if (bounds) {
+      i = bisectColumn(cells, Math.floor(bounds[0] / ts));
+      stop = bisectColumn(cells, Math.ceil(bounds[1] / ts) + 1);
+    }
+    for (; i < stop; i++) {
+      const z = cells[i],
+        t = z.c * ts,
+        p = z.r * ps;
+      if (
+        bounds &&
+        (t < bounds[0] ||
+          Math.min(t + ts, src.b1) > bounds[1] ||
+          p < bounds[2] ||
+          p + ps > bounds[3])
+      )
+        continue;
+      const c = Math.floor(z.c / dt),
+        r = Math.floor(z.r / dp),
+        k = cellKey(c, r);
+      let a = map.get(k);
+      if (!a) {
+        a = { c, r, v: 0, ct: 0, p: 0, w: 0, hi: -Infinity, lo: Infinity };
+        map.set(k, a);
+        list.push(a);
+      }
+      a.v += z.v;
+      a.ct += z.ct;
+      a.p += z.p;
+      a.w += z.w;
+      if (z.ct > 0) {
+        if (z.hi > a.hi) a.hi = z.hi;
+        if (z.lo < a.lo) a.lo = z.lo;
+      }
+    }
+  }
+  // Motion cells as the chart reads them: sorted, keyed, by column (its volume,
+  // trades, path, dwell and range) and those without a trade. Its rows and
+  // totals are summed when first read (motionTotals): a frame that only draws
+  // the cells never needs them.
+  function motionSummary(list, n, m, map = null) {
+    const cells = list.sort((a, b) => a.c - b.c || a.r - b.r),
+      cols = [];
+    if (!map) {
+      map = new Map();
+      for (const z of cells) map.set(cellKey(z.c, z.r), z);
+    }
+    let col = null;
+    const moved = [];
+    for (const z of cells) {
+      if (!col || col.c !== z.c) {
+        col = { c: z.c, v: 0, ct: 0, p: 0, w: 0, hi: -Infinity, lo: Infinity };
+        cols.push(col);
+      }
+      col.v += z.v;
+      col.ct += z.ct;
+      col.p += z.p;
+      col.w += z.w;
+      if (z.ct > 0) {
+        if (z.hi > col.hi) col.hi = z.hi;
+        if (z.lo < col.lo) col.lo = z.lo;
+      } else moved.push(z);
+    }
+    return { n, m, cells, cols, map, moved, rows: null, p: null, w: null, scales: {} };
+  }
+  // A motion summary's rows, path and dwell by price row summed exactly, and
+  // its totals; the cube's own totals when it answered for the rectangle.
+  function motionTotals(q) {
+    if (q.rows) return q;
+    // exactSum's compensated sums, kept as they go: a pan works these out every frame.
+    const add = (s, x) => {
+        const t = s[0] + x;
+        s[1] += Math.abs(s[0]) >= Math.abs(x) ? s[0] - t + x : x - t + s[0];
+        s[0] = t;
+      },
+      rows = new Map(),
+      p = [0, 0],
+      w = [0, 0];
+    for (const z of q.cells) {
+      let row = rows.get(z.r);
+      if (!row) {
+        row = { r: z.r, ps: [0, 0], ws: [0, 0] };
+        rows.set(z.r, row);
+      }
+      add(row.ps, z.p);
+      add(row.ws, z.w);
+      add(p, z.p);
+      add(w, z.w);
+    }
+    q.rows = [...rows.values()]
+      .sort((a, b) => a.r - b.r)
+      .map((row) => ({ r: row.r, p: row.ps[0] + row.ps[1], w: row.ws[0] + row.ws[1] }));
+    if (q.p === null) q.p = p[0] + p[1];
+    if (q.w === null) q.w = w[0] + w[1];
+    return q;
+  }
   function activeCutoff() {
     return S.replay && S.anchor !== null
       ? Math.min(CUT, Math.floor(S.anchor / stepT()) * stepT())
@@ -3744,6 +3960,7 @@
       "sell",
       "poc",
       "evidence",
+      "time",
       "accent",
       "neutral",
     ]) {
@@ -3942,12 +4159,17 @@
     geometry();
     const src = displaySource(),
       cut = activeCutoff(),
-      full = aggregate(
-        src,
-        renderN(),
-        renderM(),
-        S.replay ? [src.col0 * 2 ** src.n, cut, 0, Infinity] : null,
-      ),
+      // Under Path and Dwell the cells shade by their own motion, over the
+      // motion's own level: the block's other amounts over its level go unread.
+      moving = Boolean(PACK.live) && movementMode(),
+      full = moving
+        ? null
+        : aggregate(
+            src,
+            renderN(),
+            renderM(),
+            S.replay ? [src.col0 * 2 ** src.n, cut, 0, Infinity] : null,
+          ),
       meas = measurement(),
       b = meas.b,
       query = meas.query,
@@ -3958,12 +4180,14 @@
         (query.n === renderN()
           ? query
           : aggregate(src, renderN(), renderM(), outwardBounds(meas.r))),
+      // Path and dwell, while a movement view shows them.
+      mv = movementOn() ? motionView(src, cut, meas) : null,
       ts = stepT(),
       ps = stepP(),
       u = transition
         ? clamp((performance.now() - transition.start) / 170, 0, 1)
         : 1;
-    prepareMeasures(full, shown, query, b);
+    prepareMeasures(full, shown, query, b, moving);
     labelsTaken = [];
     // Latest sits over the plot's top right when it shows, and the replay
     // transport on the replay line: labels keep clear of both.
@@ -4006,7 +4230,8 @@
     grid();
     if (S.selection) {
       ctx.globalAlpha = 0.25;
-      for (const z of full.cells) fillCell(z, full, u);
+      if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u);
+      else for (const z of full.cells) fillCell(z, full, u);
       ctx.globalAlpha = 1;
     }
     ctx.save();
@@ -4017,7 +4242,8 @@
     ctx.beginPath();
     ctx.rect(x1, y1, x2 - x1, y2 - y1);
     ctx.clip();
-    for (const z of shown.cells) fillCell(z, full, u);
+    if (moving) paintMotion(shown, mv.shown, mv, b, u);
+    else for (const z of shown.cells) fillCell(z, full, u);
     ctx.restore();
     markings(shown, cut);
     paintUnfinished(shown);
@@ -4124,12 +4350,14 @@
     ctx.restore();
     const ro = readouts(cut);
     axes(ro);
-    profile(query, b, meas.state);
-    activity(shown, cut);
+    profile(query, b, meas.state, mv);
+    activity(shown, cut, mv);
     crosshair(ro);
-    querySummary(meas);
-    el("legend-text").textContent = legendText(full);
-    el("legend-text").title = LEGEND_TITLES[S.mode];
+    querySummary(meas, mv);
+    el("legend-text").textContent = legendText(full, mv);
+    el("legend-text").title =
+      LEGEND_TITLES[S.mode] +
+      (moving && !mv.src && motionIssue() ? ` They couldn't be read: ${motionIssue()}.` : "");
     el("ramp").style.background = legendRamp();
     const marks = marksReadout(b);
     el("ray-count").textContent = marks.rayCount + " untested levels";
@@ -4138,7 +4366,7 @@
       marks.vaLow === null || meas.state === "pending" || meas.state === "failed"
         ? "—"
         : price(marks.vaLow) + "–" + price(marks.vaHigh);
-    last = { full, query, shown, meas, b, cut };
+    last = { full, query, shown, meas, b, cut, mv };
     if (transition) {
       if (u >= 1) transition = null;
       else requestDraw();
@@ -4559,6 +4787,8 @@
       p2: b[3] * PR,
       tR: BASE * 2 ** S.n,
       pR: PR * 2 ** S.m,
+      // With a movement view on, the measures it shows.
+      ...(movementOn() ? { measures: ["path_length", "dwell"] } : {}),
     };
   }
   // This browser keeps the workspace and the last view for every tab: the
@@ -4725,8 +4955,9 @@
     },
     // The encodings, in the order M steps through them: each one's name, what
     // it shows and the measure it reads. The cube has four measures per cell,
-    // and each reaches the chart: volume, trades, and their taker-buy parts.
-    MODES = ["volume", "flow", "delta", "trades", "flowtrades", "size", "geometry"],
+    // and each reaches the chart: volume, trades, and their taker-buy parts;
+    // live, also how the price moved inside each cell, its path and dwell.
+    MODES = ["volume", "flow", "delta", "trades", "flowtrades", "size", "path", "dwell", "geometry"],
     MODE_INFO = {
       volume: { name: "Volume", desc: "USDT traded in each cell" },
       flow: { name: "Taker flow", desc: "Share of each cell's USDT bought by takers" },
@@ -4734,11 +4965,14 @@
       trades: { name: "Trades", desc: "Trades in each cell" },
       flowtrades: { name: "Taker trades", desc: "Share of each cell's trades that were taker buys" },
       size: { name: "Trade size", desc: "Average USDT per trade in each cell" },
+      path: { name: "Path", desc: "How far the price travelled in each cell, in row heights" },
+      dwell: { name: "Dwell", desc: "Each cell's share of its column's time" },
       geometry: { name: "Geometry", desc: "The grid's occupied cells" },
     },
     MODE_GROUPS = [
       ["USDT", ["volume", "flow", "delta"]],
       ["Trades", ["trades", "flowtrades", "size"]],
+      ["Movement", ["path", "dwell"]],
       ["Grid", ["geometry"]],
     ],
     MODE_NAMES = Object.fromEntries(MODES.map((k) => [k, MODE_INFO[k].name]));
@@ -4765,7 +4999,7 @@
     if (!S.auto) add("r", S.n + "," + S.m);
     if (followMode() !== "refit") add("f", followMode());
     if (S.mode !== "volume") add("mode", S.mode);
-    const marks = ["poc", "area", "untested"].filter((k) => S[k]).join(",");
+    const marks = ["poc", "area", "untested", "time"].filter((k) => S[k]).join(",");
     if (marks !== "poc") add("marks", marks || "none");
     if (S.lines.length) add("lines", S.lines.join(","));
     if (S.selection) {
@@ -4818,6 +5052,7 @@
       poc: marks.includes("poc"),
       area: marks.includes("area"),
       untested: marks.includes("untested"),
+      time: marks.includes("time"),
       lines: String(q.get("lines") ?? "").split(",").filter(Boolean),
       selection: q.has("sel")
         ? [...pair(selT, time), ...pair(selP, rows)].map(Math.round)
@@ -4863,10 +5098,12 @@
       n: locked ? clamp(Math.round(v.n), 0, N_MAX) : null,
       m: locked ? clamp(Math.round(v.m), 0, M_MAX) : null,
       follow: FOLLOWS.includes(v.follow) ? v.follow : "refit",
-      mode: MODES.includes(v.mode) ? v.mode : "volume",
+      mode: modes().includes(v.mode) ? v.mode : "volume",
       poc: v.poc !== false,
       area: v.area === true,
       untested: v.untested === true,
+      // Path and dwell need the live cube.
+      time: Boolean(PACK.live) && v.time === true,
       lines: normalizeLines(v.lines),
       selection:
         sel.length === 4 &&
@@ -4906,6 +5143,7 @@
       "poc",
       "area",
       "untested",
+      "time",
       "lines",
       "selection",
       "anchor",
@@ -5023,9 +5261,10 @@
         const v = obj.view,
           // Density folded into Volume: a code that asks for it opens as Volume.
           mode = v.mode === "density" ? "volume" : v.mode;
-        if (MODES.includes(mode)) S.mode = mode;
-        for (const k of ["poc", "area", "untested", "replay"])
+        if (modes().includes(mode)) S.mode = mode;
+        for (const k of ["poc", "area", "untested", "time", "replay"])
           if (typeof v[k] === "boolean") S[k] = v[k];
+        if (!PACK.live) S.time = false;
         if (Array.isArray(v.lines)) S.lines = normalizeLines(v.lines);
         if (["context", "evidence"].includes(v.tab)) S.tab = v.tab;
         if (["poc", "barrier"].includes(v.evidenceKind))
@@ -5170,7 +5409,7 @@
   // the cell counts. While the cube measures a rectangle the loaded cells can't
   // sum exactly, the numbers wait for it: the chart draws the overlapping cells
   // meanwhile, but no number is shown that isn't the rectangle's own.
-  function querySummary(meas) {
+  function querySummary(meas, mv) {
     const { query, b, state } = meas,
       partialCoverage = state === "recorded" && b.some((x, i) => x !== meas.r[i]),
       measuring = state === "pending" || state === "failed",
@@ -5216,6 +5455,46 @@
       el(id).setAttribute("aria-label", measuring ? "not measured yet" : exact);
       el(id).title = measuring ? "" : exact;
     }
+    // Path and dwell, while a movement view shows them: the rectangle's own, up
+    // to where they end.
+    const rect = mv?.rect,
+      reached = Boolean(rect?.query) && rect.end > b[0];
+    if (reached) motionTotals(rect.query);
+    el("path-metric").hidden = el("dwell-metric").hidden = el("moved-row").hidden = !mv;
+    el("motion-to-row").hidden = !(reached && rect.end < Math.min(b[1], activeCutoff()));
+    if (mv) {
+      const why = !rect.query
+        ? rect.state === "failed"
+          ? `The cube didn't answer: ${rect.error}`
+          : "Reading path and dwell from the cube"
+        : b[0] >= Math.floor(CUT)
+          ? "Not measured yet: the open column is measured once it completes"
+          : "Not measured by the cube yet",
+        span = Math.max(0, Math.min(b[1], rect.end) - b[0]) * BASE;
+      for (const [id, text, exact] of [
+        ["path", reached ? compact(rect.query.p) : "—", reached ? usdt(rect.query.p) + " USDT" : why],
+        [
+          "dwell",
+          reached ? dur(rect.query.w) : "—",
+          reached
+            ? `${secondsExact(rect.query.w)} · ${(span > 0 ? (100 * rect.query.w) / span : 0).toFixed(1)}% of the time`
+            : why,
+        ],
+      ]) {
+        el(id).textContent = text;
+        el(id).title = exact;
+        el(id).setAttribute("aria-label", exact);
+      }
+      el("motion-to").textContent = reached ? `${when(rect.end)} UTC` : "—";
+      // Moved through: without a trade in the rectangle's own cells either.
+      el("moved").textContent = !reached
+        ? "—"
+        : integer(
+            rect.query.n === query.n && rect.query.m === query.m
+              ? rect.query.moved.filter((z) => !query.map.has(z.c + "," + z.r)).length
+              : rect.query.moved.length,
+          );
+    }
     const wait = (text) => (measuring ? "—" : text);
     el("poc-value").textContent = wait(
       query.poc === null ? "—" : price((query.poc + 0.5) * ps * PR),
@@ -5260,7 +5539,7 @@
     el("key-unavailable").hidden = !coverageGap;
     el("data-coarse").hidden = !(renderN() > S.n || renderM() > S.m);
     queryUI(meas);
-    renderCells(measuring ? null : query, b);
+    renderCells(measuring ? null : query, b, mv);
   }
   // The rectangle's measured cells, or none while the cube measures them.
   const measuredCells = (l) =>
@@ -5283,12 +5562,13 @@
       .filter(Boolean)
       .join(" · ");
   }
-  function renderCells(query, b) {
+  function renderCells(query, b, mv) {
     if (!(S.drawerOpen && S.drawer === "cells")) return;
     clearTimeout(cellsTimer);
-    cellsTimer = setTimeout(() => buildCells(query, b), 80);
+    cellsTimer = setTimeout(() => buildCells(query, b, mv), 80);
   }
-  function buildCells(query, b) {
+  function buildCells(query, b, mv) {
+    for (const th of qsa(".ol-motion-col")) th.hidden = !mv;
     if (!query) {
       el("table-body").replaceChildren();
       el("table-caption").textContent = "Measuring the rectangle in the cube…";
@@ -5300,7 +5580,15 @@
     // coarser in time than the view shows.
     const ts = 2 ** query.n,
       ps = 2 ** query.m,
-      key = [query.n, query.m, b.join(","), S.cellSort, S.cellDir].join("|");
+      key = [query.n, query.m, b.join(","), S.cellSort, S.cellDir, Boolean(mv)].join("|"),
+      // With a movement view on, each cell's path and dwell, and the cells the
+      // price moved through or held in without a trade, at the table's level.
+      mq =
+        mv?.rect.query && mv.rect.query.n === query.n && mv.rect.query.m === query.m
+          ? mv.rect.query
+          : null,
+      end = mq ? mv.rect.end : -Infinity,
+      moves = (c) => (c.p !== undefined ? c : mq?.map.get(cellKey(c.c, c.r)));
     if (key !== tableKey) {
       tablePage = 0;
       tableKey = key;
@@ -5310,12 +5598,17 @@
         price: (c) => c.r,
         volume: (c) => c.v,
         trades: (c) => c.ct,
-        buyvol: (c) => c.bv,
-        buytrades: (c) => c.bt,
+        buyvol: (c) => c.bv ?? 0,
+        buytrades: (c) => c.bt ?? 0,
+        path: (c) => moves(c)?.p ?? -1,
+        dwell: (c) => moves(c)?.w ?? -1,
         state: (c) => cellState(c, b, ts, ps),
       }[S.cellSort],
+      // Cells the price moved through or held in without a trade: without one
+      // here either, where a cell's trades can come after path and dwell end.
+      movedThrough = mq ? mq.moved.filter((z) => !query.map.has(z.c + "," + z.r)) : [],
       cells = query.cells
-        .slice()
+        .concat(movedThrough)
         .sort(
           (x, y) =>
             (value(x) < value(y) ? -1 : value(x) > value(y) ? 1 : 0) *
@@ -5341,9 +5634,19 @@
           price(Math.min((c.r + 1) * ps, b[3]) * PR),
         usdt(c.v),
         integer(c.ct),
-        usdt(c.bv),
-        integer(c.bt),
-        cellState(c, b, ts, ps),
+        usdt(c.bv ?? 0),
+        integer(c.bt ?? 0),
+        ...(mv
+          ? !mq
+            ? ["…", "…"]
+            : c.c * ts >= end
+              ? ["—", "—"]
+              : [
+                  usdt(moves(c)?.p ?? 0),
+                  secondsMilli(moves(c)?.w ?? 0),
+                ]
+          : []),
+        cellState(c, b, ts, ps) + (c.ct === 0 ? " · no trades" : ""),
       ];
       for (const v of values) {
         const td = document.createElement("td");
@@ -5355,8 +5658,9 @@
     }
     el("table-body").replaceChildren(frag);
     hoverRow = null;
-    el("table-caption").textContent =
-      `${integer(cells.length)} occupied cells in view · zero cells omitted`;
+    el("table-caption").textContent = mq
+      ? `${integer(query.cells.length)} occupied and ${integer(movedThrough.length)} moved-through cells in view · other zero cells omitted`
+      : `${integer(cells.length)} occupied cells in view · zero cells omitted`;
     el("table-page").textContent = `${tablePage + 1} / ${pages}`;
     el("table-back").disabled = tablePage === 0;
     el("table-next").disabled = tablePage === pages - 1;
@@ -5394,6 +5698,47 @@
       ...(note ? [part("div", "ol-tip-note", note)] : []),
     );
   }
+  // A drawn cell's path and dwell for the tooltip, or why it has none yet.
+  function motionRows(c, r, z, money, exact) {
+    const mv = last.mv,
+      ts = stepT(),
+      ps = stepP();
+    if (!mv.src)
+      return [["Path, dwell", motionIssue() ? "couldn't be read" : "reading from the cube…"]];
+    if (c * ts >= mv.end)
+      return [
+        [
+          "Path, dwell",
+          c * ts >= Math.floor(CUT)
+            ? "measured once the column completes"
+            : motion.busy
+              ? "reading from the cube…"
+              : "not measured by the cube yet",
+        ],
+      ];
+    const b = last.b,
+      secs = Math.max(0, Math.min((c + 1) * ts, b[1], mv.end) - Math.max(c * ts, b[0])) * BASE,
+      width = Math.max(0, Math.min((r + 1) * ps, b[3]) - Math.max(r * ps, b[2])) * PR,
+      path = z ? z.p : 0,
+      dwell = z ? z.w : 0,
+      // The column's value in the pane under the prices.
+      col = movementMode() ? mv.shown?.cols.find((x) => x.c === c) : null,
+      pane =
+        !col
+          ? []
+          : S.mode === "path"
+            ? [["Column path ÷ range", col.ct > 0 && col.hi > col.lo ? compact(col.p / (col.hi - col.lo)) : "—"]]
+            : [["Column USDT ÷ path", col.p > 0 ? compact(col.v / col.p) : "—"]];
+    return [
+      ["Path", `${money(path)} · ${compact(width > 0 ? path / width : 0)} row heights`],
+      [
+        "Dwell",
+        `${exact ? secondsExact(dwell) : dur(dwell)} · ${(secs > 0 ? (100 * dwell) / secs : 0).toFixed(exact ? 2 : 1)}% of the column`,
+      ],
+      ...pane,
+      ...((c + 1) * ts > mv.end ? [["Measured to", `${when(mv.end)} UTC`]] : []),
+    ];
+  }
   function onProfile(p) {
     const px = G.x + G.w + 9;
     return p.x >= px && p.x <= px + G.profile - 8 && p.y >= G.y && p.y <= G.y + G.h;
@@ -5417,8 +5762,30 @@
     } else if (last && onProfile(p)) {
       const r = Math.floor(p.p / ps),
         row = last.query.rows.find((x) => x.r === r),
-        waiting = last.meas.state === "pending" || last.meas.state === "failed";
-      hover.row = row ? r : null;
+        waiting = last.meas.state === "pending" || last.meas.state === "failed",
+        // Time at price, while its overlay is on: the row's time and its share.
+        time = S.time && last.mv ? last.mv.rect : null,
+        trow = time?.query && motionTotals(time.query).rows.find((x) => x.r === r),
+        times = !time
+          ? []
+          : !time.query
+            ? [["Time at price", time.state === "failed" ? "couldn't be read" : "reading from the cube…"]]
+            : time.end <= last.b[0]
+              ? [
+                  [
+                    "Time at price",
+                    last.b[0] >= Math.floor(CUT)
+                      ? "measured once the column completes"
+                      : "not measured by the cube yet",
+                  ],
+                ]
+              : [
+                [
+                  "Time at price",
+                  `${exact ? secondsExact(trow?.w || 0) : dur(trow?.w || 0)} · ${share(time.query.w > 0 ? (trow?.w || 0) / time.query.w : 0)}`,
+                ],
+              ];
+      hover.row = row || trow ? r : null;
       // A profile row is no one cell: the Cells drawer shows none as hovered.
       syncRowHover(null);
       if (waiting)
@@ -5431,7 +5798,7 @@
             ? `Not measured: the cube didn't answer (${last.meas.error})`
             : "Measuring the rectangle in the cube…",
         );
-      else if (!row) tipRows(tip, priceRow(r), "", [], "No trades at this price in view");
+      else if (!row) tipRows(tip, priceRow(r), "", times, "No trades at this price in view");
       else
         tipRows(
           tip,
@@ -5445,6 +5812,7 @@
             ["Trades", count(row.ct)],
             ["Taker buys", `${money(row.bv)} · ${share(row.bv / row.v)}`],
             ["Taker-buy trades", `${count(row.bt)} · ${share(row.ct ? row.bt / row.ct : 0)}`],
+            ...times,
           ],
           note,
         );
@@ -5471,6 +5839,9 @@
         PACK.live && CANON !== null && (c + 1) * ts > CANON
           ? ["Source", "provisional minutes"]
           : null;
+      // Path and dwell, while a movement view shows them.
+      const mz = last.mv?.shown?.map.get(cellKey(c, r)),
+        moves = last.mv ? motionRows(c, r, mz, money, exact) : [];
       if (unavailable)
         tipRows(tip, head, priceRow(r), [], S.replay && p.t >= last.cut
           ? "Hidden in replay"
@@ -5486,8 +5857,14 @@
           tip,
           head,
           priceRow(r),
-          [...(coarse ? [coarse] : []), ...(provisional ? [provisional] : [])],
-          open ? "Still open: no trades yet" : "No trades in this cell",
+          [...moves, ...(coarse ? [coarse] : []), ...(provisional ? [provisional] : [])],
+          mz
+            ? mz.p > 0
+              ? "The price moved through without a trade here"
+              : "The price held here without a trade"
+            : open
+              ? "Still open: no trades yet"
+              : "No trades in this cell",
         );
       else
         tipRows(
@@ -5501,6 +5878,7 @@
             ["Taker buys", `${money(z.bv)} · ${share(z.bv / z.v)}`],
             ["Taker-buy trades", `${count(z.bt)} · ${share(z.ct ? z.bt / z.ct : 0)}`],
             ["Buy − sell", signed(2 * z.bv - z.v, money)],
+            ...moves,
             ["Column", open ? "Still open" : "Complete"],
             ...(provisional ? [provisional] : []),
             ...(coarse ? [coarse] : []),
@@ -5557,9 +5935,14 @@
       b.setAttribute("aria-checked", String(b.dataset.mode === S.mode)),
     );
     renderLines();
-    for (const f of ["poc", "area", "untested"]) el(f).checked = S[f];
+    for (const f of ["poc", "area", "untested", "time"]) el(f).checked = S[f];
+    // Path and dwell need the live cube; the recorded page says so.
+    el("time").disabled = !PACK.live;
     el("key-poc").hidden = el("key-bpoc").hidden = !S.poc;
     el("key-area").hidden = !S.area;
+    // The movement views' keys: outlined cells, cells not measured yet, time at price.
+    el("key-moved").hidden = el("key-plain").hidden = !(PACK.live && movementMode());
+    el("key-time").hidden = !(PACK.live && S.time);
     const coarse = renderN() > S.n || renderM() > S.m;
     // The level on the bar leaves the unit to the popover: "15 min × 125".
     el("res-text").textContent = `${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)}`;
@@ -5634,6 +6017,7 @@
                 poc: S.poc,
                 area: S.area,
                 untested: S.untested,
+                time: S.time,
                 lines: S.lines,
                 tab: S.tab,
                 replay: S.replay,
@@ -5658,7 +6042,7 @@
     ])
       el(id).addEventListener("click", () => {
         tablePage += d;
-        if (last) buildCells(measuredCells(last), last.b);
+        if (last) buildCells(measuredCells(last), last.b, last.mv);
       });
     for (const button of qsa("[data-sort]"))
       button.addEventListener("click", () => {
@@ -5668,7 +6052,7 @@
           S.cellSort = key;
           S.cellDir = key === "state" ? 1 : -1;
         }
-        if (last) buildCells(measuredCells(last), last.b);
+        if (last) buildCells(measuredCells(last), last.b, last.mv);
         save();
       });
     // A table row and its cell on the chart light up together.
@@ -6094,11 +6478,17 @@
       group.append(head);
       for (const key of keys) {
         const info = MODE_INFO[key],
+          // Path and dwell need the live cube: the recorded page lists them, off.
+          off = !modes().includes(key),
           b = menuItem(
             "menuitemradio",
-            [svgIcon("check", "ol-icon ol-check"), itemText(`mode-${key}`, info.name, info.desc)],
+            [
+              svgIcon("check", "ol-icon ol-check"),
+              itemText(`mode-${key}`, info.name, off ? "Live cube only" : info.desc),
+            ],
             () => setMode(key),
           );
+        if (off) b.setAttribute("aria-disabled", "true");
         b.setAttribute("aria-labelledby", `ol-mode-${key}-name`);
         b.setAttribute("aria-describedby", `ol-mode-${key}-desc`);
         b.dataset.mode = key;
@@ -6442,18 +6832,21 @@
     return full.metrics;
   }
   // Only the rectangle's cells are measured every frame: its bounds cut them.
-  function prepareMeasures(full, shown, query, b) {
-    const level = levelMetrics(full),
+  // Path and dwell shade by their own amounts: under them these go unread, and
+  // the level's cells (full) aren't summed.
+  function prepareMeasures(full, shown, query, b, moving = false) {
+    const level = moving ? null : levelMetrics(full),
       ts = stepT(),
       ps = stepP(),
       whole = ts * BASE * ps * PR,
       metrics = new WeakMap();
-    for (const z of shown.cells)
-      metrics.set(z, { ...cellExposure(z, b, ts, ps), whole, delta: 2 * z.bv - z.v });
+    if (!moving)
+      for (const z of shown.cells)
+        metrics.set(z, { ...cellExposure(z, b, ts, ps), whole, delta: 2 * z.bv - z.v });
     markState = {
       metrics,
-      level: level.cells,
-      deltaMax: level.deltaMax,
+      level: level ? level.cells : new WeakMap(),
+      deltaMax: level ? level.deltaMax : 1,
       va: contiguousArea(query.rows, query.poc, query.v),
       rays: [],
     };
@@ -6505,7 +6898,11 @@
   }
   const ramp = (t) => rampColours[Math.round(clamp(t, 0, 1) * 255)];
   const AMOUNT_UNITS = { volume: "USDT", trades: "trades", size: "USDT a trade" };
-  function legendText(full) {
+  function legendText(full, mv) {
+    if (mv && movementMode()) {
+      if (!mv.src) return motionIssue() ? "Path and dwell unavailable" : "Reading path and dwell…";
+      return motionLegend(motionScale(mv.full, mv.fullBounds, mv.end, stepT(), stepP()));
+    }
     if (S.mode === "geometry") return "Occupied cells";
     if (S.mode === "flow") return "Taker buys 25% · 50% · 75% of USDT";
     if (S.mode === "flowtrades") return "Taker buys 25% · 50% · 75% of trades";
@@ -6527,6 +6924,8 @@
     flowtrades:
       "The share of each cell's trades that were taker buys: buy colour above half, sell colour below, full at 75% and 25%. Paler cells had fewer trades.",
     delta: "Taker-buy minus taker-sell volume per cell, in USDT",
+    path: "How far the price travelled in each cell: its path length, the sum of every move between consecutive trades split across the rows it passes, over the row's height, at its full-cell rate and shaded by rank. The numbers are the 5th and 95th percentiles. Outlined cells the price moved through or held in without a trade. The pane under the prices shows each column's path over its range, its highest trade less its lowest: 1 for a straight run, more the more it turned back. Read from the live cube up to the last complete base column.",
+    dwell: "Each cell's share of its column's time: how long the price, held from one trade to the next, sat in the cell's rows, shaded by rank. The numbers are the 5th and 95th percentiles. Outlined cells the price moved through or held in without a trade. The pane under the prices shows each column's USDT traded per USDT the price moved, its volume over its path. Read from the live cube up to the last complete base column.",
     geometry: "The grid's occupied cells",
   };
   function legendRamp() {
@@ -6624,7 +7023,7 @@
     ctx.stroke();
     ctx.restore();
   }
-  function profile(query, b, state) {
+  function profile(query, b, state, mv) {
     if (!G.profile) return;
     const max = d3.max(query.rows, (z) => z.v) || 1,
       px = G.x + G.w + 9,
@@ -6642,6 +7041,24 @@
       ctx.fillStyle = colors.volume;
       ctx.globalAlpha = 0.08;
       ctx.fillRect(px, ya, pw, yb - ya);
+      ctx.globalAlpha = 1;
+    }
+    // Time at price: each row's share of the rectangle's time, under the volume
+    // profile at the same width, its edge marked.
+    const time = S.time && mv?.rect.query && mv.rect.end > b[0] ? motionTotals(mv.rect.query) : null;
+    if (time) {
+      const most = d3.max(time.rows, (z) => z.w) || 1;
+      ctx.fillStyle = colors.time;
+      for (const row of time.rows) {
+        const ya = G.Y(Math.min((row.r + 1) * ps, b[3])),
+          yb = G.Y(Math.max(row.r * ps, b[2])),
+          x = (pw * row.w) / most;
+        if (yb <= ya || !(x > 0)) continue;
+        ctx.globalAlpha = 0.22;
+        ctx.fillRect(px, ya, x, Math.max(0.1, yb - ya - 0.7));
+        ctx.globalAlpha = 0.9;
+        ctx.fillRect(px + x - 1.5, ya, 1.5, Math.max(0.1, yb - ya - 0.7));
+      }
       ctx.globalAlpha = 1;
     }
     for (const row of query.rows) {
@@ -7331,32 +7748,47 @@
   // Activity: each column's amount in a pane under the prices that shares
   // their time axis: its volume, its trades or its average trade size, or its
   // signed taker volume (taker flow and delta) or signed taker trades (taker
-  // trades).
-  function activity(full, cut) {
+  // trades). Under Path, each column's path over its range; under Dwell, its
+  // USDT traded per USDT the price moved; both up to where they end.
+  function activity(full, cut, mv) {
     const ts = stepT(),
       b = bounds(),
-      cols = full.cols.filter(
-        (c) => (c.c + 1) * ts > S.tA && c.c * ts < S.tB && c.c * ts < cut,
+      moving = Boolean(mv) && movementMode(),
+      end = moving ? (mv.src ? mv.end : -Infinity) : Infinity,
+      cols = ((moving ? mv.shown : full)?.cols || []).filter(
+        (c) => (c.c + 1) * ts > S.tA && c.c * ts < S.tB && c.c * ts < cut && c.c * ts < end,
       ),
       signed = ["delta", "flow", "flowtrades"].includes(S.mode),
       value = (c) =>
-        S.mode === "flowtrades"
-          ? 2 * c.bt - c.ct
-          : signed
-            ? 2 * c.bv - c.v
-            : S.mode === "trades"
-              ? c.ct
-              : S.mode === "size"
-                ? c.ct > 0
-                  ? c.v / c.ct
-                  : 0
-                : c.v,
+        S.mode === "path"
+          ? c.ct > 0 && c.hi > c.lo
+            ? c.p / (c.hi - c.lo)
+            : 0
+          : S.mode === "dwell"
+            ? c.p > 0
+              ? c.v / c.p
+              : 0
+            : S.mode === "flowtrades"
+              ? 2 * c.bt - c.ct
+              : signed
+                ? 2 * c.bv - c.v
+                : S.mode === "trades"
+                  ? c.ct
+                  : S.mode === "size"
+                    ? c.ct > 0
+                      ? c.v / c.ct
+                      : 0
+                    : c.v,
       unit =
-        S.mode === "trades" || S.mode === "flowtrades"
-          ? "trades"
-          : S.mode === "size"
-            ? "per trade"
-            : "USDT",
+        S.mode === "path"
+          ? "× range"
+          : S.mode === "dwell"
+            ? "per USDT"
+            : S.mode === "trades" || S.mode === "flowtrades"
+              ? "trades"
+              : S.mode === "size"
+                ? "per trade"
+                : "USDT",
       max = d3.max(cols, (c) => Math.abs(value(c))) || 1,
       top = G.ay,
       h = G.ah,
@@ -7379,7 +7811,7 @@
     if (signed) markLine(G.x, zero, G.x + G.w, zero, colors.line, 1, 0.9);
     for (const c of cols) {
       const xa = G.X(Math.max(c.c * ts, b[0])),
-        xb = G.X(Math.min((c.c + 1) * ts, cut, b[1]));
+        xb = G.X(Math.min((c.c + 1) * ts, cut, b[1], end));
       if (xb <= xa) continue;
       const v = value(c),
         bh = (Math.abs(v) / max) * room,
@@ -8159,6 +8591,7 @@
     while (tiles.length > TILES_KEPT) {
       const t = tiles.shift();
       delete sources[t.id];
+      delete motion.sources[t.id];
       delete loadState[t.id];
       delete PACK.blocks[t.id];
     }
@@ -8281,6 +8714,7 @@
     if (!PACK.live || !ready) return;
     clearTimeout(cube.timer);
     cube.timer = setTimeout(pumpCube, 200);
+    scheduleMotion();
   }
   function cubeWant() {
     const wants = { measure: measureWant, tile: tileWant, lens: lensWant, lines: linesWant, history: historyWant };
@@ -8355,6 +8789,484 @@
     update();
     pumpCube();
   }
+  // Path and dwell (PRD-0023): how the price moved inside each cell, which the
+  // Movement encodings and Time at price show. The live page reads them only
+  // while a view shows them, in the cube's second query slot and never ahead
+  // of the view's own reads, so a view is never held back by them: the tier
+  // the view or the lens draws from (whole once, then the columns it gained),
+  // the view's or the lens's tile, and the rectangle's when no loaded block
+  // tiles it. They end at the pack's last complete base column, a block's
+  // `end`: the open column is measured once it completes.
+  const MOVEMENT = ["path", "dwell"],
+    movementMode = () => MOVEMENT.includes(S.mode),
+    movementOn = () => Boolean(PACK.live) && (movementMode() || S.time),
+    // The encodings this page can show: path and dwell need the live cube.
+    modes = () => (PACK.live ? MODES : MODES.filter((k) => !MOVEMENT.includes(k)));
+  const motion = {
+    sources: {}, // tier or tile id -> its cells with path and dwell
+    view: null, // the reference tier with the recent tier's later columns
+    measured: new Map(), // rectangle key -> the cube's answer
+    busy: null,
+    failed: new Map(),
+    timer: 0,
+    memo: new Map(), // the latest bounded aggregates, which a still view's frames reuse
+    epoch: 0, // moves when what was read is let go: an answer asked for before is dropped
+  };
+  // The motion block of the block a view or the lens draws from.
+  function motionOf(src) {
+    if (!src) return null;
+    return src.id === "reference-with-tail" ? motion.view : motion.sources[src.id] || null;
+  }
+  function rebuildMotionView() {
+    const r = motion.sources.reference,
+      z = motion.sources.recent;
+    motion.view =
+      r && z
+        ? {
+            ...r,
+            id: "motion:reference-with-tail",
+            cells: r.cells.concat(motionAggregate(z, r.n, r.m).cells.filter((c) => c.c >= r.col1)),
+            b1: z.b1,
+            end: z.end,
+            col1: Math.ceil(z.b1 / 2 ** r.n),
+          }
+        : null;
+  }
+  function boundedMotion(src, n, m, bounds) {
+    const key = [src.id, n, m, ...bounds].join("|"),
+      hit = motion.memo.get(key);
+    if (hit && hit.cells[0] === src.cells) return hit.out;
+    const out = motionAggregate(src, n, m, bounds);
+    motion.memo.delete(key);
+    motion.memo.set(key, { cells: [src.cells], out });
+    while (motion.memo.size > 4) motion.memo.delete(motion.memo.keys().next().value);
+    return out;
+  }
+  // The view's path and dwell at the drawn level: over the whole drawn block,
+  // which the cells shade against, over the rectangle, and its totals.
+  function motionView(src, cut, meas) {
+    const msrc = motionOf(src),
+      rect = motionMeasurement(meas);
+    if (!msrc) return { src: null, full: null, shown: null, rect, end: -Infinity };
+    const n = renderN(),
+      m = renderM(),
+      end = Math.min(msrc.end, cut),
+      fullBounds = [msrc.b0, end, 0, Infinity],
+      full = S.replay
+        ? boundedMotion(msrc, n, m, [msrc.col0 * 2 ** msrc.n, cut, 0, Infinity])
+        : motionAggregate(msrc, n, m),
+      shown =
+        rect.query && rect.query.n === n && rect.query.m === m
+          ? rect.query
+          : boundedMotion(msrc, n, m, outwardBounds(meas.r));
+    return { src: msrc, full, fullBounds, shown, rect, end };
+  }
+  // The rectangle's path and dwell, exactly: summed from a loaded motion block
+  // that tiles it, or the cube's answer, each up to where its measures end.
+  function motionMeasurement(meas) {
+    const r = meas.r,
+      n = renderN(),
+      m = renderM();
+    if (r[1] <= r[0] || r[3] <= r[2]) return { state: "exact", query: motionSummary([], n, m), end: r[0] };
+    const exact = motionExact(r, n, m);
+    if (exact) return { state: "exact", query: exactMotion(exact, r, n, m), end: Math.min(r[1], exact.end) };
+    const spec = motionSpec(r, n, m),
+      hit = motion.measured.get(spec.key);
+    if (hit) return { state: "cube", query: hit.query, end: hit.end };
+    // A rectangle at the latest data keeps the answer it had a moment ago while
+    // the cube reads the new minutes, as the rectangle's other measures do.
+    const near = (a, b) => Math.abs(a - b) <= 64,
+      windowed = S.window && !S.selection,
+      was =
+        !S.replay && r[1] >= Math.floor(CUT)
+          ? [...motion.measured.values()]
+              .reverse()
+              .find(
+                (x) =>
+                  x.edge &&
+                  x.nq === spec.nq &&
+                  x.m === m &&
+                  x.r[1] <= r[1] &&
+                  near(x.r[1], r[1]) &&
+                  near(x.r[0], r[0]) &&
+                  (windowed
+                    ? x.win === S.window
+                    : !x.win && x.r[0] === r[0] && x.r[2] === r[2] && x.r[3] === r[3]),
+              )
+          : null;
+    if (was && !motion.failed.has(spec.key)) return { state: "cube", query: was.query, end: was.end, updating: true };
+    return {
+      state: motion.failed.has(spec.key) ? "failed" : "pending",
+      error: motion.failed.get(spec.key),
+      query: null,
+      end: -Infinity,
+    };
+  }
+  // A loaded motion block whose cells tile the rectangle, as exactSource finds
+  // one for the other measures: its sums are then the cube's answer. It reaches
+  // as far into the rectangle as this pack can be measured, or it is a tier
+  // still reading the columns it gained, whose sums end where it does. Of those,
+  // the one reaching furthest into the rectangle, then the coarsest: the
+  // reference tier ends at its last complete column, and the reference with the
+  // recent tier's later columns goes on from there.
+  function motionExact(r, n, m) {
+    const reach = Math.min(r[1], Math.floor(CUT));
+    return (
+      Object.values(motion.sources)
+        .concat(motion.view ? [motion.view] : [])
+        .filter((s) => {
+          const ts = 2 ** s.n,
+            ps = 2 ** s.m;
+          return (
+            s.n <= n &&
+            s.m <= m &&
+            s.b0 <= r[0] &&
+            (s.end >= reach || (!s.id.startsWith("motion:tile:") && s.end > r[0])) &&
+            r[0] % ts === 0 &&
+            (r[1] % ts === 0 || r[1] >= s.end) &&
+            r[2] % ps === 0 &&
+            r[3] % ps === 0
+          );
+        })
+        .sort((a, b) => Math.min(b.end, r[1]) - Math.min(a.end, r[1]) || b.n - a.n || b.m - a.m)[0] ||
+      null
+    );
+  }
+  // The rectangle's sums from the block that tiles it, or, where a coarser block
+  // holds whole columns of it, those columns from that block and only the part
+  // columns at its ends from the finer: the same cells, far fewer to sum, and a
+  // pan sums them every frame.
+  function exactMotion(exact, r, n, m) {
+    const coarse = Object.values(motion.sources)
+        .concat(motion.view ? [motion.view] : [])
+        .filter((s) => s.n > exact.n && s.n <= n && s.m <= m && r[2] % 2 ** s.m === 0 && r[3] % 2 ** s.m === 0)
+        .map((s) => {
+          const tc = 2 ** s.n;
+          return { s, a: Math.max(Math.ceil(r[0] / tc), Math.ceil(s.b0 / tc)) * tc, z: Math.floor(Math.min(r[1], s.end, exact.end) / tc) * tc };
+        })
+        .filter((x) => x.z > x.a)
+        .sort((x, y) => y.z - y.a - (x.z - x.a))[0],
+      parts = coarse
+        ? [
+            [exact, [r[0], coarse.a, r[2], r[3]]],
+            [coarse.s, [coarse.a, coarse.z, r[2], r[3]]],
+            [exact, [coarse.z, r[1], r[2], r[3]]],
+          ]
+        : [[exact, r]],
+      key = parts.map(([s, b]) => [s.id, ...b].join(",")).join("|") + "|" + n + "|" + m,
+      hit = motion.memo.get(key);
+    if (hit && parts.every(([s], i) => hit.cells[i] === s.cells)) return hit.out;
+    const map = new Map(),
+      list = [];
+    for (const [s, b] of parts) if (b[1] > b[0]) accumulate(map, list, s, n, m, b);
+    const out = motionSummary(list, n, m, map);
+    motion.memo.delete(key);
+    motion.memo.set(key, { cells: parts.map(([s]) => s.cells), out });
+    while (motion.memo.size > 4) motion.memo.delete(motion.memo.keys().next().value);
+    return out;
+  }
+  // The cube read for a rectangle's path and dwell, at the level the rectangle's
+  // other measures are read at.
+  function motionSpec(r, n, m) {
+    let nq = n;
+    while (nq < 24 && Math.ceil(r[1] / 2 ** nq) - Math.floor(r[0] / 2 ** nq) > TILE_COLUMNS)
+      nq++;
+    const key = ["motion", live.generation, nq, m, ...r, r[1] > Math.floor(CUT) ? CUT : ""].join("|"),
+      edge = r[1] >= Math.floor(CUT),
+      win = S.window && !S.selection ? S.window : null;
+    return {
+      key,
+      nq,
+      path: `/cube/query?n=${nq}&m=${m}&b0=${r[0]}&b1=${r[1]}&r0=${r[2]}&r1=${r[3]}&motion=1`,
+      decode: async (body) => ({ block: await unpack(body.block, key), body }),
+      apply: ({ block, body }) => {
+        const q = motionSummary(block.cells, nq, m);
+        // The cube's own totals, summed exactly.
+        q.p = body.summary.path_length;
+        q.w = body.summary.dwell;
+        motion.measured.delete(key);
+        motion.measured.set(key, { query: q, end: body.end, r, nq, m, edge, win });
+        while (motion.measured.size > 24) motion.measured.delete(motion.measured.keys().next().value);
+      },
+    };
+  }
+  // A tier's path and dwell: whole, or once the page holds them, only the
+  // columns from where they end. Columns read under an earlier pack of this
+  // page stay (each pack a delta on the last reads its partitions unchanged),
+  // except provisional minutes the day's archive has since replaced, which the
+  // cube may have measured differently: those are read again.
+  function motionTierWant(id) {
+    const have = motion.sources[id];
+    if (!sources[id] || (have && have.token === PACK.state_token)) return null;
+    const from = !have
+      ? null
+      : Math.max(
+          0,
+          Math.floor(
+            CANON !== null && have.canon !== null && CANON > have.canon
+              ? Math.min(have.end, have.canon)
+              : have.end,
+          ),
+        );
+    return {
+      key: ["motion", live.generation, id, PACK.state_token, from ?? ""].join("|"),
+      path: `/cube/motion?tier=${id}` + (from === null ? "" : `&from=${from}`),
+      decode: async (body) => ({ part: await unpack(body.block, "motion:" + id), body }),
+      apply: ({ part, body }) => {
+        const held = motion.sources[id];
+        // Only the columns it gained, for a tier this page no longer holds: nothing to add them to.
+        if (!held && !body.whole) return;
+        const block = held && !body.whole ? held : { ...part, id: "motion:" + id };
+        if (block === held)
+          block.cells = held.cells
+            .filter((c) => c.c >= body.col0 && c.c < body.from)
+            .concat(part.cells);
+        Object.assign(block, {
+          b0: body.col0 * 2 ** part.n,
+          col0: body.col0,
+          b1: body.end,
+          end: body.end,
+          col1: Math.ceil(body.end / 2 ** part.n),
+          token: body.state_token,
+          canon: canonOf(body),
+        });
+        motion.sources[id] = block;
+        forgetMotionLevels();
+        rebuildMotionView();
+      },
+    };
+  }
+  function motionTileWant(src) {
+    if (motion.sources[src.id]) return null;
+    return {
+      key: ["motion", live.generation, src.id].join("|"),
+      path: `/cube/tile?n=${src.n}&m=${src.m}&b0=${src.b0}&b1=${src.b1}&motion=1`,
+      decode: async (body) => ({ part: await unpack(body.block, "motion:" + src.id), body }),
+      apply: ({ part, body }) => {
+        // A tile let go meanwhile has no use for its path and dwell.
+        if (!sources[src.id]) return;
+        motion.sources[src.id] = { ...part, id: "motion:" + src.id, b0: src.b0, b1: body.end, end: body.end };
+      },
+    };
+  }
+  function motionSourceWant(src) {
+    if (!src) return null;
+    if (src.id === "reference-with-tail")
+      return motionTierWant("reference") || motionTierWant("recent");
+    if (TIERS.includes(src.id)) return motionTierWant(src.id);
+    return src.id.startsWith("tile:") ? motionTileWant(src) : null;
+  }
+  function motionMeasureWant() {
+    const r = requestedBounds(),
+      n = renderN(),
+      m = renderM();
+    if (r[1] <= r[0] || r[3] <= r[2] || motionExact(r, n, m)) return null;
+    const spec = motionSpec(r, n, m);
+    return motion.measured.has(spec.key) ? null : spec;
+  }
+  // What the view needs next: the block it is drawn from, the rectangle's
+  // totals, then the lens's block. Nothing while the view's own measures,
+  // tile or lens tile are still to be read.
+  function motionWant() {
+    if (!movementOn() || cube.stale) return null;
+    if (["measure", "tile", "lens"].includes(cube.busy?.kind)) return null;
+    for (const want of [measureWant(), tileWant(), lensWant()])
+      if (want && !cube.failed.has(want.key)) return null;
+    const lens = S.lens || nav.alt || nav.hold ? lensFrame()?.src : null;
+    return (
+      [motionSourceWant(displaySource()), motionMeasureWant(), lens ? motionSourceWant(lens) : null].find(
+        (want) => want && !motion.failed.has(want.key),
+      ) || null
+    );
+  }
+  // Why the view's path and dwell couldn't be read, when they couldn't.
+  function motionIssue() {
+    const want = motionSourceWant(displaySource());
+    return want ? motion.failed.get(want.key) || null : null;
+  }
+  // Levels summed from a motion block that changed are summed again.
+  function forgetMotionLevels() {
+    for (const key of [...groups.keys()]) if (key.startsWith("motion:")) groups.delete(key);
+  }
+  // After the day's archive replaced provisional minutes, what was read from
+  // them is read again: the tiles and rectangles past the old edge are let go,
+  // and each tier reads its columns from that edge when next asked.
+  function dropMotionAfter(edge) {
+    motion.epoch++;
+    for (const [id, s] of Object.entries(motion.sources))
+      if (id.startsWith("tile:") && s.end > edge) delete motion.sources[id];
+    for (const [key, x] of motion.measured) if (x.r[1] > edge) motion.measured.delete(key);
+  }
+  function scheduleMotion() {
+    if (!PACK.live || !ready) return;
+    clearTimeout(motion.timer);
+    motion.timer = setTimeout(pumpMotion, 200);
+  }
+  // One path and dwell read at a time, beside the cube's other reads. An answer
+  // for a pack the page replaced meanwhile is dropped, as theirs are.
+  async function pumpMotion() {
+    if (!PACK.live || !ready || motion.busy) return;
+    const want = motionWant();
+    if (!want) return;
+    const generation = live.generation,
+      epoch = motion.epoch;
+    motion.busy = want;
+    requestDraw();
+    try {
+      const target = new URL(
+        `${want.path}&pack=${encodeURIComponent(PACK.state_token)}&proto=${PROTOCOL}`,
+        location.href,
+      );
+      target.username = "";
+      target.password = "";
+      const response = await fetch(target, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(120000),
+        }),
+        body = await response.json().catch(() => null);
+      offerReload(body);
+      if (body?.error === "cube_changed") {
+        cube.stale = true;
+        throw Error("the cube changed; taking its new data first");
+      }
+      if (!response.ok) throw Error(body?.error || `the server answered ${response.status}`);
+      const decoded = await want.decode(body);
+      if (generation === live.generation && epoch === motion.epoch) want.apply(decoded);
+    } catch (error) {
+      const message = (
+        error.name === "TimeoutError"
+          ? "the server didn't answer within two minutes"
+          : error instanceof TypeError
+            ? "the server can't be reached"
+            : error.message
+      ).replace(/\.+$/, "");
+      if (!cube.stale) motion.failed.set(want.key, message);
+    }
+    motion.busy = null;
+    if (cube.stale) pollLive();
+    requestDraw();
+    pumpMotion();
+  }
+  // A cell's path in row heights, at its full-cell rate as volume counts, or
+  // its dwell as a share of its column's time: the column's seconds inside the
+  // rectangle and before the measures end, which its cells' dwell sums to.
+  function motionAmount(z, b, end, ts, ps, mode = S.mode) {
+    const seconds =
+      Math.max(0, Math.min((z.c + 1) * ts, b[1], end) - Math.max(z.c * ts, b[0])) * BASE;
+    if (!(seconds > 0)) return 0;
+    if (mode === "dwell") return z.w / seconds;
+    const width = Math.max(0, Math.min((z.r + 1) * ps, b[3]) - Math.max(z.r * ps, b[2])) * PR;
+    return width > 0 ? (z.p / width) * ((ts * BASE) / seconds) : 0;
+  }
+  // Shaded by rank among the block's cells, like the other amounts.
+  function motionScale(q, b, end, ts, ps, mode = S.mode) {
+    if (!q.scales[mode])
+      q.scales[mode] = Float64Array.from(
+        q.cells.map((z) => motionAmount(z, b, end, ts, ps, mode)).filter((x) => x > 0),
+      ).sort();
+    return q.scales[mode];
+  }
+  // Where a cell of the drawn level falls, mid-transition too; false when it
+  // is off the plot. One box, reused, so a frame allocates nothing per cell.
+  const BOX = { xa: 0, xb: 0, ya: 0, yb: 0 };
+  function cellBox(z, u, ts, ps, cut) {
+    if (z.c * ts >= cut) return false;
+    let xa = G.X(z.c * ts),
+      xb = G.X(Math.min((z.c + 1) * ts, cut)),
+      ya = G.Y((z.r + 1) * ps),
+      yb = G.Y(z.r * ps);
+    if (transition && u < 1) {
+      const ot = 2 ** transition.n,
+        op = 2 ** transition.m,
+        oa = Math.floor((z.c * ts) / ot) * ot,
+        ob = Math.floor((z.r * ps) / op) * op;
+      xa = G.X(oa) + (xa - G.X(oa)) * u;
+      xb = G.X(oa + ot) + (xb - G.X(oa + ot)) * u;
+      ya = G.Y(ob + op) + (ya - G.Y(ob + op)) * u;
+      yb = G.Y(ob) + (yb - G.Y(ob)) * u;
+    }
+    if (xb < G.x || xa > G.x + G.w || yb < G.y || ya > G.y + G.h) return false;
+    BOX.xa = xa;
+    BOX.xb = xb;
+    BOX.ya = ya;
+    BOX.yb = yb;
+    return true;
+  }
+  // A cell with trades is filled; one the price only moved through or held in
+  // is outlined in its colour, or filled pale where too small to outline.
+  function motionMark(colour, traded, xa, ya, w, h, gap) {
+    if (traded) {
+      ctx.fillStyle = colour;
+      ctx.fillRect(xa + gap / 2, ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
+    } else if (w > 3 && h > 3) {
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(xa + 1, ya + 1, w - 2, h - 2);
+    } else {
+      const alpha = ctx.globalAlpha;
+      ctx.globalAlpha = alpha * 0.45;
+      ctx.fillStyle = colour;
+      ctx.fillRect(xa, ya, Math.max(0.1, w), Math.max(0.1, h));
+      ctx.globalAlpha = alpha;
+    }
+  }
+  // Path and dwell shade the cells the price traded in and outline those it
+  // only moved through or held in: with no trade in `base` either, where a
+  // cell's trades can come after they end. A cell of `base` after where they
+  // end, or any while they are read, is drawn plain.
+  function paintMotion(base, q, mv, b, u) {
+    const ts = stepT(),
+      ps = stepP(),
+      cut = activeCutoff(),
+      end = mv.src ? mv.end : -Infinity;
+    if (q) {
+      const sorted = motionScale(mv.full, mv.fullBounds, end, ts, ps);
+      for (const z of q.cells) {
+        if (!cellBox(z, u, ts, ps, cut)) continue;
+        const w = BOX.xb - BOX.xa,
+          h = BOX.yb - BOX.ya;
+        motionMark(
+          ramp(rank(sorted, motionAmount(z, b, end, ts, ps))),
+          z.ct > 0 || (base !== null && base.map.has(z.c + "," + z.r)),
+          BOX.xa,
+          BOX.ya,
+          w,
+          h,
+          w > 4 && h > 4 ? design.gap : 0,
+        );
+      }
+    }
+    ctx.fillStyle = colors.line;
+    for (const z of base ? base.cells : []) {
+      if ((z.c + 1) * ts <= end || (q && q.map.has(cellKey(z.c, z.r))) || !cellBox(z, u, ts, ps, cut))
+        continue;
+      const w = BOX.xb - BOX.xa,
+        h = BOX.yb - BOX.ya,
+        gap = w > 4 && h > 4 ? design.gap : 0;
+      ctx.fillRect(BOX.xa + gap / 2, BOX.ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
+    }
+  }
+  // The legend's quantiles, as each movement encoding reads.
+  const motionUnit = (x) =>
+    S.mode === "dwell" ? `${+(x * 100).toPrecision(2)}%` : compact(x);
+  function motionLegend(sorted) {
+    if (!sorted.length) return S.mode === "dwell" ? "Share of column time" : "Row heights";
+    const range = `${motionUnit(d3.quantileSorted(sorted, 0.05))} → ${motionUnit(d3.quantileSorted(sorted, 0.95))}`;
+    return S.mode === "dwell" ? `${range} of column time` : `${range} row heights`;
+  }
+  // Seconds to the microsecond, as the cube counts dwell, and to the
+  // millisecond in the Cells table. The inspector writes them every frame, so
+  // they keep their formatters, as prices do.
+  const secondsFormat = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 6,
+      maximumFractionDigits: 6,
+    }),
+    millisecondsFormat = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3,
+    }),
+    secondsExact = (x) => secondsFormat.format(x) + " s",
+    secondsMilli = (x) => millisecondsFormat.format(x) + " s";
   // The plane status is a live region, so it is written only when its text
   // changes; a rewrite with the same words would be announced again.
   function setPlaneStatus(value) {
@@ -9130,47 +10042,50 @@
             .filter(Boolean)
             .sort((x, y) => x - y),
           deltaMax = d3.quantileSorted(deltas, 0.995) || 1;
-        // The lens's cells shade against each other, at their full-cell rates.
-        for (const z of q.cells)
-          markState.metrics.set(z, {
-            ...cellExposure(z, lensBounds, ts, ps),
-            whole,
-            delta: 2 * z.bv - z.v,
-          });
-        const sorted = amountScale(q);
-        localLegend =
-          S.mode === "delta"
-            ? `Δ −${compact(deltaMax)} · 0 · +${compact(deltaMax)} USDT`
-            : S.mode === "flow" || S.mode === "flowtrades"
-              ? "Taker buys 25% · 50% · 75%"
-              : S.mode === "geometry"
-                ? "Occupied cells"
-                : sorted.length
-                  ? `${compact(d3.quantileSorted(sorted, 0.05))} → ${compact(d3.quantileSorted(sorted, 0.95))} ${AMOUNT_UNITS[S.mode]}`
-                  : "";
-        for (const z of q.cells) {
-          const xa = G.X(z.c * ts),
-            xb = G.X(Math.min((z.c + 1) * ts, b)),
-            ya = G.Y((z.r + 1) * ps),
-            yb = G.Y(z.r * ps);
-          ctx.fillStyle = cellColour(z, q, deltaMax);
-          if (S.mode === "geometry") {
-            ctx.strokeStyle = colors.volume;
-            ctx.globalAlpha = 0.65;
-            ctx.strokeRect(
-              xa + 0.5,
-              ya + 0.5,
-              Math.max(0.4, xb - xa - 1),
-              Math.max(0.4, yb - ya - 1),
-            );
-            ctx.globalAlpha = 1;
-          } else
-            ctx.fillRect(
-              xa + 0.3,
-              ya + 0.3,
-              Math.max(0.5, xb - xa - 0.6),
-              Math.max(0.5, yb - ya - 0.6),
-            );
+        if (movementMode()) localLegend = lensMotion(src, q, n, m, lensBounds, b);
+        else {
+          // The lens's cells shade against each other, at their full-cell rates.
+          for (const z of q.cells)
+            markState.metrics.set(z, {
+              ...cellExposure(z, lensBounds, ts, ps),
+              whole,
+              delta: 2 * z.bv - z.v,
+            });
+          const sorted = amountScale(q);
+          localLegend =
+            S.mode === "delta"
+              ? `Δ −${compact(deltaMax)} · 0 · +${compact(deltaMax)} USDT`
+              : S.mode === "flow" || S.mode === "flowtrades"
+                ? "Taker buys 25% · 50% · 75%"
+                : S.mode === "geometry"
+                  ? "Occupied cells"
+                  : sorted.length
+                    ? `${compact(d3.quantileSorted(sorted, 0.05))} → ${compact(d3.quantileSorted(sorted, 0.95))} ${AMOUNT_UNITS[S.mode]}`
+                    : "";
+          for (const z of q.cells) {
+            const xa = G.X(z.c * ts),
+              xb = G.X(Math.min((z.c + 1) * ts, b)),
+              ya = G.Y((z.r + 1) * ps),
+              yb = G.Y(z.r * ps);
+            ctx.fillStyle = cellColour(z, q, deltaMax);
+            if (S.mode === "geometry") {
+              ctx.strokeStyle = colors.volume;
+              ctx.globalAlpha = 0.65;
+              ctx.strokeRect(
+                xa + 0.5,
+                ya + 0.5,
+                Math.max(0.4, xb - xa - 1),
+                Math.max(0.4, yb - ya - 1),
+              );
+              ctx.globalAlpha = 1;
+            } else
+              ctx.fillRect(
+                xa + 0.3,
+                ya + 0.3,
+                Math.max(0.5, xb - xa - 0.6),
+                Math.max(0.5, yb - ya - 0.6),
+              );
+          }
         }
         if (S.poc) {
           ctx.beginPath();
@@ -9222,6 +10137,44 @@
       [sub, colors.muted],
       ...(localLegend ? [[localLegend, colors.muted]] : []),
     ]);
+  }
+  // The lens under Path or Dwell: its finer cells' path and dwell, shaded
+  // against each other, from the motion of the block it draws from; its
+  // legend, or why there is none yet.
+  function lensMotion(src, q, n, m, lensBounds, stop) {
+    const msrc = motionOf(src),
+      ts = 2 ** n,
+      ps = 2 ** m,
+      end = msrc ? Math.min(msrc.end, activeCutoff()) : -Infinity,
+      mq = msrc ? boundedMotion(msrc, n, m, lensBounds) : null,
+      sorted = mq ? motionScale(mq, lensBounds, end, ts, ps) : null;
+    for (const z of mq ? mq.cells : []) {
+      const xa = G.X(z.c * ts),
+        xb = G.X(Math.min((z.c + 1) * ts, stop)),
+        ya = G.Y((z.r + 1) * ps),
+        yb = G.Y(z.r * ps);
+      motionMark(
+        ramp(rank(sorted, motionAmount(z, lensBounds, end, ts, ps))),
+        z.ct > 0 || q.map.has(z.c + "," + z.r),
+        xa,
+        ya,
+        xb - xa,
+        yb - ya,
+        0.6,
+      );
+    }
+    ctx.fillStyle = colors.line;
+    for (const z of q.cells) {
+      if ((z.c + 1) * ts <= end || (mq && mq.map.has(cellKey(z.c, z.r)))) continue;
+      const xa = G.X(z.c * ts),
+        xb = G.X(Math.min((z.c + 1) * ts, stop)),
+        ya = G.Y((z.r + 1) * ps),
+        yb = G.Y(z.r * ps);
+      ctx.fillRect(xa + 0.3, ya + 0.3, Math.max(0.5, xb - xa - 0.6), Math.max(0.5, yb - ya - 0.6));
+    }
+    if (mq) return motionLegend(sorted);
+    const want = motionSourceWant(src);
+    return want && motion.failed.has(want.key) ? "Path and dwell unavailable" : "Reading path and dwell…";
   }
   // The caption sits on a tab outside the lens, so the lens shows only data:
   // above it when there is room, otherwise below. The tab is sized to its text.
@@ -9662,8 +10615,9 @@
       else if (k === "f") fitPrice("Fit price");
       else if (k === "," || k === ".") stepAnchor(k === "," ? -1 : 1);
       else if (k === "m") {
-        const i = MODES.indexOf(S.mode) + (shift ? -1 : 1);
-        setMode(MODES[(i + MODES.length) % MODES.length]);
+        const list = modes(),
+          i = list.indexOf(S.mode) + (shift ? -1 : 1);
+        setMode(list[(i + list.length) % list.length]);
       } else if (k === "p" && shift) {
         S.poc = !S.poc;
         update();
@@ -9736,6 +10690,7 @@
     save();
   }
   function setMode(mode) {
+    if (!modes().includes(mode)) return;
     S.mode = mode;
     update();
     save();
@@ -9808,7 +10763,7 @@
     el(id).addEventListener("click", () =>
       changeResolution(S.n + dn, S.m + dm, dm === 0),
     );
-  for (const f of ["poc", "area", "untested"])
+  for (const f of ["poc", "area", "untested", "time"])
     el(f).addEventListener("change", () => {
       S[f] = el(f).checked;
       update();
@@ -9980,6 +10935,7 @@
   }
   async function applyLive(body, whole) {
     const was = CUT,
+      wasCanon = CANON,
       parts = {};
     // Everything is decoded before anything changes: no frame sees half a pack.
     for (const id of TIERS)
@@ -9993,6 +10949,9 @@
         }
       live.generation++;
       measured.clear();
+      motion.sources = {};
+      motion.view = null;
+      motion.measured.clear();
       histories.clear();
       lineResults.clear();
       lineLatest.clear();
@@ -10001,6 +10960,7 @@
     // New data: reads the cube refused or failed are asked for again.
     cube.stale = false;
     cube.failed.clear();
+    motion.failed.clear();
     for (const [id, part] of Object.entries(parts)) {
       const src = sources[id],
         meta = { ...body.blocks[id] };
@@ -10032,6 +10992,7 @@
       if (key in body) PACK[key] = body[key];
     CUT = (Date.parse(PACK.cutoff) / 1000 - T0) / BASE;
     CANON = canonOf(PACK);
+    if (!whole && wasCanon !== null && CANON !== wasCanon) dropMotionAfter(wasCanon);
     CUT_YEAR = date(CUT).getUTCFullYear();
     groups.clear();
     evidenceCache.clear();

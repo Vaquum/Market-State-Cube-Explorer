@@ -13,6 +13,8 @@
   --ol-sell: light-dark(#b3624b, #d89777);
   --ol-poc: light-dark(#a87823, #dfb967);
   --ol-evidence: light-dark(#7664a9, #b4a1df);
+  /* Time at price: the profile of where the price spent its time */
+  --ol-time: light-dark(#8f4f86, #d59bcc);
   /* Taker flow's midpoint: an even share, distinct from gridlines and both sides */
   --ol-neutral: light-dark(#b9c2bc, #5f6b64);
   /* POC lines: one colour each for the periods, apart from the cells' ramp and
@@ -511,6 +513,11 @@
 #origo-lens .ol-item[aria-checked="true"] {
   font-weight: 500;
 }
+/* A choice this page can't make (path and dwell on the recorded page). */
+#origo-lens .ol-item[aria-disabled="true"] {
+  color: var(--ol-muted);
+  cursor: default;
+}
 #origo-lens .ol-item-note {
   color: var(--ol-muted);
   font-weight: 400;
@@ -975,6 +982,10 @@
   min-height: var(--h-m);
   cursor: pointer;
 }
+#origo-lens .ol-marks label:has(input:disabled) {
+  color: var(--ol-muted);
+  cursor: default;
+}
 #origo-lens .ol-legend {
   margin-left: auto;
   display: flex;
@@ -1393,6 +1404,16 @@
 #origo-lens .ol-data-key.coarse {
   background: var(--ol-panel);
   border-left: 3px solid var(--ol-poc);
+}
+#origo-lens .ol-data-key.moved {
+  background: transparent;
+  border: 1.5px solid var(--ol-muted);
+}
+#origo-lens .ol-data-key.plain {
+  background: var(--ol-line);
+}
+#origo-lens .ol-data-key.time {
+  background: var(--ol-time);
 }
 
 /* Inspector: its own scroll, so the chart stays in view. */

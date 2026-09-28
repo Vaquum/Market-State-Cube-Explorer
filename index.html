@@ -6462,8 +6462,8 @@
   // A cell's amount for an encoding: USDT, trades or USDT a trade. Volume and
   // trades grow with the cell, so an edge portion or the open column counts at
   // its full-cell rate and compares with whole cells; the values shown stay
-  // the cell's own. The rectangle's and the lens's cells are measured against
-  // their own bounds, before the level's.
+  // the cell's own. The rectangle's and the lens's cells are measured within
+  // their own bounds, the level's other cells within its block.
   function amount(z, mode = S.mode) {
     const m = markState.metrics.get(z) || markState.level.get(z),
       rate = m?.area > 0 ? m.whole / m.area : 1;

@@ -5643,10 +5643,7 @@
               ? ["—", "—"]
               : [
                   usdt(moves(c)?.p ?? 0),
-                  (moves(c)?.w ?? 0).toLocaleString("en-US", {
-                    minimumFractionDigits: 3,
-                    maximumFractionDigits: 3,
-                  }) + " s",
+                  secondsMilli(moves(c)?.w ?? 0),
                 ]
           : []),
         cellState(c, b, ts, ps) + (c.ct === 0 ? " · no trades" : ""),
@@ -9257,9 +9254,19 @@
     const range = `${motionUnit(d3.quantileSorted(sorted, 0.05))} → ${motionUnit(d3.quantileSorted(sorted, 0.95))}`;
     return S.mode === "dwell" ? `${range} of column time` : `${range} row heights`;
   }
-  // Seconds to the microsecond, as the cube counts dwell.
-  const secondsExact = (x) =>
-    x.toLocaleString("en-US", { minimumFractionDigits: 6, maximumFractionDigits: 6 }) + " s";
+  // Seconds to the microsecond, as the cube counts dwell, and to the
+  // millisecond in the Cells table. The inspector writes them every frame, so
+  // they keep their formatters, as prices do.
+  const secondsFormat = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 6,
+      maximumFractionDigits: 6,
+    }),
+    millisecondsFormat = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3,
+    }),
+    secondsExact = (x) => secondsFormat.format(x) + " s",
+    secondsMilli = (x) => millisecondsFormat.format(x) + " s";
   // The plane status is a live region, so it is written only when its text
   // changes; a rewrite with the same words would be announced again.
   function setPlaneStatus(value) {

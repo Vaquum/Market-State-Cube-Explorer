@@ -3704,6 +3704,9 @@
         stop = CUT > bounds[1] ? at(Math.ceil(bounds[1] / ts) + 1) : cells.length,
         level = groups.get(key),
         c0 = Math.ceil(bounds[0] / tn),
+        // The columns wholly inside run from c0 to c1, or where the cutoff
+        // comes first to the level's end: the bounds then leave out no later
+        // cell, as they never have (and no block holds one after its cutoff).
         c1 = CUT > bounds[1] ? Math.floor(bounds[1] / tn) : Infinity;
       if (
         level &&

@@ -651,7 +651,14 @@
   margin-top: var(--sp-1);
   color: var(--ol-muted);
 }
-/* The encoding: its name on a menu button in the chart header. */
+/* What the cells and the pane under the prices show: each its choice on a
+   menu button, side by side at the start of the chart header. */
+#origo-lens .ol-surfaces {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+}
 #origo-lens .ol-mode-group {
   position: relative;
 }

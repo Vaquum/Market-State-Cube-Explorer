@@ -488,31 +488,67 @@
         </button>
       </div>
       <div class="ol-chart-head">
-        <div class="ol-group ol-mode-group">
-          <button
-            type="button"
-            id="ol-mode"
-            class="ol-pick cursor-interaction"
-            aria-haspopup="menu"
-            aria-expanded="false"
-            aria-controls="ol-mode-menu"
-            aria-label="Encoding: Volume"
-            aria-keyshortcuts="M"
-            data-keys="M"
-            data-hint="What the cells' colour shows; M steps to the next, Shift+M back"
-          >
-            <span id="ol-mode-text">Volume</span>
-            <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
-            </svg>
-          </button>
-          <div
-            class="ol-pop ol-menu ol-mode-menu"
-            id="ol-mode-menu"
-            role="menu"
-            aria-label="Encoding"
-            hidden
-          ></div>
+        <div class="ol-surfaces">
+          <div class="ol-group ol-mode-group">
+            <button
+              type="button"
+              id="ol-mode"
+              class="ol-pick cursor-interaction"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-controls="ol-mode-menu"
+              aria-label="Cells: Volume"
+              aria-keyshortcuts="M"
+              data-keys="M"
+              data-hint="What the cells' colour shows; M steps to the next, Shift+M back"
+            >
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
+                <path d="M2.5 8h11M8 2.5v11" />
+              </svg>
+              <span id="ol-mode-text">Volume</span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
+            </button>
+            <div
+              class="ol-pop ol-menu ol-mode-menu"
+              id="ol-mode-menu"
+              role="menu"
+              aria-label="Cells"
+              hidden
+            ></div>
+          </div>
+          <div class="ol-group ol-mode-group">
+            <button
+              type="button"
+              id="ol-pane"
+              class="ol-pick cursor-interaction"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-controls="ol-pane-menu"
+              aria-label="Columns: Same as cells"
+              aria-keyshortcuts="B"
+              data-keys="B"
+              data-hint="What the pane under the prices shows for each column; B steps to the next, Shift+B back"
+            >
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 13.5h11M4.5 11v-3.5M8 11V4M11.5 11V6" />
+              </svg>
+              <span class="ol-label">Columns:</span>
+              <span id="ol-pane-text">Same as cells</span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
+            </button>
+            <div
+              class="ol-pop ol-menu ol-mode-menu"
+              id="ol-pane-menu"
+              role="menu"
+              aria-label="Columns"
+              hidden
+            ></div>
+          </div>
         </div>
         <div class="ol-marks" role="group" aria-label="Overlays">
           <label title="Each column's point of control, and the profile's (P and B) · Shift+P"
@@ -1344,6 +1380,10 @@
             <div>
               <dt>Next or previous encoding</dt>
               <dd><kbd>M</kbd> <kbd>Shift</kbd> <kbd>M</kbd></dd>
+            </div>
+            <div>
+              <dt>Next or previous column measure</dt>
+              <dd><kbd>B</kbd> <kbd>Shift</kbd> <kbd>B</kbd></dd>
             </div>
             <div>
               <dt>POC lines</dt>

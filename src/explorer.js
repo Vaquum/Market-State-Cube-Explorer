@@ -6410,6 +6410,9 @@
     }
     update();
     syncURL(true);
+    // The arrows name the entries beside this one, even when its address
+    // needed no rewrite (syncURL then leaves them).
+    renderHistory();
     save();
   });
 

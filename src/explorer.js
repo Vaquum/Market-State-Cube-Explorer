@@ -82,6 +82,8 @@
       n: 4,
       m: 0,
       mode: "volume",
+      // The pane under the prices: Same as cells, or a measure of its own.
+      pane: "cells",
       poc: true,
       area: false,
       untested: false,
@@ -902,14 +904,8 @@
       // Under Path and Dwell the cells shade by their own motion, over the
       // motion's own level: the block's other amounts over its level go unread.
       moving = Boolean(PACK.live) && movementMode(),
-      full = moving
-        ? null
-        : aggregate(
-            src,
-            renderN(),
-            renderM(),
-            S.replay ? [src.col0 * 2 ** src.n, cut, 0, Infinity] : null,
-          ),
+      sum = S.replay ? [src.col0 * 2 ** src.n, cut, 0, Infinity] : null,
+      full = moving ? null : aggregate(src, renderN(), renderM(), sum),
       meas = measurement(),
       b = meas.b,
       query = meas.query,
@@ -928,6 +924,8 @@
         ? clamp((performance.now() - transition.start) / 170, 0, 1)
         : 1;
     prepareMeasures(full, shown, query, b, moving);
+    // Cascade's parents: the level one coarser in both time and price.
+    if (S.mode === "cascade") levelCascade(full, src, sum);
     labelsTaken = [];
     // Latest sits over the plot's top right when it shows, and the replay
     // transport on the replay line: labels keep clear of both.
@@ -1091,7 +1089,7 @@
     const ro = readouts(cut);
     axes(ro);
     profile(query, b, meas.state, mv);
-    activity(shown, cut, mv);
+    activity(shown, cut, mv, full);
     crosshair(ro);
     querySummary(meas, mv);
     el("legend-text").textContent = legendText(full, mv);
@@ -1697,11 +1695,12 @@
     // it shows and the measure it reads. The cube has four measures per cell,
     // and each reaches the chart: volume, trades, and their taker-buy parts;
     // live, also how the price moved inside each cell, its path and dwell.
-    MODES = ["volume", "flow", "delta", "trades", "flowtrades", "size", "path", "dwell", "geometry"],
+    MODES = ["volume", "flow", "delta", "cascade", "trades", "flowtrades", "size", "path", "dwell", "geometry"],
     MODE_INFO = {
       volume: { name: "Volume", desc: "USDT traded in each cell" },
       flow: { name: "Taker flow", desc: "Share of each cell's USDT bought by takers" },
       delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT in each cell" },
+      cascade: { name: "Cascade", desc: "How each cell's USDT splits within its parent, one level coarser in time and price" },
       trades: { name: "Trades", desc: "Trades in each cell" },
       flowtrades: { name: "Taker trades", desc: "Share of each cell's trades that were taker buys" },
       size: { name: "Trade size", desc: "Average USDT per trade in each cell" },
@@ -1710,12 +1709,34 @@
       geometry: { name: "Geometry", desc: "The grid's occupied cells" },
     },
     MODE_GROUPS = [
-      ["USDT", ["volume", "flow", "delta"]],
+      ["USDT", ["volume", "flow", "delta", "cascade"]],
       ["Trades", ["trades", "flowtrades", "size"]],
       ["Movement", ["path", "dwell"]],
       ["Grid", ["geometry"]],
     ],
-    MODE_NAMES = Object.fromEntries(MODES.map((k) => [k, MODE_INFO[k].name]));
+    MODE_NAMES = Object.fromEntries(MODES.map((k) => [k, MODE_INFO[k].name])),
+    // The pane under the prices (the Columns menu, B): one value per column, in
+    // the order B steps through them. Same as cells follows the encoding.
+    PANES = ["cells", "volume", "delta", "trades", "size", "efficiency", "choppiness", "perpath"],
+    PANE_INFO = {
+      cells: { name: "Same as cells", desc: "Each column's amount of what the cells show" },
+      volume: { name: "Volume", desc: "USDT traded in each column" },
+      delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT in each column" },
+      trades: { name: "Trades", desc: "Trades in each column" },
+      size: { name: "Trade size", desc: "Average USDT per trade in each column" },
+      efficiency: {
+        name: "Efficiency",
+        desc: "USDT per 125 USDT row each column's trades touched, against its parent column's",
+      },
+      choppiness: { name: "Choppiness", desc: "How far the price travelled in each column, over its range" },
+      perpath: { name: "Volume per path", desc: "USDT traded in each column per USDT the price moved" },
+    },
+    PANE_GROUPS = [
+      ["Follow", ["cells"]],
+      ["USDT", ["volume", "delta"]],
+      ["Trades", ["trades", "size"]],
+      ["Movement", ["efficiency", "choppiness", "perpath"]],
+    ];
   function svgIcon(name, className = "ol-icon") {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", className);
@@ -1739,6 +1760,7 @@
     if (!S.auto) add("r", S.n + "," + S.m);
     if (followMode() !== "refit") add("f", followMode());
     if (S.mode !== "volume") add("mode", S.mode);
+    if (S.pane !== "cells") add("pane", S.pane);
     const marks = ["poc", "area", "untested", "time"].filter((k) => S[k]).join(",");
     if (marks !== "poc") add("marks", marks || "none");
     if (S.lines.length) add("lines", S.lines.join(","));
@@ -1789,6 +1811,7 @@
       m: level ? Number(level[2]) : NaN,
       follow: q.get("f") || "refit",
       mode: q.get("mode") || "volume",
+      pane: q.get("pane") || "cells",
       poc: marks.includes("poc"),
       area: marks.includes("area"),
       untested: marks.includes("untested"),
@@ -1839,6 +1862,8 @@
       m: locked ? clamp(Math.round(v.m), 0, M_MAX) : null,
       follow: FOLLOWS.includes(v.follow) ? v.follow : "refit",
       mode: modes().includes(v.mode) ? v.mode : "volume",
+      // Choppiness and volume per path need the live cube.
+      pane: panes().includes(v.pane) ? v.pane : "cells",
       poc: v.poc !== false,
       area: v.area === true,
       untested: v.untested === true,
@@ -1880,6 +1905,7 @@
     S.diagonal = v.follow === "diagonal";
     for (const k of [
       "mode",
+      "pane",
       "poc",
       "area",
       "untested",
@@ -2002,6 +2028,7 @@
           // Density folded into Volume: a code that asks for it opens as Volume.
           mode = v.mode === "density" ? "volume" : v.mode;
         if (modes().includes(mode)) S.mode = mode;
+        if (panes().includes(v.pane)) S.pane = v.pane;
         for (const k of ["poc", "area", "untested", "time", "replay"])
           if (typeof v[k] === "boolean") S[k] = v[k];
         if (!PACK.live) S.time = false;
@@ -2046,11 +2073,19 @@
       line(x + k, y + h, x + k + h, y, color, 1, alpha);
     ctx.restore();
   }
+  // Under Cascade, the time a cell's parent spans; none at the lattice's
+  // coarsest time or price, where there is no parent.
+  const parentSpan = () =>
+    S.mode === "cascade" && renderN() < N_MAX && renderM() < M_MAX ? 2 * stepT() : 0;
   function paintCoverage(b) {
     const src = displaySource(),
       cut = activeCutoff(),
-      x0 = clamp(G.X(src.b0), G.x, G.x + G.w),
-      xe = clamp(G.X(Math.min(src.b1, cut)), G.x, G.x + G.w),
+      // Under Cascade a parent the block holds only part of has no value either.
+      span = parentSpan(),
+      start = span ? Math.ceil(src.b0 / span) * span : src.b0,
+      stop = Math.min(src.b1, cut),
+      x0 = clamp(G.X(start), G.x, G.x + G.w),
+      xe = clamp(G.X(span && stop < cut ? Math.floor(stop / span) * span : stop), G.x, G.x + G.w),
       xc = clamp(G.X(cut), G.x, G.x + G.w);
     hatchRect(G.x, G.y, x0 - G.x, G.h, colors.line, 11, 0.6);
     // Recorded time the source does not cover.
@@ -2121,17 +2156,24 @@
         0.35,
       );
   }
+  // The open column, and under Cascade the whole parent column that holds the
+  // data's edge: its cells' shares change as trades arrive (in replay, its
+  // later half is hidden). Whether it shows, for the status bar's key.
+  let unfinishedShown = false;
   function paintUnfinished(query) {
     const cut = activeCutoff(),
       ts = stepT(),
-      c = Math.floor(cut / ts);
-    if (!S.replay && cut % ts !== 0) {
-      const xa = Math.max(G.x, G.X(c * ts)),
+      span = parentSpan() || ts,
+      c = Math.floor(cut / span);
+    unfinishedShown = false;
+    if ((!S.replay || span > ts) && cut % span !== 0) {
+      const xa = Math.max(G.x, G.X(c * span)),
         xb = Math.min(G.x + G.w, G.X(cut));
       hatchRect(xa, G.y, xb - xa, G.h, colors.poc, 7, 0.25);
       if (xb > G.x && xa < G.x + G.w) {
+        unfinishedShown = span > ts;
         line(xa, G.y, xb, G.y, colors.poc, 3, 0.8);
-        chartLabel("Open", clamp(xa + 3, G.x + 4, G.x + G.w - 36), G.y + 28, colors.poc);
+        if (!S.replay) chartLabel("Open", clamp(xa + 3, G.x + 4, G.x + G.w - 36), G.y + 28, colors.poc);
       }
     }
     if (renderN() > S.n || renderM() > S.m) {
@@ -2275,7 +2317,7 @@
     el("zero-count").textContent = wait(integer(zero));
     // The key names each state; its count lives with the cell counts.
     el("key-zero").hidden = zero === 0;
-    el("key-open").hidden = openRows === 0;
+    el("key-open").hidden = openRows === 0 && !unfinishedShown;
     el("key-unavailable").hidden = !coverageGap;
     el("data-coarse").hidden = !(renderN() > S.n || renderM() > S.m);
     queryUI(meas);
@@ -2435,7 +2477,8 @@
       part("div", "ol-tip-head", head),
       ...(sub ? [part("div", "ol-tip-sub", sub)] : []),
       ...(rows.length ? [list] : []),
-      ...(note ? [part("div", "ol-tip-note", note)] : []),
+      // One note, or a few, each its own line.
+      ...[note || []].flat().filter(Boolean).map((text) => part("div", "ol-tip-note", text)),
     );
   }
   // A drawn cell's path and dwell for the tooltip, or why it has none yet.
@@ -2461,8 +2504,8 @@
       width = Math.max(0, Math.min((r + 1) * ps, b[3]) - Math.max(r * ps, b[2])) * PR,
       path = z ? z.p : 0,
       dwell = z ? z.w : 0,
-      // The column's value in the pane under the prices.
-      col = movementMode() ? mv.shown?.cols.find((x) => x.c === c) : null,
+      // The column's value in the pane under the prices, while it follows the cells.
+      col = movementMode() && S.pane === "cells" ? mv.shown?.cols.find((x) => x.c === c) : null,
       pane =
         !col
           ? []
@@ -2478,6 +2521,148 @@
       ...pane,
       ...((c + 1) * ts > mv.end ? [["Measured to", `${when(mv.end)} UTC`]] : []),
     ];
+  }
+  // A cell's share of its parent and its Cascade value for the tooltip, or why
+  // it has none; at +2, that no other cell in its parent traded. The share is
+  // the whole cell's: where the rectangle holds only part of the cell (shown),
+  // both whole amounts are given too.
+  const ratioText = (v, exact) => signed(v, (x) => x.toFixed(exact ? 3 : 2));
+  function cascadeRows(e, share, exact, money, shown) {
+    if (e.state === "ok") {
+      const part = shown && Math.abs(shown.v - e.w.v) > 1e-9 * e.w.v;
+      return {
+        rows: [
+          ["Of its parent", share(e.share)],
+          ["Cascade", ratioText(e.value, exact)],
+          ...(part
+            ? [
+                ["Whole cell", money(e.w.v)],
+                ["Parent", money(e.p.v)],
+              ]
+            : []),
+        ],
+        note: e.alone
+          ? "No other cell in its parent traded: the price never got there. That is movement, not concentration."
+          : part
+            ? `Part of this cell is outside the ${S.selection ? "selection" : "view"}; its share is the whole cell's.`
+            : "",
+      };
+    }
+    const why = {
+      coarsest: "no parent at the coarsest level",
+      open: S.replay ? "its parent runs past the replay's edge" : "its parent is still open",
+      outside: "only part of its parent is loaded",
+      none: "no value here",
+    };
+    return { rows: [["Cascade", why[e.state]]], note: "" };
+  }
+  // The pane's column under the pointer: its value and what it is made of,
+  // or why it has none.
+  function paneTip(tip, p, money, count, share, exact, note) {
+    const ts = stepT(),
+      c = Math.floor(p.t / ts),
+      head = `${range(c * ts, (c + 1) * ts)} UTC · ${dur(ts * BASE)}`,
+      { key, measure, cols } = paneShown,
+      x = cols.find((y) => y.c === c),
+      mv = last.mv,
+      sub = [measure.label, measure.unit].filter(Boolean).join(" · ");
+    if (p.t >= last.cut) return tipRows(tip, head, sub, [], S.replay ? "Hidden in replay" : "After the data cutoff");
+    if (!x) {
+      const b = last.b,
+        why =
+          p.t < b[0] || p.t >= b[1]
+            ? S.selection
+              ? "Outside the selection"
+              : PACK.live
+                ? "Loading this level from the cube"
+                : "Not recorded at this level"
+            : measure.motion && !mv?.src
+              ? motionIssue()
+                ? "Path and dwell couldn't be read"
+                : "Reading path and dwell from the cube…"
+              : measure.motion && c * ts >= mv.end
+                ? c * ts >= Math.floor(CUT)
+                  ? "Path and dwell are measured once the column completes"
+                  : "Not measured by the cube yet"
+                : "No trades in this column";
+      return tipRows(tip, head, sub, [], why);
+    }
+    if (measure.ratio && x.state !== "ok") {
+      const why = {
+        coarsest: "No coarser level to compare with",
+        open: S.replay ? "Its parent column runs past the replay's edge" : "Its parent column is still open",
+        outside: "Only part of its parent column is loaded",
+        unavailable: "The recorded snapshot has no 125 USDT rows here",
+        pending: "Reading its rows from the cube…",
+        failed: `The cube didn't answer: ${x.error}`,
+        none: "No trades in this column",
+      };
+      return tipRows(tip, head, sub, [], why[x.state]);
+    }
+    // A ratio's entry, or else the column itself and its value.
+    const col = x,
+      value = measure.ratio ? x.value : measure.value(x),
+      rows =
+        key === "cascade"
+          ? [
+              ["Of its parent column", share(x.share)],
+              ["Value", ratioText(value, exact)],
+              ["Column", money(x.w.v)],
+              ["Parent column", money(x.p.v)],
+            ]
+          : key === "efficiency"
+            ? [
+                ["Efficiency", ratioText(value, exact)],
+                ["USDT per row", money(x.e)],
+                ["Rows touched", integer(x.w.rows)],
+                ["Parent's USDT per row", money(x.ep)],
+                ["Parent's rows", integer(x.p.rows)],
+              ]
+            : key === "choppiness"
+              ? [
+                  ["Path ÷ range", compact(value)],
+                  ["Path", money(col.p)],
+                  ["Range", col.ct > 0 ? money(col.hi - col.lo) : "—"],
+                ]
+              : key === "perpath"
+                ? [
+                    ["USDT per USDT moved", compact(value)],
+                    ["Volume", money(col.v)],
+                    ["Path", money(col.p)],
+                  ]
+                : key === "delta"
+                  ? [
+                      ["Buy − sell", signed(value, money)],
+                      ["Volume", money(col.v)],
+                      ["Taker buys", share(col.bv / col.v)],
+                    ]
+                  : key === "takertrades"
+                    ? [
+                        ["Buy − sell trades", signed(value, count)],
+                        ["Trades", count(col.ct)],
+                        ["Taker-buy trades", share(col.ct ? col.bt / col.ct : 0)],
+                      ]
+                    : key === "size"
+                      ? [
+                          ["Trade size", col.ct ? money(value) : "—"],
+                          ["Trades", count(col.ct)],
+                        ]
+                      : key === "trades"
+                        ? [
+                            ["Trades", count(col.ct)],
+                            ["Volume", money(col.v)],
+                          ]
+                        : [
+                            ["Volume", money(col.v)],
+                            ["Trades", count(col.ct)],
+                          ],
+      notes =
+        key === "cascade" && x.alone
+          ? "The other column in its parent had no trades"
+          : key === "efficiency"
+            ? "Its USDT per 125 USDT row its trades touched, over its parent column's, against the 0.70 expected"
+            : "";
+    tipRows(tip, head, sub, rows, [notes, note]);
   }
   function onProfile(p) {
     const px = G.x + G.w + 9;
@@ -2556,6 +2741,9 @@
           ],
           note,
         );
+    } else if (last && paneShown && inActivity(p)) {
+      paneTip(tip, p, money, count, share, exact, note);
+      syncRowHover(null);
     } else if (!last || !inPlot(p)) {
       tip.hidden = true;
       syncRowHover(null);
@@ -2579,9 +2767,13 @@
         PACK.live && CANON !== null && (c + 1) * ts > CANON
           ? ["Source", "provisional minutes"]
           : null;
-      // Path and dwell, while a movement view shows them.
+      // Path and dwell, while a movement view shows them; Cascade's share.
       const mz = last.mv?.shown?.map.get(cellKey(c, r)),
-        moves = last.mv ? motionRows(c, r, mz, money, exact) : [];
+        moves = last.mv ? motionRows(c, r, mz, money, exact) : [],
+        cas =
+          S.mode === "cascade" && last.full?.cascade
+            ? cascadeRows(cascadeOf(last.full.cascade, c, r), share, exact, money, z)
+            : null;
       if (unavailable)
         tipRows(tip, head, priceRow(r), [], S.replay && p.t >= last.cut
           ? "Hidden in replay"
@@ -2618,12 +2810,13 @@
             ["Taker buys", `${money(z.bv)} · ${share(z.bv / z.v)}`],
             ["Taker-buy trades", `${count(z.bt)} · ${share(z.ct ? z.bt / z.ct : 0)}`],
             ["Buy − sell", signed(2 * z.bv - z.v, money)],
+            ...(cas ? cas.rows : []),
             ...moves,
             ["Column", open ? "Still open" : "Complete"],
             ...(provisional ? [provisional] : []),
             ...(coarse ? [coarse] : []),
           ],
-          note,
+          [cas?.note, note],
         );
       syncRowHover(z ? c + "," + r : null);
     }
@@ -2670,10 +2863,19 @@
       b.setAttribute("aria-checked", String(b.dataset.window === S.window)),
     );
     el("mode-text").textContent = MODE_NAMES[S.mode];
-    el("mode").setAttribute("aria-label", `Encoding: ${MODE_NAMES[S.mode]}`);
+    el("mode").setAttribute("aria-label", `Cells: ${MODE_NAMES[S.mode]}`);
     qsa("#ol-mode-menu [data-mode]").forEach((b) =>
       b.setAttribute("aria-checked", String(b.dataset.mode === S.mode)),
     );
+    // The pane's choice, written only when it changes: update() runs on every input.
+    if (el("pane").dataset.pane !== S.pane) {
+      el("pane").dataset.pane = S.pane;
+      el("pane-text").textContent = PANE_INFO[S.pane].name;
+      el("pane").setAttribute("aria-label", `Columns: ${PANE_INFO[S.pane].name}`);
+      qsa("#ol-pane-menu [data-pane]").forEach((b) =>
+        b.setAttribute("aria-checked", String(b.dataset.pane === S.pane)),
+      );
+    }
     renderLines();
     for (const f of ["poc", "area", "untested", "time"]) el(f).checked = S[f];
     // Path and dwell need the live cube; the recorded page says so.
@@ -2754,6 +2956,7 @@
               query: cubeQuery(),
               view: {
                 mode: S.mode,
+                pane: S.pane,
                 poc: S.poc,
                 area: S.area,
                 untested: S.untested,
@@ -3048,6 +3251,17 @@
     el("sheet-toggle").setAttribute("aria-expanded", String(open));
     if (!open) closePop();
   }
+  // On a phone the controls open in a sheet, and the Columns menu with them,
+  // before POC lines; wider, it sits beside Cells in the chart header.
+  const PHONE = matchMedia("(max-width: 760px)");
+  function placeMenus() {
+    const group = el("pane").parentElement,
+      sheet = el("controls");
+    if (PHONE.matches === (group.parentElement === sheet)) return;
+    closePop();
+    if (PHONE.matches) sheet.insertBefore(group, sheet.querySelector(":scope > .ol-lines-group"));
+    else root.querySelector(".ol-surfaces").append(group);
+  }
   // Menus: a button's list of choices. The arrows move through them, Home and
   // End jump to the ends, Tab leaves, Escape closes back to the button, and a
   // choice closes the list.
@@ -3238,6 +3452,41 @@
       parts.push(group);
     }
     el("mode-menu").replaceChildren(...parts);
+  }
+  // The pane's measures, grouped as the encodings are, each with what it shows.
+  function buildPaneMenu() {
+    const parts = [];
+    for (const [cap, keys] of PANE_GROUPS) {
+      const group = document.createElement("div"),
+        head = document.createElement("div");
+      group.setAttribute("role", "group");
+      head.className = "ol-menu-cap";
+      head.id = `ol-pane-cap-${parts.length}`;
+      head.textContent = cap;
+      group.setAttribute("aria-labelledby", head.id);
+      group.append(head);
+      for (const key of keys) {
+        const info = PANE_INFO[key],
+          // Choppiness and volume per path need the live cube: the recorded page lists them, off.
+          off = !panes().includes(key),
+          b = menuItem(
+            "menuitemradio",
+            [
+              svgIcon("check", "ol-icon ol-check"),
+              itemText(`pane-${key}`, info.name, off ? "Live cube only" : info.desc),
+            ],
+            () => setPane(key),
+          );
+        if (off) b.setAttribute("aria-disabled", "true");
+        b.setAttribute("aria-labelledby", `ol-pane-${key}-name`);
+        b.setAttribute("aria-describedby", `ol-pane-${key}-desc`);
+        b.dataset.pane = key;
+        b.setAttribute("aria-checked", String(key === S.pane));
+        group.append(b);
+      }
+      parts.push(group);
+    }
+    el("pane-menu").replaceChildren(...parts);
   }
 
   // Labels: a control's name and key, and what it does, a second after the
@@ -3431,6 +3680,7 @@
     bindMenu("window", "window-menu", buildWindowMenu);
     bindMenu("follow", "follow-menu", buildFollowMenu);
     bindMenu("mode", "mode-menu", buildModeMenu);
+    bindMenu("pane", "pane-menu", buildPaneMenu);
     bindLines();
     bindPop("res", "res-pop", () => {
       nav.planeKey = "";
@@ -3442,7 +3692,9 @@
       renderViews();
       viewsStatus("");
       el("view-name").value =
-        viewPlace() + (S.mode === "volume" ? "" : " · " + MODE_NAMES[S.mode]);
+        viewPlace() +
+        (S.mode === "volume" ? "" : " · " + MODE_NAMES[S.mode]) +
+        (S.pane === "cells" ? "" : ` · ${PANE_INFO[S.pane].name} columns`);
     });
     bindPop("evidence-info", "evidence-more");
     document.addEventListener("pointerdown", (e) => {
@@ -3461,6 +3713,8 @@
       setSheet(root.dataset.sheet !== "open"),
     );
     el("sheet-close").addEventListener("click", () => setSheet(false));
+    placeMenus();
+    PHONE.addEventListener("change", placeMenus);
     for (const button of qsa("[data-tool]"))
       button.addEventListener("click", () => setTool(button.dataset.tool));
     el("hist-back").addEventListener("click", () => history.back());
@@ -3608,7 +3862,12 @@
   // holds as many cells as any other, so the colour tells cells apart wherever
   // they crowd. Sorted once per block, level and encoding.
   function amountScale(full, mode = S.mode) {
-    const key = mode === "flowtrades" ? "trades" : mode === "flow" || mode === "delta" || mode === "geometry" ? "volume" : mode;
+    const key =
+      mode === "flowtrades"
+        ? "trades"
+        : ["flow", "delta", "cascade", "geometry"].includes(mode)
+          ? "volume"
+          : mode;
     if (!full.scales[key])
       full.scales[key] = Float64Array.from(
         full.cells.map((z) => amount(z, key)).filter((x) => x > 0),
@@ -3630,11 +3889,15 @@
     light: ["#f2f9c4", "#d6efb3", "#a9dcb6", "#73c6bd", "#41b0c3", "#2390bd", "#2a6aac", "#283f94", "#15205e"],
     dark: ["#1b2c33", "#18405a", "#1a5b7d", "#1f7896", "#2c969c", "#4db493", "#86cd83", "#c6e27c", "#f4f1a6"],
   };
-  let rampColours = [];
+  // Colours kept with cells, as Cascade's are, are worked out again once the
+  // theme changes: this counts the themes the page has drawn in.
+  let rampColours = [],
+    colourEpoch = 0;
   function buildRamp() {
     const stops = d3.lab(colors.surface).l < 50 ? RAMP.dark : RAMP.light,
       f = d3.piecewise(d3.interpolateLab, stops);
     rampColours = Array.from({ length: 256 }, (_, i) => d3.rgb(f(i / 255)).formatHex());
+    colourEpoch++;
   }
   const ramp = (t) => rampColours[Math.round(clamp(t, 0, 1) * 255)];
   const AMOUNT_UNITS = { volume: "USDT", trades: "trades", size: "USDT a trade" };
@@ -3648,6 +3911,8 @@
     if (S.mode === "flowtrades") return "Taker buys 25% · 50% · 75% of trades";
     if (S.mode === "delta")
       return `Δ ${signedCompact(-markState.deltaMax)} · 0 · ${signedCompact(markState.deltaMax)} USDT`;
+    if (S.mode === "cascade")
+      return full.cascade?.parent ? "−2 · 0 · +2 vs an even share" : "No coarser level to compare with";
     const sorted = amountScale(full),
       unit = AMOUNT_UNITS[S.mode];
     if (!sorted.length) return unit;
@@ -3664,32 +3929,133 @@
     flowtrades:
       "The share of each cell's trades that were taker buys: buy colour above half, sell colour below, full at 75% and 25%. Paler cells had fewer trades.",
     delta: "Taker-buy minus taker-sell volume per cell, in USDT",
+    cascade:
+      "How each cell's USDT splits within its parent, the cell one level coarser in time and price that it shares with three others: log₂ of 4 × its share of the parent, so 0 is an even quarter, +1 twice that and −1 half. +2 is the whole parent: no other cell in it traded, so the price never got there. Buy colour above 0, where volume concentrated, sell colour below, where it thinned; full at ±2 and paler where less traded. The pane under the prices shows each column's share of its parent column the same way.",
     path: "How far the price travelled in each cell: its path length, the sum of every move between consecutive trades split across the rows it passes, over the row's height, at its full-cell rate and shaded by rank. The numbers are the 5th and 95th percentiles. Outlined cells the price moved through or held in without a trade. The pane under the prices shows each column's path over its range, its highest trade less its lowest: 1 for a straight run, more the more it turned back. Read from the live cube up to the last complete base column.",
     dwell: "Each cell's share of its column's time: how long the price, held from one trade to the next, sat in the cell's rows, shaded by rank. The numbers are the 5th and 95th percentiles. Outlined cells the price moved through or held in without a trade. The pane under the prices shows each column's USDT traded per USDT the price moved, its volume over its path. Read from the live cube up to the last complete base column.",
     geometry: "The grid's occupied cells",
   };
   function legendRamp() {
-    if (S.mode === "flow" || S.mode === "flowtrades")
+    if (S.mode === "flow" || S.mode === "flowtrades" || S.mode === "cascade")
       return "linear-gradient(to right,var(--ol-sell),var(--ol-neutral),var(--ol-buy))";
     if (S.mode === "delta")
       return "linear-gradient(to right,var(--ol-sell),var(--ol-line),var(--ol-buy))";
     if (S.mode === "geometry") return "var(--ol-line)";
     return `linear-gradient(to right,${[0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1].map(ramp).join(",")})`;
   }
+  // How much a cell traded among the block's cells, from 0 to 1: its amount at
+  // its full-cell rate on a log scale between their 2nd and 99.5th percentiles.
+  // Diverging colours are paler the less a cell traded.
+  function tradedLevel(z, full) {
+    const sorted = amountScale(full),
+      lo = Math.log(d3.quantileSorted(sorted, 0.02) || 1),
+      hi = Math.log(d3.quantileSorted(sorted, 0.995) || Math.E);
+    return clamp((Math.log(Math.max(amount(z), 1e-9)) - lo) / Math.max(0.1, hi - lo), 0, 1);
+  }
+  // From the neutral midpoint at 0 to buy at +1 and sell at −1, toward the
+  // surface as the level falls.
+  function divergingColour(t, level) {
+    const hue = d3.interpolateRgb(colors.neutral, t >= 0 ? colors.buy : colors.sell)(Math.abs(t));
+    return d3.interpolateRgb(colors.surface, hue)(0.3 + 0.7 * level);
+  }
+  // Cascade: how each cell's USDT splits within its parent, the cell one level
+  // coarser in both time and price, (n + 1, m + 1), that it shares with three
+  // others. Its value is log2(4 × its share): 0 an even quarter, +1 twice that,
+  // −1 half, and +2 the whole parent, where no other cell in it traded. Both
+  // levels are the block's own whole cells, summed by aggregate(), so the
+  // shares within a parent add up to 1. A parent that starts before the
+  // block's cells or ends after them has no value; one that runs past the data
+  // (the open column, or a replay's edge) is unfinished; and at the lattice's
+  // coarsest time or price there is no parent. The context is kept with the
+  // level's cells; each cell's value is worked out once, when first drawn.
+  function cascadeContext(cells, parent, start, end, cut) {
+    return { cells, parent, start, end, cut, n: cells.n, entries: new Map(), cols: null, parents: null };
+  }
+  // The drawn level's context, from the block it is drawn from: its cells
+  // (full) and its parents, summed within the same bounds.
+  function levelCascade(full, src, sum) {
+    const [start, stop] = sourceRange(src),
+      cut = activeCutoff(),
+      end = Math.min(stop, cut),
+      parent = full.n >= N_MAX || full.m >= M_MAX ? null : aggregate(src, full.n + 1, full.m + 1, sum),
+      c = full.cascade;
+    if (!(c && c.parent === parent && c.start === start && c.end === end && c.cut === cut))
+      full.cascade = cascadeContext(full, parent, start, end, cut);
+    return full.cascade;
+  }
+  function cascadeOf(ctx, c, r) {
+    const k = cellKey(c, r);
+    let e = ctx.entries.get(k);
+    if (!e) {
+      e = cascadeEntry(ctx, c, r);
+      ctx.entries.set(k, e);
+    }
+    return e;
+  }
+  // A cell's share of its parent and its value, or why it has none: no parent
+  // at the coarsest level; outside, a parent the block holds only part of;
+  // open, one that runs past the data.
+  function cascadeEntry(ctx, c, r) {
+    if (!ctx.parent) return { state: "coarsest" };
+    const w = ctx.cells.map.get(c + "," + r);
+    if (!w) return { state: "none" };
+    const pc = Math.floor(c / 2),
+      span = 2 ** (ctx.n + 1);
+    if (pc * span < ctx.start) return { state: "outside", w };
+    if ((pc + 1) * span > ctx.end) return { state: ctx.end >= ctx.cut ? "open" : "outside", w };
+    const p = ctx.parent.map.get(pc + "," + Math.floor(r / 2));
+    if (!(p?.v > 0)) return { state: "none", w };
+    const share = w.v / p.v;
+    // Alone: no other cell in the parent traded.
+    return { state: "ok", w, p, share, value: Math.log2(4 * share), alone: p.ct === w.ct, colour: "", epoch: -1 };
+  }
+  // A column's share of its parent column, one level up in time, as log2(2 ×
+  // its share): the pane's Same as cells under Cascade, on the same scale.
+  // Worked out once for the level, as the cells' are.
+  function cascadeColumn(ctx, c) {
+    if (!ctx.cols) {
+      ctx.cols = new Map();
+      ctx.parents = ctx.parent ? new Map(ctx.parent.cols.map((x) => [x.c, x])) : null;
+    }
+    let e = ctx.cols.get(c);
+    if (!e) {
+      e = cascadeColumnEntry(ctx, c);
+      ctx.cols.set(c, e);
+    }
+    return e;
+  }
+  function cascadeColumnEntry(ctx, c) {
+    if (!ctx.parent) return { c, state: "coarsest" };
+    const w = ctx.cells.cols[bisectColumn(ctx.cells.cols, c)],
+      pc = Math.floor(c / 2),
+      span = 2 ** (ctx.n + 1);
+    if (w?.c !== c) return { c, state: "none" };
+    if (pc * span < ctx.start) return { c, state: "outside", w };
+    if ((pc + 1) * span > ctx.end) return { c, state: ctx.end >= ctx.cut ? "open" : "outside", w };
+    const p = ctx.parents.get(pc);
+    if (!(p?.v > 0)) return { c, state: "none", w };
+    const share = w.v / p.v;
+    return { c, state: "ok", w, p, share, value: Math.log2(2 * share), alone: p.ct === w.ct };
+  }
   // A cell's colour. Amounts take the ramp by rank. Taker flow, by USDT or by
   // trades, diverges from a neutral midpoint to buy and sell, full at 75% and
-  // 25%, paler where less traded. Delta shades signed taker volume.
+  // 25%, paler where less traded; so does Cascade, full at ±2, and a cell it
+  // has no value for is drawn plain. Delta shades signed taker volume.
   function cellColour(z, full, deltaMax = markState.deltaMax) {
     if (S.mode === "flow" || S.mode === "flowtrades") {
       const byTrades = S.mode === "flowtrades",
-        share = byTrades ? (z.ct ? z.bt / z.ct : 0.5) : z.v ? z.bv / z.v : 0.5,
-        t = clamp((share - 0.5) / 0.25, -1, 1),
-        sorted = amountScale(full),
-        lo = Math.log(d3.quantileSorted(sorted, 0.02) || 1),
-        hi = Math.log(d3.quantileSorted(sorted, 0.995) || Math.E),
-        level = clamp((Math.log(Math.max(amount(z), 1e-9)) - lo) / Math.max(0.1, hi - lo), 0, 1),
-        hue = d3.interpolateRgb(colors.neutral, t >= 0 ? colors.buy : colors.sell)(Math.abs(t));
-      return d3.interpolateRgb(colors.surface, hue)(0.3 + 0.7 * level);
+        share = byTrades ? (z.ct ? z.bt / z.ct : 0.5) : z.v ? z.bv / z.v : 0.5;
+      return divergingColour(clamp((share - 0.5) / 0.25, -1, 1), tradedLevel(z, full));
+    }
+    if (S.mode === "cascade") {
+      const e = full.cascade && cascadeOf(full.cascade, z.c, z.r);
+      if (e?.state !== "ok") return colors.line;
+      // Kept with the cell for its level, until the theme changes.
+      if (e.epoch !== colourEpoch) {
+        e.colour = divergingColour(clamp(e.value / 2, -1, 1), tradedLevel(e.w, full));
+        e.epoch = colourEpoch;
+      }
+      return e.colour;
     }
     if (S.mode === "delta") {
       const delta = 2 * z.bv - z.v;
@@ -4485,51 +4851,73 @@
       root.querySelector("#ol-lines-list input")?.focus();
     });
   }
-  // Activity: each column's amount in a pane under the prices that shares
-  // their time axis: its volume, its trades or its average trade size, or its
-  // signed taker volume (taker flow and delta) or signed taker trades (taker
-  // trades). Under Path, each column's path over its range; under Dwell, its
-  // USDT traded per USDT the price moved; both up to where they end.
-  function activity(full, cut, mv) {
+  // The pane under the prices: one value per column, sharing their time axis.
+  // Its measure is the Columns menu's choice (B), or under Same as cells what
+  // the cells show: volume, trades or trade size; signed taker volume under
+  // Taker flow and Delta, signed taker trades under Taker trades; under Path
+  // each column's path over its range (choppiness), under Dwell its USDT per
+  // USDT the price moved (volume per path); under Cascade its share of its
+  // parent column; under Geometry its volume.
+  function paneMeasure() {
+    if (S.pane !== "cells") return S.pane;
+    return { flow: "delta", flowtrades: "takertrades", path: "choppiness", dwell: "perpath", geometry: "volume" }[S.mode] || S.mode;
+  }
+  // Each measure's name and unit, and its value from a column of the
+  // rectangle's cells, or of their path and dwell (motion), up to where those
+  // end. A ratio is log2 of the actual over the expected, from the level's
+  // whole columns, on the buy and sell colours and full at ±2.
+  const PANE_MEASURES = {
+    volume: { label: "Volume", unit: "USDT", value: (c) => c.v },
+    delta: { label: "Delta", unit: "USDT", signed: true, value: (c) => 2 * c.bv - c.v },
+    takertrades: { label: "Buy − sell trades", unit: "", signed: true, value: (c) => 2 * c.bt - c.ct },
+    trades: { label: "Trades", unit: "", value: (c) => c.ct },
+    size: { label: "Trade size", unit: "USDT a trade", value: (c) => (c.ct > 0 ? c.v / c.ct : 0) },
+    choppiness: {
+      label: "Choppiness",
+      unit: "path ÷ range",
+      motion: true,
+      value: (c) => (c.ct > 0 && c.hi > c.lo ? c.p / (c.hi - c.lo) : 0),
+    },
+    perpath: { label: "Volume per path", unit: "USDT per USDT moved", motion: true, value: (c) => (c.p > 0 ? c.v / c.p : 0) },
+    cascade: { label: "Share of parent column", unit: "log₂ vs even", ratio: true },
+    efficiency: { label: "Efficiency", unit: "log₂ vs expected", ratio: true },
+  };
+  // The pane's measure and columns as last drawn, which its tooltip reads.
+  let paneShown = null;
+  // A ratio's columns in view between `from` and `to`, each with its value, or
+  // why it has none. The other measures' columns are the cells' own (activity).
+  function ratioColumns(key, full, ts, from, to) {
+    const out = [];
+    if (key === "cascade") {
+      const cx = full?.cascade,
+        cols = cx ? full.cols : [];
+      for (let i = bisectColumn(cols, Math.floor(from / ts)); i < cols.length && cols[i].c * ts < to; i++)
+        out.push(cascadeColumn(cx, cols[i].c));
+    } else if (to > from) {
+      const ex = efficiencyContext(renderN());
+      for (let c = Math.floor(from / ts); c * ts < to; c++) {
+        const e = efficiencyOf(ex, c);
+        if (e.state !== "none") out.push(e);
+      }
+    }
+    return out;
+  }
+  function activity(shown, cut, mv, full) {
     const ts = stepT(),
       b = bounds(),
-      moving = Boolean(mv) && movementMode(),
-      end = moving ? (mv.src ? mv.end : -Infinity) : Infinity,
-      cols = ((moving ? mv.shown : full)?.cols || []).filter(
-        (c) => (c.c + 1) * ts > S.tA && c.c * ts < S.tB && c.c * ts < cut && c.c * ts < end,
-      ),
-      signed = ["delta", "flow", "flowtrades"].includes(S.mode),
-      value = (c) =>
-        S.mode === "path"
-          ? c.ct > 0 && c.hi > c.lo
-            ? c.p / (c.hi - c.lo)
-            : 0
-          : S.mode === "dwell"
-            ? c.p > 0
-              ? c.v / c.p
-              : 0
-            : S.mode === "flowtrades"
-              ? 2 * c.bt - c.ct
-              : signed
-                ? 2 * c.bv - c.v
-                : S.mode === "trades"
-                  ? c.ct
-                  : S.mode === "size"
-                    ? c.ct > 0
-                      ? c.v / c.ct
-                      : 0
-                    : c.v,
-      unit =
-        S.mode === "path"
-          ? "× range"
-          : S.mode === "dwell"
-            ? "per USDT"
-            : S.mode === "trades" || S.mode === "flowtrades"
-              ? "trades"
-              : S.mode === "size"
-                ? "per trade"
-                : "USDT",
-      max = d3.max(cols, (c) => Math.abs(value(c))) || 1,
+      key = paneMeasure(),
+      measure = PANE_MEASURES[key],
+      end = measure.motion ? (mv?.src ? mv.end : -Infinity) : Infinity,
+      from = Math.max(S.tA, b[0]),
+      to = Math.min(S.tB, cut, b[1], end),
+      // A column of the cells, or of their path and dwell, with a value; a
+      // ratio's, with its value or why it has none.
+      cols = measure.ratio
+        ? ratioColumns(key, full, ts, from, to)
+        : ((measure.motion ? mv?.shown : shown)?.cols || []).filter((c) => (c.c + 1) * ts > from && c.c * ts < to),
+      value = measure.ratio ? (x) => x.value : measure.value,
+      signed = measure.signed || measure.ratio,
+      max = measure.ratio ? 2 : d3.max(cols, (c) => Math.abs(value(c))) || 1,
       top = G.ay,
       h = G.ah,
       zero = signed ? top + h / 2 : top + h,
@@ -4549,22 +4937,229 @@
     }
     timeGrid(top, top + h);
     if (signed) markLine(G.x, zero, G.x + G.w, zero, colors.line, 1, 0.9);
-    for (const c of cols) {
-      const xa = G.X(Math.max(c.c * ts, b[0])),
-        xb = G.X(Math.min((c.c + 1) * ts, cut, b[1], end));
+    let bars = 0;
+    for (const x of cols) {
+      if (measure.ratio && x.state !== "ok") continue;
+      const xa = G.X(Math.max(x.c * ts, b[0])),
+        xb = G.X(Math.min((x.c + 1) * ts, cut, b[1], end));
       if (xb <= xa) continue;
-      const v = value(c),
+      bars++;
+      const v = measure.ratio ? clamp(x.value, -2, 2) : value(x),
         bh = (Math.abs(v) / max) * room,
         y = signed ? (v >= 0 ? zero - bh : zero) : zero - bh;
-      ctx.fillStyle = signed ? (v >= 0 ? colors.buy : colors.sell) : colors.volume;
-      ctx.globalAlpha = 0.65;
+      ctx.fillStyle = measure.ratio
+        ? divergingColour(v / 2, 1)
+        : signed
+          ? v >= 0
+            ? colors.buy
+            : colors.sell
+          : colors.volume;
+      ctx.globalAlpha = measure.ratio ? 0.85 : 0.65;
       ctx.fillRect(xa, y, Math.max(0.1, xb - xa - (xb - xa > 3 ? 1 : 0)), bh);
     }
+    ctx.globalAlpha = 1;
+    // A ratio's columns without a value: those whose parent runs past the data
+    // are unfinished, like the open column; those it can't be read for are
+    // unavailable.
+    if (measure.ratio) {
+      const span = 2 * ts,
+        at = Math.floor(cut / span) * span;
+      if (cut % span !== 0 && cols.some((x) => x.state === "open")) {
+        const xa = Math.max(G.x, G.X(at));
+        hatchRect(xa, top, Math.min(G.x + G.w, G.X(cut)) - xa, h, colors.poc, 7, 0.25);
+      }
+      let run = null;
+      const flush = () => {
+        if (run) hatchRect(G.X(run[0]), top, G.X(run[1]) - G.X(run[0]), h, colors.line, 11, 0.6);
+        run = null;
+      };
+      for (const x of cols)
+        if (x.state === "outside" || x.state === "unavailable") {
+          const a = Math.max(x.c * ts, b[0]),
+            z = Math.min((x.c + 1) * ts, cut, b[1]);
+          if (run && run[1] === a) run[1] = z;
+          else {
+            flush();
+            run = [a, z];
+          }
+        }
+      flush();
+    }
     ctx.restore();
-    // The scale in the price labels' column: the largest value, then the unit.
-    if (!cols.length) return;
-    text((signed ? "±" : "") + compact(max), G.x - 8, top + 7, colors.muted, "right");
-    if (h >= 34) text(unit, G.x - 8, top + 21, colors.muted, "right");
+    paneShown = { key, measure, cols };
+    // The scale in the price labels' column: the largest value, or a ratio's
+    // full strength.
+    if (bars || measure.ratio)
+      text((signed ? "±" : "") + (measure.ratio ? "2" : compact(max)), G.x - 8, top + 7, colors.muted, "right");
+    paneLegend(measure, cols, mv, top);
+  }
+  // The pane's name and unit at its top left, and what it is still reading or
+  // couldn't read. Measured only when its words or the pane's width change.
+  let paneLabel = { s: "", width: 0, text: "", w: 0 };
+  function paneLegend(measure, cols, mv, top) {
+    const has = (state) => measure.ratio && cols.some((x) => x.state === state),
+      note = measure.motion
+        ? !mv?.src
+          ? motionIssue()
+            ? "path and dwell couldn't be read"
+            : "reading path and dwell…"
+          : ""
+        : !measure.ratio
+          ? ""
+          : has("coarsest")
+            ? "no coarser level to compare with"
+            : has("failed")
+              ? "rows couldn't be read"
+              : has("pending")
+                ? "reading rows from the cube…"
+                : has("unavailable")
+                  ? `125 USDT rows are recorded here for the last ${renderN() >= 4 ? 30 : 7} days`
+                  : "",
+      s = note ? `${measure.label}${measure.unit ? " · " + measure.unit : ""} · ${note}` : measure.unit ? `${measure.label} · ${measure.unit}` : measure.label;
+    ctx.font = `${TYPE.s}px ${FONT}`;
+    if (paneLabel.s !== s || paneLabel.width !== G.w) {
+      const fitted = fitText(s, G.w - 12);
+      paneLabel = { s, width: G.w, text: fitted, w: ctx.measureText(fitted).width };
+    }
+    ctx.fillStyle = colors.surface;
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(G.x + 2, top + 1, paneLabel.w + 8, 15);
+    ctx.globalAlpha = 1;
+    text(paneLabel.text, G.x + 6, top + 8.5, colors.muted, "left");
+  }
+  // Efficiency: a column's USDT per 125 USDT row its trades touched, against
+  // its parent column's one level up in time, as log2 of their ratio over
+  // 0.70, the ratio expected: halving a column halves its volume, while its
+  // range shrinks only by 2^ISO_B, the diagonal's exponent, and
+  // 2^(0.486 − 1) = 0.700. Rows are counted at 125 USDT whatever rows are
+  // drawn: at coarse rows a column spans one or two of them, and the measure
+  // would collapse to plain volume. The counts come from loaded blocks of 125
+  // USDT rows where they hold a column's parent whole (the recent tier's base
+  // cells, and from 15 minutes the 30-day archive with the recent tier after
+  // it), and live, elsewhere, from the cube (/cube/touched), a chunk of 512
+  // columns at a time.
+  const EFFICIENCY_EXPECTED = 2 ** (ISO_B - 1),
+    TOUCHED_CHUNK = 512,
+    touches = new Map(),
+    touchedMaps = new WeakMap();
+  // A level's columns, each with its USDT and the rows its trades touched.
+  function touchedColumns(q) {
+    let map = touchedMaps.get(q);
+    if (!map) {
+      map = new Map(q.cols.map((x) => [x.c, { v: x.v, rows: x.rows.length }]));
+      touchedMaps.set(q, map);
+    }
+    return map;
+  }
+  // The loaded blocks of 125 USDT rows that can count a level's rows.
+  function touchedBlocks(n) {
+    return [sources.recent, referenceView || sources.reference].filter((s) => s && s.m === 0 && s.n <= n);
+  }
+  // What Efficiency reads at level n, gathered once a frame: the data's edge,
+  // and the loaded blocks that can count the level's rows, each with its span.
+  function efficiencyContext(n) {
+    const cut = activeCutoff();
+    return {
+      n,
+      cut,
+      blocks: touchedBlocks(n).map((src) => {
+        const [start, stop] = sourceRange(src);
+        return { src, start, end: Math.min(stop, cut), cols: null, parents: null };
+      }),
+      chunk: null,
+    };
+  }
+  function efficiencyOf(ex, c) {
+    const n = ex.n;
+    if (n >= N_MAX) return { c, state: "coarsest" };
+    const span = 2 ** (n + 1),
+      pc = Math.floor(c / 2),
+      a = pc * span,
+      z = a + span;
+    // A parent that runs past the data is unfinished, as the open column is.
+    if (z > ex.cut) return { c, state: "open" };
+    for (const h of ex.blocks)
+      if (a >= h.start && z <= h.end) {
+        if (!h.cols) {
+          h.cols = touchedColumns(aggregate(h.src, n, 0));
+          h.parents = touchedColumns(aggregate(h.src, n + 1, 0));
+        }
+        return efficiencyFrom(h.cols, h.parents, c, pc);
+      }
+    if (!PACK.live) return { c, state: "unavailable" };
+    // Columns in view share a chunk or two: each is looked up once a frame.
+    const k = Math.floor(a / (TOUCHED_CHUNK * 2 ** n));
+    if (ex.chunk?.k !== k) {
+      const range = touchedRange(n, k),
+        key = range && touchedKey(n, range);
+      ex.chunk = { k, key, hit: key && touches.get(key) };
+    }
+    const { key, hit } = ex.chunk;
+    if (hit) return efficiencyFrom(hit.cols, hit.parents, c, pc);
+    return key && cube.failed.has(key) ? { c, state: "failed", error: cube.failed.get(key) } : { c, state: "pending" };
+  }
+  function efficiencyFrom(cols, parents, c, pc) {
+    const w = cols.get(c),
+      p = parents.get(pc);
+    if (!(w?.v > 0 && w.rows > 0 && p?.v > 0 && p.rows > 0)) return { c, state: "none" };
+    const e = w.v / w.rows,
+      ep = p.v / p.rows;
+    return { c, state: "ok", value: Math.log2(e / ep / EFFICIENCY_EXPECTED), e, ep, w, p };
+  }
+  // Chunk k of level n: its columns up to the last whole parent before the
+  // data's edge.
+  function touchedRange(n, k) {
+    const span = 2 ** (n + 1),
+      b0 = k * TOUCHED_CHUNK * 2 ** n,
+      b1 = Math.min(b0 + TOUCHED_CHUNK * 2 ** n, Math.floor(CUT / span) * span);
+    return b1 > b0 ? [b0, b1] : null;
+  }
+  const touchedKey = (n, [b0, b1]) => ["touched", live.generation, n, b0, b1].join("|");
+  // The cube read for chunk k of level n: each column's rows touched and USDT,
+  // and its parents'.
+  function touchedSpec(n, k) {
+    const range = touchedRange(n, k);
+    if (!range) return null;
+    const [b0, b1] = range,
+      key = touchedKey(n, range);
+    return {
+      key,
+      b0,
+      b1,
+      path: `/cube/touched?n=${n}&b0=${b0}&b1=${b1}`,
+      decode: async (body) => body,
+      apply: (body) => {
+        const map = (x) => new Map(x.col.map((c, i) => [c, { v: x.volume[i], rows: x.rows[i] }]));
+        touches.delete(key);
+        touches.set(key, { cols: map(body.columns), parents: map(body.parents) });
+        while (touches.size > 24) touches.delete(touches.keys().next().value);
+      },
+    };
+  }
+  // What Efficiency needs read next: a chunk holding parents in view that no
+  // loaded block holds whole. Only while it shows, and after the view's own
+  // reads (see CUBE_KINDS).
+  function touchedWant() {
+    if (!PACK.live || paneMeasure() !== "efficiency") return null;
+    const n = renderN();
+    if (n >= N_MAX) return null;
+    const span = 2 ** (n + 1),
+      size = TOUCHED_CHUNK * 2 ** n,
+      cut = activeCutoff(),
+      [a, z] = viewRange();
+    for (let k = Math.floor(a / size); k * size < Math.min(z, cut); k++) {
+      const spec = touchedSpec(n, k);
+      if (!spec || touches.has(spec.key) || cube.failed.has(spec.key)) continue;
+      const lo = Math.floor(Math.max(a, spec.b0) / span) * span,
+        hi = Math.ceil(Math.min(z, spec.b1) / span) * span;
+      if (hi <= lo) continue;
+      const held = touchedBlocks(n).some((s) => {
+        const [start, stop] = sourceRange(s);
+        return lo >= start && hi <= Math.min(stop, cut);
+      });
+      if (!held) return spec;
+    }
+    return null;
   }
 
   // The columns the continuations compare, at level (n, m), up to `end`: the
@@ -5442,13 +6037,13 @@
     };
   }
   // Reads from the cube, for the live page: the rectangle's measures, the
-  // view's tile, the lens's tile, the POC lines and the continuations' history.
-  // One goes at a time, in that order of need, and each kind asks only for
-  // what the page needs now, so a view that moved on is read once it settles.
-  // A read for a pack the page has since replaced is dropped. One the cube
-  // refuses as changed waits for the page to take the cube's new data; one
-  // that fails is not asked again until new data arrives.
-  const CUBE_KINDS = ["measure", "tile", "lens", "lines", "history"],
+  // view's tile, the lens's tile, the rows Efficiency counts, the POC lines and
+  // the continuations' history. One goes at a time, in that order of need, and
+  // each kind asks only for what the page needs now, so a view that moved on
+  // is read once it settles. A read for a pack the page has since replaced is
+  // dropped. One the cube refuses as changed waits for the page to take the
+  // cube's new data; one that fails is not asked again until new data arrives.
+  const CUBE_KINDS = ["measure", "tile", "lens", "touched", "lines", "history"],
     cube = { busy: null, stale: false, timer: 0, failed: new Map() };
   function scheduleCube() {
     if (!PACK.live || !ready) return;
@@ -5457,7 +6052,14 @@
     scheduleMotion();
   }
   function cubeWant() {
-    const wants = { measure: measureWant, tile: tileWant, lens: lensWant, lines: linesWant, history: historyWant };
+    const wants = {
+      measure: measureWant,
+      tile: tileWant,
+      lens: lensWant,
+      touched: touchedWant,
+      lines: linesWant,
+      history: historyWant,
+    };
     for (const kind of CUBE_KINDS) {
       const want = wants[kind]();
       if (want && !cube.failed.has(want.key)) return { kind, ...want };
@@ -5538,10 +6140,14 @@
   // tiles it. They end at the pack's last complete base column, a block's
   // `end`: the open column is measured once it completes.
   const MOVEMENT = ["path", "dwell"],
+    // The pane's choices that read path and dwell.
+    PANE_MOTION = ["choppiness", "perpath"],
     movementMode = () => MOVEMENT.includes(S.mode),
-    movementOn = () => Boolean(PACK.live) && (movementMode() || S.time),
+    movementOn = () => Boolean(PACK.live) && (movementMode() || S.time || PANE_MOTION.includes(S.pane)),
     // The encodings this page can show: path and dwell need the live cube.
-    modes = () => (PACK.live ? MODES : MODES.filter((k) => !MOVEMENT.includes(k)));
+    modes = () => (PACK.live ? MODES : MODES.filter((k) => !MOVEMENT.includes(k))),
+    // The pane's choices this page can show: choppiness and volume per path too.
+    panes = () => (PACK.live ? PANES : PANES.filter((k) => !PANE_MOTION.includes(k)));
   const motion = {
     sources: {}, // tier or tile id -> its cells with path and dwell
     view: null, // the reference tier with the recent tier's later columns
@@ -6383,6 +6989,7 @@
             ...view,
             follow: followMode(),
             mode: S.mode,
+            pane: S.pane,
             poc: S.poc,
             area: S.area,
             untested: S.untested,
@@ -6470,6 +7077,7 @@
         lead: S.tB - CUT,
         auto: S.auto,
         mode: S.mode,
+        pane: S.pane,
         ...summary(),
       },
       i = views.list.findIndex((x) => x.name === name);
@@ -6546,6 +7154,7 @@
       // A view saved in a retired encoding (Density) opens as Volume and
       // names none.
       ...(x.mode !== "volume" && MODE_NAMES[x.mode] ? [MODE_NAMES[x.mode]] : []),
+      ...(x.pane && x.pane !== "cells" && PANE_INFO[x.pane] ? [`${PANE_INFO[x.pane].name} columns`] : []),
     ].join(" · ");
   }
   function renderViews() {
@@ -6804,16 +7413,21 @@
               delta: 2 * z.bv - z.v,
             });
           const sorted = amountScale(q);
+          if (S.mode === "cascade") q.cascade = lensCascade(src, n, m, lensBounds);
           localLegend =
             S.mode === "delta"
               ? `Δ −${compact(deltaMax)} · 0 · +${compact(deltaMax)} USDT`
               : S.mode === "flow" || S.mode === "flowtrades"
                 ? "Taker buys 25% · 50% · 75%"
-                : S.mode === "geometry"
-                  ? "Occupied cells"
-                  : sorted.length
-                    ? `${compact(d3.quantileSorted(sorted, 0.05))} → ${compact(d3.quantileSorted(sorted, 0.95))} ${AMOUNT_UNITS[S.mode]}`
-                    : "";
+                : S.mode === "cascade"
+                  ? q.cascade.parent
+                    ? "−2 · 0 · +2 vs an even share"
+                    : "No coarser level to compare with"
+                  : S.mode === "geometry"
+                    ? "Occupied cells"
+                    : sorted.length
+                      ? `${compact(d3.quantileSorted(sorted, 0.05))} → ${compact(d3.quantileSorted(sorted, 0.95))} ${AMOUNT_UNITS[S.mode]}`
+                      : "";
           for (const z of q.cells) {
             const xa = G.X(z.c * ts),
               xb = G.X(Math.min((z.c + 1) * ts, b)),
@@ -6889,6 +7503,28 @@
       [sub, colors.muted],
       ...(localLegend ? [[localLegend, colors.muted]] : []),
     ]);
+  }
+  // The lens under Cascade: its finer cells and their parents, summed over the
+  // lens widened to whole parents, so each cell it shows has its whole parent.
+  function lensCascade(src, n, m, lensBounds) {
+    const [start, stop] = sourceRange(src),
+      cut = activeCutoff();
+    if (n >= N_MAX || m >= M_MAX)
+      return cascadeContext({ n, m, map: new Map(), cols: [] }, null, start, Math.min(stop, cut), cut);
+    const pt = 2 ** (n + 1),
+      pp = 2 ** (m + 1),
+      wide = [
+        Math.floor(lensBounds[0] / pt) * pt,
+        Math.ceil(lensBounds[1] / pt) * pt,
+        Math.floor(lensBounds[2] / pp) * pp,
+        Math.ceil(lensBounds[3] / pp) * pp,
+      ],
+      cells = aggregate(src, n, m, wide),
+      parent = aggregate(src, n + 1, m + 1, wide),
+      c = cells.cascade;
+    if (!(c && c.parent === parent && c.start === start && c.end === Math.min(stop, cut) && c.cut === cut))
+      cells.cascade = cascadeContext(cells, parent, start, Math.min(stop, cut), cut);
+    return cells.cascade;
   }
   // The lens under Path or Dwell: its finer cells' path and dwell, shaded
   // against each other, from the motion of the block it draws from; its
@@ -7370,6 +8006,10 @@
         const list = modes(),
           i = list.indexOf(S.mode) + (shift ? -1 : 1);
         setMode(list[(i + list.length) % list.length]);
+      } else if (k === "b") {
+        const list = panes(),
+          i = list.indexOf(S.pane) + (shift ? -1 : 1);
+        setPane(list[(i + list.length) % list.length]);
       } else if (k === "p" && shift) {
         S.poc = !S.poc;
         update();
@@ -7444,6 +8084,12 @@
   function setMode(mode) {
     if (!modes().includes(mode)) return;
     S.mode = mode;
+    update();
+    save();
+  }
+  function setPane(pane) {
+    if (!panes().includes(pane)) return;
+    S.pane = pane;
     update();
     save();
   }
@@ -7705,6 +8351,7 @@
       motion.view = null;
       motion.measured.clear();
       histories.clear();
+      touches.clear();
       lineResults.clear();
       lineLatest.clear();
       lineParts.clear();

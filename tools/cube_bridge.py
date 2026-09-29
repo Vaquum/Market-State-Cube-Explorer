@@ -28,6 +28,10 @@ Routes, all behind HTTP Basic Auth except ``/healthz``:
 - ``/cube/tile?n&m&b0&b1&pack``: the same without price bounds or summary.
 - ``/cube/columns?n&m&pack``: each column's POC, volume and taker-buy volume at level (n, m),
   for up to the last 100,000 complete columns: the history the continuations compare.
+- ``/cube/touched?n&b0&b1&pack``: each column's USDT and the 125 USDT rows its trades touched,
+  at level n and at level n + 1, over base columns [b0, b1) on whole parent columns: from a
+  ``/cube/query`` at m = 0, counts and sums only. Efficiency, the pane's measure, reads them
+  only while it shows, where no loaded tier at 125 USDT rows holds a parent whole.
 - ``/cube/motion?tier&pack[&from]``: one tier of pack ``pack`` again, with how the price moved
   inside each cell (MSC3), up to the pack's last complete base column: the whole tier, or with
   ``from`` (a base edge) its columns from the one holding that edge on, for a page that holds
@@ -92,6 +96,7 @@ FIELDS = ("vol", "tbvol", "cnt", "tbcnt", "col", "row")  # MSC2 order
 MOTION_FIELDS = ("vol", "tbvol", "cnt", "tbcnt", "path", "dwell", "high", "low", "col", "row")  # MSC3 order
 MOTION_MEASURES = ("path_length", "dwell", "high", "low")
 MOTION_HELD = 8
+TOUCHES_HELD = 32
 # How far two reads of the same cells' volume may differ: the last bits of a float sum.
 VOLUME_ROUNDING = 1e-12
 MAX_COLUMNS = 4096
@@ -298,6 +303,26 @@ def merge(cells: dict, extra: dict, n: int, m: int) -> dict:
     return {k: out[k] for k in FIELDS}
 
 
+def rows_touched(col: Any, row: Any, vol: Any) -> dict:
+    """Each column's USDT and how many rows its trades touched, from cells at 125 USDT rows:
+    the rows its cells hold. Given parent columns (``col >> 1``), the rows across both a
+    parent's columns, each counted once."""
+    import numpy as np
+
+    if not len(col):
+        return {"col": [], "rows": [], "volume": []}
+    key = (col.astype(np.uint64) << np.uint64(32)) | row.astype(np.uint64)
+    order = np.argsort(key, kind="stable")
+    key, col, vol = key[order], col[order], vol[order]
+    distinct = np.r_[True, key[1:] != key[:-1]]
+    starts = np.flatnonzero(np.r_[True, col[1:] != col[:-1]])
+    return {
+        "col": col[starts].tolist(),
+        "rows": np.add.reduceat(distinct.astype(np.int64), starts).tolist(),
+        "volume": [math.fsum(part) for part in np.split(vol, starts[1:])],
+    }
+
+
 def columns(cells: dict) -> dict:
     """Each column of the cells: its volume, taker-buy volume and POC row (the lower row on a
     tie), as columnar arrays."""
@@ -417,6 +442,7 @@ class Explorer:
         self.stale = False  # a read found the current pack behind the cube: rebuild it now
         self.held: dict[str, dict] = {}  # pack token -> the pins that pack read, its tiers, its cutoff
         self.motions: dict[tuple, dict] = {}  # (token, tier, first column's base edge) -> motion answer
+        self.touches: dict[tuple, dict] = {}  # (token, n, b0, b1) -> rows touched
         self.motion_building = threading.Lock()  # one motion tier read at a time; others then share it
         self.packed_at = 0.0
         # When the cube's data cutoff last moved, on this server's clock. The first pack
@@ -513,13 +539,13 @@ class Explorer:
                     self.stale = True
             raise CubeChanged(f"{len(changed)} partition(s) differ from the page's pack, first {changed[0]}")
 
-    def measure(self, spec: dict, token: str) -> dict:
-        """The cube's cells and summary for one rectangle, for the page holding pack ``token``.
-
-        The rectangle is read from the cube up to the last complete base column before the
-        pack's cutoff; the open column, when the rectangle reaches it, is the pack's own, so
-        the answer is the state the page holds even after the cube has moved on.
-        """
+    def rectangle_cells(self, spec: dict, token: str) -> tuple[dict, dict, dict | None, dict | None, bool, tuple | None]:
+        """One rectangle's level-(n, m) cells for the page holding pack ``token``: read from the
+        cube up to the last complete base column before the pack's cutoff, and the open column,
+        when the rectangle reaches it, from the pack's own, so they are the state the page holds
+        even after the cube has moved on. With the pack held, the cube's response and summary
+        of the part it read, whether the rectangle reaches the open column, and the open
+        column's rows."""
         n, m, b0, b1, r0, r1 = (spec[key] for key in ("n", "m", "b0", "b1", "r0", "r1"))
         held = self.holding(token)
         cutoff = held["cutoff"]
@@ -532,13 +558,11 @@ class Explorer:
             response, cells, summary, pins = read(n, m, b0, stop, r0, r1)
             self.check(pins, held, token)
         opened = b1 > closed and top > closed
-        if not opened and summary is not None:
-            answer = cube_summary(summary, response, n, m)
-        else:
+        extent = None
+        if opened or summary is None:
             if cells is None:
                 cells = {key: held["tiers"]["recent"]["cells"][key][:0] for key in FIELDS}
             extra = {key: value[:0] for key, value in cells.items()}
-            extent = None
             if opened:
                 recent = held["tiers"]["recent"]["cells"]
                 keep = recent["col"] == closed
@@ -548,6 +572,18 @@ class Explorer:
                 if len(extra["row"]):
                     extent = (int(extra["row"].min()), int(extra["row"].max()) + 1)
             cells = merge(cells, extra, n, m)
+        return cells, held, response, summary, opened, extent
+
+    def measure(self, spec: dict, token: str) -> dict:
+        """The cube's cells and summary for one rectangle, for the page holding pack ``token``
+        (rectangle_cells)."""
+        n, m, b0, b1, r0, r1 = (spec[key] for key in ("n", "m", "b0", "b1", "r0", "r1"))
+        cells, held, response, summary, opened, extent = self.rectangle_cells(spec, token)
+        cutoff = held["cutoff"]
+        top = math.ceil(cutoff)
+        if not opened and summary is not None:
+            answer = cube_summary(summary, response, n, m)
+        else:
             answer = merged_summary(cells, n, m, b0, top if opened else b1, r0, r1, summary, extent, cutoff)
         end = min(float(top if opened else b1), cutoff)
         state = held["state"]
@@ -556,6 +592,28 @@ class Explorer:
             state_token=state["state_token"],
         )
         return {"cutoff": state["cutoff"], "block": block(n, m, float(b0), end, cells), "summary": answer}
+
+    def touched(self, n: int, b0: int, b1: int, token: str) -> dict:
+        """Each column's USDT and the 125 USDT rows its trades touched, at level n and one level
+        up, over base columns [b0, b1), for the page holding pack ``token``: from the cube's cells
+        at (n, 0), the rows of a column its cells, and a parent's the rows across both its
+        columns. Kept per pack and span, as a page asks each chunk once."""
+        key = (token, n, b0, b1)
+        with self.lock:
+            hit = self.touches.get(key)
+        if hit is not None:
+            return hit
+        cells, held, *_ = self.rectangle_cells({"n": n, "m": 0, "b0": b0, "b1": b1, "r0": None, "r1": None}, token)
+        answer = {
+            "n": n, "b0": b0, "b1": b1, "cutoff": held["state"]["cutoff"],
+            "columns": rows_touched(cells["col"], cells["row"], cells["vol"]),
+            "parents": rows_touched(cells["col"] >> 1, cells["row"], cells["vol"]),
+        }
+        with self.lock:
+            self.touches[key] = answer
+            while len(self.touches) > TOUCHES_HELD:
+                del self.touches[next(iter(self.touches))]
+        return answer
 
     def history(self, n: int, m: int, token: str) -> dict:
         """Each complete column's POC row, volume and taker-buy volume at level (n, m), for up
@@ -783,6 +841,16 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/cube/columns":
                 n, m = level(args)
                 self.json(self.explorer.history(n, m, args.get("pack", [""])[0]))
+            elif url.path == "/cube/touched":
+                n, b0, b1 = integer(args, "n"), integer(args, "b0"), integer(args, "b1")
+                if not 0 <= n < MAX_TIME_EXPONENT:
+                    raise ValueError(f"n must be 0..{MAX_TIME_EXPONENT - 1}")
+                span = 2 ** (n + 1)
+                if not (0 <= b0 < b1 and b0 % span == 0 and b1 % span == 0):
+                    raise ValueError("b0 and b1 must be the edges of whole parent columns, b0 < b1")
+                if (b1 - b0) // 2**n > MAX_COLUMNS:
+                    raise ValueError(f"more than {MAX_COLUMNS} columns")
+                self.json(self.explorer.touched(n, b0, b1, args.get("pack", [""])[0]))
             elif (asset := self.explorer.vendor_file(url.path)) is not None:
                 self.reply(200, VENDOR_TYPES.get(asset.suffix, "application/octet-stream"), asset.read_bytes())
             else:

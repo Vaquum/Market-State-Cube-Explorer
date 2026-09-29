@@ -1684,9 +1684,10 @@
 #origo-lens .ol-keys-note:last-child {
   margin: var(--sp-4) 0 0;
 }
+/* Two columns where they fit; on a narrow phone one, no wider than the dialog. */
 #origo-lens .ol-keys-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: var(--sp-4) var(--sp-6);
 }
 #origo-lens .ol-keys h3 {
@@ -1698,8 +1699,11 @@
 #origo-lens .ol-keys dl {
   margin: 0;
 }
+/* The name and the keys split the row's spare width evenly, neither taking more
+   than it needs: the shorter keeps one line, the longer wraps in its column. */
 #origo-lens .ol-keys dl > div {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--sp-3);
@@ -1711,6 +1715,9 @@
   font-size: var(--fs-s);
   color: var(--ol-muted);
   text-align: right;
+}
+/* The keys may wrap; a key cap never does. */
+#origo-lens .ol-keys kbd {
   white-space: nowrap;
 }
 #origo-lens kbd {

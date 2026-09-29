@@ -621,6 +621,19 @@
   border-radius: 2px;
   background: var(--line, var(--ol-muted));
 }
+/* The level line's: dashed, in the text colour, as on the chart. */
+#origo-lens .ol-level-swatch {
+  height: 0;
+  border-radius: 0;
+  background: none;
+  border-top: 1.5px dashed var(--ol-ink);
+}
+/* The tooltip passes the pointer through, all but its one control: the level
+   line's, which a tap on touch shows in the row section. */
+#origo-lens .ol-tip .ol-tip-action {
+  pointer-events: auto;
+  margin-top: var(--sp-2);
+}
 #origo-lens .ol-line-name {
   flex: 1;
   min-width: 0;

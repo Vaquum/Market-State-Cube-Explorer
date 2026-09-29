@@ -90,6 +90,8 @@
       // The row underlay behind the cells (Rows, U), over a period of its own.
       rows: "off",
       period: "90d",
+      // The level line (X): one price, in base rows, or none.
+      level: null,
       // POC lines: the periods and days chosen, in list order.
       lines: [],
       tab: "context",
@@ -1774,6 +1776,7 @@
     if (S.pane !== "cells") add("pane", S.pane);
     if (S.rows !== "off") add("rows", S.rows);
     if (S.period !== "90d") add("period", S.period);
+    if (S.level !== null) add("level", usd(S.level));
     const marks = ["poc", "area", "untested"].filter((k) => S[k]).join(",");
     if (marks !== "poc") add("marks", marks || "none");
     if (S.lines.length) add("lines", S.lines.join(","));
@@ -1827,6 +1830,7 @@
       pane: q.get("pane") || "cells",
       rows: q.get("rows") || "off",
       period: q.get("period") || "90d",
+      level: q.has("level") ? rows(q.get("level")) : null,
       poc: marks.includes("poc"),
       area: marks.includes("area"),
       untested: marks.includes("untested"),
@@ -1881,6 +1885,7 @@
       // Time at price needs the live cube.
       rows: rowsChoices().includes(v.rows) ? v.rows : "off",
       period: validPeriod(v.period) ? v.period : "90d",
+      level: Number.isFinite(v.level) && v.level > 0 ? v.level : null,
       poc: v.poc !== false,
       area: v.area === true,
       untested: v.untested === true,
@@ -1923,6 +1928,7 @@
       "pane",
       "rows",
       "period",
+      "level",
       "poc",
       "area",
       "untested",
@@ -2047,6 +2053,7 @@
         if (panes().includes(v.pane)) S.pane = v.pane;
         if (rowsChoices().includes(v.rows)) S.rows = v.rows;
         if (validPeriod(v.period)) S.period = v.period;
+        if (v.level === null || (Number.isFinite(v.level) && v.level > 0)) S.level = v.level;
         for (const k of ["poc", "area", "untested", "replay"])
           if (typeof v[k] === "boolean") S[k] = v[k];
         if (Array.isArray(v.lines)) S.lines = normalizeLines(v.lines);
@@ -2735,6 +2742,21 @@
     }
     return out;
   }
+  // On touch, where X can't be pressed, the tooltip's row section places the
+  // level line on its row, or clears it.
+  function levelButton(r) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ol-action ol-s ol-tip-action cursor-interaction";
+    b.dataset.keys = "X";
+    b.dataset.hint = "A dashed line at this row's price, kept through zooms; or X over a row";
+    b.textContent = S.level === null ? `Level line at ${price((r + 0.5) * stepP() * PR)}` : "Clear the level line";
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleLevel(S.level === null ? r : null);
+    });
+    return b;
+  }
   // Over the profile: whether the row is the period's POC, or in its 70% area.
   function underlayMarks(r) {
     const vb = last.under?.volBands;
@@ -2884,6 +2906,8 @@
         );
       syncRowHover(z ? c + "," + r : null);
     }
+    // After a tap, the row section's control for the level line.
+    if (nav.touchTip && !onLine && (inPlot(p) || onProfile(p))) tip.append(levelButton(Math.floor(p.p / ps)));
     tip.hidden = false;
     // Beside the pointer, right of it where it fits, and inside the panes, so it
     // never covers the cell under the pointer or the axis readouts.
@@ -3024,6 +3048,7 @@
                 untested: S.untested,
                 rows: S.rows,
                 period: S.period,
+                level: S.level,
                 lines: S.lines,
                 tab: S.tab,
                 replay: S.replay,
@@ -4357,6 +4382,12 @@
       );
     }
     ctx.globalAlpha = 1;
+    if (S.level !== null) {
+      const y = Math.round(G.Y(S.level)) + 0.5;
+      ctx.setLineDash([6, 4]);
+      line(px, y, px + pw + 3, y, colors.ink, 1.3, 0.9);
+      ctx.setLineDash([]);
+    }
     const hr = pointerRow();
     if (hr !== null) {
       const ya = G.Y((hr + 1) * ps),
@@ -5087,7 +5118,7 @@
     const shown = S.lines
       .map((key) => ({ key, r: lineShown(key), colour: lineColour(key) }))
       .filter((l) => l.r.state === "ready" && l.r.row !== null);
-    if (!shown.length) return;
+    if (!shown.length && S.level === null) return;
     const right = G.x + G.w;
     ctx.save();
     ctx.beginPath();
@@ -5114,8 +5145,29 @@
       }
       lineHits.push({ key: l.key, y, xa, xb: right, r: l.r, colour: l.colour });
     }
+    // The level line: dashed across the prices in the neutral text colour, on
+    // a halo, unlike the POC lines, which are coloured and solid over their period.
+    if (S.level !== null) {
+      const y = Math.round(G.Y(S.level)) + 0.5;
+      ctx.setLineDash([6, 4]);
+      line(G.x, y, right, y, colors.surface, 4, 0.8);
+      line(G.x, y, right, y, colors.ink, hover?.line === "level" ? 2 : 1.3, 0.9);
+      ctx.setLineDash([]);
+      lineHits.push({ key: "level", y, xa: G.x, xb: right, colour: colors.ink });
+    }
     ctx.restore();
-    drawLineTags(shown);
+    drawLineTags([
+      ...shown.map((l) => ({
+        key: l.key,
+        colour: l.colour,
+        at: (l.r.row + 0.5) * l.r.rowPrice,
+        name: lineTag(l.key),
+        value: (l.r.exact ? "" : "≈ ") + price((l.r.row + 0.5) * l.r.rowPrice * PR),
+      })),
+      ...(S.level === null
+        ? []
+        : [{ key: "level", colour: colors.ink, at: S.level, name: "Level", value: price(S.level * PR) }]),
+    ]);
   }
   // Tags at the plot's right edge, one per line, level with it or pushed apart
   // just enough to read, with a leader back to the line; a line above or below
@@ -5137,10 +5189,10 @@
       ),
       tags = shown
         .map((l) => {
-          const y = G.Y((l.r.row + 0.5) * l.r.rowPrice),
+          const y = G.Y(l.at),
             off = y < G.y ? -1 : y > G.y + G.h ? 1 : 0,
-            name = lineTag(l.key) + (off < 0 ? " ↑" : off > 0 ? " ↓" : ""),
-            value = (l.r.exact ? "" : "≈ ") + price((l.r.row + 0.5) * l.r.rowPrice * PR);
+            name = l.name + (off < 0 ? " ↑" : off > 0 ? " ↓" : ""),
+            value = l.value;
           ctx.font = `500 ${TYPE.s}px ${FONT}`;
           const nameW = Math.ceil(ctx.measureText(name).width) + 2 * pad;
           ctx.font = `${TYPE.s}px ${FONT}`;
@@ -5201,6 +5253,11 @@
     );
   }
   function lineTip(tip, h) {
+    if (h.key === "level") {
+      tipRows(tip, "Level line", `${price(S.level * PR)} USDT`, [], nav.touchTip ? "" : "X clears it");
+      if (nav.touchTip) tip.append(levelButton(Math.floor(S.level / stepP())));
+      return;
+    }
     const r = h.r,
       rowTop = (r.row + 1) * r.rowPrice * PR,
       rowBottom = r.row * r.rowPrice * PR,
@@ -5294,7 +5351,41 @@
       if (value.textContent !== text) value.textContent = text;
       if (value.title !== why) value.title = why;
     }
-    el("lines-clear").disabled = !S.lines.length;
+    const level = el("lines-level"),
+      levelKey = S.level === null ? "" : String(S.level);
+    if (level.dataset.level !== levelKey) {
+      level.dataset.level = levelKey;
+      if (S.level === null) {
+        const none = document.createElement("div");
+        none.className = "ol-lines-note";
+        none.textContent = "None: X over a price row places one.";
+        level.replaceChildren(none);
+      } else {
+        const row = document.createElement("div"),
+          swatch = document.createElement("i"),
+          name = document.createElement("span"),
+          value = document.createElement("span"),
+          remove = document.createElement("button");
+        row.className = "ol-line-row";
+        swatch.className = "ol-line-swatch ol-level-swatch";
+        swatch.setAttribute("aria-hidden", "true");
+        name.className = "ol-line-name";
+        name.textContent = "Level";
+        value.className = "ol-line-value ol-num";
+        value.textContent = price(S.level * PR);
+        remove.type = "button";
+        remove.className = "ol-icon-button ol-s cursor-interaction";
+        remove.dataset.levelRemove = "1";
+        remove.dataset.keys = "X";
+        remove.dataset.hint = "";
+        remove.setAttribute("aria-label", `Remove the level line at ${price(S.level * PR)}`);
+        remove.innerHTML =
+          '<svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>';
+        row.append(swatch, name, value, remove);
+        level.replaceChildren(row);
+      }
+    }
+    el("lines-clear").disabled = !S.lines.length && S.level === null;
     el("lines-days-head").textContent = days.length ? "Since a day" : "Since a day · none yet";
     const last = date(Math.max(0, activeCutoff() - 1e-6)).toISOString().slice(0, 10);
     el("lines-date").min = "2021-01-01";
@@ -5316,9 +5407,9 @@
     }
     const count = S.lines.length ? String(S.lines.length) : "";
     if (el("lines-count").textContent !== count) el("lines-count").textContent = count;
-    const label = S.lines.length
-      ? `POC lines: ${S.lines.map(lineName).join(", ")}`
-      : "POC lines: none";
+    const label =
+      (S.lines.length ? `POC lines: ${S.lines.map(lineName).join(", ")}` : "POC lines: none") +
+      (S.level === null ? "" : `; level line at ${price(S.level * PR)}`);
     if (el("lines").getAttribute("aria-label") !== label) el("lines").setAttribute("aria-label", label);
   }
   function linesStatus(text) {
@@ -5375,7 +5466,14 @@
       e.preventDefault();
       closePop(true);
     });
+    el("lines-level").addEventListener("click", (e) => {
+      if (!e.target.closest("[data-level-remove]")) return;
+      toggleLevel();
+      linesStatus("Level line removed");
+      el("lines-date").focus();
+    });
     el("lines-clear").addEventListener("click", () => {
+      S.level = null;
       setLines([]);
       linesStatus("Every line is off");
       root.querySelector("#ol-lines-list input")?.focus();
@@ -6317,6 +6415,8 @@
     alt: false,
     shift: false,
     hold: false,
+    // The tooltip a tap on touch opened, which holds the level line's control.
+    touchTip: false,
     holdTimer: 0,
     zoomTimer: 0,
     zoomTime: false,
@@ -7531,6 +7631,7 @@
             untested: S.untested,
             rows: S.rows,
             period: S.period,
+            level: S.level,
             lines: S.lines,
             tab: S.tab,
             evidenceKind: S.evidenceKind,
@@ -8166,6 +8267,7 @@
       nav.last = p;
       nav.alt = e.altKey;
       el("tip").hidden = true;
+      nav.touchTip = false;
       if (nav.pointers.size === 2) {
         clearTimeout(nav.holdTimer);
         nav.hold = false;
@@ -8207,6 +8309,7 @@
       if (!ready) return;
       const p = at(e);
       nav.last = p;
+      if (e.pointerType !== "touch") nav.touchTip = false;
       nav.alt = e.altKey;
       setCursor(p);
       if (nav.pointers.has(e.pointerId)) nav.pointers.set(e.pointerId, p);
@@ -8345,8 +8448,25 @@
       )
         S.selection = null;
       settleNavigation(label, false);
+      // A tap on touch shows the tooltip where it landed: its row section holds
+      // the level line's control, as X over a row does with a pointer.
+      if (e.pointerType === "touch" && click && inPlot(p)) {
+        nav.touchTip = true;
+        tooltip(p);
+      }
     };
     canvas.addEventListener("pointerup", finish);
+    // A tapped tooltip closes at the next touch anywhere but on it.
+    document.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (!nav.touchTip || el("tip").contains(e.target)) return;
+        nav.touchTip = false;
+        el("tip").hidden = true;
+        requestDraw();
+      },
+      true,
+    );
     canvas.addEventListener("pointercancel", (e) => {
       // A cancelled pinch or price scale has already moved the view: it ends as
       // a lifted one.
@@ -8357,7 +8477,9 @@
       drag = null;
       requestDraw();
     });
-    canvas.addEventListener("pointerleave", () => {
+    canvas.addEventListener("pointerleave", (e) => {
+      // A finger lifted leaves the canvas: the tooltip its tap opened stays.
+      if (e.pointerType === "touch" && nav.touchTip) return;
       if (!drag && !nav.pinch) {
         hover = null;
         nav.last = null;
@@ -8452,7 +8574,9 @@
         e.isComposing ||
         e.metaKey ||
         (e.ctrlKey && !typed) ||
-        target?.closest(TEXT_FIELDS)
+        target?.closest(TEXT_FIELDS) ||
+        // A radio group's arrows choose within it (the Rows period's).
+        (e.key.startsWith("Arrow") && target?.matches('input[type="radio"]'))
       )
         return;
       if (e.key === "Alt") {
@@ -8556,7 +8680,8 @@
         const list = rowsChoices(),
           i = list.indexOf(S.rows) + (shift ? -1 : 1);
         setRows(list[(i + list.length) % list.length]);
-      } else if (k === "p" && shift) {
+      } else if (k === "x") toggleLevel();
+      else if (k === "p" && shift) {
         S.poc = !S.poc;
         update();
         save();
@@ -8650,6 +8775,21 @@
     S.period = key;
     update();
     save();
+  }
+  // The level line (X): one dashed line on a price row's centre, kept as its
+  // price, so it stays put through zooms and resolution changes. With no line,
+  // X places it on the row under the pointer (or, with none over the prices,
+  // the view's middle row); with one, X clears it wherever the pointer is.
+  function toggleLevel(row = null) {
+    if (S.level !== null) S.level = null;
+    else {
+      const ps = stepP(),
+        p = nav.last && (inPlot(nav.last) || onProfile(nav.last)) ? nav.last.p : (S.pA + S.pB) / 2;
+      S.level = ((row ?? Math.floor(p / ps)) + 0.5) * ps;
+    }
+    update();
+    save();
+    if (hover && !el("tip").hidden) tooltip(hover);
   }
   function toggleAuto() {
     S.auto = !S.auto;

@@ -41,6 +41,12 @@ Routes, all behind HTTP Basic Auth except ``/healthz``:
   Every answer with motion names where its measures end (``end``, a base position, and
   ``through``): the open column is measured once it completes, and while the cube is still
   measuring its history the measures end where the cube's do.
+- ``/cube/bars?n&b0&b1&pack``: bars at a grid timeframe (n = 2, 4, 6, 8 or 9: 3.75 minutes,
+  15 minutes, 1 hour, 4 hours or 8 hours) over base columns [b0, b1), b0 on a bar's edge: each
+  column's open, high, low and close, its USDT, taker-buy USDT and BTC volume, and its trades
+  (MSCB), from the cube's measures at rows that hold every price, so each column is one cell.
+  Like motion, they end at the pack's last complete base column or where the cube's measures
+  end, and say where (``end``, ``through``). Kept per pack and span.
 - ``/vendor/<file>``: the vendored scripts, flat file names only.
 
 Every ``/cube/`` route takes ``proto=2``, the page's protocol. A page loaded before it names
@@ -57,9 +63,13 @@ MSCC: the same header, then column u32, POC row u32, volume f32, taker-buy volum
 MSC3: MSC2 with four more f64 arrays after the trade counts: path length (USDT), dwell (seconds),
 high and low (the cell's highest and lowest trade price; NaN in a cell without trades). It holds
 the cells the price moved through or held in without trading as well: trades 0.
+MSCB: the same header (m the bars' price level, 20), then f64 arrays open, high, low, close,
+volume, taker-buy volume, BTC volume and trades, then column u32: one bar per column with
+trades, in time order. A column without trades has no bar.
 
-Reads with motion ask the cube for path length, dwell, high and low (PRD-0023). They take the
-cube service's second query slot, so a tile never waits behind one.
+Reads with motion ask the cube for path length, dwell, high and low (PRD-0023), and bars for
+open, high, low, close and base volume. They take the cube service's second query slot, so a
+tile never waits behind one.
 """
 
 from __future__ import annotations
@@ -97,6 +107,16 @@ MOTION_FIELDS = ("vol", "tbvol", "cnt", "tbcnt", "path", "dwell", "high", "low",
 MOTION_MEASURES = ("path_length", "dwell", "high", "low")
 MOTION_HELD = 8
 TOUCHES_HELD = 32
+# Bars: the grid timeframes (3.75 minutes, 15 minutes, 1, 4 and 8 hours), read at rows of
+# 125 × 2**20 USDT, one row holding every price, so each column is one cell.
+BAR_LEVELS = (2, 4, 6, 8, 9)
+BAR_PRICE_EXPONENT = 20
+BAR_MEASURES = ("base_volume", "high", "low", "open", "close")
+BAR_FIELDS = (
+    ("open", "open"), ("high", "high"), ("low", "low"), ("close", "close"), ("vol", "volume"),
+    ("tbvol", "taker_buy_volume"), ("btc", "base_volume"), ("cnt", "trade_count"),
+)  # MSCB order, before the column
+BARS_HELD = 64
 # How far two reads of the same cells' volume may differ: the last bits of a float sum.
 VOLUME_ROUNDING = 1e-12
 MAX_COLUMNS = 4096
@@ -150,18 +170,18 @@ class CubeChanged(Exception):
 
 
 def cube_query(
-    t1: str, t2: str | None, p1: int | None, p2: int | None, tR: float, pR: int, motion: bool = False,
+    t1: str, t2: str | None, p1: int | None, p2: int | None, tR: float, pR: int,
+    measures: tuple[str, ...] | None = None,
 ) -> tuple[dict, Any, dict]:
     """One cube query and its two files, read through the supported reader.
 
-    Queries go one at a time in each slot; a busy service is asked again for up to
-    BUSY_WAIT_SECONDS.
+    Queries go one at a time in each slot, those with measures in the second; a busy service
+    is asked again for up to BUSY_WAIT_SECONDS.
     """
     deadline = time.monotonic() + BUSY_WAIT_SECONDS
-    measures = MOTION_MEASURES if motion else None
     while True:
         try:
-            with MOTION_SLOT if motion else CUBE_SLOT:
+            with MOTION_SLOT if measures else CUBE_SLOT:
                 result = query(t1=t1, t2=t2, p1=p1, p2=p2, tR=tR, pR=pR, measures=measures, url=CUBE_URL)
             break
         except MarketStateError as error:
@@ -215,7 +235,7 @@ def read(
         p2=None if r1 is None else r1 * BASE_PRICE,
         tR=BASE_SECONDS * 2**n,
         pR=BASE_PRICE * 2**m,
-        motion=motion,
+        measures=MOTION_MEASURES if motion else None,
     )
     meta = json.loads(table.schema.metadata[b"origo.market_state"])
     grid = meta["grid"]
@@ -230,11 +250,50 @@ def read(
     return response, cells, summary, {pin[0]: list(pin[2:]) for pin in meta["pins"]}
 
 
+def bar_read(n: int, b0: int, b1: int) -> tuple[dict, dict, dict]:
+    """The cube's bars at level n over base columns [b0, b1): each column with trades as one
+    cell of rows that hold every price, with its open, high, low, close and BTC volume. With
+    the cube's response and the pins it read."""
+    import numpy as np
+
+    response, table, _ = cube_query(
+        t1=edge(b0), t2=edge(b1), p1=None, p2=None, tR=BASE_SECONDS * 2**n,
+        pR=BASE_PRICE * 2**BAR_PRICE_EXPONENT, measures=BAR_MEASURES,
+    )
+    meta = json.loads(table.schema.metadata[b"origo.market_state"])
+    grid = meta["grid"]
+    if (grid["time_exponent"], grid["price_exponent"]) != (n, BAR_PRICE_EXPONENT):
+        raise RuntimeError(f"Cube answered level {grid} for requested bars at n = {n}.")
+    col = table.column("time_index").to_numpy().astype(np.uint64)
+    order = np.argsort(col, kind="stable")
+    col = col[order]
+    # One row holds every price below 131 M USDT: a column with two cells has a price above it.
+    if col.size and (bool(np.any(col[1:] == col[:-1])) or int(col[-1]) >= 2**32):
+        raise RuntimeError("A bar's column holds prices in more than one row, or is beyond 32 bits.")
+    bars = {key: table.column(name).to_numpy(zero_copy_only=False)[order].astype("<f8") for key, name in BAR_FIELDS}
+    bars["col"] = col.astype("<u4")
+    return response, bars, {pin[0]: list(pin[2:]) for pin in meta["pins"]}
+
+
+def mscb(n: int, col0: int, col1: int, bars: dict) -> str:
+    """Bars as one MSCB payload, gzipped and base64-encoded."""
+    header = struct.pack("<4sBBHIII12x", b"MSCB", n, BAR_PRICE_EXPONENT, 0, col0, col1, len(bars["col"]))
+    payload = header + b"".join(bars[key].tobytes() for key, _ in BAR_FIELDS) + bars["col"].tobytes()
+    return base64.b64encode(gzip.compress(payload, compresslevel=6)).decode()
+
+
 def no_cells() -> dict:
     """No cells, as MSC3's arrays."""
     import numpy as np
 
     return {key: np.zeros(0, "<u4" if key in ("col", "row") else "<f8") for key in MOTION_FIELDS}
+
+
+def no_bars() -> dict:
+    """No bars, as MSCB's arrays."""
+    import numpy as np
+
+    return {**{key: np.zeros(0, "<f8") for key, _ in BAR_FIELDS}, "col": np.zeros(0, "<u4")}
 
 
 def msc2(n: int, m: int, col0: int, col1: int, cells: dict, first: int = 0, motion: bool = False) -> str:
@@ -443,6 +502,7 @@ class Explorer:
         self.held: dict[str, dict] = {}  # pack token -> the pins that pack read, its tiers, its cutoff
         self.motions: dict[tuple, dict] = {}  # (token, tier, first column's base edge) -> motion answer
         self.touches: dict[tuple, dict] = {}  # (token, n, b0, b1) -> rows touched
+        self.bar_answers: dict[tuple, dict] = {}  # (token, n, b0, b1) -> bars
         self.motion_building = threading.Lock()  # one motion tier read at a time; others then share it
         self.packed_at = 0.0
         # When the cube's data cutoff last moved, on this server's clock. The first pack
@@ -656,6 +716,49 @@ class Explorer:
         self.check(pins, held, token)
         return cells, response, summary, min(float(b1), base_units(response["data_cutoff"]))
 
+    def bars(self, n: int, b0: int, b1: int, token: str) -> dict:
+        """Bars at level n over base columns [b0, b1) for the page holding pack ``token``, up to
+        the pack's last complete base column, or where the cube's measures end: ``end``, a base
+        position. The bar holding it is partial when it isn't a bar's edge. Kept per pack and
+        span; the page asks again from its latest bar as the pack moves on."""
+        key = (token, n, b0, b1)
+        with self.lock:
+            hit = self.bar_answers.get(key)
+        if hit is not None:
+            return hit
+        held = self.holding(token)
+        cutoff = held["cutoff"]
+        if b1 > math.ceil(cutoff):
+            raise ValueError("b1 is after the pack's cutoff")
+        stop = min(b1, math.floor(cutoff))
+        bars, end = no_bars(), float(b0)
+        if b0 < stop:
+            try:
+                response, bars, pins = bar_read(n, b0, stop)
+            except MarketStateError as error:
+                # The cube hasn't measured this time yet: no bars, measured up to where it has.
+                if not (error.status == 409 and error.body.get("error") == "outside_coverage"):
+                    raise
+                end = min(float(b0), base_units(str(error.body["data_cutoff"])))
+            else:
+                self.check(pins, held, token)
+                end = min(float(stop), base_units(response["data_cutoff"]))
+        step = 2**n
+        col0, col1 = b0 // step, max(b0 // step, -(-math.ceil(end) // step))
+        answer = {
+            "n": n, "b0": b0, "b1": b1, "end": end, "through": edge(end), "state_token": token,
+            "cutoff": held["state"]["cutoff"], "canonical_through": held["state"]["canonical_through"],
+            "bars": {
+                "n": n, "col0": col0, "col1": col1, "count": len(bars["col"]), "layout": "MSCB",
+                "encoding": "gzip+base64", "gzip_base64": mscb(n, col0, col1, bars),
+            },
+        }
+        with self.lock:
+            self.bar_answers[key] = answer
+            while len(self.bar_answers) > BARS_HELD:
+                del self.bar_answers[next(iter(self.bar_answers))]
+        return answer
+
     def motion(self, tier_id: str, token: str, start: int | None) -> dict:
         """One tier of the page's pack with path, dwell, high and low (MSC3), up to the pack's
         last complete base column: the whole tier, or its columns from the one holding base
@@ -841,6 +944,16 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/cube/columns":
                 n, m = level(args)
                 self.json(self.explorer.history(n, m, args.get("pack", [""])[0]))
+            elif url.path == "/cube/bars":
+                n, b0, b1 = integer(args, "n"), integer(args, "b0"), integer(args, "b1")
+                if n not in BAR_LEVELS:
+                    raise ValueError("n must be 2, 4, 6, 8 or 9: bars of 3.75 minutes, 15 minutes, 1, 4 or 8 hours")
+                step = 2**n
+                if not (0 <= b0 < b1 and b0 % step == 0):
+                    raise ValueError("b0 must be a bar's edge and b1 after it")
+                if -(-b1 // step) - b0 // step > MAX_COLUMNS:
+                    raise ValueError(f"more than {MAX_COLUMNS} bars")
+                self.json(self.explorer.bars(n, b0, b1, args.get("pack", [""])[0]))
             elif url.path == "/cube/touched":
                 n, b0, b1 = integer(args, "n"), integer(args, "b0"), integer(args, "b1")
                 if not 0 <= n < MAX_TIME_EXPONENT:

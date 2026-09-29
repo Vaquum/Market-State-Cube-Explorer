@@ -9783,12 +9783,24 @@
     }
     return { state: "ready", points, end: r.end };
   }
+  // The span an anchored VWAP is drawn over: the chunks of bars the view is
+  // in, so a pan within them keeps its curve, up to the data's edge.
+  function anchoredSpan(n, cut = activeCutoff()) {
+    const span = BAR_CHUNK * 2 ** n;
+    return { from: Math.floor(Math.max(0, S.tA) / span) * span, to: Math.min(cut, Math.ceil(S.tB / span) * span) };
+  }
   // The bars the lines on read beyond the whole timeframes: the VWAPs', at the
-  // timeframe they are drawn at, over the view's days.
+  // timeframe they are drawn at, over the view's days and, for an anchored one,
+  // the span it is drawn over, the bar at the edge included.
   function viewBarNeeds() {
-    if (!PACK.live || !(S.lines.includes("svwap") || vwapAnchors().length)) return [];
+    const anchored = PACK.live && vwapAnchors().length > 0;
+    if (!PACK.live || !(S.lines.includes("svwap") || anchored)) return [];
     const n = vwapLevel();
-    return n === 9 ? [] : [[n, Math.floor(Math.max(0, S.tA) / DAYS) * DAYS, Math.min(Math.ceil(S.tB / DAYS) * DAYS, cutEdge())]];
+    if (n === 9) return [];
+    const edge = cutEdge(),
+      days = Math.min(Math.ceil(S.tB / DAYS) * DAYS, edge),
+      b = anchored ? Math.max(days, Math.min(edge, Math.ceil(anchoredSpan(n).to))) : days;
+    return [[n, Math.floor(Math.max(0, S.tA) / DAYS) * DAYS, b]];
   }
   // The row underlay (Rows, U): each price row's value over a period of its
   // own, drawn as bands across the chart behind the cells and as a second
@@ -10357,9 +10369,7 @@
       }
     }
     // An anchored curve spans the chunks of bars the view is in.
-    const span = BAR_CHUNK * 2 ** n,
-      from = Math.floor(Math.max(0, S.tA) / span) * span,
-      to = Math.min(cut, Math.ceil(S.tB / span) * span);
+    const { from, to } = anchoredSpan(n, cut);
     for (const a of vwapAnchors()) {
       if (a.state !== "ready" || a.t === null || a.t >= stop) continue;
       const r = vwapCurve(a.t, n, Math.max(a.t, from), to);
@@ -11368,7 +11378,8 @@
       if (r?.state === "failed") return `The view's bars couldn't be read: ${r.error}`;
       if (r?.state === "pending") return "Reading the view's bars for the VWAPs…";
     }
-    if (!keys.some((k) => EIGHT_HOUR_LINES.includes(k) || STRUCTURE_LINES.includes(k) || isVwapDay(k))) return "";
+    if (!keys.some((k) => EIGHT_HOUR_LINES.includes(k) || STRUCTURE_LINES.includes(k) || FOUR_HOUR_LINES.includes(k) || isVwapDay(k)))
+      return "";
     const s = barSeries(9);
     return s.state === "failed"
       ? `The 8-hour bars couldn't be read: ${s.error}`

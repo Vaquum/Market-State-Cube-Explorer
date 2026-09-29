@@ -34,21 +34,20 @@
   --ol-time: light-dark(#8f4f86, #d59bcc);
   /* Taker flow's midpoint: an even share, distinct from gridlines and both sides */
   --ol-neutral: light-dark(#b9c2bc, #5f6b64);
-  /* POC lines: one colour each for the periods, apart from the cells' ramp and
-     from each other; the days chosen share one family, told apart by date */
-  --ol-line-1d: light-dark(#c2255c, #f783ac);
-  --ol-line-wk: light-dark(#e8590c, #ffa94d);
-  --ol-line-7d: light-dark(#c92a2a, #ff8787);
-  --ol-line-mo: light-dark(#862e9c, #e599f7);
-  --ol-line-30d: light-dark(#5f3dc4, #b197fc);
-  --ol-line-90d: light-dark(#5c940d, #a9e34b);
-  --ol-line-yr: light-dark(#1971c2, #74c0fc);
-  --ol-line-1y: light-dark(#212529, #f1f3f5);
-  --ol-line-3y: light-dark(#868e96, #adb5bd);
-  --ol-line-day1: light-dark(#0b7285, #66d9e8);
-  --ol-line-day2: light-dark(#087f5b, #63e6be);
-  --ol-line-day3: light-dark(#1098ad, #99e9f2);
-  --ol-line-day4: light-dark(#0ca678, #96f2d7);
+  /* Lines: one colour per family, apart from the data's colours and from
+     each other in every colour vision; a line's timeframe shows in its
+     weight and saturation, in three tiers. Clock lines are neutral. */
+  --ol-line-poc: var(--ol-poc);
+  --ol-line-level: light-dark(#9471f5, #bb6bd9);
+  --ol-line-average: light-dark(#6c661f, #8a9650);
+  --ol-line-vwap: light-dark(#7c3514, #e2621a);
+  --ol-line-clock: light-dark(#8c948f, #7d8a82);
+  --ol-tier-short-width: 1.25;
+  --ol-tier-short-chroma: 0.7;
+  --ol-tier-medium-width: 1.75;
+  --ol-tier-medium-chroma: 0.85;
+  --ol-tier-long-width: 2.5;
+  --ol-tier-long-chroma: 1;
   /* Interface: focus, selection, controls; never data */
   --ol-accent: var(--ol-ink);
   --ol-border: light-dark(#768d7e, #667f6f);
@@ -574,7 +573,7 @@
   background: var(--ol-on);
 }
 
-/* POC lines: the bar's button shows a dot per line on, in its colour. */
+/* Lines: the bar's button shows a dot per family on, in its colour. */
 #origo-lens .ol-lines-dots {
   display: inline-flex;
   align-items: center;
@@ -596,10 +595,11 @@
   border-radius: 50%;
   box-shadow: 0 0 0 1px var(--ol-surface);
 }
-/* The popover: periods to tick, days to add and remove, each with its colour
-   and, when on, its POC. */
+/* The popover: the families, each a group that opens and closes, with rows
+   to tick, each with its look and, when on, its value; days to add and
+   remove. */
 #origo-lens .ol-lines-pop {
-  width: 300px;
+  width: 320px;
   max-height: min(78vh, 640px);
   overflow: auto;
 }
@@ -634,9 +634,56 @@
 #origo-lens .ol-line-swatch {
   flex: none;
   width: 14px;
-  height: 3px;
+  height: var(--weight, 3px);
   border-radius: 2px;
   background: var(--line, var(--ol-muted));
+}
+/* A clock line's: upright, as on the chart. */
+#origo-lens .ol-clock-swatch {
+  width: var(--weight, 2px);
+  height: 14px;
+  margin: 0 6px;
+}
+#origo-lens .ol-family + .ol-family,
+#origo-lens .ol-family + .ol-list-head {
+  border-top: 1px solid var(--ol-line);
+}
+#origo-lens .ol-family-head {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0;
+  padding: 0 var(--sp-1);
+  font-weight: 500;
+}
+#origo-lens .ol-family-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+#origo-lens .ol-family-name {
+  flex: 1;
+  text-align: left;
+}
+#origo-lens .ol-family-count {
+  font-size: var(--fs-s);
+  font-weight: 400;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-family-head[aria-expanded="true"] .ol-caret {
+  transform: rotate(180deg);
+}
+#origo-lens .ol-family-body {
+  padding-bottom: var(--sp-2);
+}
+#origo-lens .ol-family-status {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-s);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-family-status:empty {
+  display: none;
 }
 /* The level line's: dashed, in the text colour, as on the chart. */
 #origo-lens .ol-level-swatch {
@@ -2165,17 +2212,17 @@
           aria-haspopup="dialog"
           aria-expanded="false"
           aria-controls="ol-lines-pop"
-          aria-label="POC lines"
+          aria-label="Lines"
           aria-keyshortcuts="P"
           data-keys="P"
-          data-hint="A line at the price each chosen period traded the most"
+          data-hint="POC lines, session levels and the clock"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M1.5 4.5h13M1.5 8h9M1.5 11.5h11" />
           </svg>
           <span class="ol-lines-dots" id="ol-lines-dots" aria-hidden="true"></span
           ><span class="ol-lines-count ol-num" id="ol-lines-count" aria-hidden="true"></span
-          ><span class="ol-label">POC lines</span>
+          ><span class="ol-label">Lines</span>
           <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
             <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
           </svg>
@@ -2188,7 +2235,7 @@
           hidden
         >
           <div class="ol-pop-head">
-            <span id="ol-lines-title">POC lines</span
+            <span id="ol-lines-title">Lines</span
             ><button
               type="button"
               id="ol-lines-clear"
@@ -2197,33 +2244,117 @@
               Clear
             </button>
           </div>
-          <p class="ol-lines-note" id="ol-lines-note">
-            Each line is the 125 USDT price row where its period traded the most
-            USDT, drawn across the period and on to the right.
-          </p>
-          <div
-            class="ol-lines-list"
-            id="ol-lines-list"
-            role="group"
-            aria-label="Periods up to the latest data"
-          ></div>
-          <div class="ol-list-head" id="ol-lines-days-head">Since a day</div>
-          <div
-            class="ol-lines-list"
-            id="ol-lines-days"
-            role="group"
-            aria-labelledby="ol-lines-days-head"
-          ></div>
-          <form class="ol-lines-add" id="ol-lines-add">
-            <input
-              type="date"
-              id="ol-lines-date"
-              aria-label="A day in UTC: its line runs from that day to the latest data"
-              required
-            /><button type="submit" class="ol-action ol-s cursor-interaction">
-              Add day
+          <section class="ol-family" data-family="profile">
+            <button
+              type="button"
+              class="ol-family-head cursor-interaction"
+              id="ol-family-profile-head"
+              aria-expanded="true"
+              aria-controls="ol-family-profile"
+            >
+              <i class="ol-family-dot" aria-hidden="true"></i
+              ><span class="ol-family-name">Volume profile</span
+              ><span class="ol-family-count ol-num"></span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
             </button>
-          </form>
+            <div
+              class="ol-family-body"
+              id="ol-family-profile"
+              role="group"
+              aria-labelledby="ol-family-profile-head"
+            >
+              <p class="ol-lines-note" id="ol-lines-note">
+                Each POC line is the 125 USDT price row where its period traded
+                the most USDT, drawn across the period and on to the right.
+              </p>
+              <div class="ol-list-head" id="ol-lines-periods-head">POC per period</div>
+              <div
+                class="ol-lines-list"
+                id="ol-lines-list"
+                role="group"
+                aria-labelledby="ol-lines-periods-head"
+              ></div>
+              <div class="ol-list-head" id="ol-lines-days-head">Since a day</div>
+              <div
+                class="ol-lines-list"
+                id="ol-lines-days"
+                role="group"
+                aria-labelledby="ol-lines-days-head"
+              ></div>
+              <form class="ol-lines-add" id="ol-lines-add">
+                <input
+                  type="date"
+                  id="ol-lines-date"
+                  aria-label="A day in UTC: its POC line runs from that day to the latest data"
+                  required
+                /><button type="submit" class="ol-action ol-s cursor-interaction">
+                  Add day
+                </button>
+              </form>
+              <div class="ol-list-head" id="ol-lines-more-head">Value areas and days</div>
+              <div
+                class="ol-lines-list"
+                data-toggles="profile"
+                role="group"
+                aria-labelledby="ol-lines-more-head"
+              ></div>
+              <p class="ol-family-status" data-family-status="profile" role="status"></p>
+            </div>
+          </section>
+          <section class="ol-family" data-family="session">
+            <button
+              type="button"
+              class="ol-family-head cursor-interaction"
+              id="ol-family-session-head"
+              aria-expanded="false"
+              aria-controls="ol-family-session"
+            >
+              <i class="ol-family-dot" aria-hidden="true"></i
+              ><span class="ol-family-name">Session levels</span
+              ><span class="ol-family-count ol-num"></span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
+            </button>
+            <div
+              class="ol-family-body"
+              id="ol-family-session"
+              role="group"
+              aria-labelledby="ol-family-session-head"
+              hidden
+            >
+              <div class="ol-lines-list" data-toggles="session"></div>
+              <p class="ol-family-status" data-family-status="session" role="status"></p>
+            </div>
+          </section>
+          <section class="ol-family" data-family="clock">
+            <button
+              type="button"
+              class="ol-family-head cursor-interaction"
+              id="ol-family-clock-head"
+              aria-expanded="false"
+              aria-controls="ol-family-clock"
+            >
+              <i class="ol-family-dot" aria-hidden="true"></i
+              ><span class="ol-family-name">Clock</span
+              ><span class="ol-family-count ol-num"></span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
+            </button>
+            <div
+              class="ol-family-body"
+              id="ol-family-clock"
+              role="group"
+              aria-labelledby="ol-family-clock-head"
+              hidden
+            >
+              <div class="ol-lines-list" data-toggles="clock"></div>
+              <p class="ol-family-status" data-family-status="clock" role="status"></p>
+            </div>
+          </section>
           <div class="ol-list-head" id="ol-lines-level-head">Level line · X</div>
           <div
             class="ol-lines-list"
@@ -3411,7 +3542,7 @@
               <dd><kbd>X</kbd></dd>
             </div>
             <div>
-              <dt>POC lines</dt>
+              <dt>Lines: POC lines, session levels and the clock</dt>
               <dd><kbd>P</kbd></dd>
             </div>
             <div>
@@ -4230,11 +4361,19 @@
       probe.style.color = `var(--ol-${key})`;
       colors[key] = getComputedStyle(probe).color;
     }
-    colors.lines = {};
-    for (const key of [...LINE_KEYS, ...DAY_COLOURS]) {
+    // The line families' colours, and each tier's weight and saturation.
+    colors.family = {};
+    for (const key of ["poc", "level", "average", "vwap", "clock"]) {
       probe.style.color = `var(--ol-line-${key})`;
-      colors.lines[key] = getComputedStyle(probe).color;
+      colors.family[key] = getComputedStyle(probe).color;
     }
+    const tokens = getComputedStyle(root);
+    colors.tiers = {};
+    for (const tier of ["short", "medium", "long"])
+      colors.tiers[tier] = {
+        width: parseFloat(tokens.getPropertyValue(`--ol-tier-${tier}-width`)) || 1.5,
+        chroma: parseFloat(tokens.getPropertyValue(`--ol-tier-${tier}-chroma`)) || 1,
+      };
     probe.remove();
     buildRamp();
   }
@@ -4510,6 +4649,7 @@
     ctx.restore();
     markings(shown, cut);
     paintUnfinished(shown);
+    drawClock(cut);
     drawLines(cut);
     if (S.tab === "evidence") {
       const ev = settledEvidence();
@@ -6029,7 +6169,7 @@
       ts = stepT(),
       ps = stepP();
     if (!mv.src)
-      return [["Path, dwell", motionIssue() ? "couldn't be read" : "reading from the cube…"]];
+      return [["Path, dwell", motionIssue() ? `couldn't be read: ${motionIssue()}` : "reading from the cube…"]];
     if (c * ts >= mv.end)
       return [
         [
@@ -6120,7 +6260,7 @@
                 : "Not recorded at this level"
             : measure.motion && !mv?.src
               ? motionIssue()
-                ? "Path and dwell couldn't be read"
+                ? `Path and dwell couldn't be read: ${motionIssue()}`
                 : "Reading path and dwell from the cube…"
               : measure.motion && c * ts >= mv.end
                 ? c * ts >= Math.floor(CUT)
@@ -6301,11 +6441,16 @@
       note = exact ? "" : "Hold Shift for exact values",
       ps = stepP(),
       priceRow = (r) => `${price(r * ps * PR)}–${price((r + 1) * ps * PR)} USDT`;
-    // A POC line or its tag under the pointer names the line.
-    const onLine = last && inPlot(p) ? lineAt(p) : null;
-    hover.line = onLine?.key || null;
+    // A line or its tag under the pointer names the line; a clock line or a
+    // CME gap, its event.
+    const onLine = last && lineHits.length && inPlot(p) ? lineAt(p) : null,
+      onClock = !onLine && last && clockHits.length && inPlot(p) ? clockAt(p) : null;
+    hover.line = onLine?.id || null;
     if (onLine) {
       lineTip(tip, onLine);
+      syncRowHover(null);
+    } else if (onClock) {
+      clockTip(tip, onClock);
       syncRowHover(null);
     } else if (last && onProfile(p)) {
       const r = Math.floor(p.p / ps),
@@ -8271,7 +8416,6 @@
       { key: "3y", name: "3 years", tag: "3Y", days: 1095 },
     ],
     LINE_KEYS = LINES.map((l) => l.key),
-    DAY_COLOURS = ["day1", "day2", "day3", "day4"],
     DAYS_KEPT = 12,
     lineInfo = (key) => LINES.find((l) => l.key === key),
     // A day by its UTC date, a real one, from the history's first day on.
@@ -8282,6 +8426,95 @@
       return Number.isFinite(t) && new Date(t).toISOString().startsWith(key);
     },
     dayStart = (key) => (Date.parse(key + "T00:00:00Z") / 1000 - T0) / BASE;
+  // Lines (P): families of lines, each a named group in the menu and one
+  // colour on the chart. The volume profile holds the POC lines, their value
+  // areas, each day's POC and value area and the untested POCs; the session
+  // levels the day's, week's and month's opens and the previous day's high,
+  // low and close; the clock vertical lines at the times the market
+  // coordinates on. A line's timeframe shows in the thickness and saturation
+  // of its family's colour, in three tiers: short (a day to a week), medium
+  // (a month to a quarter) and long (a year or more); its tag names its exact
+  // period. Any number can be on at once, and the address and saved views
+  // keep them all.
+  const FAMILIES = [
+      { id: "profile", name: "Volume profile", colour: "poc" },
+      { id: "session", name: "Session levels", colour: "level" },
+      { id: "clock", name: "Clock", colour: "clock" },
+    ],
+    TOGGLES = {
+      va: { family: "profile", name: "Value area high and low", desc: "The top and bottom of each period's 70% value area" },
+      dpoc: { family: "profile", name: "Daily POC and value area", desc: "Each UTC day's, across its day", tier: "short" },
+      udpoc: {
+        family: "profile",
+        name: "Untested daily POCs",
+        desc: "The last 30 sessions' POCs that no later trade has come within 125 USDT of, within 5 daily ATRs of the price",
+        tier: "short",
+        live: true,
+      },
+      uwpoc: {
+        family: "profile",
+        name: "Untested weekly POCs",
+        desc: "The last 26 weeks' POCs, the same way",
+        tier: "short",
+        live: true,
+      },
+      dopen: { family: "session", name: "Daily open", desc: "Each UTC day's first trade, across its day", tier: "short", live: true },
+      pdhlc: { family: "session", name: "Previous day's high, low and close", desc: "Across the following day", tier: "short", live: true },
+      wopen: { family: "session", name: "Weekly open", desc: "Monday 00:00 UTC, across its week", tier: "short", live: true },
+      mopen: { family: "session", name: "Monthly open", desc: "The 1st, 00:00 UTC, across its month", tier: "medium", live: true },
+      cday: { family: "clock", name: "Day start", desc: "00:00 UTC" },
+      cweek: { family: "clock", name: "Week open", desc: "Monday 00:00 UTC" },
+      cmonth: { family: "clock", name: "Month open", desc: "The 1st, 00:00 UTC" },
+      funding: { family: "clock", name: "Funding", desc: "00:00, 08:00 and 16:00 UTC" },
+      usopen: { family: "clock", name: "US equity open", desc: "13:30 UTC in US daylight time, 14:30 otherwise" },
+      cme: {
+        family: "clock",
+        name: "CME close and reopen",
+        desc: "Friday 16:00 and Sunday 17:00 Chicago; live, the spot gap between them is shaded until a trade reaches the Friday close",
+      },
+      deribit: { family: "clock", name: "Deribit expiry", desc: "Fridays 08:00 UTC; heavier on the month's last and at a quarter's end" },
+    },
+    TOGGLE_KEYS = Object.keys(TOGGLES),
+    isPeriod = (k) => LINE_KEYS.includes(k) || isDay(k),
+    periodLines = () => S.lines.filter(isPeriod),
+    familyOf = (k) => (isPeriod(k) ? "profile" : TOGGLES[k]?.family),
+    // The recorded snapshot has no exact opens, highs, lows or closes.
+    lineAvailable = (k) => isPeriod(k) || Boolean(TOGGLES[k] && (PACK.live || !TOGGLES[k].live)),
+    PERIOD_TIERS = {
+      "1d": "short",
+      wk: "short",
+      "7d": "short",
+      mo: "medium",
+      "30d": "medium",
+      "90d": "medium",
+      yr: "long",
+      "1y": "long",
+      "3y": "long",
+      all: "long",
+    };
+  // A line's tier: a period's by its length, a day chosen by how long ago it is.
+  function lineTier(key) {
+    if (TOGGLES[key]) return TOGGLES[key].tier || "short";
+    if (!isDay(key)) return PERIOD_TIERS[key];
+    const days = (cutEdge() - dayStart(key)) / DAYS;
+    return days <= 7 ? "short" : days <= 92 ? "medium" : "long";
+  }
+  // A family's colour at a tier: long lines at full saturation and weight,
+  // shorter ones paler and thinner. Kept per theme.
+  const styleMemo = new Map();
+  function lineStyle(family, tier) {
+    const key = family + "|" + tier + "|" + colourEpoch;
+    let style = styleMemo.get(key);
+    if (!style) {
+      const t = colors.tiers[tier] || colors.tiers.long,
+        c = d3.lch(colors.family[family]);
+      c.c *= t.chroma;
+      style = { colour: c.formatHex(), width: t.width };
+      styleMemo.set(key, style);
+      while (styleMemo.size > 64) styleMemo.delete(styleMemo.keys().next().value);
+    }
+    return style;
+  }
   // A line's name, in lists and its tooltip; its tag, on the chart. The
   // calendar periods are named by what they are now: the month, the year; a
   // day's by the day it runs since.
@@ -8296,16 +8529,17 @@
     if (key === "yr") return String(now.getUTCFullYear());
     return lineInfo(key).tag;
   }
-  function lineColour(key) {
-    if (!isDay(key)) return colors.lines[key];
-    const days = S.lines.filter(isDay);
-    return colors.lines[DAY_COLOURS[Math.max(0, days.indexOf(key)) % DAY_COLOURS.length]];
-  }
-  // The lines kept in order: the periods as listed, then the days by date.
+  // The lines kept in order: the periods as listed, the families' toggles,
+  // then the days by date; those this page can't draw are dropped.
   function normalizeLines(list) {
-    const keys = new Set((Array.isArray(list) ? list : []).filter((k) => LINE_KEYS.includes(k) || isDay(k)));
+    const keys = new Set(
+      (Array.isArray(list) ? list : []).filter(
+        (k) => (LINE_KEYS.includes(k) || isDay(k) || TOGGLE_KEYS.includes(k)) && lineAvailable(k),
+      ),
+    );
     return [
       ...LINE_KEYS.filter((k) => keys.has(k)),
+      ...TOGGLE_KEYS.filter((k) => keys.has(k)),
       ...[...keys].filter(isDay).sort().slice(-DAYS_KEPT),
     ];
   }
@@ -8426,8 +8660,10 @@
     return was && r.span && was.span[1] <= cutEdge() ? { ...was, stale: true } : r;
   }
   // The periods whose rows are read: the lines', and the underlay's while it shows.
-  const readPeriods = () =>
-    S.rows !== "off" && !S.lines.includes(S.period) ? [...S.lines, S.period] : S.lines;
+  const readPeriods = () => {
+    const own = periodLines();
+    return S.rows !== "off" && !own.includes(S.period) ? [...own, S.period] : own;
+  };
   function linesWant() {
     for (const key of readPeriods()) {
       const r = lineResult(key);
@@ -8461,6 +8697,629 @@
     S.lines = normalizeLines(next);
     update();
     save();
+  }
+  // Bars (/cube/bars): at a grid timeframe, each column's open, high, low and
+  // close, its USDT, taker-buy USDT and BTC volume and its trades, the cube's
+  // own measures (PRD-0023), read in path and dwell's second slot while a line
+  // built on them is on (live only). A timeframe's bars are read in chunks of
+  // 4,096 aligned to the history's start, the latest first and back to the
+  // history's first day, where the daily ATR starts. The chunk holding the
+  // latest data is read again from its latest bar as the pack moves on, and
+  // from the day's start once the day's archive has replaced its provisional
+  // minutes. Bars end at the pack's last complete base column, or earlier
+  // where the cube's measures end, and the lines built on them say so; in
+  // replay the bar at the edge is read up to the edge, so no bar holds a trade
+  // after it.
+  const BAR_CHUNK = 4096,
+    barChunks = new Map(), // "n|j" -> { n, j, a, z, bars, end, token, canon }
+    barEdges = new Map(), // "generation|n|edge" -> { bar, end }
+    // The lines built on 8-hour bars: their days, weeks and months.
+    EIGHT_HOUR_LINES = ["udpoc", "uwpoc", "dopen", "pdhlc", "wopen", "mopen"];
+  let barsVersion = 0;
+  async function unpackBars(block) {
+    const buf = await inflate(block),
+      v = new DataView(buf);
+    if (String.fromCharCode(...new Uint8Array(buf, 0, 4)) !== "MSCB") throw Error("Invalid block of bars");
+    const count = v.getUint32(16, true);
+    let o = 32;
+    const take = (Type) => {
+      const a = new Type(buf, o, count);
+      o += Type.BYTES_PER_ELEMENT * count;
+      return a;
+    };
+    const [open, high, low, close, vol, bv, btc, ct] = Array.from({ length: 8 }, () => take(Float64Array)),
+      cs = take(Uint32Array);
+    return Array.from({ length: count }, (_, i) => ({
+      c: cs[i],
+      open: open[i],
+      high: high[i],
+      low: low[i],
+      close: close[i],
+      v: vol[i],
+      bv: bv[i],
+      btc: btc[i],
+      ct: ct[i],
+    }));
+  }
+  // The timeframes the lines on read: 8-hour bars for the days, weeks and
+  // months, and hourly ones for the CME gap.
+  function barLevels() {
+    if (!PACK.live) return [];
+    const out = [];
+    if (EIGHT_HOUR_LINES.some((k) => S.lines.includes(k))) out.push(9);
+    if (S.lines.includes("cme")) out.push(6);
+    return out;
+  }
+  function barChunkWant(n, j) {
+    const step = 2 ** n,
+      a = j * BAR_CHUNK * step,
+      z = a + BAR_CHUNK * step,
+      top = Math.ceil(CUT),
+      id = n + "|" + j,
+      have = barChunks.get(id);
+    if (a >= top) return null;
+    // Provisional minutes the day's archive has replaced since: read again from there.
+    const redo = Boolean(have) && CANON !== null && have.canon !== null && CANON > have.canon && have.end > have.canon;
+    if (have && !redo && (have.end >= z || have.token === PACK.state_token)) return null;
+    const from = have ? Math.max(a, Math.floor((redo ? Math.min(have.end, have.canon) : have.end) / step) * step) : a,
+      b1 = Math.min(z, top);
+    if (from >= b1) return null;
+    return {
+      key: ["bars", live.generation, n, j, from, b1, PACK.state_token].join("|"),
+      path: `/cube/bars?n=${n}&b0=${from}&b1=${b1}`,
+      decode: async (body) => ({ part: await unpackBars(body.bars), body }),
+      apply: ({ part, body }) => {
+        const held = barChunks.get(id),
+          kept = held ? held.bars.filter((x) => x.c * step < from) : [];
+        barChunks.set(id, {
+          n,
+          j,
+          a,
+          z,
+          bars: kept.concat(part),
+          end: Math.max(from, body.end),
+          token: body.state_token,
+          canon: canonOf(body),
+        });
+        barsVersion++;
+      },
+    };
+  }
+  // In replay, the bar holding the edge, up to the edge.
+  function barEdgeWant(n) {
+    const step = 2 ** n,
+      edge = cutEdge();
+    if (!S.replay || edge % step === 0) return null;
+    const key = [live.generation, n, edge].join("|");
+    if (barEdges.has(key)) return null;
+    const b0 = Math.floor(edge / step) * step;
+    return {
+      key: "bar-edge|" + key,
+      path: `/cube/bars?n=${n}&b0=${b0}&b1=${edge}`,
+      decode: async (body) => ({ part: await unpackBars(body.bars), body }),
+      apply: ({ part, body }) => {
+        barEdges.set(key, { bar: part[0] || null, end: body.end });
+        while (barEdges.size > 16) barEdges.delete(barEdges.keys().next().value);
+        barsVersion++;
+      },
+    };
+  }
+  // Each timeframe's chunks before the data's edge, the latest first, then in
+  // replay the bar at the edge.
+  function barsWant() {
+    for (const n of barLevels()) {
+      const span = BAR_CHUNK * 2 ** n,
+        edge = cutEdge();
+      for (let j = Math.floor((edge - 1) / span); j >= 0; j--) {
+        const want = barChunkWant(n, j);
+        if (want && !motion.failed.has(want.key)) return want;
+      }
+      const tail = barEdgeWant(n);
+      if (tail && !motion.failed.has(tail.key)) return tail;
+    }
+    return null;
+  }
+  // Why a timeframe's bars couldn't be read, when they couldn't.
+  function barsIssue(n) {
+    for (const [key, message] of motion.failed)
+      if ((key.startsWith("bars|") && key.split("|")[2] === String(n)) || key.startsWith(`bar-edge|${live.generation}|${n}|`))
+        return message;
+    return null;
+  }
+  // A timeframe's bars up to the data's edge, in time order, once every chunk
+  // before the edge is read: complete bars and live the latest one so far, in
+  // replay the bar at the edge up to it. With where they end: the pack's last
+  // complete base column, the replay's edge, or earlier where the cube's
+  // measures end. Kept until a read or the edge changes.
+  const seriesMemo = new Map();
+  function barSeries(n) {
+    const edge = cutEdge(),
+      step = 2 ** n,
+      span = BAR_CHUNK * step,
+      partial = S.replay && edge % step !== 0,
+      tail = partial ? barEdges.get([live.generation, n, edge].join("|")) : null,
+      key = [live.generation, edge, S.replay, barsVersion].join("|"),
+      hit = seriesMemo.get(n);
+    if (hit?.key === key) return hit.out;
+    const chunks = [];
+    for (let j = 0; j * span < edge; j++) chunks.push(barChunks.get(n + "|" + j));
+    let out = { state: motion.failed.size && barsIssue(n) ? "failed" : "pending", n, error: barsIssue(n) };
+    if (chunks.length && chunks.every(Boolean) && (!partial || tail)) {
+      const bars = [];
+      let end = S.replay ? edge : chunks[chunks.length - 1].end;
+      for (const ch of chunks) {
+        for (const x of ch.bars) if (!S.replay || (x.c + 1) * step <= edge) bars.push(x);
+        if (ch.end < Math.min(ch.z, edge)) end = Math.min(end, ch.end);
+      }
+      if (tail) {
+        if (tail.bar) bars.push(tail.bar);
+        end = Math.min(end, tail.end);
+      }
+      out = { state: "ready", n, step, bars, end };
+    }
+    seriesMemo.set(n, { key, out });
+    return out;
+  }
+  // Where a timeframe's measures end, when the cube's end before the data does:
+  // the lines built on them end there too.
+  function barsShort(series) {
+    return series.state === "ready" && series.end < (S.replay ? cutEdge() : Math.floor(CUT)) ? series.end : null;
+  }
+  // Bars combined: the first's open, the highest high, the lowest low, the
+  // last's close and the volumes and trades summed.
+  function combineBars(parts) {
+    let high = -Infinity,
+      low = Infinity,
+      ct = 0;
+    for (const x of parts) {
+      if (x.high > high) high = x.high;
+      if (x.low < low) low = x.low;
+      ct += x.ct;
+    }
+    return {
+      open: parts[0].open,
+      high,
+      low,
+      close: parts[parts.length - 1].close,
+      v: exactSum(parts.map((x) => x.v)),
+      bv: exactSum(parts.map((x) => x.bv)),
+      btc: exactSum(parts.map((x) => x.btc)),
+      ct,
+    };
+  }
+  // A UTC day's week, Monday to Sunday: 2021-01-04 (day 3) starts week 1, and
+  // the history's first three days are week 0.
+  const weekOf = (d) => Math.floor((d + 4) / 7),
+    weekStart = (w) => (7 * w - 4) * DAYS,
+    monthOf = (t) => {
+      const at = date(t);
+      return at.getUTCFullYear() * 12 + at.getUTCMonth();
+    },
+    monthStart = (k) => (Date.UTC(Math.floor(k / 12), k % 12, 1) / 1000 - T0) / BASE;
+  // UTC days from 8-hour bars, three to a day; weeks from their days, Monday
+  // to Sunday; months from theirs. Each whole when it ends by the bars' end.
+  // Kept with the bars.
+  const calendarMemo = new WeakMap();
+  function barCalendar(series) {
+    let hit = calendarMemo.get(series);
+    if (hit) return hit;
+    const group = (items, keyOf, start, stop) => {
+      const out = [],
+        by = new Map();
+      for (const x of items) {
+        const k = keyOf(x);
+        let g = by.get(k);
+        if (!g) {
+          g = { k, t: start(k), z: stop(k), parts: [] };
+          by.set(k, g);
+          out.push(g);
+        }
+        g.parts.push(x);
+      }
+      for (const g of out) Object.assign(g, combineBars(g.parts), { whole: g.z <= series.end });
+      return { list: out, by };
+    };
+    const days = group(
+        series.bars,
+        (x) => Math.floor((x.c * series.step) / DAYS),
+        (d) => d * DAYS,
+        (d) => (d + 1) * DAYS,
+      ),
+      weeks = group(days.list, (d) => weekOf(d.k), weekStart, (w) => weekStart(w + 1)),
+      months = group(days.list, (d) => monthOf(d.t), monthStart, (k) => monthStart(k + 1));
+    hit = { days, weeks, months, atr: dailyATR(days.list) };
+    calendarMemo.set(series, hit);
+    return hit;
+  }
+  // The daily ATR, from the history's first day: Wilder's smoothing of the
+  // true range over 14 days. A day's true range is its high less its low, or
+  // further to the previous day's close where that lies outside them; the
+  // first ATR is the mean of the first 14, on the 14th day, and each after it
+  // (13 × the last + the day's true range) ÷ 14. Whole days only, by day.
+  function dailyATR(days, length = 14) {
+    const out = new Map();
+    let prev = null,
+      sum = 0,
+      count = 0,
+      atr = null;
+    for (const day of days) {
+      if (!day.whole) break;
+      const tr =
+        prev === null
+          ? day.high - day.low
+          : Math.max(day.high - day.low, Math.abs(day.high - prev.close), Math.abs(day.low - prev.close));
+      count++;
+      if (atr === null) {
+        sum += tr;
+        if (count === length) atr = sum / length;
+      } else atr = ((length - 1) * atr + tr) / length;
+      if (atr !== null) out.set(day.k, atr);
+      prev = day;
+    }
+    return out;
+  }
+  // Each UTC day's volume profile at 125 USDT rows: each row's USDT, the POC
+  // (the row with the most, the lower row winning a tie) and the 70% value
+  // area, as the view's profile computes them. Summed from loaded cells at 125
+  // USDT rows that tile the day (the recent and reference tiers hold the last
+  // 30 days), or live read from the cube at 8-hour columns, up to 64 days at a
+  // time, and kept: a whole day never changes. A week's is its days' rows summed.
+  const DAY_READ = 64,
+    dayReads = new Map(), // "generation|d|edge" -> profile
+    dayMemo = new Map();
+  function profileOf(rows) {
+    let poc = null,
+      best = 0;
+    for (const x of rows)
+      if (x.v > best) {
+        best = x.v;
+        poc = x.r;
+      }
+    const v = exactSum(rows.map((x) => x.v));
+    return { rows, v, poc, va: contiguousArea(rows, poc, v) };
+  }
+  // Rows summed from cells, or from other rows, in order.
+  function rowsOf(items) {
+    const rows = new Map();
+    for (const z of items) {
+      let row = rows.get(z.r);
+      if (!row) rows.set(z.r, (row = { r: z.r, vs: [], bvs: [] }));
+      row.vs.push(z.v);
+      row.bvs.push(z.bv);
+    }
+    return [...rows.values()].sort((a, b) => a.r - b.r).map((x) => ({ r: x.r, v: exactSum(x.vs), bv: exactSum(x.bvs) }));
+  }
+  const dayReadKey = (d) => {
+    const edge = cutEdge();
+    return [live.generation, d, (d + 1) * DAYS > edge ? edge : ""].join("|");
+  };
+  function dayFailure(d) {
+    for (const [key, message] of cube.failed) {
+      const [kind, generation, a, b] = key.split("|");
+      if (kind === "days" && Number(generation) === live.generation && Number(a) <= d * DAYS && d * DAYS < Number(b))
+        return message;
+    }
+    return null;
+  }
+  function dayProfile(d) {
+    const edge = cutEdge(),
+      a = d * DAYS,
+      b = Math.min((d + 1) * DAYS, edge);
+    if (b <= a || a < 0) return { state: "none", d };
+    const src = exactSource([a, b, 0, 2 ** 32], 9, 0);
+    if (src && src.m === 0) {
+      const key = [src.id, d, b].join("|"),
+        hit = dayMemo.get(key);
+      if (hit && hit.cells === src.cells) return hit.out;
+      const ts = 2 ** src.n,
+        map = new Map(),
+        stop = CUT > b ? bisectColumn(src.cells, Math.ceil(b / ts) + 1) : src.cells.length;
+      sumCells(map, src, 9, 0, [a, b, 0, Infinity], bisectColumn(src.cells, Math.floor(a / ts)), stop);
+      const out = { state: "ready", d, exact: true, whole: b === (d + 1) * DAYS, ...profileOf(rowsOf([...map.values()])) };
+      dayMemo.delete(key);
+      dayMemo.set(key, { cells: src.cells, out });
+      while (dayMemo.size > 160) dayMemo.delete(dayMemo.keys().next().value);
+      return out;
+    }
+    const read = dayReads.get(dayReadKey(d));
+    if (read) return read;
+    if (!PACK.live) return { state: "unrecorded", d };
+    const failed = dayFailure(d);
+    return failed ? { state: "failed", d, error: failed } : { state: "pending", d };
+  }
+  // A week's profile, from its days' rows, once all of them are.
+  const weekMemo = new Map();
+  function weekProfile(w) {
+    const d0 = 7 * w - 4,
+      days = Array.from({ length: 7 }, (_, i) => dayProfile(d0 + i));
+    const waiting = days.find((p) => p.state !== "ready");
+    if (waiting) return { state: waiting.state, w, error: waiting.error };
+    const hit = weekMemo.get(w);
+    if (hit && hit.days.every((p, i) => p === days[i])) return hit.out;
+    const out = { state: "ready", w, ...profileOf(rowsOf(days.flatMap((p) => p.rows))) };
+    weekMemo.set(w, { days, out });
+    while (weekMemo.size > 40) weekMemo.delete(weekMemo.keys().next().value);
+    return out;
+  }
+  // The days whose profiles the lines on need: the view's, for each day's POC
+  // and value area while days are far enough apart to draw, then the last 30
+  // sessions' and 26 weeks' for the untested lists.
+  function dayNeeds() {
+    const out = [],
+      edge = cutEdge(),
+      last = Math.ceil(edge / DAYS);
+    if (S.lines.includes("dpoc") && spaced(DAYS))
+      for (let d = Math.max(0, Math.floor(S.tA / DAYS)); d < Math.min(last, Math.ceil(S.tB / DAYS)); d++) out.push(d);
+    if (!PACK.live) return out;
+    const D = Math.floor(untestedNow() / DAYS);
+    if (S.lines.includes("udpoc")) for (let d = Math.max(0, D - UNTESTED_DAYS); d < D; d++) out.push(d);
+    if (S.lines.includes("uwpoc")) {
+      const W = weekOf(D);
+      for (let d = Math.max(0, 7 * (W - UNTESTED_WEEKS) - 4); d < 7 * W - 4; d++) out.push(d);
+    }
+    return out;
+  }
+  function daysWant() {
+    if (!PACK.live) return null;
+    const need = dayNeeds(),
+      wanted = new Set(need),
+      edge = cutEdge();
+    for (const d of need) {
+      if (dayProfile(d).state !== "pending") continue;
+      // A run of days needed and still to read, the day at the edge alone.
+      let e = d + 1;
+      if (e * DAYS <= edge)
+        while (e - d < DAY_READ && (e + 1) * DAYS <= edge && wanted.has(e) && dayProfile(e).state === "pending") e++;
+      const a = d * DAYS,
+        b = Math.min(e * DAYS, edge),
+        key = ["days", live.generation, a, b].join("|");
+      if (cube.failed.has(key)) continue;
+      return {
+        key,
+        path: `/cube/tile?n=9&m=0&b0=${a}&b1=${b}`,
+        decode: (body) => unpack(body.block, key),
+        apply: (block) => {
+          const byDay = new Map();
+          for (const z of block.cells) {
+            const day = Math.floor(z.c / 3);
+            if (!byDay.has(day)) byDay.set(day, []);
+            byDay.get(day).push(z);
+          }
+          for (let x = d; x < e; x++)
+            dayReads.set(dayReadKey(x), {
+              state: "ready",
+              d: x,
+              exact: true,
+              whole: (x + 1) * DAYS <= b,
+              ...profileOf(rowsOf(byDay.get(x) || [])),
+            });
+          while (dayReads.size > 600) dayReads.delete(dayReads.keys().next().value);
+        },
+      };
+    }
+    return null;
+  }
+  // Untested POCs (live): each whole day's POC among the last 30 sessions, and
+  // separately each whole week's among the last 26 weeks, that no later trade
+  // came within one 125 USDT row of (no later 8-hour bar's low to high meets
+  // the POC ± 125 USDT), within 5 daily ATRs of the latest price. Each has its
+  // age in sessions or weeks and its distance from the latest price in daily
+  // ATRs and USDT. In replay, nothing after the edge is used.
+  const UNTESTED_DAYS = 30,
+    UNTESTED_WEEKS = 26,
+    UNTESTED_REACH = 5;
+  // The time the untested lists run to: the bars' end, or the data's edge
+  // while the bars are read.
+  function untestedNow() {
+    const s = PACK.live ? barSeries(9) : null;
+    return s?.state === "ready" ? s.end : activeCutoff();
+  }
+  const untestedLatest = new Map();
+  // Once per data change: a frame asks with the same data.
+  function untestedList(kind) {
+    const series = barSeries(9);
+    if (series.state !== "ready") return { state: series.state, error: series.error };
+    const now = [series.end, barsVersion, dayReads.size, live.generation, CUT, sourcesKey()].join("|"),
+      was = untestedLatest.get(kind);
+    if (was?.now === now && was.series === series) return was.out;
+    const out = untestedFrom(kind, series);
+    untestedLatest.set(kind, { now, series, out });
+    return out;
+  }
+  function untestedFrom(kind, series) {
+    const cal = barCalendar(series),
+      D = Math.floor(series.end / DAYS),
+      W = weekOf(D),
+      profiles =
+        kind === "day"
+          ? Array.from({ length: UNTESTED_DAYS }, (_, i) => dayProfile(D - UNTESTED_DAYS + i)).filter((p) => p.state !== "none")
+          : Array.from({ length: UNTESTED_WEEKS }, (_, i) => weekProfile(W - UNTESTED_WEEKS + i)).filter((p) => p.w > 0),
+      waiting = profiles.find((p) => p.state !== "ready"),
+      last = series.bars[series.bars.length - 1],
+      atr = cal.atr.get(D - 1) ?? null,
+      items = [];
+    if (last && atr !== null)
+      for (const p of profiles) {
+        if (p.state !== "ready" || p.poc === null) continue;
+        const from = kind === "day" ? p.d * DAYS : weekStart(p.w),
+          to = kind === "day" ? (p.d + 1) * DAYS : weekStart(p.w + 1),
+          at = (p.poc + 0.5) * PR,
+          tested = series.bars.some((x) => x.c * series.step >= to && x.low <= at + PR && x.high >= at - PR);
+        if (tested || Math.abs(at - last.close) > UNTESTED_REACH * atr) continue;
+        items.push({
+          kind,
+          k: kind === "day" ? p.d : p.w,
+          from,
+          to,
+          row: p.poc,
+          price: at,
+          age: kind === "day" ? D - p.d : W - p.w,
+          usd: at - last.close,
+          atrs: (at - last.close) / atr,
+        });
+      }
+    return {
+      state: waiting ? (waiting.state === "failed" ? "failed" : "pending") : "ready",
+      error: waiting?.error,
+      items,
+      atr,
+      latest: last?.close ?? null,
+      end: series.end,
+    };
+  }
+  // The clock: vertical lines at the times the market coordinates on, from
+  // the calendar alone. US daylight time runs from the second Sunday in March
+  // to the first Sunday in November; Chicago keeps it too, 5 hours behind UTC
+  // in it and 6 otherwise, and New York 4 and 5.
+  const nthSunday = (y, month, n) => {
+      const first = new Date(Date.UTC(y, month, 1)).getUTCDay();
+      return 1 + ((7 - first) % 7) + 7 * (n - 1);
+    },
+    usDaylight = (y, month, day) => {
+      const start = Date.UTC(y, 2, nthSunday(y, 2, 2)),
+        stop = Date.UTC(y, 10, nthSunday(y, 10, 1)),
+        at = Date.UTC(y, month, day);
+      return at >= start && at < stop;
+    },
+    // The last Friday of a month, as its day of the month.
+    lastFriday = (y, month) => {
+      const days = new Date(Date.UTC(y, month + 1, 0)).getUTCDate(),
+        last = new Date(Date.UTC(y, month, days)).getUTCDay();
+      return days - ((last - 5 + 7) % 7);
+    };
+  // Each kind's times from `a` to `b` (base), with what each is. `gap` is the
+  // least time between two of a kind, which the spacing rule reads.
+  const CLOCK = {
+    cday: { gap: DAYS, name: "Day start" },
+    cweek: { gap: 7 * DAYS, name: "Week open" },
+    cmonth: { gap: 28 * DAYS, name: "Month open" },
+    funding: { gap: DAYS / 3, name: "Funding" },
+    usopen: { gap: DAYS, name: "US equity open" },
+    cme: { gap: (49 * HOUR), name: "CME" },
+    deribit: { gap: 7 * DAYS, name: "Deribit expiry" },
+  };
+  function clockEvents(kind, a, b) {
+    const out = [],
+      d0 = Math.max(0, Math.floor(a / DAYS) - 1),
+      d1 = Math.ceil(b / DAYS) + 1,
+      push = (t, what, weight = 1) => {
+        if (t >= a && t <= b) out.push({ kind, t, what, weight });
+      };
+    if (kind === "cmonth") {
+      for (let k = monthOf(Math.max(0, a)); monthStart(k) <= b; k++) push(monthStart(k), "Month open");
+      return out;
+    }
+    if (kind === "cweek") {
+      for (let w = Math.max(1, weekOf(d0)); weekStart(w) <= b; w++) push(weekStart(w), "Week open");
+      return out;
+    }
+    for (let d = d0; d < d1; d++) {
+      const t = d * DAYS,
+        at = date(t),
+        y = at.getUTCFullYear(),
+        month = at.getUTCMonth(),
+        dom = at.getUTCDate(),
+        wd = at.getUTCDay();
+      if (kind === "cday") push(t, "Day start");
+      else if (kind === "funding") for (const h of [0, 8, 16]) push(t + h * HOUR, "Funding");
+      else if (kind === "usopen") {
+        if (wd >= 1 && wd <= 5) push(t + (usDaylight(y, month, dom) ? 13.5 : 14.5) * HOUR, "US equity open");
+      } else if (kind === "cme") {
+        const summer = usDaylight(y, month, dom);
+        if (wd === 5) push(t + (summer ? 21 : 22) * HOUR, "CME close");
+        if (wd === 0) push(t + (summer ? 22 : 23) * HOUR, "CME reopen");
+      } else if (kind === "deribit" && wd === 5) {
+        const monthly = dom === lastFriday(y, month),
+          quarterly = monthly && month % 3 === 2;
+        push(t + 8 * HOUR, quarterly ? "Quarterly expiry" : monthly ? "Monthly expiry" : "Weekly expiry", quarterly ? 3 : monthly ? 2 : 1);
+      }
+    }
+    return out;
+  }
+  // The CME gap (live): for each weekend, the spot price at the Friday close
+  // and at the Sunday reopen (each the last trade before it, the close of the
+  // hour that ends there), shaded from the reopen until a later trade reaches
+  // the Friday close, to the end of the hour it does. From hourly bars; kept
+  // with them.
+  const gapMemo = new WeakMap();
+  function cmeGaps(series) {
+    let hit = gapMemo.get(series);
+    if (hit) return hit;
+    const bars = series.bars,
+      step = series.step,
+      // Block minima and maxima, 64 bars each, to find the first bar after a
+      // reopen that reaches a price without walking every bar.
+      B = 64,
+      lows = [],
+      highs = [];
+    for (let i = 0; i < bars.length; i += B) {
+      let lo = Infinity,
+        hi = -Infinity;
+      for (let k = i; k < Math.min(bars.length, i + B); k++) {
+        lo = Math.min(lo, bars[k].low);
+        hi = Math.max(hi, bars[k].high);
+      }
+      lows.push(lo);
+      highs.push(hi);
+    }
+    const index = (t) => {
+        // The first bar starting at or after t.
+        let lo = 0,
+          hi = bars.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (bars[mid].c * step < t) lo = mid + 1;
+          else hi = mid;
+        }
+        return lo;
+      },
+      // The spot price at t: the close of the last bar before it.
+      spot = (t) => {
+        const i = index(t) - 1;
+        return i >= 0 ? bars[i] : null;
+      },
+      reaches = (x, price, up) => (up ? x.low <= price : x.high >= price),
+      firstReach = (i, price, up) => {
+        while (i < bars.length) {
+          if (i % B === 0 && i + B <= bars.length) {
+            const b = i / B;
+            if (!(up ? lows[b] <= price : highs[b] >= price)) {
+              i += B;
+              continue;
+            }
+          }
+          if (reaches(bars[i], price, up)) return i;
+          i++;
+        }
+        return -1;
+      },
+      out = [],
+      events = clockEvents("cme", 0, series.end);
+    for (let i = 0; i + 1 < events.length; i++) {
+      const close = events[i],
+        open = events[i + 1];
+      if (close.what !== "CME close" || open.what !== "CME reopen" || open.t > series.end) continue;
+      const before = spot(close.t),
+        after = spot(open.t);
+      if (!before || !after || before.c * step + step < close.t - DAYS) continue;
+      const fri = before.close,
+        sun = after.close;
+      if (fri === sun) continue;
+      const up = sun > fri,
+        j = firstReach(index(open.t), fri, up);
+      out.push({
+        close: close.t,
+        open: open.t,
+        fri,
+        sun,
+        lo: Math.min(fri, sun),
+        hi: Math.max(fri, sun),
+        filled: j >= 0 ? Math.min((bars[j].c + 1) * step, series.end) : null,
+      });
+    }
+    hit = out;
+    gapMemo.set(series, hit);
+    return hit;
   }
   // The row underlay (Rows, U): each price row's value over a period of its
   // own, drawn as bands across the chart behind the cells and as a second
@@ -8627,65 +9486,491 @@
       rect = meas.state === "pending" || meas.state === "failed" ? null : meas.query;
     return { kind, period: S.period, vol, res, bands, volBands, rect };
   }
-  // The lines and their tags. Longer periods are drawn first, so shorter ones
-  // lie on top; each line is haloed in the surface colour to stand clear of
-  // the cells under it.
+  // The horizontal lines on, as drawn this frame: each with its key and its
+  // own id, the family and tier it is drawn in, its price (base rows), its
+  // span, whether it goes on dashed to the right edge, and its tag. A
+  // per-day, per-week or per-month line draws only while its days, weeks or
+  // months are at least 6 px apart on screen, all but the one in effect at
+  // the data's edge, which goes on to the right edge with its tag.
+  const spaced = (gap) => (gap * G.w) / Math.max(1e-9, S.tB - S.tA) >= 6,
+    // The loaded blocks, as far as a day's profile reads them.
+    sourcesKey = () => Object.values(sources).map((s) => s.id + ":" + s.cells.length).join(",") + "|" + (referenceView?.cells.length ?? ""),
+    itemsMemo = new Map();
+  function cachedItems(name, key, make) {
+    const hit = itemsMemo.get(name);
+    if (hit?.key === key) return hit.items;
+    const items = make();
+    itemsMemo.set(name, { key, items });
+    return items;
+  }
+  function lineItems(cut) {
+    const items = [],
+      on = new Set(S.lines),
+      dNow = Math.floor(Math.max(0, cut - 1e-6) / DAYS),
+      tag = (name, value, approx = false) => ({ name, value: (approx ? "≈ " : "") + price(value * PR) });
+    for (const key of periodLines()) {
+      const r = lineShown(key);
+      if (r.state !== "ready" || r.row === null) continue;
+      const tier = lineTier(key),
+        at = (r.row + 0.5) * r.rowPrice,
+        span = [r.span[0], Math.min(r.span[1], cut)];
+      items.push({
+        key,
+        id: key,
+        kind: "poc",
+        family: "poc",
+        tier,
+        at,
+        from: span[0],
+        to: span[1],
+        on: true,
+        r,
+        tag: tag(lineTag(key), at, !r.exact),
+      });
+      const va = on.has("va") ? periodArea(r) : null;
+      if (va)
+        for (const [edge, side] of [
+          [va.r1 * r.rowPrice, "VAH"],
+          [va.r0 * r.rowPrice, "VAL"],
+        ])
+          items.push({
+            key: "va",
+            id: `va|${key}|${side}`,
+            kind: "va",
+            side,
+            period: key,
+            family: "poc",
+            tier,
+            at: edge,
+            from: span[0],
+            to: span[1],
+            on: true,
+            weight: 0.65,
+            r,
+            va,
+            tag: tag(`${lineTag(key)} ${side}`, edge, !r.exact),
+          });
+    }
+    // The rest changes only with the data and the days in view.
+    if (!S.lines.some((k) => k === "dpoc" || k === "udpoc" || k === "uwpoc" || EIGHT_HOUR_LINES.includes(k))) return items;
+    const data = [live.generation, CUT, cut, barsVersion, dayReads.size, sourcesKey()].join("|"),
+      d0 = Math.max(0, Math.floor(S.tA / DAYS)),
+      d1 = Math.min(dNow, Math.floor(S.tB / DAYS)),
+      wide = [DAYS, 7 * DAYS, 28 * DAYS].map(spaced),
+      view = [data, d0, d1, wide].join("|");
+    if (on.has("dpoc")) items.push(...cachedItems("dpoc", view, () => dayItems(cut, dNow, d0, d1, wide[0], tag)));
+    if (on.has("udpoc") || on.has("uwpoc"))
+      items.push(...cachedItems("untested", [data, on.has("udpoc"), on.has("uwpoc")].join("|"), () => untestedItems(on)));
+    const session = ["dopen", "pdhlc", "wopen", "mopen"].filter((k) => on.has(k));
+    if (session.length)
+      items.push(...cachedItems("session", [view, session].join("|"), () => sessionItems(cut, dNow, session, wide, tag)));
+    return items;
+  }
+  // A period's 70% value area, kept with its rows.
+  const areaMemo = new WeakMap();
+  function periodArea(r) {
+    if (!areaMemo.has(r.rows)) areaMemo.set(r.rows, contiguousArea(r.rows, r.row, r.total));
+    return areaMemo.get(r.rows);
+  }
+  // Each day's POC and value area in view, while days are far enough apart,
+  // and the latest day's, which goes on to the right edge with its tags.
+  function dayItems(cut, dNow, d0, d1, wide, tag) {
+    const items = [],
+      days = [];
+    if (wide) for (let d = d0; d <= d1; d++) days.push(d);
+    if (!days.includes(dNow)) days.push(dNow);
+    for (const d of days) {
+      const latest = d === dNow,
+        p = dayProfile(d);
+      if (p.state !== "ready" || p.poc === null) continue;
+      const from = d * DAYS,
+        to = Math.min((d + 1) * DAYS, cut);
+      items.push({
+        key: "dpoc",
+        id: `dpoc|${d}`,
+        kind: "dpoc",
+        side: "POC",
+        d,
+        p,
+        family: "poc",
+        tier: "short",
+        at: p.poc + 0.5,
+        from,
+        to,
+        on: latest,
+        tag: latest ? tag("Day POC", p.poc + 0.5) : null,
+      });
+      if (p.va)
+        for (const [edge, side] of [
+          [p.va.r1, "VAH"],
+          [p.va.r0, "VAL"],
+        ])
+          items.push({
+            key: "dpoc",
+            id: `dpoc|${d}|${side}`,
+            kind: "dpoc",
+            side,
+            d,
+            p,
+            family: "poc",
+            tier: "short",
+            at: edge,
+            from,
+            to,
+            on: latest,
+            weight: 0.65,
+            tag: latest ? tag(`Day ${side}`, edge) : null,
+          });
+    }
+    return items;
+  }
+  // The untested POCs: each from its day or week, on to the right edge,
+  // tagged with its age and distance.
+  function untestedItems(on) {
+    const items = [];
+    for (const [key, kind] of [
+      ["udpoc", "day"],
+      ["uwpoc", "week"],
+    ]) {
+      if (!on.has(key)) continue;
+      const list = untestedList(kind);
+      for (const u of list.items || [])
+        items.push({
+          key,
+          id: `${key}|${u.k}`,
+          kind: "untested",
+          u,
+          list,
+          family: "poc",
+          tier: "short",
+          at: u.price / PR,
+          from: u.from,
+          to: u.to,
+          on: true,
+          tag: {
+            name: `${kind === "day" ? "uPOC" : "uwPOC"} ${u.age}${kind === "day" ? "d" : "w"}`,
+            value: `${price(u.price)} · ${signed(u.atrs, (x) => x.toFixed(1))} ATR · ${signed(u.usd, (x) => price(Math.round(x)))}`,
+          },
+        });
+    }
+    return items;
+  }
+  // The session levels in view: each day's open and its previous day's high,
+  // low and close, each week's and month's open, while they are far enough
+  // apart, and the latest of each, on to the right edge with its tag.
+  function sessionItems(cut, dNow, keys, wide, tag) {
+    const series = barSeries(9);
+    if (series.state !== "ready") return [];
+    const items = [],
+      cal = barCalendar(series),
+      end = Math.min(cut, series.end),
+      // The days, weeks or months in view, or else only the latest.
+      inView = (list, apart, now) =>
+        apart ? list.filter((g) => g.z > S.tA && g.t < Math.min(S.tB, cut)) : list.filter((g) => g.k === now),
+      withLatest = (list, all, now) => (list.some((g) => g.k === now) ? list : list.concat(all.filter((g) => g.k === now)));
+    if (keys.includes("dopen") || keys.includes("pdhlc"))
+      for (const day of withLatest(inView(cal.days.list, wide[0], dNow), cal.days.list, dNow)) {
+        const latest = day.k === dNow;
+        if (keys.includes("dopen"))
+          items.push({
+            key: "dopen",
+            id: `dopen|${day.k}`,
+            kind: "open",
+            g: day,
+            span: "day",
+            family: "level",
+            tier: "short",
+            at: day.open / PR,
+            from: day.t,
+            to: Math.min(day.z, end),
+            on: latest,
+            tag: latest ? tag("Day open", day.open / PR) : null,
+          });
+        const prev = cal.days.by.get(day.k - 1);
+        if (keys.includes("pdhlc") && prev?.whole)
+          for (const [value, side, name] of [
+            [prev.high, "high", "PDH"],
+            [prev.low, "low", "PDL"],
+            [prev.close, "close", "PDC"],
+          ])
+            items.push({
+              key: "pdhlc",
+              id: `pdhlc|${day.k}|${side}`,
+              kind: "prev",
+              side,
+              g: day,
+              prev,
+              family: "level",
+              tier: "short",
+              at: value / PR,
+              from: day.t,
+              to: Math.min(day.z, end),
+              on: latest,
+              weight: side === "close" ? 0.75 : 1,
+              tag: latest ? tag(name, value / PR) : null,
+            });
+      }
+    if (keys.includes("wopen")) {
+      const now = weekOf(dNow);
+      for (const week of withLatest(inView(cal.weeks.list, wide[1], now), cal.weeks.list, now)) {
+        const latest = week.k === now;
+        items.push({
+          key: "wopen",
+          id: `wopen|${week.k}`,
+          kind: "open",
+          g: week,
+          span: "week",
+          family: "level",
+          tier: "short",
+          at: week.open / PR,
+          from: Math.max(0, week.t),
+          to: Math.min(week.z, end),
+          on: latest,
+          tag: latest ? tag("Week open", week.open / PR) : null,
+        });
+      }
+    }
+    if (keys.includes("mopen")) {
+      const now = monthOf(Math.max(0, cut - 1e-6));
+      for (const month of withLatest(inView(cal.months.list, wide[2], now), cal.months.list, now)) {
+        const latest = month.k === now;
+        items.push({
+          key: "mopen",
+          id: `mopen|${month.k}`,
+          kind: "open",
+          g: month,
+          span: "month",
+          family: "level",
+          tier: "medium",
+          at: month.open / PR,
+          from: month.t,
+          to: Math.min(month.z, end),
+          on: latest,
+          tag: latest ? tag(`${d3.utcFormat("%b")(date(month.t))} open`, month.open / PR) : null,
+        });
+      }
+    }
+    return items;
+  }
+  // The lines, their tags and the level line. Longer spans are drawn first,
+  // so shorter ones lie on top; each line is haloed in the surface colour to
+  // stand clear of the cells under it. Lines of one look go in one stroke:
+  // a wide view draws a line a day.
   let lineHits = [];
   function drawLines(cut) {
-    lineHits = [];
-    const shown = S.lines
-      .map((key) => ({ key, r: lineShown(key), colour: lineColour(key) }))
-      .filter((l) => l.r.state === "ready" && l.r.row !== null);
-    if (!shown.length && S.level === null) return;
-    const right = G.x + G.w;
+    if (lineHits.length) lineHits = [];
+    if (!S.lines.length && S.level === null) return;
+    const items = lineItems(cut);
+    if (!items.length && S.level === null) return;
+    const right = G.x + G.w,
+      halo = new Map(),
+      ticks = [],
+      strokes = new Map(),
+      stroke = (colour, width, dash, alpha, x1, y, x2) => {
+        const k = [colour, width, dash, alpha].join("|");
+        let s = strokes.get(k);
+        if (!s) strokes.set(k, (s = { colour, width, dash, alpha, segs: [] }));
+        s.segs.push(x1, y, x2);
+      };
+    items.sort((a, b) => b.to - b.from - (a.to - a.from));
+    for (const l of items) {
+      const style = lineStyle(l.family, l.tier),
+        hot = hover?.line === l.id,
+        width = style.width * (l.weight || 1) + (hot ? 1 : 0),
+        y = Math.round(G.Y(l.at)) + 0.5,
+        xa = clamp(G.X(l.from), G.x - 2, right),
+        xb = clamp(G.X(l.to), G.x - 2, right),
+        xe = l.on ? right : xb;
+      l.colour = style.colour;
+      l.y = y;
+      if (y < G.y - 4 || y > G.y + G.h + 4 || xe <= G.x) continue;
+      // The halo, then the span solid and the rest of the way dashed.
+      const w = width + 3;
+      if (!halo.has(w)) halo.set(w, []);
+      halo.get(w).push(xa, y, xe);
+      if (xb > xa) stroke(style.colour, width, "", 1, xa, y, xb);
+      if (l.on && right > xb) stroke(style.colour, Math.max(1, width * 0.7), "5,4", 0.85, xb, y, right);
+      // Where a period starts, when it starts in view.
+      if (l.kind === "poc" && G.X(l.from) > G.x + 1 && G.X(l.from) < right - 1) ticks.push([xa, y, style.colour]);
+      lineHits.push({ key: l.key, id: l.id, y, xa, xb: xe, item: l, colour: style.colour });
+    }
     ctx.save();
     ctx.beginPath();
     ctx.rect(G.x, G.y, G.w, G.h);
     ctx.clip();
-    for (const l of shown.slice().sort((a, b) => b.r.span[1] - b.r.span[0] - (a.r.span[1] - a.r.span[0]))) {
-      const y = Math.round(G.Y((l.r.row + 0.5) * l.r.rowPrice)) + 0.5,
-        xa = clamp(G.X(l.r.span[0]), G.x - 2, right),
-        xb = clamp(G.X(Math.min(l.r.span[1], cut)), G.x - 2, right),
-        hot = hover?.line === l.key,
-        width = hot ? 3 : 2;
-      l.y = y;
-      // The halo, then the period solid and the rest of the way dashed. A line
-      // being updated keeps its last place until the new one is read.
-      line(xa, y, right, y, colors.surface, width + 3, 0.85);
-      line(xa, y, xb, y, l.colour, width, 1);
-      ctx.setLineDash([5, 4]);
-      line(xb, y, right, y, l.colour, hot ? 2 : 1.4, 0.85);
-      ctx.setLineDash([]);
-      // Where the period starts, when it starts in view.
-      if (G.X(l.r.span[0]) > G.x + 1 && G.X(l.r.span[0]) < right - 1) {
-        line(xa, y - 5, xa, y + 5, colors.surface, 4, 0.85);
-        line(xa, y - 5, xa, y + 5, l.colour, 2, 1);
+    ctx.strokeStyle = colors.surface;
+    ctx.globalAlpha = 0.85;
+    for (const [w, segs] of halo) {
+      ctx.lineWidth = w;
+      ctx.beginPath();
+      for (let i = 0; i < segs.length; i += 3) {
+        ctx.moveTo(segs[i], segs[i + 1]);
+        ctx.lineTo(segs[i + 2], segs[i + 1]);
       }
-      lineHits.push({ key: l.key, y, xa, xb: right, r: l.r, colour: l.colour });
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    for (const s of strokes.values()) {
+      ctx.strokeStyle = s.colour;
+      ctx.lineWidth = s.width;
+      ctx.globalAlpha = s.alpha;
+      ctx.setLineDash(s.dash ? s.dash.split(",").map(Number) : []);
+      ctx.beginPath();
+      for (let i = 0; i < s.segs.length; i += 3) {
+        ctx.moveTo(s.segs[i], s.segs[i + 1]);
+        ctx.lineTo(s.segs[i + 2], s.segs[i + 1]);
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    for (const [x, y, colour] of ticks) {
+      line(x, y - 5, x, y + 5, colors.surface, 4, 0.85);
+      line(x, y - 5, x, y + 5, colour, 2, 1);
     }
     // The level line: dashed across the prices in the neutral text colour, on
-    // a halo, unlike the POC lines, which are coloured and solid over their period.
+    // a halo, unlike the family lines, which are coloured and solid over their span.
     if (S.level !== null) {
       const y = Math.round(G.Y(S.level)) + 0.5;
       ctx.setLineDash([6, 4]);
       line(G.x, y, right, y, colors.surface, 4, 0.8);
       line(G.x, y, right, y, colors.ink, hover?.line === "level" ? 2 : 1.3, 0.9);
       ctx.setLineDash([]);
-      lineHits.push({ key: "level", y, xa: G.x, xb: right, colour: colors.ink });
+      lineHits.push({ key: "level", id: "level", y, xa: G.x, xb: right, colour: colors.ink });
     }
     ctx.restore();
     drawLineTags([
-      ...shown.map((l) => ({
-        key: l.key,
-        colour: l.colour,
-        at: (l.r.row + 0.5) * l.r.rowPrice,
-        name: lineTag(l.key),
-        value: (l.r.exact ? "" : "≈ ") + price((l.r.row + 0.5) * l.r.rowPrice * PR),
-      })),
+      ...items
+        .filter((l) => l.tag)
+        .map((l) => ({ key: l.id, colour: l.colour, at: l.at, name: l.tag.name, value: l.tag.value })),
       ...(S.level === null
         ? []
         : [{ key: "level", colour: colors.ink, at: S.level, name: "Level", value: price(S.level * PR) }]),
     ]);
+  }
+  // Clock lines: vertical, in the clock's neutral colour, each kind with a
+  // dash and weight of its own, across the prices, into the future too; each
+  // kind draws only while its lines are at least 6 px apart, and the Deribit
+  // expiry's monthly and quarterly ones, heavier, while theirs are. Under the
+  // horizontal lines. Live, the CME gap is shaded from the reopen until a
+  // trade reaches the Friday close.
+  const CLOCK_LOOK = {
+    cday: { dash: [], width: 1 },
+    cweek: { dash: [], width: 1.3 },
+    cmonth: { dash: [], width: 1.7 },
+    funding: { dash: [1, 3], width: 1 },
+    usopen: { dash: [4, 3], width: 1.2 },
+    cme: { dash: [7, 2, 1, 2], width: 1.2 },
+    deribit: { dash: [2, 2], width: 1 },
+  };
+  let clockHits = [];
+  function drawClock(cut) {
+    if (clockHits.length) clockHits = [];
+    if (!S.lines.length) return;
+    const kinds = S.lines.filter((k) => CLOCK[k]);
+    if (!kinds.length) return;
+    const colour = lineStyle("clock", "long").colour;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(G.x, G.y, G.w, G.h);
+    ctx.clip();
+    if (kinds.includes("cme") && PACK.live) {
+      const s = barSeries(6);
+      if (s.state === "ready")
+        for (const g of cmeGaps(s)) {
+          const x0 = G.X(g.open),
+            x1 = G.X(g.filled ?? Math.min(s.end, cut)),
+            y0 = G.Y(g.hi / PR),
+            y1 = G.Y(g.lo / PR);
+          if (x1 < G.x || x0 > G.x + G.w || y1 < G.y || y0 > G.y + G.h) continue;
+          ctx.fillStyle = colour;
+          ctx.globalAlpha = 0.16;
+          ctx.fillRect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0));
+          ctx.globalAlpha = 1;
+          markLine(x0, y0, x1, y0, colour, 1, 0.7);
+          markLine(x0, y1, x1, y1, colour, 1, 0.7);
+          clockHits.push({ gap: g, box: [x0, Math.min(y0, y1 - 3), x1, Math.max(y1, y0 + 3)] });
+        }
+    }
+    for (const kind of kinds) {
+      const look = CLOCK_LOOK[kind],
+        events = spaced(CLOCK[kind].gap)
+          ? clockEvents(kind, S.tA, S.tB)
+          : kind === "deribit"
+            ? clockEvents(kind, S.tA, S.tB).filter((e) => spaced(e.weight === 3 ? 91 * DAYS : 28 * DAYS) && e.weight > 1)
+            : [];
+      for (const weight of [1, 2, 3]) {
+        const drawn = events.filter((e) => (e.weight || 1) === weight);
+        if (!drawn.length) continue;
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = look.width * (weight === 3 ? 2 : weight === 2 ? 1.5 : 1);
+        ctx.globalAlpha = 0.6;
+        ctx.setLineDash(look.dash);
+        ctx.beginPath();
+        for (const e of drawn) {
+          const x = Math.round(G.X(e.t)) + 0.5;
+          ctx.moveTo(x, G.y);
+          ctx.lineTo(x, G.y + G.h);
+          clockHits.push({ event: e, x });
+        }
+        ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+  // The clock lines under the pointer, all that fall at the nearest one's
+  // time (funding at a day's start, an expiry at 08:00), within 3 px; or else
+  // the CME gap it is inside.
+  function clockAt(p) {
+    const near = clockHits.filter((h) => h.event && Math.abs(p.x - h.x) <= 3);
+    if (near.length) {
+      const t = near.reduce((a, h) => (Math.abs(p.x - h.x) < Math.abs(p.x - a.x) ? h : a)).event.t;
+      return { events: near.filter((h) => h.event.t === t).map((h) => h.event) };
+    }
+    return clockHits.find((h) => h.gap && p.x >= h.box[0] && p.x <= h.box[2] && p.y >= h.box[1] && p.y <= h.box[3]) || null;
+  }
+  function clockTip(tip, h) {
+    if (h.gap) {
+      const g = h.gap,
+        size = g.hi - g.lo;
+      tipRows(
+        tip,
+        `CME gap · ${price(Math.round(size))} USDT`,
+        `${((100 * size) / g.lo).toFixed(2)}% ${g.sun > g.fri ? "up" : "down"} over the weekend`,
+        [
+          ["Friday close", `${price(g.fri)} USDT · ${when(g.close)} UTC`],
+          ["Sunday reopen", `${price(g.sun)} USDT · ${when(g.open)} UTC`],
+          ["Traded back", g.filled === null ? "not yet" : `by ${when(g.filled)} UTC`],
+        ],
+        "The spot price at each: the last trade before it. Shaded until a trade reaches the Friday close",
+      );
+      return;
+    }
+    const e = h.events[0];
+    tipRows(
+      tip,
+      h.events.map((x) => x.what).join(" · "),
+      `${d3.utcFormat("%a")(date(e.t))} ${when(e.t)} UTC`,
+      [],
+      h.events.map(clockNote).filter(Boolean),
+    );
+  }
+  function clockNote(e) {
+    if (e.kind === "usopen") return "9:30 in New York: 13:30 UTC in US daylight time, 14:30 otherwise";
+    if (e.kind === "cme")
+      return e.what === "CME close"
+        ? "Friday 16:00 in Chicago, where CME's weekend close starts"
+        : "Sunday 17:00 in Chicago, when CME reopens for the Monday session";
+    if (e.kind === "deribit")
+      return e.weight === 3
+        ? "Deribit's quarterly expiry: the last Friday of the quarter, 08:00 UTC"
+        : e.weight === 2
+          ? "Deribit's monthly expiry: the month's last Friday, 08:00 UTC"
+          : "Deribit's weekly expiry: Friday, 08:00 UTC";
+    if (e.kind === "funding") return "Perpetual funding, every 8 hours from 00:00 UTC";
+    return "";
   }
   // Tags at the plot's right edge, one per line, level with it or pushed apart
   // just enough to read, with a leader back to the line; a line above or below
@@ -8757,7 +10042,7 @@
       ctx.fillText(t.value, x + t.nameW + t.valueW / 2, t.ty + 0.5);
       ctx.globalAlpha = 1;
       labelsTaken.push([x - 3, top - 2, x + w + 3, top + height + 2]);
-      const hit = lineHits.find((h) => h.key === t.key);
+      const hit = lineHits.find((h) => h.id === t.key);
       if (hit) hit.tag = [x, top, x + w, top + height];
     }
   }
@@ -8770,37 +10055,147 @@
       null
     );
   }
+  const SIDE_NAMES = { VAH: "value area high", VAL: "value area low", POC: "POC" };
   function lineTip(tip, h) {
     if (h.key === "level") {
       tipRows(tip, "Level line", `${price(S.level * PR)} USDT`, [], nav.touchTip ? "" : "X clears it");
       if (nav.touchTip) tip.append(levelButton(Math.floor(S.level / stepP())));
       return;
     }
-    const r = h.r,
-      rowTop = (r.row + 1) * r.rowPrice * PR,
-      rowBottom = r.row * r.rowPrice * PR,
-      periodEnd = Math.min(r.span[1], activeCutoff());
-    tipRows(
-      tip,
-      `${lineName(h.key)} · POC ${price((r.row + 0.5) * r.rowPrice * PR)} USDT`,
-      `Row ${price(rowBottom)}–${price(rowTop)} USDT`,
-      [
-        ["Period", range(r.span[0], periodEnd) + " UTC"],
-        ["In the row", `${compact(r.volume)} USDT · ${r.total ? ((100 * r.volume) / r.total).toFixed(1) : "0"}%`],
-        ["Period volume", `${compact(r.total)} USDT`],
-      ],
-      r.stale
-        ? "Updating to the latest data…"
-        : r.exact
-          ? "Where the period traded the most USDT, per 125 USDT row"
-          : r.rowPrice > 1
-            ? `Approximate: the recorded snapshot has ${price(r.rowPrice * PR)} USDT rows here`
-            : `Approximate: the recorded snapshot starts the period on its ${dur(BASE * r.columns)} columns`,
-    );
+    const l = h.item,
+      usdtAt = (x) => `${price(x * PR)} USDT`;
+    if (l.kind === "poc" || l.kind === "va") {
+      const r = l.r,
+        approx = r.exact ? "" : "≈ ",
+        periodEnd = Math.min(r.span[1], activeCutoff()),
+        key = l.kind === "poc" ? l.key : l.period,
+        area = l.kind === "va" ? l.va : null;
+      tipRows(
+        tip,
+        l.kind === "poc"
+          ? `${lineName(key)} · POC ${approx}${price(l.at * PR)} USDT`
+          : `${lineName(key)} · ${SIDE_NAMES[l.side]} ${approx}${price(l.at * PR)} USDT`,
+        l.kind === "poc"
+          ? `Row ${price(r.row * r.rowPrice * PR)}–${price((r.row + 1) * r.rowPrice * PR)} USDT`
+          : `The ${l.side === "VAH" ? "top" : "bottom"} of the period's 70% value area`,
+        [
+          ["Period", range(r.span[0], periodEnd) + " UTC"],
+          ...(area
+            ? [
+                ["Value area", `${price(area.r0 * r.rowPrice * PR)}–${price(area.r1 * r.rowPrice * PR)} USDT`],
+                ["In it", `${compact(area.volume)} USDT · ${(100 * area.share).toFixed(1)}%`],
+                ["POC", usdtAt((r.row + 0.5) * r.rowPrice)],
+              ]
+            : [["In the row", `${compact(r.volume)} USDT · ${r.total ? ((100 * r.volume) / r.total).toFixed(1) : "0"}%`]]),
+          ["Period volume", `${compact(r.total)} USDT`],
+        ],
+        r.stale
+          ? "Updating to the latest data…"
+          : r.exact
+            ? "Per 125 USDT row, the cube's own"
+            : r.rowPrice > 1
+              ? `Approximate: the recorded snapshot has ${price(r.rowPrice * PR)} USDT rows here`
+              : `Approximate: the recorded snapshot starts the period on its ${dur(BASE * r.columns)} columns`,
+      );
+      return;
+    }
+    if (l.kind === "dpoc") {
+      const p = l.p,
+        top = p.rows.find((x) => x.r === p.poc);
+      tipRows(
+        tip,
+        `Daily ${SIDE_NAMES[l.side]} · ${usdtAt(l.at)}`,
+        day(l.d * DAYS) + (p.whole ? "" : ", so far"),
+        [
+          ["Timeframe", "1 day, 00:00–24:00 UTC"],
+          ["POC", `${usdtAt(p.poc + 0.5)} · ${compact(top?.v || 0)} USDT`],
+          ...(p.va ? [["Value area", `${price(p.va.r0 * PR)}–${price(p.va.r1 * PR)} USDT · ${(100 * p.va.share).toFixed(1)}%`]] : []),
+          ["Day volume", `${compact(p.v)} USDT`],
+        ],
+        "The day's POC and 70% value area, per 125 USDT row",
+      );
+      return;
+    }
+    if (l.kind === "untested") {
+      const u = l.u,
+        daily = u.kind === "day",
+        unit = daily ? (u.age === 1 ? "session" : "sessions") : u.age === 1 ? "week" : "weeks";
+      tipRows(
+        tip,
+        `Untested ${daily ? "daily" : "weekly"} POC · ${price(u.price)} USDT`,
+        daily ? day(u.from) : `Week of ${day(u.from)}`,
+        [
+          ["Timeframe", daily ? "1 day" : "1 week, from Monday"],
+          ["Age", `${u.age} ${unit}`],
+          ["Distance", `${signed(u.atrs, (x) => x.toFixed(2))} daily ATRs · ${signed(u.usd, (x) => price(Math.round(x)))} USDT`],
+          ["Latest price", `${price(l.list.latest)} USDT`],
+          ["Daily ATR", `${price(Math.round(l.list.atr))} USDT, 14 days, Wilder's`],
+        ],
+        `No trade since has come within 125 USDT of it${S.replay ? " before the replay's edge" : ""}`,
+      );
+      return;
+    }
+    const g = l.g,
+      span = l.kind === "prev" ? "day" : l.span,
+      names = { day: "Daily", week: "Weekly", month: "Monthly" };
+    if (l.kind === "open")
+      tipRows(
+        tip,
+        `${names[span]} open · ${usdtAt(l.at)}`,
+        span === "day" ? day(g.t) : span === "week" ? `Week of ${day(g.t)}` : d3.utcFormat("%B %Y")(date(g.t)),
+        [
+          ["Timeframe", { day: "1 day", week: "1 week, from Monday", month: "1 month" }[span]],
+          ["High", `${price(g.high)} USDT`],
+          ["Low", `${price(g.low)} USDT`],
+          [g.whole ? "Close" : "Latest", `${price(g.close)} USDT`],
+        ],
+        "Its first trade: the cube's exact open",
+      );
+    else
+      tipRows(
+        tip,
+        `Previous day's ${l.side} · ${usdtAt(l.at)}`,
+        `${day(l.prev.t)}, across ${day(g.t)}`,
+        [
+          ["Timeframe", "1 day"],
+          ["High", `${price(l.prev.high)} USDT`],
+          ["Low", `${price(l.prev.low)} USDT`],
+          ["Close", `${price(l.prev.close)} USDT`],
+        ],
+        "Exact, from the cube's own highs, lows and closes",
+      );
   }
-  // The POC lines' popover: the periods as checkboxes, each with its colour and,
-  // when on, its POC; the days chosen, each removable; and a day to add. The
-  // bar's button shows the lines on as dots in their colours.
+  // The Lines popover: the families as groups that open and close, each row a
+  // toggle with its look and, when on, its value; the days chosen, each
+  // removable; a day to add; the level line. The bar's button shows a dot per
+  // family on, in its colour.
+  // A family is open as it was last left, or else while it has lines on (the
+  // volume profile always).
+  const FAMILY_OPEN_KEY = "origo-lines-open";
+  let familyOpen = null;
+  function familiesOpen() {
+    if (!familyOpen) {
+      familyOpen = {};
+      try {
+        Object.assign(familyOpen, JSON.parse(localStorage.getItem(FAMILY_OPEN_KEY) || "{}"));
+      } catch {
+        // Without storage, the defaults.
+      }
+    }
+    const open = {};
+    for (const f of FAMILIES)
+      open[f.id] = f.id in familyOpen ? familyOpen[f.id] : f.id === "profile" || S.lines.some((k) => familyOf(k) === f.id);
+    return open;
+  }
+  function setFamilyOpen(id, open) {
+    familiesOpen();
+    familyOpen[id] = open;
+    try {
+      localStorage.setItem(FAMILY_OPEN_KEY, JSON.stringify(familyOpen));
+    } catch {
+      // Remembered for this page only.
+    }
+  }
   function lineValue(key) {
     const r = lineShown(key);
     if (r.state === "ready")
@@ -8812,19 +10207,58 @@
     if (r.state === "failed") return "unavailable";
     return "…";
   }
+  // A toggle's value while on: its price now, or how many, or why not yet.
+  function toggleValue(key) {
+    if (!lineAvailable(key)) return { text: "Live cube only" };
+    if (!S.lines.includes(key) || CLOCK[key]) return { text: "" };
+    const why = (s) =>
+      s.state === "failed"
+        ? { text: "unavailable", title: `The cube didn't answer: ${s.error}` }
+        : { text: "…" };
+    if (key === "va") return { text: periodLines().length ? "" : "with a period" };
+    if (key === "udpoc" || key === "uwpoc") {
+      const list = untestedList(key === "udpoc" ? "day" : "week");
+      if (list.state !== "ready") return list.items ? { text: `${list.items.length} so far…` } : why(list);
+      return { text: list.atr === null ? "needs 14 days" : `${list.items.length} within ${UNTESTED_REACH} ATR` };
+    }
+    if (key === "dpoc") {
+      const p = dayProfile(Math.floor(Math.max(0, activeCutoff() - 1e-6) / DAYS));
+      return p.state === "ready" ? { text: p.poc === null ? "no trades" : price((p.poc + 0.5) * PR) } : why(p);
+    }
+    const series = barSeries(9);
+    if (series.state !== "ready") return why(series);
+    const cal = barCalendar(series),
+      last = cal.days.list[cal.days.list.length - 1];
+    if (!last) return { text: "no trades" };
+    if (key === "dopen") return { text: price(last.open) };
+    if (key === "pdhlc") {
+      const prev = cal.days.by.get(last.k - 1);
+      return { text: prev ? `C ${price(prev.close)}` : "no day before" };
+    }
+    if (key === "wopen") return { text: price(cal.weeks.list[cal.weeks.list.length - 1].open) };
+    return { text: price(cal.months.list[cal.months.list.length - 1].open) };
+  }
+  function swatch(key, family, tier) {
+    const s = document.createElement("i");
+    s.className = "ol-line-swatch" + (CLOCK[key] ? " ol-clock-swatch" : "");
+    s.setAttribute("aria-hidden", "true");
+    s.dataset.lineSwatch = key;
+    s.dataset.family = family;
+    if (tier) s.dataset.tier = tier;
+    return s;
+  }
   function lineRow(key, removable) {
     const row = document.createElement(removable ? "div" : "label"),
-      swatch = document.createElement("i"),
       name = document.createElement("span"),
-      value = document.createElement("span");
+      value = document.createElement("span"),
+      toggle = TOGGLES[key];
     row.className = "ol-line-row" + (removable ? "" : " cursor-interaction");
-    swatch.className = "ol-line-swatch";
-    swatch.setAttribute("aria-hidden", "true");
-    swatch.dataset.lineSwatch = key;
     name.className = "ol-line-name";
-    name.textContent = lineName(key);
+    name.textContent = toggle ? toggle.name : lineName(key);
+    if (toggle) row.title = toggle.desc;
     value.className = "ol-line-value ol-num";
     value.dataset.lineValue = key;
+    const look = swatch(key, FAMILIES.find((f) => f.id === familyOf(key)).colour, toggle ? null : lineTier(key));
     if (removable) {
       const remove = document.createElement("button");
       remove.type = "button";
@@ -8833,41 +10267,92 @@
       remove.setAttribute("aria-label", `Remove the line since ${day(dayStart(key))}`);
       remove.innerHTML =
         '<svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>';
-      row.append(swatch, name, value, remove);
+      row.append(look, name, value, remove);
     } else {
       const box = document.createElement("input");
       box.type = "checkbox";
       box.dataset.line = key;
-      row.append(box, swatch, name, value);
+      row.append(box, look, name, value);
     }
     return row;
   }
+  // Which families have lines on, in menu order.
+  function familiesOn() {
+    return FAMILIES.filter((f) => S.lines.some((k) => familyOf(k) === f.id));
+  }
+  // The bar's button on every update; the popover only while it is open,
+  // and in full as it opens.
   function renderLines() {
+    renderLinesButton();
+    if (el("lines-pop").hidden) return;
     const on = new Set(S.lines),
       days = S.lines.filter(isDay);
     if (!el("lines-list").childElementCount)
       el("lines-list").replaceChildren(...LINE_KEYS.map((key) => lineRow(key, false)));
+    for (const list of qsa("[data-toggles]"))
+      if (!list.childElementCount)
+        list.replaceChildren(...TOGGLE_KEYS.filter((k) => TOGGLES[k].family === list.dataset.toggles).map((key) => lineRow(key, false)));
     if (el("lines-days").dataset.keys !== days.join(",")) {
       el("lines-days").dataset.keys = days.join(",");
       el("lines-days").replaceChildren(...days.map((key) => lineRow(key, true)));
     }
-    for (const box of qsa("#ol-lines-list input[data-line]")) {
-      const key = box.dataset.line;
+    for (const box of qsa("#ol-lines-pop input[data-line]")) {
+      const key = box.dataset.line,
+        available = lineAvailable(key);
       if (box.checked !== on.has(key)) box.checked = on.has(key);
-      // The names of the calendar periods say which month and year they are.
-      const name = box.parentElement.querySelector(".ol-line-name"),
-        named = key === "mo" || key === "yr" ? `${lineInfo(key).name} · ${lineTag(key)}` : lineInfo(key).name;
-      if (name.textContent !== named) name.textContent = named;
+      if (box.disabled !== !available) box.disabled = !available;
+      if (!TOGGLES[key]) {
+        // The names of the calendar periods say which month and year they are.
+        const name = box.parentElement.querySelector(".ol-line-name"),
+          named = key === "mo" || key === "yr" ? `${lineInfo(key).name} · ${lineTag(key)}` : lineInfo(key).name;
+        if (name.textContent !== named) name.textContent = named;
+      }
     }
-    for (const swatch of qsa("[data-line-swatch]"))
-      swatch.style.setProperty("--line", lineColour(swatch.dataset.lineSwatch));
+    // Written only when they change: this runs on every input, and a style
+    // written would have the next frame lay the page out again.
+    for (const s of qsa("[data-line-swatch]")) {
+      const key = s.dataset.lineSwatch,
+        tier = s.dataset.tier || (isPeriod(key) ? lineTier(key) : TOGGLES[key]?.tier || "short"),
+        style = lineStyle(s.dataset.family, CLOCK[key] ? "long" : tier),
+        look = `${style.colour}|${Math.max(1, style.width).toFixed(2)}px`;
+      if (s.dataset.look === look) continue;
+      s.dataset.look = look;
+      s.style.setProperty("--line", style.colour);
+      s.style.setProperty("--weight", look.split("|")[1]);
+    }
     for (const value of qsa("[data-line-value]")) {
       const key = value.dataset.lineValue,
-        text = on.has(key) ? lineValue(key) : "",
-        r = on.has(key) ? lineShown(key) : null,
-        why = r?.state === "failed" ? `The cube didn't answer: ${r.error}` : "";
-      if (value.textContent !== text) value.textContent = text;
-      if (value.title !== why) value.title = why;
+        shown = TOGGLES[key]
+          ? toggleValue(key)
+          : on.has(key)
+            ? (() => {
+                const r = lineShown(key);
+                return { text: lineValue(key), title: r.state === "failed" ? `The cube didn't answer: ${r.error}` : "" };
+              })()
+            : { text: "" };
+      if (value.textContent !== shown.text) value.textContent = shown.text;
+      if (value.title !== (shown.title || "")) value.title = shown.title || "";
+    }
+    // Each family's head: whether it is open, its dot and how many are on.
+    const open = familiesOpen();
+    for (const f of FAMILIES) {
+      const head = el(`family-${f.id}-head`),
+        body = el(`family-${f.id}`),
+        count = S.lines.filter((k) => familyOf(k) === f.id).length,
+        isOpen = Boolean(open[f.id]);
+      if (head.getAttribute("aria-expanded") !== String(isOpen)) head.setAttribute("aria-expanded", String(isOpen));
+      if (body.hidden === isOpen) body.hidden = !isOpen;
+      const dot = head.querySelector(".ol-family-dot"),
+        colour = lineStyle(f.colour, "long").colour;
+      if (dot.dataset.colour !== colour) {
+        dot.dataset.colour = colour;
+        dot.style.background = colour;
+      }
+      const text = count ? String(count) : "";
+      if (head.querySelector(".ol-family-count").textContent !== text) head.querySelector(".ol-family-count").textContent = text;
+      const status = root.querySelector(`[data-family-status="${f.id}"]`),
+        note = familyStatus(f.id);
+      if (status.textContent !== note) status.textContent = note;
     }
     const level = el("lines-level"),
       levelKey = S.level === null ? "" : String(S.level);
@@ -8880,13 +10365,13 @@
         level.replaceChildren(none);
       } else {
         const row = document.createElement("div"),
-          swatch = document.createElement("i"),
+          look = document.createElement("i"),
           name = document.createElement("span"),
           value = document.createElement("span"),
           remove = document.createElement("button");
         row.className = "ol-line-row";
-        swatch.className = "ol-line-swatch ol-level-swatch";
-        swatch.setAttribute("aria-hidden", "true");
+        look.className = "ol-line-swatch ol-level-swatch";
+        look.setAttribute("aria-hidden", "true");
         name.className = "ol-line-name";
         name.textContent = "Level";
         value.className = "ol-line-value ol-num";
@@ -8899,36 +10384,67 @@
         remove.setAttribute("aria-label", `Remove the level line at ${price(S.level * PR)}`);
         remove.innerHTML =
           '<svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>';
-        row.append(swatch, name, value, remove);
+        row.append(look, name, value, remove);
         level.replaceChildren(row);
       }
     }
-    el("lines-clear").disabled = !S.lines.length && S.level === null;
-    el("lines-days-head").textContent = days.length ? "Since a day" : "Since a day · none yet";
-    const last = date(Math.max(0, activeCutoff() - 1e-6)).toISOString().slice(0, 10);
-    el("lines-date").min = "2021-01-01";
-    el("lines-date").max = last;
-    // The bar's button: a dot for each line on, in its colour, and its name.
-    const dots = el("lines-dots"),
-      shown = S.lines.slice(0, 5),
-      want = shown.map(lineColour).join(",") + (S.lines.length > 5 ? `+${S.lines.length - 5}` : "");
+    const cleared = !S.lines.length && S.level === null,
+      daysHead = days.length ? "Since a day" : "Since a day · none yet",
+      last = date(Math.max(0, activeCutoff() - 1e-6)).toISOString().slice(0, 10);
+    if (el("lines-clear").disabled !== cleared) el("lines-clear").disabled = cleared;
+    if (el("lines-days-head").textContent !== daysHead) el("lines-days-head").textContent = daysHead;
+    if (el("lines-date").min !== "2021-01-01") el("lines-date").min = "2021-01-01";
+    if (el("lines-date").max !== last) el("lines-date").max = last;
+  }
+  function renderLinesButton() {
+    // The bar's button: a dot for each family on, in its colour.
+    const fams = familiesOn(),
+      dots = el("lines-dots"),
+      want = fams.map((f) => f.id).join(",") + "|" + colourEpoch;
     if (dots.dataset.dots !== want) {
       dots.dataset.dots = want;
       dots.replaceChildren(
-        ...shown.map((key) => {
+        ...fams.map((f) => {
           const dot = document.createElement("i");
-          dot.style.background = lineColour(key);
+          dot.style.background = lineStyle(f.colour, "long").colour;
           return dot;
         }),
-        ...(S.lines.length > 5 ? [`+${S.lines.length - 5}`] : []),
       );
     }
     const count = S.lines.length ? String(S.lines.length) : "";
     if (el("lines-count").textContent !== count) el("lines-count").textContent = count;
     const label =
-      (S.lines.length ? `POC lines: ${S.lines.map(lineName).join(", ")}` : "POC lines: none") +
-      (S.level === null ? "" : `; level line at ${price(S.level * PR)}`);
+      (fams.length
+        ? `Lines: ${fams
+            .map((f) => `${f.name} (${S.lines.filter((k) => familyOf(k) === f.id).map((k) => TOGGLES[k]?.name || lineName(k)).join(", ")})`)
+            .join("; ")}`
+        : "Lines: none") + (S.level === null ? "" : `; level line at ${price(S.level * PR)}`);
     if (el("lines").getAttribute("aria-label") !== label) el("lines").setAttribute("aria-label", label);
+  }
+  // What a family's lines are waiting on, or where their measures end.
+  function familyStatus(id) {
+    if (!PACK.live) return id === "session" ? "Session levels need the live cube." : "";
+    const keys = S.lines.filter((k) => familyOf(k) === id);
+    if (id === "clock") {
+      if (!keys.includes("cme")) return "";
+      const s = barSeries(6);
+      return s.state === "failed"
+        ? `The CME gap's hourly bars couldn't be read: ${s.error}`
+        : s.state === "pending"
+          ? "Reading hourly bars for the CME gap…"
+          : barsShort(s) !== null
+            ? `The CME gap ends at ${when(barsShort(s))} UTC, where the cube's measures do.`
+            : "";
+    }
+    if (!keys.some((k) => EIGHT_HOUR_LINES.includes(k))) return "";
+    const s = barSeries(9);
+    return s.state === "failed"
+      ? `The 8-hour bars couldn't be read: ${s.error}`
+      : s.state === "pending"
+        ? "Reading 8-hour bars from the cube…"
+        : barsShort(s) !== null
+          ? `Measured to ${when(barsShort(s))} UTC: the cube's measures end there.`
+          : "";
   }
   function linesStatus(text) {
     el("lines-status").textContent = text;
@@ -8942,16 +10458,23 @@
       hideHint();
       linesStatus("");
       renderLines();
-      // Into the list: the first line on, or the first period.
-      (root.querySelector("#ol-lines-list input:checked") ||
-        root.querySelector("#ol-lines-list input"))?.focus();
+      // Into the list: the first line on in an open family, or else the first
+      // family's head.
+      (root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:checked") ||
+        root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:not(:disabled)") ||
+        el("family-profile-head"))?.focus();
     });
-    el("lines-list").addEventListener("change", (e) => {
+    el("lines-pop").addEventListener("change", (e) => {
       const key = e.target.dataset?.line;
       if (!key) return;
       setLines(e.target.checked ? [...S.lines, key] : S.lines.filter((k) => k !== key));
-      linesStatus(`${lineName(key)} ${e.target.checked ? "on" : "off"}`);
+      linesStatus(`${TOGGLES[key]?.name || lineName(key)} ${e.target.checked ? "on" : "off"}`);
     });
+    for (const f of FAMILIES)
+      el(`family-${f.id}-head`).addEventListener("click", () => {
+        setFamilyOpen(f.id, !familiesOpen()[f.id]);
+        renderLines();
+      });
     el("lines-days").addEventListener("click", (e) => {
       const key = e.target.closest("[data-line-remove]")?.dataset.lineRemove;
       if (!key) return;
@@ -8994,7 +10517,7 @@
       S.level = null;
       setLines([]);
       linesStatus("Every line is off");
-      root.querySelector("#ol-lines-list input")?.focus();
+      el("family-profile-head").focus();
     });
   }
   // The pane under the prices: one value per column, sharing their time axis.
@@ -9147,7 +10670,7 @@
       note = measure.motion
         ? !mv?.src
           ? motionIssue()
-            ? "path and dwell couldn't be read"
+            ? `path and dwell couldn't be read: ${motionIssue()}`
             : "reading path and dwell…"
           : ""
         : !measure.ratio
@@ -10185,13 +11708,13 @@
     };
   }
   // Reads from the cube, for the live page: the rectangle's measures, the
-  // view's tile, the lens's tile, the rows Efficiency counts, the POC lines and
-  // the continuations' history. One goes at a time, in that order of need, and
+  // view's tile, the lens's tile, the rows Efficiency counts, the POC lines,
+  // the days' profiles and the continuations' history. One goes at a time, in that order of need, and
   // each kind asks only for what the page needs now, so a view that moved on
   // is read once it settles. A read for a pack the page has since replaced is
   // dropped. One the cube refuses as changed waits for the page to take the
   // cube's new data; one that fails is not asked again until new data arrives.
-  const CUBE_KINDS = ["measure", "tile", "lens", "touched", "lines", "history"],
+  const CUBE_KINDS = ["measure", "tile", "lens", "touched", "lines", "days", "history"],
     cube = { busy: null, stale: false, timer: 0, failed: new Map() };
   function scheduleCube() {
     if (!PACK.live || !ready) return;
@@ -10206,6 +11729,7 @@
       lens: lensWant,
       touched: touchedWant,
       lines: linesWant,
+      days: daysWant,
       history: historyWant,
     };
     for (const kind of CUBE_KINDS) {
@@ -10559,11 +12083,12 @@
     return motion.measured.has(spec.key) ? null : spec;
   }
   // What the view needs next: the block it is drawn from, the rectangle's
-  // totals, then the lens's block. Nothing while the view's own measures,
-  // tile or lens tile are still to be read.
+  // totals, then the lens's block; then the underlay's dwell and the lines'
+  // bars. Nothing while the view's own measures, tile or lens tile are still
+  // to be read.
   function motionWant() {
     const viewing = movementOn();
-    if (!(viewing || (PACK.live && S.rows === "time")) || cube.stale) return null;
+    if (!(viewing || (PACK.live && S.rows === "time") || barLevels().length) || cube.stale) return null;
     if (["measure", "tile", "lens"].includes(cube.busy?.kind)) return null;
     for (const want of [measureWant(), tileWant(), lensWant()])
       if (want && !cube.failed.has(want.key)) return null;
@@ -10574,6 +12099,7 @@
         viewing ? motionMeasureWant() : null,
         lens ? motionSourceWant(lens) : null,
         underlayDwellWant(),
+        barsWant(),
       ].find((want) => want && !motion.failed.has(want.key)) || null
     );
   }
@@ -10645,6 +12171,10 @@
     motion.busy = null;
     if (cube.stale) pollLive();
     requestDraw();
+    // The Lines popover says what its bars are waiting on, and the days the
+    // bars now reach may need reading in the first slot.
+    renderLines();
+    pumpCube();
     pumpMotion();
   }
   // A cell's path in row heights, at its full-cell rate as volume counts, or
@@ -12573,6 +14103,12 @@
       lineParts.clear();
       dwellResults.clear();
       dwellLatest.clear();
+      barChunks.clear();
+      barEdges.clear();
+      dayReads.clear();
+      dayMemo.clear();
+      weekMemo.clear();
+      barsVersion++;
     }
     // New data: reads the cube refused or failed are asked for again.
     cube.stale = false;

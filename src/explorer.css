@@ -17,21 +17,20 @@
   --ol-time: light-dark(#8f4f86, #d59bcc);
   /* Taker flow's midpoint: an even share, distinct from gridlines and both sides */
   --ol-neutral: light-dark(#b9c2bc, #5f6b64);
-  /* POC lines: one colour each for the periods, apart from the cells' ramp and
-     from each other; the days chosen share one family, told apart by date */
-  --ol-line-1d: light-dark(#c2255c, #f783ac);
-  --ol-line-wk: light-dark(#e8590c, #ffa94d);
-  --ol-line-7d: light-dark(#c92a2a, #ff8787);
-  --ol-line-mo: light-dark(#862e9c, #e599f7);
-  --ol-line-30d: light-dark(#5f3dc4, #b197fc);
-  --ol-line-90d: light-dark(#5c940d, #a9e34b);
-  --ol-line-yr: light-dark(#1971c2, #74c0fc);
-  --ol-line-1y: light-dark(#212529, #f1f3f5);
-  --ol-line-3y: light-dark(#868e96, #adb5bd);
-  --ol-line-day1: light-dark(#0b7285, #66d9e8);
-  --ol-line-day2: light-dark(#087f5b, #63e6be);
-  --ol-line-day3: light-dark(#1098ad, #99e9f2);
-  --ol-line-day4: light-dark(#0ca678, #96f2d7);
+  /* Lines: one colour per family, apart from the data's colours and from
+     each other in every colour vision; a line's timeframe shows in its
+     weight and saturation, in three tiers. Clock lines are neutral. */
+  --ol-line-poc: var(--ol-poc);
+  --ol-line-level: light-dark(#9471f5, #bb6bd9);
+  --ol-line-average: light-dark(#6c661f, #8a9650);
+  --ol-line-vwap: light-dark(#7c3514, #e2621a);
+  --ol-line-clock: light-dark(#8c948f, #7d8a82);
+  --ol-tier-short-width: 1.25;
+  --ol-tier-short-chroma: 0.7;
+  --ol-tier-medium-width: 1.75;
+  --ol-tier-medium-chroma: 0.85;
+  --ol-tier-long-width: 2.5;
+  --ol-tier-long-chroma: 1;
   /* Interface: focus, selection, controls; never data */
   --ol-accent: var(--ol-ink);
   --ol-border: light-dark(#768d7e, #667f6f);
@@ -557,7 +556,7 @@
   background: var(--ol-on);
 }
 
-/* POC lines: the bar's button shows a dot per line on, in its colour. */
+/* Lines: the bar's button shows a dot per family on, in its colour. */
 #origo-lens .ol-lines-dots {
   display: inline-flex;
   align-items: center;
@@ -579,10 +578,11 @@
   border-radius: 50%;
   box-shadow: 0 0 0 1px var(--ol-surface);
 }
-/* The popover: periods to tick, days to add and remove, each with its colour
-   and, when on, its POC. */
+/* The popover: the families, each a group that opens and closes, with rows
+   to tick, each with its look and, when on, its value; days to add and
+   remove. */
 #origo-lens .ol-lines-pop {
-  width: 300px;
+  width: 320px;
   max-height: min(78vh, 640px);
   overflow: auto;
 }
@@ -617,9 +617,56 @@
 #origo-lens .ol-line-swatch {
   flex: none;
   width: 14px;
-  height: 3px;
+  height: var(--weight, 3px);
   border-radius: 2px;
   background: var(--line, var(--ol-muted));
+}
+/* A clock line's: upright, as on the chart. */
+#origo-lens .ol-clock-swatch {
+  width: var(--weight, 2px);
+  height: 14px;
+  margin: 0 6px;
+}
+#origo-lens .ol-family + .ol-family,
+#origo-lens .ol-family + .ol-list-head {
+  border-top: 1px solid var(--ol-line);
+}
+#origo-lens .ol-family-head {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0;
+  padding: 0 var(--sp-1);
+  font-weight: 500;
+}
+#origo-lens .ol-family-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+#origo-lens .ol-family-name {
+  flex: 1;
+  text-align: left;
+}
+#origo-lens .ol-family-count {
+  font-size: var(--fs-s);
+  font-weight: 400;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-family-head[aria-expanded="true"] .ol-caret {
+  transform: rotate(180deg);
+}
+#origo-lens .ol-family-body {
+  padding-bottom: var(--sp-2);
+}
+#origo-lens .ol-family-status {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-s);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-family-status:empty {
+  display: none;
 }
 /* The level line's: dashed, in the text colour, as on the chart. */
 #origo-lens .ol-level-swatch {

@@ -10369,6 +10369,42 @@
     }
     return out;
   }
+  // A curve's points as drawn: from the one before the view's left edge to the
+  // one past its right, one vertex to a pixel column, at the latest point in
+  // the column. A column starts at the vertex that opens it, so points closer
+  // together than a pixel share a column rather than chaining into one.
+  function curveVertices(pts, right) {
+    const xs = [],
+      ys = [],
+      vals = [];
+    let i = 0,
+      hi = pts.length;
+    while (i < hi) {
+      const mid = (i + hi) >> 1;
+      if (pts[mid][0] < S.tA) i = mid + 1;
+      else hi = mid;
+    }
+    let column = -Infinity;
+    for (i = Math.max(0, i - 1); i < pts.length; i++) {
+      const [t, v] = pts[i],
+        x = G.X(t),
+        y = G.Y(v / PR),
+        past = x > right + 2;
+      if (x - column < 1 && xs.length && !past) {
+        xs[xs.length - 1] = x;
+        ys[ys.length - 1] = y;
+        vals[vals.length - 1] = v;
+        continue;
+      }
+      xs.push(x);
+      ys.push(y);
+      vals.push(v);
+      column = x;
+      // One point past the edge, so the curve runs to it.
+      if (past) break;
+    }
+    return { xs, ys, vals };
+  }
   // The lines, their tags and the level line. Longer spans are drawn first,
   // so shorter ones lie on top; each line is haloed in the surface colour to
   // stand clear of the cells under it. Lines of one look go in one stroke:
@@ -10429,39 +10465,7 @@
     for (const c of curves) {
       const style = lineStyle("vwap", c.tier),
         hot = hover?.line === c.id,
-        xs = [],
-        ys = [],
-        vals = [];
-      let lastX = -Infinity;
-      const pts = c.r.points;
-      let i0 = 0,
-        hi = pts.length;
-      while (i0 < hi) {
-        const mid = (i0 + hi) >> 1;
-        if (pts[mid][0] < S.tA) i0 = mid + 1;
-        else hi = mid;
-      }
-      for (let i = Math.max(0, i0 - 1); i < pts.length; i++) {
-        const [t, v] = pts[i],
-          x = G.X(t);
-        if (x > right + 2) {
-          // One point past the edge, so the curve runs to it.
-          xs.push(x);
-          ys.push(G.Y(v / PR));
-          vals.push(v);
-          break;
-        }
-        if (x - lastX < 1 && xs.length) {
-          xs[xs.length - 1] = x;
-          ys[ys.length - 1] = G.Y(v / PR);
-          vals[vals.length - 1] = v;
-        } else {
-          xs.push(x);
-          ys.push(G.Y(v / PR));
-          vals.push(v);
-        }
-        lastX = x;
-      }
+        { xs, ys, vals } = curveVertices(c.r.points, right);
       if (!xs.length) continue;
       c.colour = style.colour;
       c.at = vals[vals.length - 1] / PR;

@@ -603,6 +603,10 @@
   max-height: min(78vh, 640px);
   overflow: auto;
 }
+/* The Rows period: one to pick, or a day to start from. */
+#origo-lens .ol-period-pop {
+  width: 270px;
+}
 #origo-lens .ol-lines-note {
   margin: 0 0 var(--sp-2);
   color: var(--ol-muted);
@@ -1026,6 +1030,13 @@
   background: linear-gradient(to right, var(--ol-panel), var(--ol-volume));
   border-radius: var(--r-s);
 }
+/* The Rows legend: the underlay's choice, period and scale, beside its menus. */
+#origo-lens .ol-rows-legend {
+  margin-left: var(--sp-1);
+}
+#origo-lens .ol-rows-legend .ol-ramp {
+  width: 36px;
+}
 #origo-lens .ol-plot {
   position: relative;
   flex: 1 1 0;
@@ -1435,9 +1446,6 @@
 }
 #origo-lens .ol-data-key.plain {
   background: var(--ol-line);
-}
-#origo-lens .ol-data-key.time {
-  background: var(--ol-time);
 }
 
 /* Inspector: its own scroll, so the chart stays in view. */
@@ -2455,6 +2463,94 @@
               hidden
             ></div>
           </div>
+          <div class="ol-group ol-mode-group">
+            <button
+              type="button"
+              id="ol-rows"
+              class="ol-pick cursor-interaction"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-controls="ol-rows-menu"
+              aria-label="Rows: Off"
+              aria-keyshortcuts="U"
+              data-keys="U"
+              data-hint="What the backdrop behind the cells and the second profile show for each price row, over a period of their own; U steps to the next, Shift+U back"
+            >
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 3.5h7M2.5 6.5h11M2.5 9.5h9M2.5 12.5h5" />
+              </svg>
+              <span class="ol-label">Rows:</span>
+              <span id="ol-rows-text">Off</span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
+            </button>
+            <div
+              class="ol-pop ol-menu ol-mode-menu"
+              id="ol-rows-menu"
+              role="menu"
+              aria-label="Rows"
+              hidden
+            ></div>
+          </div>
+          <div class="ol-group ol-period-group" hidden>
+            <button
+              type="button"
+              id="ol-period"
+              class="ol-pick cursor-interaction"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="ol-period-pop"
+              aria-label="Rows' period: 90 days"
+              data-hint="The period the rows are summed over, up to the latest data or the replay's edge"
+            >
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
+                <path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" />
+              </svg>
+              <span class="ol-label">Period:</span>
+              <span id="ol-period-text">90 days</span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
+            </button>
+            <div
+              class="ol-pop ol-lines-pop ol-period-pop"
+              id="ol-period-pop"
+              role="dialog"
+              aria-labelledby="ol-period-title"
+              hidden
+            >
+              <div class="ol-pop-head">
+                <span id="ol-period-title">Rows' period</span>
+              </div>
+              <p class="ol-lines-note">
+                The rows are summed over this period, up to the latest data, or in
+                replay to its edge.
+              </p>
+              <div
+                class="ol-lines-list"
+                id="ol-period-list"
+                role="radiogroup"
+                aria-labelledby="ol-period-title"
+              ></div>
+              <form class="ol-lines-add" id="ol-period-add">
+                <input
+                  type="date"
+                  id="ol-period-date"
+                  aria-label="A day in UTC: the period runs from that day to the latest data"
+                  required
+                /><button type="submit" class="ol-action ol-s cursor-interaction">
+                  Since this day
+                </button>
+              </form>
+              <div class="ol-lines-status" id="ol-period-status" role="status"></div>
+            </div>
+          </div>
+          <span class="ol-legend ol-rows-legend" id="ol-rows-legend" hidden
+            ><i class="ol-ramp" id="ol-rows-ramp" aria-hidden="true"></i
+            ><span id="ol-rows-legend-text" class="ol-num"></span
+          ></span>
         </div>
         <div class="ol-marks" role="group" aria-label="Overlays">
           <label title="Each column's point of control, and the profile's (P and B) · Shift+P"
@@ -2463,8 +2559,6 @@
             ><input type="checkbox" id="ol-area" />70% area</label
           ><label title="Column POCs that no later column in view has traded at"
             ><input type="checkbox" id="ol-untested" />Untested</label
-          ><label title="Each row's share of the time the price spent in it, under the volume profile · live cube only"
-            ><input type="checkbox" id="ol-time" />Time at price</label
           >
         </div>
         <span class="ol-legend"
@@ -2882,9 +2976,6 @@
           ><span id="ol-key-poc">P · total POC</span
           ><span id="ol-key-bpoc">B · buy POC</span
           ><span id="ol-key-area" hidden>H/L · composite 70%</span
-          ><span id="ol-key-time" hidden
-            ><i class="ol-data-key time" aria-hidden="true"></i>Time at
-            price</span
           ><span id="ol-ray-count" hidden></span>
         </div>
         <span class="ol-gesture" id="ol-gesture"
@@ -3292,6 +3383,10 @@
               <dd><kbd>B</kbd> <kbd>Shift</kbd> <kbd>B</kbd></dd>
             </div>
             <div>
+              <dt>Next or previous row measure</dt>
+              <dd><kbd>U</kbd> <kbd>Shift</kbd> <kbd>U</kbd></dd>
+            </div>
+            <div>
               <dt>POC lines</dt>
               <dd><kbd>P</kbd></dd>
             </div>
@@ -3486,8 +3581,9 @@
       poc: true,
       area: false,
       untested: false,
-      // Time at price: each row's share of the time, under the volume profile.
-      time: false,
+      // The row underlay behind the cells (Rows, U), over a period of its own.
+      rows: "off",
+      period: "90d",
       // POC lines: the periods and days chosen, in list order.
       lines: [],
       tab: "context",
@@ -4325,6 +4421,9 @@
     prepareMeasures(full, shown, query, b, moving);
     // Cascade's parents: the level one coarser in both time and price.
     if (S.mode === "cascade") levelCascade(full, src, sum);
+    // The row underlay, while it shows, scaled to its rows in view.
+    const under = underlayFrame(meas);
+    if (under?.bands) under.peak = underlayPeak(under);
     labelsTaken = [];
     // Latest sits over the plot's top right when it shows, and the replay
     // transport on the replay line: labels keep clear of both.
@@ -4365,6 +4464,7 @@
     ctx.clip();
     paintCoverage(b);
     grid();
+    if (under) paintBands(under);
     if (S.selection) {
       ctx.globalAlpha = 0.25;
       if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u);
@@ -4474,20 +4574,25 @@
         G.Y(r * ps) - G.Y((r + 1) * ps) + 2,
       );
     }
-    // The profile row under the pointer, as a band across the prices.
-    if (hover?.row != null && onProfile(hover)) {
-      const ya = G.Y((hover.row + 1) * ps),
-        yb = G.Y(hover.row * ps);
-      ctx.fillStyle = colors.ink;
-      ctx.globalAlpha = 0.06;
-      ctx.fillRect(G.x, ya, G.w, yb - ya);
-      ctx.globalAlpha = 1;
+    // The row under the pointer, over the prices or the profile, outlined
+    // across the chart, as it is in the profile.
+    const hr = pointerRow();
+    if (hr !== null) {
+      const ya = Math.round(G.Y((hr + 1) * ps)) + 0.5,
+        yb = Math.round(G.Y(hr * ps)) - 0.5;
+      if (yb - ya >= 2) {
+        ctx.strokeStyle = colors.ink;
+        ctx.globalAlpha = 0.4;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(G.x + 0.5, ya, G.w - 1, yb - ya);
+        ctx.globalAlpha = 1;
+      }
     }
     drawResolutionLens();
     ctx.restore();
     const ro = readouts(cut);
     axes(ro);
-    profile(query, b, meas.state, mv);
+    profile(query, b, meas.state, under);
     activity(shown, cut, mv, full);
     crosshair(ro);
     querySummary(meas, mv);
@@ -4496,6 +4601,7 @@
       LEGEND_TITLES[S.mode] +
       (moving && !mv.src && motionIssue() ? ` They couldn't be read: ${motionIssue()}.` : "");
     el("ramp").style.background = legendRamp();
+    underlayLegend(under);
     const marks = marksReadout(b);
     el("ray-count").textContent = marks.rayCount + " untested levels";
     el("ray-count").hidden = !S.untested;
@@ -4503,7 +4609,7 @@
       marks.vaLow === null || meas.state === "pending" || meas.state === "failed"
         ? "—"
         : price(marks.vaLow) + "–" + price(marks.vaHigh);
-    last = { full, query, shown, meas, b, cut, mv };
+    last = { full, query, shown, meas, b, cut, mv, under };
     if (transition) {
       if (u >= 1) transition = null;
       else requestDraw();
@@ -5160,7 +5266,9 @@
     if (followMode() !== "refit") add("f", followMode());
     if (S.mode !== "volume") add("mode", S.mode);
     if (S.pane !== "cells") add("pane", S.pane);
-    const marks = ["poc", "area", "untested", "time"].filter((k) => S[k]).join(",");
+    if (S.rows !== "off") add("rows", S.rows);
+    if (S.period !== "90d") add("period", S.period);
+    const marks = ["poc", "area", "untested"].filter((k) => S[k]).join(",");
     if (marks !== "poc") add("marks", marks || "none");
     if (S.lines.length) add("lines", S.lines.join(","));
     if (S.selection) {
@@ -5211,10 +5319,11 @@
       follow: q.get("f") || "refit",
       mode: q.get("mode") || "volume",
       pane: q.get("pane") || "cells",
+      rows: q.get("rows") || "off",
+      period: q.get("period") || "90d",
       poc: marks.includes("poc"),
       area: marks.includes("area"),
       untested: marks.includes("untested"),
-      time: marks.includes("time"),
       lines: String(q.get("lines") ?? "").split(",").filter(Boolean),
       selection: q.has("sel")
         ? [...pair(selT, time), ...pair(selP, rows)].map(Math.round)
@@ -5263,11 +5372,12 @@
       mode: modes().includes(v.mode) ? v.mode : "volume",
       // Choppiness and volume per path need the live cube.
       pane: panes().includes(v.pane) ? v.pane : "cells",
+      // Time at price needs the live cube.
+      rows: rowsChoices().includes(v.rows) ? v.rows : "off",
+      period: validPeriod(v.period) ? v.period : "90d",
       poc: v.poc !== false,
       area: v.area === true,
       untested: v.untested === true,
-      // Path and dwell need the live cube.
-      time: Boolean(PACK.live) && v.time === true,
       lines: normalizeLines(v.lines),
       selection:
         sel.length === 4 &&
@@ -5305,10 +5415,11 @@
     for (const k of [
       "mode",
       "pane",
+      "rows",
+      "period",
       "poc",
       "area",
       "untested",
-      "time",
       "lines",
       "selection",
       "anchor",
@@ -5428,9 +5539,10 @@
           mode = v.mode === "density" ? "volume" : v.mode;
         if (modes().includes(mode)) S.mode = mode;
         if (panes().includes(v.pane)) S.pane = v.pane;
-        for (const k of ["poc", "area", "untested", "time", "replay"])
+        if (rowsChoices().includes(v.rows)) S.rows = v.rows;
+        if (validPeriod(v.period)) S.period = v.period;
+        for (const k of ["poc", "area", "untested", "replay"])
           if (typeof v[k] === "boolean") S[k] = v[k];
-        if (!PACK.live) S.time = false;
         if (Array.isArray(v.lines)) S.lines = normalizeLines(v.lines);
         if (["context", "evidence"].includes(v.tab)) S.tab = v.tab;
         if (["poc", "barrier"].includes(v.evidenceKind))
@@ -6063,6 +6175,72 @@
             : "";
     tipRows(tip, head, sub, rows, [notes, note]);
   }
+  // The tooltip's row section: the row's USDT in the rectangle and its share
+  // of it (left out over the profile, which gives them already), the
+  // underlay's value for the row over its period, and its relative volume.
+  function rowSection(r, money, share, exact, withRow = true) {
+    const out = [],
+      q = last.query,
+      where = S.selection ? "selection" : "view";
+    if (withRow) {
+      const row = q.rows.find((x) => x.r === r),
+        measuring = last.meas.state === "pending" || last.meas.state === "failed";
+      out.push([
+        "Row",
+        measuring
+          ? "measuring the rectangle…"
+          : row
+            ? `${money(row.v)} · ${share(q.v > 0 ? row.v / q.v : 0)} of the ${where}`
+            : `No trades in the ${where}`,
+      ]);
+    }
+    const u = last.under;
+    if (!u) return out;
+    const label = `${ROWS_INFO[u.kind].name} · ${periodLabel(u.period)}`,
+      { approx, from } = underlayBasis(u.res);
+    if (!u.bands) return [...out, [label, underlayWhy(u.res)]];
+    if (from) out.push(["Period's rows", from]);
+    const band = u.bands.map.get(Math.floor(r / 2 ** (u.bands.m - renderM())));
+    if (u.kind === "volume")
+      out.push([label, band?.v > 0 ? `${approx}${money(band.v)} · ${share(band.v / u.bands.v)}` : "No trades in the period"]);
+    else if (u.kind === "delta")
+      out.push([label, band?.v > 0 ? approx + signed(2 * band.bv - band.v, money) : "No trades in the period"]);
+    else if (u.kind === "time")
+      out.push([
+        label,
+        band?.w > 0
+          ? `${exact ? secondsExact(band.w) : dur(band.w)} · ${share(u.bands.w > 0 ? band.w / u.bands.w : 0)}`
+          : "The price wasn't here in the period",
+      ]);
+    // Relative volume: the underlay's own value under Relative volume.
+    const vb = u.volBands;
+    if (vb) {
+      const e = u.rect && relativeVolume(vb, u.rect).get(Math.floor(r / 2 ** (vb.m - renderM())));
+      out.push([
+        u.kind === "relvol" ? label : "Relative volume",
+        !u.rect
+          ? "measuring the rectangle…"
+          : !e
+            ? "No trades in the period"
+            : e.none
+              ? `−2 · it traded in the period, not in the ${where}`
+              : approx + ratioText(e.value, exact),
+      ]);
+    }
+    return out;
+  }
+  // Over the profile: whether the row is the period's POC, or in its 70% area.
+  function underlayMarks(r) {
+    const vb = last.under?.volBands;
+    if (!vb) return "";
+    const k = 2 ** (vb.m - renderM()),
+      br = Math.floor(r / k);
+    return br === vb.poc
+      ? "The period's point of control"
+      : vb.va && br >= vb.va.r0 && br < vb.va.r1
+        ? "In the period's 70% area"
+        : "";
+  }
   function onProfile(p) {
     const px = G.x + G.w + 9;
     return p.x >= px && p.x <= px + G.profile - 8 && p.y >= G.y && p.y <= G.y + G.h;
@@ -6087,29 +6265,9 @@
       const r = Math.floor(p.p / ps),
         row = last.query.rows.find((x) => x.r === r),
         waiting = last.meas.state === "pending" || last.meas.state === "failed",
-        // Time at price, while its overlay is on: the row's time and its share.
-        time = S.time && last.mv ? last.mv.rect : null,
-        trow = time?.query && motionTotals(time.query).rows.find((x) => x.r === r),
-        times = !time
-          ? []
-          : !time.query
-            ? [["Time at price", time.state === "failed" ? "couldn't be read" : "reading from the cube…"]]
-            : time.end <= last.b[0]
-              ? [
-                  [
-                    "Time at price",
-                    last.b[0] >= Math.floor(CUT)
-                      ? "measured once the column completes"
-                      : "not measured by the cube yet",
-                  ],
-                ]
-              : [
-                [
-                  "Time at price",
-                  `${exact ? secondsExact(trow?.w || 0) : dur(trow?.w || 0)} · ${share(time.query.w > 0 ? (trow?.w || 0) / time.query.w : 0)}`,
-                ],
-              ];
-      hover.row = row || trow ? r : null;
+        // The underlay's value for the row and its relative volume, while it shows.
+        times = rowSection(r, money, share, exact, false),
+        marks = underlayMarks(r);
       // A profile row is no one cell: the Cells drawer shows none as hovered.
       syncRowHover(null);
       if (waiting)
@@ -6122,12 +6280,12 @@
             ? `Not measured: the cube didn't answer (${last.meas.error})`
             : "Measuring the rectangle in the cube…",
         );
-      else if (!row) tipRows(tip, priceRow(r), "", times, "No trades at this price in view");
+      else if (!row) tipRows(tip, priceRow(r), marks, times, "No trades at this price in view");
       else
         tipRows(
           tip,
           priceRow(r),
-          [r === last.query.poc ? "Point of control" : "", r === last.query.bpoc ? "Buy point of control" : ""]
+          [r === last.query.poc ? "Point of control" : "", r === last.query.bpoc ? "Buy point of control" : "", marks]
             .filter(Boolean)
             .join(" · "),
           [
@@ -6188,7 +6346,7 @@
           tip,
           head,
           priceRow(r),
-          [...moves, ...(coarse ? [coarse] : []), ...(provisional ? [provisional] : [])],
+          [...moves, ...(coarse ? [coarse] : []), ...(provisional ? [provisional] : []), ...rowSection(r, money, share, exact)],
           mz
             ? mz.p > 0
               ? "The price moved through without a trade here"
@@ -6214,6 +6372,7 @@
             ["Column", open ? "Still open" : "Complete"],
             ...(provisional ? [provisional] : []),
             ...(coarse ? [coarse] : []),
+            ...rowSection(r, money, share, exact),
           ],
           [cas?.note, note],
         );
@@ -6275,15 +6434,13 @@
         b.setAttribute("aria-checked", String(b.dataset.pane === S.pane)),
       );
     }
+    renderRows();
     renderLines();
-    for (const f of ["poc", "area", "untested", "time"]) el(f).checked = S[f];
-    // Path and dwell need the live cube; the recorded page says so.
-    el("time").disabled = !PACK.live;
+    for (const f of ["poc", "area", "untested"]) el(f).checked = S[f];
     el("key-poc").hidden = el("key-bpoc").hidden = !S.poc;
     el("key-area").hidden = !S.area;
-    // The movement views' keys: outlined cells, cells not measured yet, time at price.
+    // The movement views' keys: outlined cells and cells not measured yet.
     el("key-moved").hidden = el("key-plain").hidden = !(PACK.live && movementMode());
-    el("key-time").hidden = !(PACK.live && S.time);
     const coarse = renderN() > S.n || renderM() > S.m;
     // The level on the bar leaves the unit to the popover: "15 min × 125".
     el("res-text").textContent = `${dur(BASE * 2 ** S.n)} × ${price(PR * 2 ** S.m)}`;
@@ -6359,7 +6516,8 @@
                 poc: S.poc,
                 area: S.area,
                 untested: S.untested,
-                time: S.time,
+                rows: S.rows,
+                period: S.period,
                 lines: S.lines,
                 tab: S.tab,
                 replay: S.replay,
@@ -6650,16 +6808,17 @@
     el("sheet-toggle").setAttribute("aria-expanded", String(open));
     if (!open) closePop();
   }
-  // On a phone the controls open in a sheet, and the Columns menu with them,
-  // before POC lines; wider, it sits beside Cells in the chart header.
+  // On a phone the controls open in a sheet, and the chart header's newer
+  // menus with them (Columns, Rows and its period), before POC lines; wider,
+  // they sit after Cells in the chart header, the Rows legend after them.
   const PHONE = matchMedia("(max-width: 760px)");
   function placeMenus() {
-    const group = el("pane").parentElement,
+    const groups = ["pane", "rows", "period"].map((id) => el(id).parentElement),
       sheet = el("controls");
-    if (PHONE.matches === (group.parentElement === sheet)) return;
+    if (PHONE.matches === (groups[0].parentElement === sheet)) return;
     closePop();
-    if (PHONE.matches) sheet.insertBefore(group, sheet.querySelector(":scope > .ol-lines-group"));
-    else root.querySelector(".ol-surfaces").append(group);
+    const before = PHONE.matches ? sheet.querySelector(":scope > .ol-lines-group") : el("rows-legend");
+    for (const group of groups) before.parentElement.insertBefore(group, before);
   }
   // Menus: a button's list of choices. The arrows move through them, Home and
   // End jump to the ends, Tab leaves, Escape closes back to the button, and a
@@ -6887,6 +7046,128 @@
     }
     el("pane-menu").replaceChildren(...parts);
   }
+  // The underlay's choices, grouped as the encodings are.
+  function buildRowsMenu() {
+    const parts = [];
+    for (const [cap, keys] of ROWS_GROUPS) {
+      const group = document.createElement("div"),
+        head = document.createElement("div");
+      group.setAttribute("role", "group");
+      head.className = "ol-menu-cap";
+      head.id = `ol-rows-cap-${parts.length}`;
+      head.textContent = cap;
+      group.setAttribute("aria-labelledby", head.id);
+      group.append(head);
+      for (const key of keys) {
+        const info = ROWS_INFO[key],
+          // Time at price needs the live cube: the recorded page lists it, off.
+          off = !rowsChoices().includes(key),
+          b = menuItem(
+            "menuitemradio",
+            [
+              svgIcon("check", "ol-icon ol-check"),
+              itemText(`rows-${key}`, info.name, off ? "Live cube only" : info.desc),
+            ],
+            () => setRows(key),
+          );
+        if (off) b.setAttribute("aria-disabled", "true");
+        b.setAttribute("aria-labelledby", `ol-rows-${key}-name`);
+        b.setAttribute("aria-describedby", `ol-rows-${key}-desc`);
+        b.dataset.rows = key;
+        b.setAttribute("aria-checked", String(key === S.rows));
+        group.append(b);
+      }
+      parts.push(group);
+    }
+    el("rows-menu").replaceChildren(...parts);
+  }
+  // The Rows menu's button, and its period's, written only when they change:
+  // update() runs on every input. The period shows while the underlay does.
+  function renderRows() {
+    const name = S.rows === "off" ? "Off" : ROWS_INFO[S.rows].name;
+    if (el("rows").dataset.rows !== S.rows) {
+      el("rows").dataset.rows = S.rows;
+      el("rows-text").textContent = name;
+      el("rows").setAttribute("aria-label", `Rows: ${name}`);
+      qsa("#ol-rows-menu [data-rows]").forEach((b) =>
+        b.setAttribute("aria-checked", String(b.dataset.rows === S.rows)),
+      );
+    }
+    const group = el("period").parentElement,
+      label = periodLabel(S.period);
+    if (group.hidden !== (S.rows === "off")) group.hidden = S.rows === "off";
+    if (el("period-text").textContent !== label) {
+      el("period-text").textContent = label;
+      el("period").setAttribute("aria-label", `Rows' period: ${label}`);
+    }
+    if (!el("period-pop").hidden) renderPeriods();
+  }
+  // The period's choices: the POC lines' periods and all history, then the
+  // chosen day, if one is.
+  function periodRow(key) {
+    const row = document.createElement("label"),
+      radio = document.createElement("input"),
+      name = document.createElement("span");
+    row.className = "ol-line-row cursor-interaction";
+    radio.type = "radio";
+    radio.name = "ol-period";
+    radio.dataset.period = key;
+    name.className = "ol-line-name";
+    row.append(radio, name);
+    return row;
+  }
+  function renderPeriods() {
+    const list = el("period-list"),
+      keys = [...PERIODS, ...(isDay(S.period) ? [S.period] : [])];
+    if (list.dataset.keys !== keys.join(",")) {
+      list.dataset.keys = keys.join(",");
+      list.replaceChildren(...keys.map(periodRow));
+    }
+    for (const radio of qsa("#ol-period-list input[data-period]")) {
+      const key = radio.dataset.period,
+        name = radio.parentElement.querySelector(".ol-line-name"),
+        label = periodLabel(key);
+      if (radio.checked !== (key === S.period)) radio.checked = key === S.period;
+      if (name.textContent !== label) name.textContent = label;
+    }
+    el("period-date").min = "2021-01-01";
+    el("period-date").max = date(Math.max(0, activeCutoff() - 1e-6)).toISOString().slice(0, 10);
+  }
+  function periodStatus(text) {
+    el("period-status").textContent = text;
+  }
+  function bindPeriods() {
+    bindPop("period", "period-pop", () => {
+      hideHint();
+      periodStatus("");
+      renderPeriods();
+      root.querySelector("#ol-period-list input:checked")?.focus();
+    });
+    el("period-list").addEventListener("change", (e) => {
+      const key = e.target.dataset?.period;
+      if (!key) return;
+      setPeriod(key);
+      periodStatus(`Rows ${periodPhrase(key)}`);
+    });
+    el("period-add").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const key = el("period-date").value;
+      if (!isDay(key)) return periodStatus("Choose a day.");
+      const start = dayStart(key);
+      if (start < 0 || start >= activeCutoff())
+        return periodStatus(`Choose a day from 1 Jan 2021 to ${day(Math.max(0, activeCutoff() - 1e-6))}.`);
+      setPeriod(key);
+      el("period-date").value = "";
+      periodStatus(`Rows ${periodPhrase(key)}`);
+    });
+    el("period-date").addEventListener("input", () => periodStatus(""));
+    // Text fields keep their keys, so the date field closes its popover itself.
+    el("period-date").addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      closePop(true);
+    });
+  }
 
   // Labels: a control's name and key, and what it does, a second after the
   // pointer rests on it, a finger holds it or the keyboard reaches it; once
@@ -7080,6 +7361,8 @@
     bindMenu("follow", "follow-menu", buildFollowMenu);
     bindMenu("mode", "mode-menu", buildModeMenu);
     bindMenu("pane", "pane-menu", buildPaneMenu);
+    bindMenu("rows", "rows-menu", buildRowsMenu);
+    bindPeriods();
     bindLines();
     bindPop("res", "res-pop", () => {
       nav.planeKey = "";
@@ -7093,7 +7376,8 @@
       el("view-name").value =
         viewPlace() +
         (S.mode === "volume" ? "" : " · " + MODE_NAMES[S.mode]) +
-        (S.pane === "cells" ? "" : ` · ${PANE_INFO[S.pane].name} columns`);
+        (S.pane === "cells" ? "" : ` · ${PANE_INFO[S.pane].name} columns`) +
+        (S.rows === "off" ? "" : ` · ${ROWS_INFO[S.rows].name} rows`);
     });
     bindPop("evidence-info", "evidence-more");
     document.addEventListener("pointerdown", (e) => {
@@ -7528,7 +7812,7 @@
     ctx.stroke();
     ctx.restore();
   }
-  function profile(query, b, state, mv) {
+  function profile(query, b, state, under) {
     if (!G.profile) return;
     const max = d3.max(query.rows, (z) => z.v) || 1,
       px = G.x + G.w + 9,
@@ -7548,24 +7832,8 @@
       ctx.fillRect(px, ya, pw, yb - ya);
       ctx.globalAlpha = 1;
     }
-    // Time at price: each row's share of the rectangle's time, under the volume
-    // profile at the same width, its edge marked.
-    const time = S.time && mv?.rect.query && mv.rect.end > b[0] ? motionTotals(mv.rect.query) : null;
-    if (time) {
-      const most = d3.max(time.rows, (z) => z.w) || 1;
-      ctx.fillStyle = colors.time;
-      for (const row of time.rows) {
-        const ya = G.Y(Math.min((row.r + 1) * ps, b[3])),
-          yb = G.Y(Math.max(row.r * ps, b[2])),
-          x = (pw * row.w) / most;
-        if (yb <= ya || !(x > 0)) continue;
-        ctx.globalAlpha = 0.22;
-        ctx.fillRect(px, ya, x, Math.max(0.1, yb - ya - 0.7));
-        ctx.globalAlpha = 0.9;
-        ctx.fillRect(px + x - 1.5, ya, 1.5, Math.max(0.1, yb - ya - 0.7));
-      }
-      ctx.globalAlpha = 1;
-    }
+    // The underlay's second profile, behind the view's.
+    if (under?.bands) underProfile(under, px, pw);
     for (const row of query.rows) {
       const ya = G.Y(Math.min((row.r + 1) * ps, b[3])),
         yb = G.Y(Math.max(row.r * ps, b[2]));
@@ -7583,9 +7851,10 @@
       );
     }
     ctx.globalAlpha = 1;
-    if (hover?.row != null && onProfile(hover)) {
-      const ya = G.Y((hover.row + 1) * ps),
-        yb = G.Y(hover.row * ps);
+    const hr = pointerRow();
+    if (hr !== null) {
+      const ya = G.Y((hr + 1) * ps),
+        yb = G.Y(hr * ps);
       ctx.strokeStyle = colors.ink;
       ctx.lineWidth = 1;
       ctx.strokeRect(px + 0.5, ya + 0.5, pw + 2, Math.max(1, yb - ya - 1));
@@ -7654,6 +7923,191 @@
       colors.muted,
       "left",
     );
+  }
+  // The price row under the pointer, over the prices or the profile, at the
+  // drawn row size: outlined across both.
+  function pointerRow() {
+    return hover && (inPlot(hover) || onProfile(hover)) ? Math.floor(hover.p / stepP()) : null;
+  }
+  // The rows of a list sorted by row that lie in the plot at row size ps: the
+  // first one's index, and the last row in view.
+  function rowsInView(rows, ps) {
+    const lo = Math.floor(G.Y.invert(G.y + G.h) / ps),
+      hi = Math.floor(G.Y.invert(G.y) / ps);
+    let i = 0,
+      j = rows.length;
+    while (i < j) {
+      const h = (i + j) >> 1;
+      if (rows[h].r < lo) i = h + 1;
+      else j = h;
+    }
+    return [i, hi];
+  }
+  // The period's peaks among its rows in view, which the bands and the second
+  // profile are scaled to, as the view's profile is to its own rows: its most
+  // USDT, most signed USDT and most time in a row.
+  function underlayPeak(u) {
+    const b = u.bands,
+      rows = b.rows;
+    let [i, hi] = rowsInView(rows, 2 ** b.m),
+      v = 0,
+      d = 0,
+      w = 0;
+    for (; i < rows.length && rows[i].r <= hi; i++) {
+      const x = rows[i];
+      if (x.v > v) v = x.v;
+      if (Math.abs(2 * x.bv - x.v) > d) d = Math.abs(2 * x.bv - x.v);
+      if (x.w > w) w = x.w;
+    }
+    return { v: v || 1, d: d || 1, w: w || 1 };
+  }
+  // A band's strength, 0 to 1, and its colour: volume in a neutral grey,
+  // delta and relative volume in the buy and sell colours (relative volume
+  // full at ±2), time at price in its own. Amounts go by the square root of
+  // their share of the peak in view, so the thinner rows still show.
+  function bandTone(u, x, rel) {
+    const k = u.peak;
+    if (u.kind === "volume") return [Math.sqrt(x.v / k.v), colors.ink];
+    if (u.kind === "time") return [Math.sqrt(x.w / k.w), colors.time];
+    const v = u.kind === "delta" ? (2 * x.bv - x.v) / k.d : rel?.get(x.r) ? rel.get(x.r).value / 2 : 0,
+      t = u.kind === "delta" ? Math.sqrt(Math.abs(v)) : Math.min(1, Math.abs(v));
+    return [t, v >= 0 ? colors.buy : colors.sell];
+  }
+  // The underlay's bands: one per price row at the drawn row size, across the
+  // whole chart behind the cells, so they show where the view has no cells:
+  // the heavy levels it never visited. Each at a low alpha.
+  function paintBands(u) {
+    if (!u.bands) return;
+    const b = u.bands,
+      ps = 2 ** b.m,
+      rel = u.kind === "relvol" && u.rect ? relativeVolume(b, u.rect) : null,
+      rows = b.rows,
+      top = u.kind === "volume" ? 0.2 : u.kind === "time" ? 0.3 : 0.16;
+    if (u.kind === "relvol" && !rel) return;
+    let [i, hi] = rowsInView(rows, ps);
+    for (; i < rows.length && rows[i].r <= hi; i++) {
+      const x = rows[i],
+        [t, colour] = bandTone(u, x, rel);
+      if (!(t > 0)) continue;
+      const ya = G.Y((x.r + 1) * ps);
+      ctx.fillStyle = colour;
+      ctx.globalAlpha = top * t;
+      ctx.fillRect(G.x, ya, G.w, Math.max(0.5, G.Y(x.r * ps) - ya));
+    }
+    ctx.globalAlpha = 1;
+  }
+  // The underlay's second profile, behind the view's: each row's value over
+  // its period, scaled to the period's own peak. Volume and time at price run
+  // from the strip's edge; delta and relative volume diverge from a centre
+  // line. The period's POC is a dashed line across the strip, and its 70%
+  // value area a bar down the strip's edge.
+  function underProfile(u, px, pw) {
+    const b = u.bands,
+      ps = 2 ** b.m,
+      mid = px + pw / 2,
+      rel = u.kind === "relvol" && u.rect ? relativeVolume(b, u.rect) : null,
+      rows = b.rows,
+      diverging = u.kind === "delta" || u.kind === "relvol";
+    let [i, hi] = rowsInView(rows, ps);
+    for (; i < rows.length && rows[i].r <= hi; i++) {
+      const x = rows[i],
+        ya = G.Y((x.r + 1) * ps),
+        h = Math.max(0.1, G.Y(x.r * ps) - ya - 0.7);
+      if (!diverging) {
+        const t = Math.min(1, u.kind === "volume" ? x.v / u.peak.v : x.w / u.peak.w);
+        if (!(t > 0)) continue;
+        ctx.fillStyle = u.kind === "volume" ? colors.ink : colors.time;
+        ctx.globalAlpha = u.kind === "volume" ? 0.16 : 0.28;
+        ctx.fillRect(px, ya, pw * t, h);
+        ctx.globalAlpha = 0.6;
+        ctx.fillRect(px + pw * t - 1, ya, 1, h);
+        continue;
+      }
+      const v =
+        u.kind === "delta"
+          ? (2 * x.bv - x.v) / u.peak.d
+          : rel?.get(x.r)
+            ? clamp(rel.get(x.r).value / 2, -1, 1)
+            : 0;
+      if (!v) continue;
+      const w = (pw / 2) * Math.abs(v);
+      ctx.fillStyle = v >= 0 ? colors.buy : colors.sell;
+      ctx.globalAlpha = 0.35;
+      ctx.fillRect(v >= 0 ? mid : mid - w, ya, w, h);
+    }
+    ctx.globalAlpha = 1;
+    if (diverging) markLine(mid, G.y, mid, G.y + G.h, colors.line, 1, 0.9);
+    const vb = u.volBands;
+    if (vb?.va) {
+      const vps = 2 ** vb.m,
+        ya = G.Y(vb.va.r1 * vps),
+        yb = G.Y(vb.va.r0 * vps);
+      ctx.fillStyle = colors.ink;
+      ctx.globalAlpha = 0.4;
+      ctx.fillRect(px, ya, 2, yb - ya);
+      ctx.globalAlpha = 1;
+    }
+    if (vb?.poc != null) {
+      const y = G.Y((vb.poc + 0.5) * 2 ** vb.m);
+      ctx.setLineDash([3, 2]);
+      markLine(px, y, px + pw, y, colors.ink, 1, 0.6);
+      ctx.setLineDash([]);
+    }
+  }
+  // How the underlay's rows stand for its period where they aren't its own
+  // exactly (the recorded snapshot): from coarser rows, its 1,000 USDT ones,
+  // marked ≈; or at 125 USDT from a block's first whole column after the
+  // period starts, which is said.
+  function underlayBasis(res) {
+    if (res.state !== "ready" || res.exact !== false) return { approx: "", from: "" };
+    if (res.rowPrice > 1) return { approx: "≈ ", from: `from ${price(PR * res.rowPrice)} USDT rows` };
+    const a = Math.ceil(res.span[0] / res.columns) * res.columns;
+    return { approx: "", from: a > res.span[0] ? `from ${when(a)} UTC` : "" };
+  }
+  // Why the underlay has no rows to draw yet.
+  function underlayWhy(res) {
+    return res.state === "failed"
+      ? `couldn't be read: ${res.error}`
+      : res.state === "pending"
+        ? "reading from the cube…"
+        : res.state === "unrecorded"
+          ? "not recorded for this period"
+          : "no time before the data's edge";
+  }
+  // The underlay's legend chip, after its menus, which name its choice and
+  // period: its ramp and scale, the peak in view, or why it has none yet. Its
+  // title names all three. Written only when its words change.
+  function underlayLegend(u) {
+    const chip = el("rows-legend");
+    if (!u) {
+      if (!chip.hidden) chip.hidden = true;
+      return;
+    }
+    if (chip.hidden) chip.hidden = false;
+    const k = u.peak,
+      { approx, from } = underlayBasis(u.res),
+      scale = !u.bands
+        ? underlayWhy(u.res)
+        : u.kind === "volume"
+          ? `${approx}0 → ${compact(k.v)} USDT`
+          : u.kind === "delta"
+            ? `${approx}Δ ${signedCompact(-k.d)} · 0 · ${signedCompact(k.d)} USDT`
+            : u.kind === "relvol"
+              ? `${approx}−2 · 0 · +2 vs the period`
+              : `0 → ${dur(k.w)}`,
+      title = `Rows: ${ROWS_INFO[u.kind].name} ${periodPhrase(u.period)}${from ? `, ${from}` : ""}: ${scale}`;
+    if (el("rows-legend-text").textContent !== scale) el("rows-legend-text").textContent = scale;
+    if (chip.title !== title) chip.title = title;
+    const ramp = el("rows-ramp");
+    if (ramp.dataset.kind !== u.kind) {
+      ramp.dataset.kind = u.kind;
+      ramp.style.background =
+        u.kind === "volume"
+          ? "linear-gradient(to right,var(--ol-surface),color-mix(in srgb,var(--ol-ink) 30%,var(--ol-surface)))"
+          : u.kind === "time"
+            ? "linear-gradient(to right,var(--ol-surface),color-mix(in srgb,var(--ol-time) 45%,var(--ol-surface)))"
+            : "linear-gradient(to right,color-mix(in srgb,var(--ol-sell) 45%,var(--ol-surface)),var(--ol-surface),color-mix(in srgb,var(--ol-buy) 45%,var(--ol-surface)))";
+    }
   }
   function markings(full, cut) {
     const ts = stepT(),
@@ -7777,6 +8231,7 @@
   // calendar periods are named by what they are now: the month, the year; a
   // day's by the day it runs since.
   function lineName(key) {
+    if (key === "all") return "All history";
     return isDay(key) ? `Since ${day(dayStart(key))}` : lineInfo(key).name;
   }
   function lineTag(key) {
@@ -7810,6 +8265,7 @@
     else if (key === "wk") a = base(d3.utcMonday.floor(now));
     else if (key === "mo") a = base(d3.utcMonth.floor(now));
     else if (key === "yr") a = base(d3.utcYear.floor(now));
+    else if (key === "all") a = 0;
     else a = Math.max(0, end - lineInfo(key).days * 1536);
     return a < end ? [a, end] : null;
   }
@@ -7820,11 +8276,12 @@
     lineId = (key, span) =>
       ["line", live.generation, key, span[0], span[1], span[1] > Math.floor(CUT) ? CUT : ""].join("|");
   // A POC from row sums: the row with the most volume, the lower row winning a
-  // tie, with its volume and the period's.
+  // tie, with its volume and the period's. Every row is kept: the underlay
+  // draws them all.
   function linePOC(key, span, q, exact, rowPrice, columns = 1) {
     const row = q.poc,
       volume = row === null ? 0 : q.rows.find((x) => x.r === row)?.v || 0;
-    return { key, span, state: "ready", exact, row, rowPrice, columns, volume, total: q.v };
+    return { key, span, state: "ready", exact, row, rowPrice, columns, volume, total: q.v, rows: q.rows };
   }
   // A period from a fixed start (a chosen day, this week, month or year) that
   // begins before the loaded base cells is split at their first UTC midnight.
@@ -7832,7 +8289,7 @@
   // moves on, once a day; the part after it is summed from the base cells as
   // new data arrives. Row sums add, so the POC is the cube's own.
   function lineSplit(key, span) {
-    if (!PACK.live || !sources.recent || !(isDay(key) || ["wk", "mo", "yr"].includes(key)))
+    if (!PACK.live || !sources.recent || !(isDay(key) || ["wk", "mo", "yr", "all"].includes(key)))
       return null;
     const at = Math.ceil(sourceRange(sources.recent)[0] / 1536) * 1536,
       src = at > span[0] && at < span[1] ? exactSource([at, span[1], 0, 2 ** 32], 0, 0) : null;
@@ -7913,8 +8370,11 @@
     const was = lineLatest.get(key);
     return was && r.span && was.span[1] <= cutEdge() ? { ...was, stale: true } : r;
   }
+  // The periods whose rows are read: the lines', and the underlay's while it shows.
+  const readPeriods = () =>
+    S.rows !== "off" && !S.lines.includes(S.period) ? [...S.lines, S.period] : S.lines;
   function linesWant() {
-    for (const key of S.lines) {
+    for (const key of readPeriods()) {
       const r = lineResult(key);
       if (r.state !== "pending") continue;
       const { id, a, b, part } = r.read,
@@ -7946,6 +8406,171 @@
     S.lines = normalizeLines(next);
     update();
     save();
+  }
+  // The row underlay (Rows, U): each price row's value over a period of its
+  // own, drawn as bands across the chart behind the cells and as a second
+  // profile behind the view's. Volume, Delta and Relative volume come from the
+  // POC lines' per-period rows, every 125 USDT row of them kept; Time at price
+  // from the period's dwell, read with path and dwell (motion=1) in their
+  // second slot. Off by default, and read only while it shows.
+  const ROWS = ["off", "volume", "delta", "relvol", "time"],
+    ROWS_INFO = {
+      off: { name: "Off", desc: "No backdrop behind the cells" },
+      volume: { name: "Volume", desc: "USDT traded at each price row over the period" },
+      delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT at each price row over the period" },
+      relvol: {
+        name: "Relative volume",
+        desc: "Each row's share of the view's USDT against its share of the period's, log₂",
+      },
+      time: { name: "Time at price", desc: "How long the price spent in each row over the period" },
+    },
+    ROWS_GROUPS = [
+      ["Off", ["off"]],
+      ["USDT", ["volume", "delta", "relvol"]],
+      ["Time", ["time"]],
+    ],
+    // The periods: the POC lines' and all history, or since a chosen day.
+    PERIODS = [...LINE_KEYS, "all"],
+    // Time at price needs the live cube's dwell.
+    rowsChoices = () => (PACK.live ? ROWS : ROWS.filter((k) => k !== "time")),
+    validPeriod = (key) => PERIODS.includes(key) || (isDay(key) && dayStart(key) < CUT),
+    periodName = (key) => lineName(key),
+    // The period in a sentence: "over the last 90 days", "over this month", "since 3 Mar 2024".
+    periodPhrase = (key) => {
+      if (key === "all") return "over all history";
+      if (isDay(key)) return `since ${day(dayStart(key))}`;
+      const info = lineInfo(key);
+      return !info.days
+        ? `over ${info.name.toLowerCase()}`
+        : info.days === 1
+          ? "over the last day"
+          : info.days === 365
+            ? "over the last year"
+            : `over the last ${info.name}`;
+    },
+    // The calendar periods name the month or year they are now.
+    periodLabel = (key) =>
+      key === "mo" || key === "yr" ? `${lineInfo(key).name} · ${lineTag(key)}` : lineName(key);
+  // Time at price: the period's dwell by 125 USDT row, the cube's own, kept per
+  // period and span. While a new span is read, the last one read for the
+  // period that ends no later than the data shown stands in, as a line's does.
+  const dwellResults = new Map(),
+    dwellLatest = new Map(),
+    dwellId = (span) =>
+      ["dwell", live.generation, span[0], span[1], span[1] > Math.floor(CUT) ? CUT : ""].join("|");
+  function dwellShown(key) {
+    const span = lineSpan(key);
+    if (!span) return { key, span: null, state: "none" };
+    const id = dwellId(span),
+      hit = dwellResults.get(id);
+    if (hit) return hit;
+    if (motion.failed.has(id)) return { key, span, state: "failed", error: motion.failed.get(id) };
+    const was = dwellLatest.get(key);
+    return was && was.span[1] <= cutEdge() ? { ...was, stale: true } : { key, span, state: "pending" };
+  }
+  function underlayDwellWant() {
+    if (!PACK.live || S.rows !== "time") return null;
+    const key = S.period,
+      span = lineSpan(key);
+    if (!span || dwellResults.has(dwellId(span))) return null;
+    const id = dwellId(span),
+      [a, b] = span,
+      nq = clamp(Math.ceil(Math.log2(Math.max(1, (b - a) / 16))), 0, 24);
+    return {
+      key: id,
+      path: `/cube/query?n=${nq}&m=0&b0=${a}&b1=${b}&motion=1`,
+      decode: async (body) => ({ block: await unpack(body.block, id), body }),
+      apply: ({ block, body }) => {
+        const q = motionTotals(motionSummary(block.cells, nq, 0)),
+          result = { key, span, state: "ready", exact: true, rowPrice: 1, rows: q.rows, w: body.summary.dwell, end: body.end };
+        dwellResults.set(id, result);
+        dwellLatest.set(key, result);
+        while (dwellResults.size > 24) dwellResults.delete(dwellResults.keys().next().value);
+      },
+    };
+  }
+  // The underlay's rows at the drawn row size, or at their own where the drawn
+  // rows are finer (the recorded snapshot's 1,000 USDT rows): each band's USDT,
+  // taker-buy USDT and dwell, the peaks each is scaled to, and the period's POC
+  // and 70% value area. Kept with the rows, per row size.
+  const bandsMemo = new WeakMap();
+  function underlayBands(res, m) {
+    const own = Math.round(Math.log2(res.rowPrice || 1)),
+      bm = Math.max(m, own);
+    let byRows = bandsMemo.get(res.rows);
+    if (!byRows) bandsMemo.set(res.rows, (byRows = new Map()));
+    const hit = byRows.get(bm);
+    if (hit) return hit;
+    const k = 2 ** (bm - own),
+      map = new Map();
+    for (const x of res.rows) {
+      const r = Math.floor(x.r / k);
+      let band = map.get(r);
+      if (!band) map.set(r, (band = { r, v: 0, bv: 0, w: 0 }));
+      band.v += x.v || 0;
+      band.bv += x.bv || 0;
+      band.w += x.w || 0;
+    }
+    const rows = [...map.values()].sort((a, b) => a.r - b.r);
+    let v = 0,
+      w = 0,
+      vmax = 0,
+      dmax = 0,
+      wmax = 0,
+      poc = null;
+    for (const x of rows) {
+      v += x.v;
+      w += x.w;
+      if (x.v > vmax) {
+        vmax = x.v;
+        poc = x.r;
+      }
+      dmax = Math.max(dmax, Math.abs(2 * x.bv - x.v));
+      wmax = Math.max(wmax, x.w);
+    }
+    const bands = { m: bm, rows, map, v, w, vmax, dmax, wmax, poc, va: contiguousArea(rows, poc, v) };
+    byRows.set(bm, bands);
+    return bands;
+  }
+  // Relative volume: log2 of a row's share of the rectangle's USDT (the
+  // selection's, or the view's) over its share of the period's, at the bands'
+  // row size. A row the period traded but the rectangle didn't is −2; a row the
+  // period never traded has none. Kept for the last rectangle.
+  const relMemo = new WeakMap();
+  function relativeVolume(bands, query) {
+    const hit = relMemo.get(bands);
+    if (hit?.query === query) return hit.values;
+    const k = 2 ** Math.max(0, bands.m - (query.m ?? renderM())),
+      rect = new Map(),
+      values = new Map();
+    for (const x of query.rows) {
+      const r = Math.floor(x.r / k);
+      rect.set(r, (rect.get(r) || 0) + x.v);
+    }
+    if (query.v > 0 && bands.v > 0)
+      for (const x of bands.rows) {
+        if (!(x.v > 0)) continue;
+        const shareP = x.v / bands.v,
+          shareV = (rect.get(x.r) || 0) / query.v;
+        values.set(x.r, shareV > 0 ? { value: Math.log2(shareV / shareP), shareV, shareP } : { value: -2, shareV: 0, shareP, none: true });
+      }
+    relMemo.set(bands, { query, values });
+    return values;
+  }
+  // What the underlay shows this frame, or null while it is off: its rows (the
+  // lines' for the period, or Time at price's dwell), their bands at the drawn
+  // row size, and the volume bands its POC, value area and relative volume
+  // come from. Relative volume waits for the rectangle's own measures.
+  function underlayFrame(meas) {
+    if (S.rows === "off") return null;
+    const kind = S.rows,
+      m = renderM(),
+      vol = lineShown(S.period),
+      res = kind === "time" ? dwellShown(S.period) : vol,
+      volBands = vol.state === "ready" && vol.rows ? underlayBands(vol, m) : null,
+      bands = kind === "time" ? (res.state === "ready" && res.rows ? underlayBands(res, m) : null) : volBands,
+      rect = meas.state === "pending" || meas.state === "failed" ? null : meas.query;
+    return { kind, period: S.period, vol, res, bands, volBands, rect };
   }
   // The lines and their tags. Longer periods are drawn first, so shorter ones
   // lie on top; each line is haloed in the surface colour to stand clear of
@@ -9542,7 +10167,7 @@
     // The pane's choices that read path and dwell.
     PANE_MOTION = ["choppiness", "perpath"],
     movementMode = () => MOVEMENT.includes(S.mode),
-    movementOn = () => Boolean(PACK.live) && (movementMode() || S.time || PANE_MOTION.includes(S.pane)),
+    movementOn = () => Boolean(PACK.live) && (movementMode() || PANE_MOTION.includes(S.pane)),
     // The encodings this page can show: path and dwell need the live cube.
     modes = () => (PACK.live ? MODES : MODES.filter((k) => !MOVEMENT.includes(k))),
     // The pane's choices this page can show: choppiness and volume per path too.
@@ -9813,15 +10438,19 @@
   // totals, then the lens's block. Nothing while the view's own measures,
   // tile or lens tile are still to be read.
   function motionWant() {
-    if (!movementOn() || cube.stale) return null;
+    const viewing = movementOn();
+    if (!(viewing || (PACK.live && S.rows === "time")) || cube.stale) return null;
     if (["measure", "tile", "lens"].includes(cube.busy?.kind)) return null;
     for (const want of [measureWant(), tileWant(), lensWant()])
       if (want && !cube.failed.has(want.key)) return null;
-    const lens = S.lens || nav.alt || nav.hold ? lensFrame()?.src : null;
+    const lens = viewing && (S.lens || nav.alt || nav.hold) ? lensFrame()?.src : null;
     return (
-      [motionSourceWant(displaySource()), motionMeasureWant(), lens ? motionSourceWant(lens) : null].find(
-        (want) => want && !motion.failed.has(want.key),
-      ) || null
+      [
+        viewing ? motionSourceWant(displaySource()) : null,
+        viewing ? motionMeasureWant() : null,
+        lens ? motionSourceWant(lens) : null,
+        underlayDwellWant(),
+      ].find((want) => want && !motion.failed.has(want.key)) || null
     );
   }
   // Why the view's path and dwell couldn't be read, when they couldn't.
@@ -9841,6 +10470,8 @@
     for (const [id, s] of Object.entries(motion.sources))
       if (id.startsWith("tile:") && s.end > edge) delete motion.sources[id];
     for (const [key, x] of motion.measured) if (x.r[1] > edge) motion.measured.delete(key);
+    for (const [key, x] of dwellResults) if (x.span[1] > edge) dwellResults.delete(key);
+    for (const [key, x] of dwellLatest) if (x.span[1] > edge) dwellLatest.delete(key);
   }
   function scheduleMotion() {
     if (!PACK.live || !ready) return;
@@ -10392,7 +11023,8 @@
             poc: S.poc,
             area: S.area,
             untested: S.untested,
-            time: S.time,
+            rows: S.rows,
+            period: S.period,
             lines: S.lines,
             tab: S.tab,
             evidenceKind: S.evidenceKind,
@@ -10477,6 +11109,8 @@
         auto: S.auto,
         mode: S.mode,
         pane: S.pane,
+        rows: S.rows,
+        period: S.period,
         ...summary(),
       },
       i = views.list.findIndex((x) => x.name === name);
@@ -10554,6 +11188,9 @@
       // names none.
       ...(x.mode !== "volume" && MODE_NAMES[x.mode] ? [MODE_NAMES[x.mode]] : []),
       ...(x.pane && x.pane !== "cells" && PANE_INFO[x.pane] ? [`${PANE_INFO[x.pane].name} columns`] : []),
+      ...(x.rows && x.rows !== "off" && ROWS_INFO[x.rows] && validPeriod(x.period)
+        ? [`${ROWS_INFO[x.rows].name} rows · ${periodName(x.period)}`]
+        : []),
     ].join(" · ");
   }
   function renderViews() {
@@ -11409,6 +12046,10 @@
         const list = panes(),
           i = list.indexOf(S.pane) + (shift ? -1 : 1);
         setPane(list[(i + list.length) % list.length]);
+      } else if (k === "u") {
+        const list = rowsChoices(),
+          i = list.indexOf(S.rows) + (shift ? -1 : 1);
+        setRows(list[(i + list.length) % list.length]);
       } else if (k === "p" && shift) {
         S.poc = !S.poc;
         update();
@@ -11492,6 +12133,18 @@
     update();
     save();
   }
+  function setRows(rows) {
+    if (!rowsChoices().includes(rows)) return;
+    S.rows = rows;
+    update();
+    save();
+  }
+  function setPeriod(key) {
+    if (!validPeriod(key)) return;
+    S.period = key;
+    update();
+    save();
+  }
   function toggleAuto() {
     S.auto = !S.auto;
     autoLevel();
@@ -11560,7 +12213,7 @@
     el(id).addEventListener("click", () =>
       changeResolution(S.n + dn, S.m + dm, dm === 0),
     );
-  for (const f of ["poc", "area", "untested", "time"])
+  for (const f of ["poc", "area", "untested"])
     el(f).addEventListener("change", () => {
       S[f] = el(f).checked;
       update();
@@ -11754,6 +12407,8 @@
       lineResults.clear();
       lineLatest.clear();
       lineParts.clear();
+      dwellResults.clear();
+      dwellLatest.clear();
     }
     // New data: reads the cube refused or failed are asked for again.
     cube.stale = false;

@@ -549,6 +549,94 @@
               hidden
             ></div>
           </div>
+          <div class="ol-group ol-mode-group">
+            <button
+              type="button"
+              id="ol-rows"
+              class="ol-pick cursor-interaction"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-controls="ol-rows-menu"
+              aria-label="Rows: Off"
+              aria-keyshortcuts="U"
+              data-keys="U"
+              data-hint="What the backdrop behind the cells and the second profile show for each price row, over a period of their own; U steps to the next, Shift+U back"
+            >
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 3.5h7M2.5 6.5h11M2.5 9.5h9M2.5 12.5h5" />
+              </svg>
+              <span class="ol-label">Rows:</span>
+              <span id="ol-rows-text">Off</span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
+            </button>
+            <div
+              class="ol-pop ol-menu ol-mode-menu"
+              id="ol-rows-menu"
+              role="menu"
+              aria-label="Rows"
+              hidden
+            ></div>
+          </div>
+          <div class="ol-group ol-period-group" hidden>
+            <button
+              type="button"
+              id="ol-period"
+              class="ol-pick cursor-interaction"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="ol-period-pop"
+              aria-label="Rows' period: 90 days"
+              data-hint="The period the rows are summed over, up to the latest data or the replay's edge"
+            >
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
+                <path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" />
+              </svg>
+              <span class="ol-label">Period:</span>
+              <span id="ol-period-text">90 days</span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
+            </button>
+            <div
+              class="ol-pop ol-lines-pop ol-period-pop"
+              id="ol-period-pop"
+              role="dialog"
+              aria-labelledby="ol-period-title"
+              hidden
+            >
+              <div class="ol-pop-head">
+                <span id="ol-period-title">Rows' period</span>
+              </div>
+              <p class="ol-lines-note">
+                The rows are summed over this period, up to the latest data, or in
+                replay to its edge.
+              </p>
+              <div
+                class="ol-lines-list"
+                id="ol-period-list"
+                role="radiogroup"
+                aria-labelledby="ol-period-title"
+              ></div>
+              <form class="ol-lines-add" id="ol-period-add">
+                <input
+                  type="date"
+                  id="ol-period-date"
+                  aria-label="A day in UTC: the period runs from that day to the latest data"
+                  required
+                /><button type="submit" class="ol-action ol-s cursor-interaction">
+                  Since this day
+                </button>
+              </form>
+              <div class="ol-lines-status" id="ol-period-status" role="status"></div>
+            </div>
+          </div>
+          <span class="ol-legend ol-rows-legend" id="ol-rows-legend" hidden
+            ><i class="ol-ramp" id="ol-rows-ramp" aria-hidden="true"></i
+            ><span id="ol-rows-legend-text" class="ol-num"></span
+          ></span>
         </div>
         <div class="ol-marks" role="group" aria-label="Overlays">
           <label title="Each column's point of control, and the profile's (P and B) · Shift+P"
@@ -557,8 +645,6 @@
             ><input type="checkbox" id="ol-area" />70% area</label
           ><label title="Column POCs that no later column in view has traded at"
             ><input type="checkbox" id="ol-untested" />Untested</label
-          ><label title="Each row's share of the time the price spent in it, under the volume profile · live cube only"
-            ><input type="checkbox" id="ol-time" />Time at price</label
           >
         </div>
         <span class="ol-legend"
@@ -976,9 +1062,6 @@
           ><span id="ol-key-poc">P · total POC</span
           ><span id="ol-key-bpoc">B · buy POC</span
           ><span id="ol-key-area" hidden>H/L · composite 70%</span
-          ><span id="ol-key-time" hidden
-            ><i class="ol-data-key time" aria-hidden="true"></i>Time at
-            price</span
           ><span id="ol-ray-count" hidden></span>
         </div>
         <span class="ol-gesture" id="ol-gesture"
@@ -1384,6 +1467,10 @@
             <div>
               <dt>Next or previous column measure</dt>
               <dd><kbd>B</kbd> <kbd>Shift</kbd> <kbd>B</kbd></dd>
+            </div>
+            <div>
+              <dt>Next or previous row measure</dt>
+              <dd><kbd>U</kbd> <kbd>Shift</kbd> <kbd>U</kbd></dd>
             </div>
             <div>
               <dt>POC lines</dt>

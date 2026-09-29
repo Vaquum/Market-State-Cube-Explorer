@@ -1677,9 +1677,10 @@
 #origo-lens .ol-keys-note:last-child {
   margin: var(--sp-4) 0 0;
 }
+/* Two columns where they fit; on a narrow phone one, no wider than the dialog. */
 #origo-lens .ol-keys-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: var(--sp-4) var(--sp-6);
 }
 #origo-lens .ol-keys h3 {

@@ -1708,8 +1708,11 @@
 #origo-lens .ol-keys dl {
   margin: 0;
 }
+/* The name and the keys split the row's spare width evenly, neither taking more
+   than it needs: the shorter keeps one line, the longer wraps in its column. */
 #origo-lens .ol-keys dl > div {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto;
   align-items: baseline;
   justify-content: space-between;
   gap: var(--sp-3);
@@ -1721,6 +1724,9 @@
   font-size: var(--fs-s);
   color: var(--ol-muted);
   text-align: right;
+}
+/* The keys may wrap; a key cap never does. */
+#origo-lens .ol-keys kbd {
   white-space: nowrap;
 }
 #origo-lens kbd {

@@ -586,6 +586,10 @@
   max-height: min(78vh, 640px);
   overflow: auto;
 }
+/* The Rows period: one to pick, or a day to start from. */
+#origo-lens .ol-period-pop {
+  width: 270px;
+}
 #origo-lens .ol-lines-note {
   margin: 0 0 var(--sp-2);
   color: var(--ol-muted);
@@ -1009,6 +1013,13 @@
   background: linear-gradient(to right, var(--ol-panel), var(--ol-volume));
   border-radius: var(--r-s);
 }
+/* The Rows legend: the underlay's choice, period and scale, beside its menus. */
+#origo-lens .ol-rows-legend {
+  margin-left: var(--sp-1);
+}
+#origo-lens .ol-rows-legend .ol-ramp {
+  width: 36px;
+}
 #origo-lens .ol-plot {
   position: relative;
   flex: 1 1 0;
@@ -1418,9 +1429,6 @@
 }
 #origo-lens .ol-data-key.plain {
   background: var(--ol-line);
-}
-#origo-lens .ol-data-key.time {
-  background: var(--ol-time);
 }
 
 /* Inspector: its own scroll, so the chart stays in view. */

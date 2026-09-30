@@ -19446,6 +19446,8 @@
       readout = frame && band && u.kind !== "relvol" ? frame.readout(band) : null,
       // The observed amount of the band: the readout's, or (the scale display is off) the band's own.
       observed = readout ? readout.observed?.value : u.kind === "volume" ? band?.v : u.kind === "delta" ? (band ? 2 * band.bv - band.v : undefined) : band?.w;
+    // Where the row's value is beyond the Rows mapping's domain, said with the row: the coordinate is clipped, the number is not.
+    const coordinate = readout?.coordinate;
     if (u.kind === "volume")
       out.push([label, observed > 0 ? `${approx}${money(observed)} · ${share(observed / u.bands.v)}` : "No trades in the period"]);
     else if (u.kind === "delta")
@@ -19473,6 +19475,8 @@
         );
       }
     }
+    if (coordinate && (coordinate.clip === "low" || coordinate.clip === "high"))
+      out.push(["Numeric clipping", coordinate.clip === "low" ? E.text.key.below : E.text.key.above, "clip", coordinate.clip]);
     // Relative volume: the underlay's own value under Relative volume.
     const vb = u.volBands;
     if (vb) {
@@ -19495,6 +19499,9 @@
         "relvol",
         typed.tag === "finite" ? typed.value : typed.tag,
       ]);
+      // The comparison support W the ratios are taken over: the rows both the rectangle and the period have, in USDT, never redefined by the ratio.
+      if (u.kind === "relvol" && rv.support.first !== null)
+        out.push(["Comparison support W", `${price(rv.support.first * 2 ** vb.m * PR)}–${price((rv.support.last + 1) * 2 ** vb.m * PR)} USDT`, "support", [rv.support.first, rv.support.last]]);
     }
     return out;
   }
@@ -20979,7 +20986,24 @@
         ticks.append(node);
       });
       if (rowEnd[1] > -Infinity) ticks.style.height = "30px";
-      dyn("bar", [bar, ticks]);
+      // Rows has two things to read colours from: the strip, each row's value at full strength, and the backdrop, the same entries at the fixed 16%
+      // over the surface. Each has its own bar and says which it is.
+      const bars = [bar, ticks];
+      if (channel === "rows") {
+        const lut = lutFor(scaleRt.appearance, scaleRt.theme),
+          ramps =
+            legend.bar.ramps.kind === "signed"
+              ? { kind: "signed", negative: lut.negative.css, positive: lut.positive.css, midpoint: lut.midpoint.css }
+              : { kind: "unsigned", unsigned: lut.unsigned.css },
+          stripBar = uiEl("div", "ol-legend-bar"),
+          stripCanvas = uiEl("canvas", "ol-legend-canvas");
+        stripCanvas.setAttribute("aria-hidden", "true");
+        stripCanvas.dataset.role = "strip";
+        stripBar.append(stripCanvas);
+        legendBar(stripCanvas, { bar: { ramps } }, 240, 10);
+        bars.unshift(uiEl("p", "ol-legend-note", "Strip: each row's value at full strength"), stripBar, uiEl("p", "ol-legend-note", "Backdrop: the same entries at 16% over the surface"));
+      }
+      dyn("bar", bars);
       const legendDetails = E.legend.details(legend),
         details = legendDetails.map((d) => {
           const dt = uiEl("dt", "", uiDetailLabel(d)),

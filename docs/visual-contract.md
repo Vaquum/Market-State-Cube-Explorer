@@ -289,7 +289,7 @@ A Wave-2 package that adds a NEW top-level helper reading `colors.*` under a nam
 |---|---|---|---|---|---|---|---|---|
 | N-30 | Two-tone boundary painter: a surface casing under an ink core for the selection frame, its corner ticks and the lens frame | src/explorer.js: `twoTone()`, `selectionFrame()` (new in S2) | Selection: `colors.accent` 1.5 px plus a 0.25 fade of everything outside; lens frame: `colors.accent` 1.5 px | `IX` interaction (ink core, surface casing) | - | #47 | U50 | todo-S2 |
 | N-31 | Event strip: one lane per enabled event kind (4h squeeze, 1D squeeze, CME gap), opaque marks in the state ink, the lane name in the price column | src/explorer.js: `paintEvents()`, `eventLanes()`; src/encoding.js `E.role.unionSpans` (new in S2) | The squeezes and the CME gap were translucent areas over the cells (`drawFill` alpha 0.24, `drawClock` alpha 0.16) | `STATE` ink, fixed role | EVENT | #47 | U52, B27 | done |
-| N-32 | Rows strip: the row values at full strength in a fixed 12 px column right of the heatmap, one block per effective row | src/explorer.js: `paintRowsStrip()` (new in S2) | Rows only drew a 16% projection over the cells and a second profile | the Rows mapping's unsigned or signed arms (`UM`, `+/-`) at alpha 1 | ROW | #47 | U50 | todo-S2 |
+| N-32 | Rows strip: the row values at full strength in a fixed 12 px column right of the heatmap, one block per effective row; the Rows legend popover has a bar for it beside the backdrop's | src/explorer.js: `paintRowsStrip()`, `legendPop()` (Rows bar) (new in S2) | Rows only drew a 16% projection over the cells and a second profile | the Rows mapping's unsigned or signed arms (`UM`, `+/-`) at alpha 1 | ROW | #47 | B28 | done |
 | N-33 | Endpoint glyphs and gutter letters of a profile track: a filled triangle for the POC, a hollow diamond for the Buy POC, both gold, each with its letter a line of room apart | src/explorer.js: `pocGlyph()`, `gutterLabels()` (new in S2) | P and B letters on leader lines at the strip's edge, B in `colors.legacyBuy` | `REF:Profile` gold, the shape and the letter distinguish the two | PROF | #47 | B25 | todo-S2 |
 | N-34 | The current track: the view's or selection's Volume with the taker-buy subset as a neutral ink inset, POC and Buy POC lines, the 70% area as a neutral fill | src/explorer.js: `paintCurrentTrack()` (new in S2) | One overpainted strip; the subset was a thin bar in `colors.legacyBuy` | neutral length on an Independent or shared axis | PROF | #47 | B25, U51 | todo-S2 |
 | N-35 | The reference track and the domains printed under the tracks | src/explorer.js: `paintReferenceTrack()`, `paintProfileDomains()` (new in S2) | The reference was painted behind the current bars at alpha 0.16 to 0.35, its axis not shown | the Rows measure over its period on its own or the shared axis; the domain as text under each track | PROF | #47 | B25, U51 | todo-S2 |
@@ -686,6 +686,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B25 | `tests/browser/profile-tracks.spec.js` | the adjacent profile tracks: geometry, independent and shared axes, disclosure, persistence | S2 |
 | B26 | `tests/browser/stroke-roles.spec.js` | the stroke-role table: marks on the plot, their footer keys, counts, geometry and colours | S2 |
 | B27 | `tests/browser/composition.spec.js` | the event strip lanes, reference stroke widths, the occlusion notice and the transient lens region | S2 |
+| B28 | `tests/browser/rows-strip.spec.js` | the Rows strip, its blocks and legend bar, the 16% projection behind the cells, and Relative volume inside W | S2 |
 
 ## 10. Migration status per slice
 
@@ -698,8 +699,8 @@ Rendered from the Status column at S1's convergence: `done` is S1's own work shi
 | D | 21 | 7 | 0 | 4 | 8 | 2 |
 | F | 14 | 0 | 0 | 0 | 2 | 12 |
 | R | 15 | 0 | 0 | 2 | 5 | 8 |
-| N | 30 | 0 | 0 | 5 | 0 | 25 |
-| all | 162 | 26 | 0 | 30 | 31 | 75 |
+| N | 30 | 0 | 0 | 4 | 0 | 26 |
+| all | 162 | 26 | 0 | 29 | 31 | 76 |
 
 ## 11. Contributor checklist
 

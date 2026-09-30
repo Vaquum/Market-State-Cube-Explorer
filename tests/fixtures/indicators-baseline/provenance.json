@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "expectationSource": "baseline-8c82ca1",
+  "generator": "tests/reference/record_baseline.mjs",
+  "seed": 20260930,
+  "source": "Inputs and outputs of the nine indicator functions of 8c82ca1:src/explorer.js (lines 6189-6337), run unmodified; inputs are hand-written series and, for the squeeze cases, seeded synthetic bandwidth series (tests/support/rng.js mulberry32). Not market data.",
+  "extractedOn": "2026-09-30",
+  "notes": "Expected values are what the baseline functions returned, recorded once; the fixture also stores the text of each baseline function so that the moved copy can be compared with it after reversing its part-23 names. Numbers JSON cannot carry are the strings NaN, Infinity, -Infinity and -0; typed arrays are {$type, v}. Re-record with tests/reference/record_baseline.mjs (needs the git history)."
+}

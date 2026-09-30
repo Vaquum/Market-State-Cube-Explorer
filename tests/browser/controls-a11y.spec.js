@@ -18,11 +18,13 @@
 //     element really sits on (the parent chain of computed backgrounds composited), font-size >= 11px and tabular
 //     numerals on the numeric text, no new control under 24 css px, no horizontal overflow at 375x812 and 600x800 and a
 //     popover that stays inside the viewport;
-//   * the D.18 elements exist;
+//   * the D.18 elements exist; the two legend bars are the pixels of the Lut (chip and popover, both themes, flipped under an
+//     open popover without a reload) and the key swatches are the role table's glyphs in the occupancy and state inks;
+//     the banner takes its height from the drawer's limit;
 //   * the manual-domain and share-window forms reject a bad input with its reason beside the field (B09c).
 //
 // Oracles: the WCAG 2.x contrast of tests/reference/contrast.js (written from the definition, validated on the published
-// anchors in contrast.test.js); the window sizes and the 24 px / 11 px floors of the PRD; the English of the two
+// anchors in contrast.test.js); the module's own Lut for the bar pixels (its bytes are pinned by lut.test.js); the window sizes and the 24 px / 11 px floors of the PRD; the English of the two
 // rejection texts is copied from INTEGRATION.md D.11 (never read back from the module); the colours the page computes are
 // read with getComputedStyle, so this checks what is painted.
 //
@@ -33,8 +35,8 @@
 //
 // What this does NOT prove: that the warnings, the axis chip or the marker show correct numbers (they need the marks
 // hooks of C, R and X and the readouts of T, which are not merged at this base; the page is checked by hand with a
-// scratch build for those), the canvas bars' pixels (legend.test.js compares the pixels of E.legend.barPixels with the
-// Lut), or how a screen reader speaks any of it (no screen reader was run).
+// scratch build for those), the bar of a SIGNED scale in the page (legend.test.js compares E.legend.barPixels with the Lut for
+// every shape), or how a screen reader speaks any of it (no screen reader was run).
 const { test, expect, probeTools } = require("./fixtures.js");
 const reference = require("../reference/contrast.js");
 
@@ -457,6 +459,11 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     await expect(banner).toContainText("The scale display hit an error and was turned off for this session; the chart shows occupancy only. Reload the page.");
     // The chip no longer claims a scale it is not showing.
     await expect(page.locator("#ol-legend")).toHaveAttribute("data-state", "failed");
+    // The banner takes height from the chart, so the drawer's limit (the grip's aria-valuemax) is that much smaller while it
+    // shows, and the page says so as soon as the banner goes.
+    const grip = page.locator("#ol-drawer-grip");
+    const bannerHeight = (await banner.boundingBox()).height;
+    const limitWith = Number(await grip.getAttribute("aria-valuemax"));
     // Details opens the lines; Dismiss hides the banner and puts the focus back on the chart.
     const more = page.locator("#ol-notice-more");
     await expect(more).toBeVisible();
@@ -468,6 +475,8 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     await page.keyboard.press("Enter");
     await expect(banner).toBeHidden();
     expect(await page.evaluate(() => document.activeElement?.id), "the focus returns to the chart").toBe("ol-canvas");
+    const limitWithout = Number(await grip.getAttribute("aria-valuemax"));
+    expect(limitWithout - limitWith, "the drawer's limit grows by the banner's height (the banner with its lines open was taller)").toBeGreaterThanOrEqual(Math.floor(bannerHeight) - 2);
   });
 
   test("no live region changes during ten wheel steps", async ({ page, fakeFor, probe }) => {
@@ -497,6 +506,69 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     expect(await page.evaluate(() => window.__liveMutations), "no rendered status, alert, log or aria-live node was touched").toEqual([]);
     // The page really did something: the legend was written (the chip has its text), so the silence is not an idle page.
     expect(await page.locator("#ol-legend-text").textContent()).not.toBe("");
+  });
+
+  test("the legend bars and the key swatches are what the canvas says they are, and a theme flip repaints them in place", async ({ page, fakeFor, probe }) => {
+    // Pixels, not attributes: the two bars are canvases blitted from E.legend.barPixels and the swatches are the role table's
+    // glyphs, so a DOM audit cannot see them. The oracle is the module's own Lut, whose bytes U18 pins (slate2, both themes),
+    // and the page's own computed colour of the occupancy token.
+    const fake = await fakeFor("mini");
+    await load(page, fake, probe, VIEW);
+    await page.focus("#ol-legend");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#ol-legend-pop")).toBeVisible();
+    const read = () =>
+      page.evaluate(() => {
+        const E = window.explorerEncoding;
+        const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+        const lut = E.lut.build("slate2", dark ? "dark" : "light");
+        const pixel = (canvas, x, y) => [...canvas.getContext("2d").getImageData(x, y, 1, 1).data];
+        const ends = (canvas) => ({ first: pixel(canvas, 0, Math.floor(canvas.height / 2)), last: pixel(canvas, canvas.width - 1, Math.floor(canvas.height / 2)), w: canvas.width });
+        const probeToken = document.createElement("span");
+        probeToken.style.color = "var(--ol-occupancy)";
+        document.querySelector("#origo-lens").append(probeToken);
+        const occupancy = getComputedStyle(probeToken).color.match(/\d+/g).map(Number);
+        probeToken.remove();
+        const swatch = (key) => document.querySelector(`#ol-legend-pop [data-key="${key}"] canvas`);
+        const zero = swatch("zero");
+        const dots = swatch("pending");
+        const ground = pixel(dots, 0, 0);
+        let marked = 0;
+        const data = dots.getContext("2d").getImageData(0, 0, dots.width, dots.height).data;
+        for (let i = 0; i < data.length; i += 4) if (data[i] !== ground[0] || data[i + 1] !== ground[1] || data[i + 2] !== ground[2]) marked++;
+        return {
+          chip: ends(document.querySelector("#ol-ramp")),
+          pop: ends(document.querySelector("#ol-legend-pop .ol-legend-canvas")),
+          lowEnd: [...lut.unsigned.rgb.slice(0, 3), 255],
+          highEnd: [...lut.unsigned.rgb.slice(765, 768), 255],
+          zeroEdge: pixel(zero, 0, 5).slice(0, 3),
+          zeroGlyph: E.role.GLYPHS["zero-outline"].ink,
+          occupancy,
+          dotsMarked: marked,
+          appearance: document.querySelector("#ol-legend").dataset.appearance,
+        };
+      });
+    const light = await read();
+    expect(light.chip.w, "the chip bar is 64 css px at device ratio 1").toBe(64);
+    expect(light.pop.w, "the popover bar is 240 css px").toBe(240);
+    for (const bar of ["chip", "pop"]) {
+      expect(light[bar].first, `${bar} bar, low end = Lut entry 0`).toEqual(light.lowEnd);
+      expect(light[bar].last, `${bar} bar, high end = Lut entry 255`).toEqual(light.highEnd);
+    }
+    expect(light.zeroGlyph).toBe("occupancy");
+    expect(light.zeroEdge, "the Zero (occupied) swatch is outlined in the occupancy ink").toEqual(light.occupancy);
+    expect(light.dotsMarked, "the Reading swatch is dots").toBeGreaterThan(0);
+    // Flip the theme under the open popover: the bars, the swatches and the popover follow without a reload.
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect.poll(async () => (await read()).chip.first.join(), { message: "the chip bar repaints in the dark Lut" }).not.toBe(light.chip.first.join());
+    const dark = await read();
+    for (const bar of ["chip", "pop"]) {
+      expect(dark[bar].first, `${bar} bar, dark low end`).toEqual(dark.lowEnd);
+      expect(dark[bar].last, `${bar} bar, dark high end`).toEqual(dark.highEnd);
+    }
+    expect(dark.lowEnd, "the dark Lut is not the light one").not.toEqual(light.lowEnd);
+    expect(dark.zeroEdge).toEqual(dark.occupancy);
+    expect(dark.appearance, "the appearance id does not depend on the theme").toBe(light.appearance);
   });
 
   for (const scheme of ["light", "dark"]) {

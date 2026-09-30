@@ -2841,16 +2841,16 @@
     // live, also how the price moved inside each cell, its path and dwell.
     MODES = ["volume", "flow", "delta", "cascade", "trades", "flowtrades", "size", "path", "dwell", "geometry"],
     MODE_INFO = {
-      volume: { name: "Volume", desc: "USDT traded in each cell" },
-      flow: { name: "Taker flow", desc: "Share of each cell's USDT bought by takers" },
-      delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT in each cell" },
-      cascade: { name: "Cascade", desc: "How each cell's USDT splits within its parent, one level coarser in time and price" },
-      trades: { name: "Trades", desc: "Trades in each cell" },
-      flowtrades: { name: "Taker trades", desc: "Share of each cell's trades that were taker buys" },
+      volume: { name: "Volume", desc: "USDT traded in each cell (its Amount), shaded on a Value scale that Explore fits to the cells in view" },
+      flow: { name: "Taker flow", desc: "Share of each cell's USDT bought by takers, on a fixed scale from 0 to 1 about one half" },
+      delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT in each cell (its Amount), drawn about a midpoint of zero" },
+      cascade: { name: "Cascade", desc: "How each cell's USDT splits within its parent, one level coarser in time and price, on a fixed scale of log2 from -2 to +2" },
+      trades: { name: "Trades", desc: "Trades in each cell (its Amount), shaded on a Value scale that Explore fits to the cells in view" },
+      flowtrades: { name: "Taker trades", desc: "Share of each cell's trades that were taker buys, on a fixed scale from 0 to 1 about one half" },
       size: { name: "Trade size", desc: "Average USDT per trade in each cell" },
-      path: { name: "Path", desc: "How far the price travelled in each cell, in row heights" },
-      dwell: { name: "Dwell", desc: "Each cell's share of its column's time" },
-      geometry: { name: "Geometry", desc: "The grid's occupied cells" },
+      path: { name: "Path", desc: "How far the price travelled in each cell, in row spans of the drawn row size over the price span the cell covers" },
+      dwell: { name: "Dwell", desc: "Each cell's share of the covered time of its column: seconds the price rested in its rows over the column's covered seconds" },
+      geometry: { name: "Geometry", desc: "The grid's occupied cells, outlined, with no magnitude" },
     },
     MODE_GROUPS = [
       ["USDT", ["volume", "flow", "delta", "cascade"]],
@@ -5339,6 +5339,9 @@
       c = full.cascade;
     if (!(c && c.parent === parent && c.start === start && c.end === end && c.cut === cut))
       full.cascade = cascadeContext(full, parent, start, end, cut);
+    // The Cells frame is built before this runs and reads its Cascade entries lazily, at encode time: this is
+    // the context it reads (see cascadeTyped).
+    cascadeLevel = full.cascade;
     return full.cascade;
   }
   function cascadeOf(ctx, c, r) {
@@ -5350,22 +5353,32 @@
     }
     return e;
   }
-  // A cell's share of its parent and its value, or why it has none: no parent
-  // at the coarsest level; outside, a parent the block holds only part of;
-  // open, one that runs past the data.
+  // A cell's share of its parent and its value, or why it has none. The STRUCTURE is decided before the
+  // child is looked at (DD-38): no parent at the coarsest level (coarsest); a parent the block holds only
+  // part of (outside); one that runs past the data (open). Only a complete parent is asked for the child,
+  // and there an absent child is a real state, not "no value here": the parent traded and this cell did not
+  // (negative-infinite, readout only: such a cell is never drawn). `res` is the typed result of
+  // E.ratio.cascade (factor 4) and is what the Cells frame, the tooltip and the tally read; `state`, `w`, `p`,
+  // `share`, `value` and `alone` keep the shape the tooltip, the Columns pane and the lens read.
   function cascadeEntry(ctx, c, r) {
-    if (!ctx.parent) return { state: "coarsest" };
     const w = ctx.cells.map.get(c + "," + r);
-    if (!w) return { state: "none" };
+    if (!ctx.parent) return cascadeTyped({ state: "coarsest", w }, { factor: 4, structure: "coarsest" });
     const pc = Math.floor(c / 2),
       span = 2 ** (ctx.n + 1);
-    if (pc * span < ctx.start) return { state: "outside", w };
-    if ((pc + 1) * span > ctx.end) return { state: ctx.end >= ctx.cut ? "open" : "outside", w };
-    const p = ctx.parent.map.get(pc + "," + Math.floor(r / 2));
-    if (!(p?.v > 0)) return { state: "none", w };
-    const share = w.v / p.v;
+    if (pc * span < ctx.start) return cascadeTyped({ state: "outside", w }, { factor: 4, structure: "outside" });
+    if ((pc + 1) * span > ctx.end) {
+      const open = ctx.end >= ctx.cut;
+      return cascadeTyped({ state: open ? "open" : "outside", w }, { factor: 4, structure: open ? "open" : "outside" });
+    }
+    const p = ctx.parent.map.get(pc + "," + Math.floor(r / 2)),
+      entry = cascadeTyped({ state: "none", w, p }, { factor: 4, structure: "complete", childV: w?.v, parentV: p?.v });
+    if (entry.tag !== CASCADE_FINITE) return entry;
     // Alone: no other cell in the parent traded.
-    return { state: "ok", w, p, share, value: Math.log2(4 * share), alone: p.ct === w.ct, colour: "", epoch: -1 };
+    entry.state = "ok";
+    entry.share = w.v / p.v;
+    entry.value = entry.res.value;
+    entry.alone = p.ct === w.ct;
+    return entry;
   }
   // A column's share of its parent column, one level up in time, as log2(2 ×
   // its share): the pane's Same as cells under Cascade, on the same scale.
@@ -5382,19 +5395,187 @@
     }
     return e;
   }
+  // The column's entry, structure first as the cell's is (DD-38), with its typed result from E.ratio.cascade
+  // at factor 2: a column that IS its whole parent column sits at +1.
   function cascadeColumnEntry(ctx, c) {
-    if (!ctx.parent) return { c, state: "coarsest" };
     const w = ctx.cells.cols[bisectColumn(ctx.cells.cols, c)],
-      pc = Math.floor(c / 2),
+      col = w?.c === c ? w : undefined;
+    if (!ctx.parent) return cascadeTyped({ c, state: "coarsest", w: col }, { factor: 2, structure: "coarsest" });
+    const pc = Math.floor(c / 2),
       span = 2 ** (ctx.n + 1);
-    if (w?.c !== c) return { c, state: "none" };
-    if (pc * span < ctx.start) return { c, state: "outside", w };
-    if ((pc + 1) * span > ctx.end) return { c, state: ctx.end >= ctx.cut ? "open" : "outside", w };
-    const p = ctx.parents.get(pc);
-    if (!(p?.v > 0)) return { c, state: "none", w };
-    const share = w.v / p.v;
-    return { c, state: "ok", w, p, share, value: Math.log2(2 * share), alone: p.ct === w.ct };
+    if (pc * span < ctx.start) return cascadeTyped({ c, state: "outside", w: col }, { factor: 2, structure: "outside" });
+    if ((pc + 1) * span > ctx.end) {
+      const open = ctx.end >= ctx.cut;
+      return cascadeTyped({ c, state: open ? "open" : "outside", w: col }, { factor: 2, structure: open ? "open" : "outside" });
+    }
+    const p = ctx.parents.get(pc),
+      entry = cascadeTyped({ c, state: "none", w: col, p }, { factor: 2, structure: "complete", childV: col?.v, parentV: p?.v });
+    if (entry.tag !== CASCADE_FINITE) return entry;
+    entry.state = "ok";
+    entry.share = col.v / p.v;
+    entry.value = entry.res.value;
+    entry.alone = p.ct === col.ct;
+    return entry;
   }
+  // ---- Cells and motion (PRD-0002 S1, package C) ----
+  // What the Cells channel draws and counts: the marks of the drawn cells and of the Path and Dwell cells
+  // encode through the frame of the channel (`sc.cells`, `sc.cellsFull`) into the one scratch object ENC, so
+  // the canvas, the tooltip, the table and the legend marker share one computation. The functions here are
+  // the consumers of that frame (fillCell, paintMotion), what feeds it (the Cascade entries, the measured
+  // predicate), what calibrates from it (the two cohorts) and what counts it (cellsMarks).
+  // The typed result of a Cascade entry, through E.ratio.cascade, kept on the entry with its tag as the
+  // small integer the frame's kernel writes (so the per-mark path copies four fields and allocates nothing).
+  // The entry is built once per cell and level, when first asked for.
+  const CASCADE_FINITE = E.result.TAG["finite"],
+    CASCADE_NEGATIVE_INFINITE = E.result.TAG["negative-infinite"],
+    // The roles an encode can give a mark that is an outline rather than a fill (E.readout.ROLE).
+    ROLE_OCCUPANCY = E.readout.ROLE.OCCUPANCY,
+    ROLE_ZERO = E.readout.ROLE.ZERO,
+    // The glyphs that mark a cell whose motion has not been read yet, and one whose read failed.
+    MOTION_PENDING = E.role.glyphFor("pending"),
+    MOTION_FAILED = E.role.glyphFor("failed"),
+    // Below this many css px a pattern or a zero outline is not resolvable: a flat fill at a fraction of the
+    // ink stands in (the role module's own threshold and alpha; the readout carries the tag).
+    PATTERN_MIN_PX = E.role.GLYPHS["pattern-dots"].minPx,
+    FLAT_ALPHA = 0.3;
+  // The Cascade context of the level now drawn, set by levelCascade; none before the first Cascade draw.
+  let cascadeLevel = null,
+    // Where the drawn Path or Dwell read ends, in base units, and the column width it was drawn at: a cell
+    // that starts at or after the end was never read and is pending, never a zero.
+    motionEnd = Infinity,
+    motionTs = 1,
+    // What this pass has already put on the canvas, so a colour is assigned only when it changes: a pass is
+    // one frame over one geometry object (each draw makes a new one and a new canvas state).
+    passGeometry = null,
+    passFrame = null,
+    passFill = null,
+    passStroke = null,
+    passPatternKind = null,
+    passPattern = null;
+  function cascadeTyped(entry, input) {
+    const res = E.ratio.cascade(input);
+    entry.res = res;
+    entry.tag = E.result.TAG[res.tag];
+    entry.reason = typeof res.reason === "string" ? res.reason : null;
+    entry.denominator = typeof res.denominator === "string" ? res.denominator : null;
+    if (res.tag === "finite") entry.value = res.value;
+    return entry;
+  }
+  // The Cascade entry of a cell as the Cells frame asks for it. The frame is built before the level's context
+  // exists (scaleFrame runs first in a draw), so it asks lazily, per mark, at encode time. No context yet
+  // leaves the result pending.
+  function cascadeInto(z, out) {
+    if (!cascadeLevel) return;
+    const entry = cascadeOf(cascadeLevel, z.c, z.r);
+    out.tag = entry.tag;
+    out.value = entry.tag === CASCADE_FINITE ? entry.value : NaN;
+    out.reason = entry.reason;
+    out.denominator = entry.denominator;
+  }
+  scaleHooks.cascadeEntry = cascadeInto;
+  // Is the cell measured? Every cell of the block drawn for a volume measure is. Under Path and Dwell a cell
+  // at or after the end of the motion read was never read: it is pending, not zero.
+  function cellsMeasured(z) {
+    const mode = S.mode;
+    if (mode !== "path" && mode !== "dwell") return true;
+    return z.c * motionTs < motionEnd;
+  }
+  scaleHooks.cellMeasured = cellsMeasured;
+  // A new pass (a new frame or a new draw) knows nothing about the canvas state: what this pass remembers of
+  // it is dropped.
+  function cellPass(frame) {
+    if (passGeometry === G && passFrame === frame) return;
+    passGeometry = G;
+    passFrame = frame;
+    passFill = passStroke = passPatternKind = passPattern = null;
+  }
+  // A flat fill at a fraction of an ink colour, over whatever is there: what a mark too small for its
+  // pattern or outline shows. The alpha multiplies the pass's own (a faded pass stays faded).
+  function cellFlat(colour, xa, ya, w, h) {
+    const alpha = ctx.globalAlpha;
+    ctx.globalAlpha = alpha * FLAT_ALPHA;
+    if (colour !== passFill) ctx.fillStyle = passFill = colour;
+    ctx.fillRect(xa, ya, Math.max(0.1, w), Math.max(0.1, h));
+    ctx.globalAlpha = alpha;
+  }
+  // A cell that has no value, or whose read has not answered, in the pattern of its kind ("pattern-dots" for
+  // a read not finished, a typed tag's glyph from the role table): one DPR-compensated tile per kind,
+  // anchored to the canvas so neighbours line up. Below the glyph's threshold the state ink stands in flat,
+  // and the readout still names the tag. (xa, ya, w, h) is the cell's box; the gap is taken off inside.
+  function motionPattern(kind, xa, ya, w, h, gap) {
+    if (Math.min(w, h) < PATTERN_MIN_PX) return cellFlat(colors.state, xa + gap / 2, ya + gap / 2, w - gap, h - gap);
+    if (kind !== passPatternKind) {
+      passPattern = patternFor(kind);
+      passPatternKind = kind;
+    }
+    if (passPattern !== passFill) ctx.fillStyle = passFill = passPattern;
+    ctx.fillRect(xa + gap / 2, ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
+  }
+  // The inputs of the Cells calibration that both cohorts share, from the state at the moment of asking
+  // (vp is built then, never kept from a draw): the rectangle the viewer declared, the cutoff and the open
+  // edge, the drawn level, the read that has to have answered, and what the fit is over. `read` is the
+  // state of the rectangle's own measure; a fit waits for it to be exact, recorded or from the cube.
+  function cohortCells(vp, cells, end, read) {
+    const eff = E.policy.effective(S.scale, S.mode);
+    return {
+      cells,
+      mode: S.mode,
+      basis: eff.basis,
+      pathBasis: eff.pathBasis,
+      b: vp.meas.b,
+      cut: vp.cut,
+      end,
+      CUT,
+      replay: S.replay,
+      level: { n: renderN(), m: renderM() },
+      geom: { BASE, PR },
+      read,
+      loading: Object.values(loadState).includes("loading"),
+      selection: Boolean(S.selection),
+      calibratedOn: S.selection ? "selection" : "view",
+    };
+  }
+  // The cells of the drawn level, for a measure that is not Path or Dwell. A fixed measure has nothing to
+  // fit, and Geometry no value: the caller (the settled tick) never asks for those, and the answer is none.
+  function cellsCohortInputs(vp) {
+    if (S.mode === "geometry" || !vp.shown) return null;
+    const inputs = cohortCells(vp, vp.shown.cells, Infinity, { state: vp.meas.state, updating: Boolean(vp.meas.updating) });
+    if (S.mode === "cascade") inputs.cascade = cascadeInto;
+    return inputs;
+  }
+  scaleHooks.cellsCohort = cellsCohortInputs;
+  // Path and Dwell cells: the motion cells of the rectangle (movement-only cells included, they are
+  // measured), up to the end of the read. No motion block yet is a read that has not answered, and a read
+  // still under way (the tier reading the columns it gained, the rectangle's own) is not finished either.
+  function motionCohortInputs(vp) {
+    const mv = vp.mv;
+    if (!mv || !movementMode()) return null;
+    const pending = !mv.src ? { state: motionIssue() ? "failed" : "pending" } : motion.busy || motionWant() ? { state: "pending" } : null;
+    return cohortCells(vp, mv.shown ? mv.shown.cells : [], mv.end, pending);
+  }
+  scaleHooks.motionCohort = motionCohortInputs;
+  // The warnings pass: every drawn mark of the Cells channel, encoded through the frame the settled mapping
+  // gives now, into the tally with its box (css px, the plot's and the rectangle's clip come in `clip`). A
+  // mark that is not a value is not counted; negative infinity is counted as a mark and as out of range.
+  // The frame is built here from the current state rather than taken from the last draw, because a fit that
+  // has just committed is not drawn yet and the tally must describe the mapping about to be drawn.
+  function cellsMarks(tally, clip, vp) {
+    if (S.mode === "geometry") return;
+    const frame = scaleFrame(vp.cut, vp).cells,
+      cells = vp.moving ? vp.mv?.shown?.cells : vp.shown.cells;
+    if (!cells) return;
+    if (vp.moving) {
+      motionEnd = vp.mv.src ? vp.mv.end : -Infinity;
+      motionTs = vp.ts;
+    }
+    for (const z of cells) {
+      if (!cellBox(z, 1, vp.ts, vp.ps, vp.cut)) continue;
+      frame.encode(z, ENC);
+      if (ENC.tag === CASCADE_NEGATIVE_INFINITE) tally.addBoxNegInf(BOX.xa, BOX.ya, BOX.xb, BOX.yb, clip);
+      else tally.addBox(BOX.xa, BOX.ya, BOX.xb, BOX.yb, clip, ENC.idx, ENC.clip, ENC.tag === CASCADE_FINITE, ENC.value !== 0);
+    }
+  }
+  scaleHooks.cellsMarks = cellsMarks;
   // A cell's colour. Amounts take the ramp by rank. Taker flow, by USDT or by
   // trades, diverges from a neutral midpoint to buy and sell, full at 75% and
   // 25%, paler where less traded; so does Cascade, full at ±2, and a cell it
@@ -5433,7 +5614,13 @@
       vaHigh: va ? Math.min(va.r1 * ps, b[3]) * PR : null,
     };
   }
-  function fillCell(z, full, u) {
+  // One cell of the drawn level, encoded through the Cells frame (`frame`: sc.cells, or sc.cellsFull for the
+  // selection's faded layer) into ENC: a fill from the table entry of its coordinate; the midpoint fill for a
+  // signed zero (a balanced cell is occupied, never the surface); an outline for an unsigned zero ("Zero
+  // (occupied)"), for Geometry and for a cell with no calibration yet; a pattern for a value that is not
+  // one. Nothing is drawn for a cell the role table marks as readout only. The cell's own colour is assigned
+  // to the canvas only when it differs from the last one, and the outline's width is always set here.
+  function fillCell(z, full, u, frame) {
     const ts = stepT(),
       ps = stepP(),
       cut = activeCutoff();
@@ -5453,27 +5640,25 @@
       yb = G.Y(ob) + (yb - G.Y(ob)) * u;
     }
     if (xb < G.x || xa > G.x + G.w || yb < G.y || ya > G.y + G.h) return;
-    if (S.mode === "geometry") {
-      const alpha = ctx.globalAlpha;
-      ctx.strokeStyle = colors.volume;
-      ctx.globalAlpha = alpha * 0.4;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(
-        xa + 0.5,
-        ya + 0.5,
-        Math.max(0.1, xb - xa - 1),
-        Math.max(0.1, yb - ya - 1),
-      );
-      ctx.globalAlpha = alpha;
+    cellPass(frame);
+    frame.encode(z, ENC);
+    const w = xb - xa,
+      h = yb - ya,
+      gap = w > 4 && h > 4 ? design.gap : 0;
+    if (ENC.pattern !== null) motionPattern(ENC.pattern, xa, ya, w, h, gap);
+    else if (ENC.css === null) return;
+    else if (ENC.role === ROLE_OCCUPANCY || ENC.role === ROLE_ZERO) {
+      // An unsigned zero too small for an outline stands in as a flat fill, as the role table says; an
+      // occupancy outline (Geometry) keeps its 1 px line at any size.
+      if (ENC.role === ROLE_ZERO && Math.min(w, h) < PATTERN_MIN_PX) cellFlat(ENC.css, xa, ya, w, h);
+      else {
+        if (ENC.css !== passStroke) ctx.strokeStyle = passStroke = ENC.css;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(xa + 0.5, ya + 0.5, Math.max(0.1, w - 1), Math.max(0.1, h - 1));
+      }
     } else {
-      ctx.fillStyle = cellColour(z, full);
-      const gap = xb - xa > 4 && yb - ya > 4 ? design.gap : 0;
-      ctx.fillRect(
-        xa + gap / 2,
-        ya + gap / 2,
-        Math.max(0.1, xb - xa - gap),
-        Math.max(0.1, yb - ya - gap),
-      );
+      if (ENC.css !== passFill) ctx.fillStyle = passFill = ENC.css;
+      ctx.fillRect(xa + gap / 2, ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
     }
   }
   function markLine(x1, y1, x2, y2, color, width = 1, alpha = 1) {
@@ -11571,38 +11756,51 @@
   }
   // Path and dwell shade the cells the price traded in and outline those it
   // only moved through or held in: with no trade in `base` either, where a
-  // cell's trades can come after they end. A cell of `base` after where they
-  // end, or any while they are read, is drawn plain.
-  function paintMotion(base, q, mv, b, u) {
+  // cell's trades can come after they end. The cells are encoded through the
+  // Cells frame (`frame`), so a cell at or after where the read ends, or a
+  // value that is not one, draws the pattern of its kind, never a colour; an
+  // unsigned zero is the occupancy outline. A cell of `base` after where the
+  // read ends, or any while it is being read, is drawn in the pattern of a
+  // read that has not finished, or of one that failed.
+  function paintMotion(base, q, mv, b, u, frame) {
     const ts = stepT(),
       ps = stepP(),
       cut = activeCutoff(),
       end = mv.src ? mv.end : -Infinity;
+    // What the frame's measured predicate answers with while this draw runs, and the pass's canvas state.
+    motionEnd = end;
+    motionTs = ts;
+    cellPass(frame);
     if (q) {
-      const sorted = motionScale(mv.full, mv.fullBounds, end, ts, ps);
       for (const z of q.cells) {
         if (!cellBox(z, u, ts, ps, cut)) continue;
         const w = BOX.xb - BOX.xa,
-          h = BOX.yb - BOX.ya;
-        motionMark(
-          ramp(rank(sorted, motionAmount(z, b, end, ts, ps))),
-          z.ct > 0 || (base !== null && base.map.has(z.c + "," + z.r)),
-          BOX.xa,
-          BOX.ya,
-          w,
-          h,
-          w > 4 && h > 4 ? design.gap : 0,
-        );
+          h = BOX.yb - BOX.ya,
+          gap = w > 4 && h > 4 ? design.gap : 0;
+        frame.encode(z, ENC);
+        if (ENC.pattern !== null) motionPattern(ENC.pattern, BOX.xa, BOX.ya, w, h, gap);
+        else if (ENC.css === null) continue;
+        else if (ENC.role !== ROLE_ZERO && ENC.role !== ROLE_OCCUPANCY && (z.ct > 0 || (base !== null && base.map.has(z.c + "," + z.r)))) {
+          if (ENC.css !== passFill) ctx.fillStyle = passFill = ENC.css;
+          ctx.fillRect(BOX.xa + gap / 2, BOX.ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
+        } else {
+          // Outlined: a cell the price only moved through or held in (in the colour of its value), or a
+          // zero (in the occupancy ink). motionMark sets both colours itself.
+          motionMark(ENC.css, false, BOX.xa, BOX.ya, w, h, gap);
+          passFill = passStroke = null;
+        }
       }
     }
-    ctx.fillStyle = colors.line;
-    for (const z of base ? base.cells : []) {
-      if ((z.c + 1) * ts <= end || (q && q.map.has(cellKey(z.c, z.r))) || !cellBox(z, u, ts, ps, cut))
-        continue;
-      const w = BOX.xb - BOX.xa,
-        h = BOX.yb - BOX.ya,
-        gap = w > 4 && h > 4 ? design.gap : 0;
-      ctx.fillRect(BOX.xa + gap / 2, BOX.ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
+    if (base) {
+      let kind = null;
+      for (const z of base.cells) {
+        if ((z.c + 1) * ts <= end || (q && q.map.has(cellKey(z.c, z.r))) || !cellBox(z, u, ts, ps, cut))
+          continue;
+        if (kind === null) kind = !mv.src && motionIssue() ? MOTION_FAILED : MOTION_PENDING;
+        const w = BOX.xb - BOX.xa,
+          h = BOX.yb - BOX.ya;
+        motionPattern(kind, BOX.xa, BOX.ya, w, h, w > 4 && h > 4 ? design.gap : 0);
+      }
     }
   }
   // The legend's quantiles, as each movement encoding reads.

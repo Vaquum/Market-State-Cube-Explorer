@@ -6028,7 +6028,16 @@
           add(E.text.key.below, String(rec.clipped.low), "clipLowFinite", rec.clipped.low);
           add(E.text.key.above, String(rec.clipped.high), "clipHighFinite", rec.clipped.high);
         }
+        // The Columns pane's axis also carries the pane's model fields and its keys (paneLegendCommit, package X)
+        const paneLegend = String(rec.id).startsWith("pane.") ? scaleUi.models.pane : null;
+        if (paneLegend)
+          for (const d of E.legend.details(paneLegend)) if (d.field.startsWith("model")) add(d.label, uiUtcText(d), d.field, d.canonical);
         box.append(list);
+        if (paneLegend) {
+          const keys = uiEl("div", "ol-legend-keys");
+          keys.append(...uiKeyList(paneLegend.keys, scaleUi.inks, true));
+          box.append(keys);
+        }
         if (rec.policy === "frozen") box.append(uiEl("p", "ol-legend-note", E.text.axis.frozenBy));
         if (rec.clipped?.count > 0) box.append(uiEl("p", "ol-legend-note", E.text.fill(E.text.axis.clipped, { n: rec.clipped.count, total: rec.clipped.total })));
         return box;
@@ -7318,6 +7327,9 @@
       level: { n: renderN(), m: renderM() },
       geom: { BASE, PR },
       read,
+      // The Cells quality class is "exact" whatever tier the read came from (exact, recorded or cube): the
+      // portable code only accepts the classes of a context, so the read's own state is no quality.
+      quality: "exact",
       loading: Object.values(loadState).includes("loading"),
       selection: Boolean(S.selection),
       calibratedOn: S.selection ? "selection" : "view",
@@ -10004,7 +10016,7 @@
       o = oscillatorOf(key),
       id = "pane." + key,
       // The registry's record, unless the scale display is off (then the pane holds its bars back).
-      axisOf = (spec) => {
+      oscAxis = (spec) => {
         if (sc === INERT_SC) return null;
         try {
           return axisFrame(id, spec);
@@ -10036,7 +10048,7 @@
         o.state === "failed"
           ? `the bars couldn't be read: ${o.error}`
           : `reading ${key === "rsi4h" ? "4-hour" : "8-hour"} bars from the cube…`;
-      rec = axisOf(key === "macd1d" ? { sign: "signed-symmetric", eligible: false, sig: "" } : { eligible: true, sig: "" });
+      rec = oscAxis(key === "macd1d" ? { sign: "signed-symmetric", eligible: false, sig: "" } : { eligible: true, sig: "" });
     } else {
       const f = o.frame,
         i0 = Math.max(0, endAt(f.ends, S.tA) - 1),
@@ -10074,7 +10086,7 @@
       if (key === "macd1d") {
         // One axis for the three series, fitted on the exact largest of them in view once their bars
         // are read; it holds through a gesture and Play (the chip says so) and is never 1 by default.
-        rec = axisOf({
+        rec = oscAxis({
           sign: "signed-symmetric",
           eligible: oscBarsCoherent(9),
           sig: [scaleWorkspace(), id, live.generation, barsVersion, cutEdge(), S.replay, key, i0, i1, o.state].join("|"),
@@ -10137,7 +10149,7 @@
       } else {
         // RSI's axis is fixed at 0 to 100, its guides at 30 and 70: the record's, so the line, the guides, the
         // labels and the tooltip place a value the same way.
-        rec = axisOf({ eligible: true, sig: "" });
+        rec = oscAxis({ eligible: true, sig: "" });
         if (rec?.typed === "finite") {
           const y = (v) => top + 4 + (1 - E.axis.coordinate(rec, v, place).t) * (h - 8),
             ticks = E.axis.ticks(rec, h - 8),
@@ -12458,10 +12470,12 @@
       const cx = full?.cascade,
         cols = cx ? full.cols : [];
       for (let i = bisectColumn(cols, Math.floor(from / ts)); i < cols.length && cols[i].c * ts < to; i++) {
-        // A copy: the level's entries are kept with the level and this adds what the pane needs.
+        // A copy: the level's entries are kept with the level and this adds what the pane needs. The entry
+        // already carries its typed result (C's cascadeTyped, factor 2, DD-38); the input is what the pane
+        // frame evaluates the column from.
         const e = cascadeColumn(cx, cols[i].c),
           input = paneCascadeRatio(e);
-        out.push({ ...e, typed: E.ratio.cascade(input), ctx: { ratio: input } });
+        out.push({ ...e, typed: e.res ?? E.ratio.cascade(input), ctx: { ratio: input } });
       }
     } else if (to > from) {
       const ex = efficiencyContext(renderN());
@@ -12646,7 +12660,7 @@
           }
           if (ENC.role === ROLE.ZERO) {
             // A measured zero has no length: a tick on the baseline says it was there.
-            see("zero");
+            see("zero-tick");
             marks.push({ id: "tick", xa, xb, y: signed ? zero : zero - 1 });
             continue;
           }
@@ -12784,6 +12798,41 @@
     }
   }
   scaleHooks.paneMarks = paneTally;
+  // The pane's Legend model (E.legend.build over the pane frame), for the generated keys of the footer and the
+  // axis popover's model and key fields (D.18). Built when what it is made of changed (the axis, the counts
+  // of the drawn marks, the model's status, the palette) and never in a steady frame; null when this frame has
+  // no pane frame (an oscillator, a fault). Called by the legend hook before it writes the footer keys, from
+  // the pane the same draw just painted (`sc.pane`, set by `activity`).
+  function paneLegendCommit(sc) {
+    const pane = sc.pane,
+      rec = pane?.axis,
+      frame = pane?.frame;
+    if (!frame || !rec) {
+      scaleUi.models.pane = null;
+      scaleUi.paneKey = "";
+      return;
+    }
+    const counts = pane.counts,
+      key = [
+        frame.fingerprint(),
+        rec.domain?.join(","),
+        rec.hold,
+        rec.policy,
+        Object.keys(counts).sort().map((id) => id + "=" + counts[id]).join(","),
+        pane.model?.status,
+        pane.model?.labels?.join("|"),
+        colourEpoch,
+      ].join(";");
+    if (scaleUi.paneKey === key) return;
+    scaleUi.paneKey = key;
+    scaleUi.models.pane = E.legend.build(frame, null, uiFmt, {
+      channel: "pane",
+      counts,
+      measureLabel: pane.measure.label,
+      updating: Boolean(rec.hold) && rec.hold !== "play",
+      paused: rec.hold === "play" ? "play" : false,
+    });
+  }
   // Efficiency: a column's USDT per 125 USDT row its trades touched, against
   // its parent column's one level up in time, as log2 of their ratio over
   // 0.70, the ratio expected: halving a column halves its volume, while its

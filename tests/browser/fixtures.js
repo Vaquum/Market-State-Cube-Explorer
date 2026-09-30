@@ -41,6 +41,7 @@ function makeGuard() {
   const allowed = [];
   const guard = {
     faultRules: 0,
+    sealed: false,
     seen,
     // allowConsole(/pattern/): this exact console error is expected by the test.
     allowConsole(pattern) {
@@ -49,7 +50,9 @@ function makeGuard() {
     },
     attach(context) {
       context.on("console", (message) => {
-        if (message.type() === "error") seen.push({ text: message.text(), where: message.location().url });
+        // After the test body, a fetch the page still had in flight fails because the fake closed under it, not because of the
+        // page: sealed, the failed-load line is not evidence (any other console error still is).
+        if (message.type() === "error" && !(guard.sealed && message.text().includes(FAILED_LOAD))) seen.push({ text: message.text(), where: message.location().url });
       });
       context.on("weberror", (webError) => {
         const error = webError.error();
@@ -151,6 +154,8 @@ const test = base.extend({
       return fake;
     }
     await use(fakeFor);
+    // The body is over and the fakes are about to close while the page may still poll (a live pack request on a loaded machine).
+    consoleGuard.sealed = true;
     // The live poll of a page that is still open would reach a closed port a moment after the fake closes, and the console guard
     // would call that a defect of the page: a page that outlives its test is closed before its cube goes (S, stage 2b). The page
     // fixture names this one, so its own checks (unhandled rejections) have already run.

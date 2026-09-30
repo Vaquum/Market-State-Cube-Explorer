@@ -45,7 +45,14 @@ async function needKeys(surface) {
   const absent = await surface.missing(["keysContainer"]);
   test.fixme(absent.length > 0 && process.env.CONVERGENCE !== "1", `needs package U: ${absent.join(", ")} is not in this page`);
 }
-const keyCount = async (surface, id) => ((await surface.keys()).find((k) => k.key === id)?.count ?? 0);
+// The pane's own keys are the axis popover's (the footer merges the keys of every channel in view, so a Cells mark of the same kind adds to
+// its count); the footer must list a key the pane has with at least the pane's count.
+const keyCount = async (surface, id) => {
+  const own = (await surface.details("axis")).keys.find((k) => k.key === id)?.count ?? 0;
+  const footer = (await surface.keys()).find((k) => k.key === id)?.count ?? 0;
+  expect(footer, `the footer lists the ${id} key with at least the pane's count`).toBeGreaterThanOrEqual(own);
+  return own;
+};
 
 // A window onto the first `minutes` of a micro fixture at its base level, the price band of its rows 195 to 215.
 const microView = (minutes, pane) => `#t=2021-01-01T00:00Z~2021-01-01T00:0${minutes}Z&p=24375~26875&r=0,0&${pane}`;
@@ -175,7 +182,7 @@ test.describe("B16c: a measured zero is a tick on the baseline", () => {
     await page.goto(`${fake.url}/${microView(5, "pane=delta")}`);
     await atRest(page, fake, probe);
     await needKeys(surface);
-    expect(await keyCount(surface, "zero")).toBe(1);
+    expect(await keyCount(surface, "zero-tick")).toBe(1);
   });
 });
 

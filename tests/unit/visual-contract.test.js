@@ -399,8 +399,12 @@ describe("docs/visual-contract.md: decision list, register, test index", () => {
   const decisions = tableWith((t) => t.header[0] === "ID" && t.header[1] === "Decision" && t.header[2] === "Contract rows");
   const register = tableWith((t) => t.header[0] === "ID" && t.header[1] === "Decision" && t.header[2] === "Where");
 
-  it("lists DR-01 to DR-38 in order, each naming rows that exist", () => {
-    assert.deepEqual(decisions.rows.map((r) => r.cells[0]), Array.from({ length: 38 }, (_, i) => `DR-${String(i + 1).padStart(2, "0")}`));
+  const sequence = (prefix, n) => Array.from({ length: n }, (_, i) => `${prefix}-${String(i + 1).padStart(2, "0")}`);
+
+  it("lists DR-01 to DR-38 (and any later ruling) in order, each naming rows that exist", () => {
+    const ids = decisions.rows.map((r) => r.cells[0]);
+    assert.ok(ids.length >= 38, "DR-01 to DR-38 are the rulings of DECISIONS.md at the freeze");
+    assert.deepEqual(ids, sequence("DR", ids.length));
     for (const r of decisions.rows)
       for (const id of r.cells[2].split(/\s*,\s*/).filter((x) => x !== "-")) assert.ok(rowById.has(id), `${r.cells[0]} names ${id}, which is not a row`);
   });
@@ -414,8 +418,10 @@ describe("docs/visual-contract.md: decision list, register, test index", () => {
     assert.match(dr01, /multiplier/i);
   });
 
-  it("carries the DD register DD-01 to DD-99 in order", () => {
-    assert.deepEqual(register.rows.map((r) => r.cells[0]), Array.from({ length: 99 }, (_, i) => `DD-${String(i + 1).padStart(2, "0")}`));
+  it("carries the DD register DD-01 to DD-99 (and any later decision) in order", () => {
+    const ids = register.rows.map((r) => r.cells[0]);
+    assert.ok(ids.length >= 99, "DD-01 to DD-99 are the decisions of API.md Appendix D at the freeze");
+    assert.deepEqual(ids, sequence("DD", ids.length));
     for (const r of register.rows) assert.ok(r.cells[1].length > 10 && r.cells[2], r.cells[0]);
   });
 

@@ -692,6 +692,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B29 | `tests/browser/resolution-plane.spec.js` | the resolution plane as an orthogonal state grid: size classes, availability, separate neutral glyphs, key, steppers | S2 |
 | B30 | `tests/browser/state-table.spec.js` | the measure-by-state table: each row named with its test, and the rows that had none (waiting parent, open cap, provisional, coarser, replay-hidden) | S2 |
 | B31 | `tests/browser/cvd-plane.spec.js` | the plane and the toolbar's coarse mark in composed fixtures under the published colour-vision simulations and grayscale (`tests/fixtures/cvd/simulations.json`) | S2 |
+| B32 | `tests/browser/failure-relevance.spec.js` | issue #29: the loading line keeps a failed read's alert while its tile is needed, through startup, view changes, the lens, a replaced pack and retries; the original build is the control | S2 |
 
 ## 10. Migration status per slice
 

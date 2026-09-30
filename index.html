@@ -17766,6 +17766,9 @@
       else delete canvas.dataset.temporary;
     }
     strokeKeysCommit();
+    // A failure noted for a tile says itself while that tile is what the view or the lens needs: a tool that opens or closes changes that without
+    // an update, so the line is decided again with the frame (nothing is noted on a healthy page, and then there is nothing to decide).
+    if (noted.size || loadingLine.blocks.size) renderLoading();
     last = { full, query, shown, meas, b, cut, mv, under, sc };
     if (transition) {
       if (u >= 1) transition = null;

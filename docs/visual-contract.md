@@ -262,6 +262,7 @@ A Wave-2 package that adds a NEW top-level helper reading `colors.*` under a nam
 
 | ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
 |---|---|---|---|---|---|---|---|---|
+| N-70 | Lens mark painter: one lens cell from what the lens frame's encoder left in the scratch mark: a fill from the mapping's table, a pattern for a typed non-value, an outline for an occupied cell with no magnitude (Geometry, No calibration, an unsigned zero), a flat low-alpha fill below 4 css px | src/explorer.js: `lensMark()` (new, INTEGRATION.md D.4; package L, added under DR-44); uses `colors.*` | Does not exist at baseline (the lens painted `cellColour`, a `colors.volume` Geometry outline and a flat `colors.line` fill inline) | `Q-fill` through the frame (`UM` and `+/-/mid` arms), `STATE` neutral keyed patterns, `OCC` outline in the occupancy ink | LENS | #46 | B12 | todo-S1 |
 
 #### 3.7.T Package T (readout consumers): IDs N-80 to N-89
 

@@ -1169,6 +1169,12 @@
       if (hooked && memo !== scaleRt.fitKey[channel])
         scaleWant(channel, "auto", key + "|" + memo, { ctx: context, ctxKey: key, memo });
     }
+    // Explore initialises a context once: a first calibration that is still wanted after the context
+    // found a mapping (a replay edge that came back to an eligible record) is not wanted any more.
+    if (resolved.state === "ok" && ask?.kind === "init" && ask.ctxKey === key) {
+      scaleRt.ctl.cancel(channel);
+      scaleRt.ask[channel] = null;
+    }
     // The retained mapping keeps drawing while a refit or an explicit Fit of the same context is pending
     // (Auto waits while Play runs: then it is paused, not updating).
     const again = scaleRt.ask[channel];
@@ -1237,9 +1243,10 @@
     scaleRt.chase = true;
     scaleArm();
   }
-  // The causes a disclosure read are spent once a settled draw has seen them.
+  // The causes a disclosure reads are spent once a settled draw has seen them: not while a fit is still on
+  // its way, because the mapping it lands is what the cause explains.
   function scaleSpendCauses() {
-    if (!scaleQuiet()) return;
+    if (!scaleQuiet() || scaleRt.ctl.hasWants()) return;
     scaleRt.hint = scaleRt.pinCause = nav.scaleCause = null;
   }
   // The chip of a channel as the legend package renders it: the D.18 attributes (every value a string, "" for
@@ -1561,11 +1568,14 @@
   }
   // Is a read the view needs still outstanding? A read that failed is not: the wants keep returning after a
   // failure (only `cube.failed` remembers it), and waiting for one would hold calibration back for good.
+  // The recorded page has no cube to ask (`scheduleCube` never starts a read there), so nothing is pending
+  // on it, whatever the wants say.
   function viewReadPending() {
     return (
-      cube.stale ||
-      ["measure", "tile", "lens"].includes(cube.busy?.kind) ||
-      [measureWant(), tileWant(), lensWant()].some((want) => want && !cube.failed.has(want.key))
+      Boolean(PACK.live) &&
+      (cube.stale ||
+        ["measure", "tile", "lens"].includes(cube.busy?.kind) ||
+        [measureWant(), tileWant(), lensWant()].some((want) => want && !cube.failed.has(want.key)))
     );
   }
   // What the page derives from its state to draw one frame: the block shown, the cutoff, the aggregates and
@@ -1696,8 +1706,10 @@
         if (said) scaleRt.noFit[channel] = nothing;
         return "dropped";
       };
-    // The context the want was made for must still be the one on screen.
+    // The context the want was made for must still be the one on screen, and an initialisation only happens
+    // for a context that has no mapping for this cutoff.
     if (!context || key !== ask.ctxKey) return drop(false);
+    if (ask.kind === "init" && !lens && scaleRt.store.lookup(workspace, key, cutMs)) return drop(false);
     const memoKey = [channel, workspace, S.replay ? cutMs : "", memo].join("|"),
       hit = ask.kind === "fit" ? null : scaleRt.fitMemo.get(memoKey);
     let found = hit ?? null;

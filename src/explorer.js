@@ -76,6 +76,8 @@
     PROFILE_PAD = 9,
     PROFILE_END = 8,
     PROFILE_NARROW = 600,
+    // The width the tracks take: none under PROFILE_NARROW unless the disclosure is open. The tracks never shrink below their 48 px and no label
+    // goes under 11 px; from 600 px the two of them with the Rows strip leave the heatmap at least 368 px, so nothing else needs to collapse.
     profileWidth = (width, tracks = 1, open = false) =>
       width < PROFILE_NARROW && !open ? 0 : PROFILE_PAD + tracks * (TRACK_BARS + TRACK_GUTTER) + (tracks - 1) * TRACK_GAP + PROFILE_END;
   // The chart's panes: prices on top, activity under them sharing the time
@@ -825,6 +827,10 @@
       .scaleLinear()
       .domain([S.pA, S.pB])
       .range([G.y + G.h, G.y]);
+    // The layout as the page drew it (css px), for the observation surface: the heatmap, the Rows strip and the profile tracks. Written only
+    // when it changes.
+    const layoutText = [G.x, G.y, G.w, G.h, G.sx, G.sw, G.tracks, G.tx[0], G.tx[1]].map((n) => Math.round(n * 100) / 100).join(",");
+    if (canvas.dataset.layout !== layoutText) canvas.dataset.layout = layoutText;
   }
   const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
   function text(s, x, y, color = colors.muted, align = "left", size = TYPE.s) {
@@ -6223,7 +6229,8 @@
     const focused = panel.contains(document.activeElement) ? document.activeElement : null,
       sel = Boolean(S.selection),
       where = `${sel ? PROFILE_TEXT.currentSelected : PROFILE_TEXT.current}`;
-    add("Current track", where, "currentTrack", sel ? "selection" : "view");
+    const span = last?.meas?.r ? dur((last.meas.r[1] - last.meas.r[0]) * BASE) : "";
+    add("Current track", span ? `${where}, ${span}` : where, "currentTrack", sel ? "selection" : "view");
     add("Current axis", cur ? `${uiAxisText(cur)}` : E.text.axis.none, "currentAxis", cur?.domain ?? null);
     add("Buy subset", PROFILE_TEXT.buy, "buySubset", "inset");
     if (under) {
@@ -7571,6 +7578,8 @@
   };
   // The plan of the two tracks for this frame: what E.axis.profile says of the rows the page holds.
   function profilePlan(query, b, state, under) {
+    // A view that is not a range (a frame before the first rectangle) compares nothing.
+    if (!(b[3] > b[2])) b = [0, 0, 0, 1];
     const m = renderM(),
       cur = { rows: query.rows, m, ready: state === "exact" || state === "recorded" || state === "cube" },
       ref = under

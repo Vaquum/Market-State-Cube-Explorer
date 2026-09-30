@@ -10157,7 +10157,7 @@
   const cdcAllowed = Object.freeze({
     "": ["visualVersion", "kind", "id", "query", "view", "appearance", "scales", "axes", "models", "observation"],
     query: ["t1", "t2", "p1", "p2", "tR", "pR"],
-    view: ["mode", "pane", "poc", "area", "untested", "rows", "period", "level", "lines", "tab", "replay", "anchor", "horizon", "evidenceKind", "barrier", "follow", "auto", "window", "viewport", "selection", "scale"],
+    view: ["mode", "pane", "poc", "area", "untested", "rows", "period", "level", "lines", "tab", "replay", "anchor", "horizon", "evidenceKind", "barrier", "follow", "auto", "window", "viewport", "selection", "scale", "profileCmp", "profileOpen"],
     "view.scale": ["basis", "pathBasis", "transform", "curve", "rowsTransform", "cells", "rows", "local", "window", "lock"],
     appearance: ["id"],
     "scales[]": ["channel", "policy", "external", "origin", "desc", "ctx", "cohort", "obsEndMs", "cutMs", "canonicalThroughMs", "token"],
@@ -10524,6 +10524,8 @@
     if (view.lines !== undefined && (!Array.isArray(view.lines) || !view.lines.every((s) => typeof s === "string"))) return fail("view.lines is a list of text");
     for (const name of ["mode", "pane", "rows", "period", "tab", "evidenceKind", "follow"]) if (view[name] !== undefined && typeof view[name] !== "string") return fail("view." + name + " is text");
     if (view.follow !== undefined && cdcFollows.indexOf(view.follow) < 0) return fail("unknown follow mode");
+    if (view.profileCmp !== undefined && view.profileCmp !== "independent" && view.profileCmp !== "absolute" && view.profileCmp !== "share") return fail("view.profileCmp is independent, absolute or share");
+    if (view.profileOpen !== undefined && typeof view.profileOpen !== "boolean") return fail("view.profileOpen is true or false");
     if (view.tab !== undefined && view.tab !== "evidence" && view.tab !== "context") return fail("unknown tab");
     if (view.evidenceKind !== undefined && view.evidenceKind !== "poc" && view.evidenceKind !== "barrier") return fail("unknown evidence kind");
     if (view.horizon !== undefined && [1, 2, 4, 8].indexOf(view.horizon) < 0) return fail("view.horizon is 1, 2, 4 or 8");
@@ -10594,6 +10596,8 @@
         evidenceKind: view.evidenceKind,
         horizon: view.horizon === undefined ? 1 : view.horizon,
         barrier: view.barrier === undefined ? 1 : view.barrier,
+        profileCmp: view.profileCmp === undefined ? "independent" : view.profileCmp,
+        profileOpen: view.profileOpen === true,
         scale: settings,
         appearance: p.appearance === undefined ? null : p.appearance.id,
       },

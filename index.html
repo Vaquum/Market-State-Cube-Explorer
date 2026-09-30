@@ -14522,7 +14522,7 @@
   const cdcAllowed = Object.freeze({
     "": ["visualVersion", "kind", "id", "query", "view", "appearance", "scales", "axes", "models", "observation"],
     query: ["t1", "t2", "p1", "p2", "tR", "pR"],
-    view: ["mode", "pane", "poc", "area", "untested", "rows", "period", "level", "lines", "tab", "replay", "anchor", "horizon", "evidenceKind", "barrier", "follow", "auto", "window", "viewport", "selection", "scale"],
+    view: ["mode", "pane", "poc", "area", "untested", "rows", "period", "level", "lines", "tab", "replay", "anchor", "horizon", "evidenceKind", "barrier", "follow", "auto", "window", "viewport", "selection", "scale", "profileCmp", "profileOpen"],
     "view.scale": ["basis", "pathBasis", "transform", "curve", "rowsTransform", "cells", "rows", "local", "window", "lock"],
     appearance: ["id"],
     "scales[]": ["channel", "policy", "external", "origin", "desc", "ctx", "cohort", "obsEndMs", "cutMs", "canonicalThroughMs", "token"],
@@ -14889,6 +14889,8 @@
     if (view.lines !== undefined && (!Array.isArray(view.lines) || !view.lines.every((s) => typeof s === "string"))) return fail("view.lines is a list of text");
     for (const name of ["mode", "pane", "rows", "period", "tab", "evidenceKind", "follow"]) if (view[name] !== undefined && typeof view[name] !== "string") return fail("view." + name + " is text");
     if (view.follow !== undefined && cdcFollows.indexOf(view.follow) < 0) return fail("unknown follow mode");
+    if (view.profileCmp !== undefined && view.profileCmp !== "independent" && view.profileCmp !== "absolute" && view.profileCmp !== "share") return fail("view.profileCmp is independent, absolute or share");
+    if (view.profileOpen !== undefined && typeof view.profileOpen !== "boolean") return fail("view.profileOpen is true or false");
     if (view.tab !== undefined && view.tab !== "evidence" && view.tab !== "context") return fail("unknown tab");
     if (view.evidenceKind !== undefined && view.evidenceKind !== "poc" && view.evidenceKind !== "barrier") return fail("unknown evidence kind");
     if (view.horizon !== undefined && [1, 2, 4, 8].indexOf(view.horizon) < 0) return fail("view.horizon is 1, 2, 4 or 8");
@@ -14959,6 +14961,8 @@
         evidenceKind: view.evidenceKind,
         horizon: view.horizon === undefined ? 1 : view.horizon,
         barrier: view.barrier === undefined ? 1 : view.barrier,
+        profileCmp: view.profileCmp === undefined ? "independent" : view.profileCmp,
+        profileOpen: view.profileOpen === true,
         scale: settings,
         appearance: p.appearance === undefined ? null : p.appearance.id,
       },
@@ -15309,6 +15313,8 @@
     PROFILE_PAD = 9,
     PROFILE_END = 8,
     PROFILE_NARROW = 600,
+    // The width the tracks take: none under PROFILE_NARROW unless the disclosure is open. The tracks never shrink below their 48 px and no label
+    // goes under 11 px; from 600 px the two of them with the Rows strip leave the heatmap at least 368 px, so nothing else needs to collapse.
     profileWidth = (width, tracks = 1, open = false) =>
       width < PROFILE_NARROW && !open ? 0 : PROFILE_PAD + tracks * (TRACK_BARS + TRACK_GUTTER) + (tracks - 1) * TRACK_GAP + PROFILE_END;
   // The chart's panes: prices on top, activity under them sharing the time
@@ -16058,6 +16064,10 @@
       .scaleLinear()
       .domain([S.pA, S.pB])
       .range([G.y + G.h, G.y]);
+    // The layout as the page drew it (css px), for the observation surface: the heatmap, the Rows strip and the profile tracks. Written only
+    // when it changes.
+    const layoutText = [G.x, G.y, G.w, G.h, G.sx, G.sw, G.tracks, G.tx[0], G.tx[1]].map((n) => Math.round(n * 100) / 100).join(",");
+    if (canvas.dataset.layout !== layoutText) canvas.dataset.layout = layoutText;
   }
   const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
   function text(s, x, y, color = colors.muted, align = "left", size = TYPE.s) {
@@ -21456,7 +21466,8 @@
     const focused = panel.contains(document.activeElement) ? document.activeElement : null,
       sel = Boolean(S.selection),
       where = `${sel ? PROFILE_TEXT.currentSelected : PROFILE_TEXT.current}`;
-    add("Current track", where, "currentTrack", sel ? "selection" : "view");
+    const span = last?.meas?.r ? dur((last.meas.r[1] - last.meas.r[0]) * BASE) : "";
+    add("Current track", span ? `${where}, ${span}` : where, "currentTrack", sel ? "selection" : "view");
     add("Current axis", cur ? `${uiAxisText(cur)}` : E.text.axis.none, "currentAxis", cur?.domain ?? null);
     add("Buy subset", PROFILE_TEXT.buy, "buySubset", "inset");
     if (under) {
@@ -22804,6 +22815,8 @@
   };
   // The plan of the two tracks for this frame: what E.axis.profile says of the rows the page holds.
   function profilePlan(query, b, state, under) {
+    // A view that is not a range (a frame before the first rectangle) compares nothing.
+    if (!(b[3] > b[2])) b = [0, 0, 0, 1];
     const m = renderM(),
       cur = { rows: query.rows, m, ready: state === "exact" || state === "recorded" || state === "cube" },
       ref = under

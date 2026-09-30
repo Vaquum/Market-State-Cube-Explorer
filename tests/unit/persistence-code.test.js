@@ -564,6 +564,25 @@ test("descriptor validation, every branch: channel, policy, transform, formula a
   bad((p) => { delete p.scales[0].desc.id; }, /id is missing/, "descriptor id missing");
 });
 
+test("the profile tracks' choice and disclosure travel in a view code (S2) and come back; a bad value is refused; absent means independent and closed", async () => {
+  const withProfile = (cmp, open) => mutate((p) => { p.view.profileCmp = cmp; p.view.profileOpen = open; });
+  for (const [cmp, open] of [["absolute", false], ["share", true], ["independent", true]]) {
+    const code = await C.encodePortable(JSON.parse(JSON.stringify({ ...payload(), view: { ...payload().view, profileCmp: cmp, profileOpen: open } })), { deflate: zlibDeflate });
+    const decoded = await C.decodePortable(code, { inflate: zlibInflate });
+    const checked = C.validatePortable(decoded.payload, {});
+    assert.equal(checked.ok, true, checked.reasons.join("; "));
+    assert.equal(checked.value.view.profileCmp, cmp);
+    assert.equal(checked.value.view.profileOpen, open);
+  }
+  const plainView = C.validatePortable(seal(payload()), {});
+  assert.equal(plainView.ok, true);
+  assert.equal(plainView.value.view.profileCmp, "independent", "a code without the setting is independent");
+  assert.equal(plainView.value.view.profileOpen, false, "and closed");
+  assert.equal(C.validatePortable(withProfile("both", false), {}).ok, false, "an unknown comparison is refused");
+  assert.match(C.validatePortable(withProfile("both", false), {}).reasons[0], /independent, absolute or share/);
+  assert.match(C.validatePortable(withProfile("share", "yes"), {}).reasons[0], /true or false/);
+});
+
 test("limits on read: 16 scales are accepted, 17 rejected; 21 axes accepted, 22 rejected; 4 models accepted, 5 rejected", () => {
   const scalesOf = (n) => Array.from({ length: n }, (_, i) => plain(record("c", valueDesc(1000 + i, 10 + i, false), cellsCtx("volume", i % 16, Math.floor(i / 16)))));
   const axesOf = (n) => Array.from({ length: n }, (_, i) => ({ id: "pane.a" + i, domain: [0, 10 + i], policy: "frozen", through: null }));

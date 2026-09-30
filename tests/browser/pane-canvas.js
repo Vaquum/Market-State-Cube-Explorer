@@ -30,7 +30,7 @@ function install(canvasId) {
     },
     set(v) {
       if (this.id === canvasId) {
-        cur = { rects: [], strokeRects: [], strokes: [], fills: [], texts: [], patterns: 0, seq: 0 };
+        cur = { rects: [], strokeRects: [], strokes: [], fills: [], texts: [], arcs: [], roundRects: [], patterns: 0, seq: 0 };
         frames.push(cur);
         if (frames.length > KEEP) frames.shift();
       }
@@ -72,7 +72,15 @@ function install(canvasId) {
     cur.fills.push({ fill: style(this.fillStyle), alpha: this.globalAlpha, path: path.slice(), seq: cur.seq++ });
   });
   wrap("fillText", function ([text, x, y]) {
-    cur.texts.push({ text: String(text), x, y, fill: style(this.fillStyle), align: this.textAlign, seq: cur.seq++ });
+    cur.texts.push({ text: String(text), x, y, fill: style(this.fillStyle), align: this.textAlign, width: this.measureText(String(text)).width, seq: cur.seq++ });
+  });
+  // a circle (a cross's marker, a divergence's dot) and a rounded rectangle (a tag's plate) are kept apart from the paths: their fills and strokes
+  // are not one of the straight-line shapes the specs count
+  wrap("arc", function ([x, y, r]) {
+    cur.arcs.push({ x, y, r, seq: cur.seq++ });
+  });
+  wrap("roundRect", function ([x, y, w, h]) {
+    cur.roundRects.push({ x, y, w, h, seq: cur.seq++ });
   });
   wrap("createPattern", () => {
     cur.patterns++;

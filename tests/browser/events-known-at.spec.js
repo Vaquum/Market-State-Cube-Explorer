@@ -8,6 +8,9 @@
 //   * gap: a weekend in which the spot price walks from 25,000 at Friday 21:00 UTC to 25,300 at the Sunday 22:00 reopen, stays there and, at Monday 03:15 UTC,
 //     falls back through 25,000 inside the hourly bar that begins at 03:00. The gap is known at the reopen; its fill at the END of that bar, not before.
 // The page is opened in replay at each edge (an edge is where its data ends; the bar at the edge is read up to it), so nothing after the edge can reach it.
+// The level is fixed in the address (`r=`): a replay edge is floored to the time step of the level the view is RENDERED at, and every edge here is a multiple of
+// the step it settles at; far from the live edge that can be a coarser tier than the address asks for, so the crossings' data ends five days after their day
+// and their views lie inside the seven days the page holds at the finest level.
 // Oracles (none is the code under test): the reference bars of tests/reference/bars.js (exact arithmetic) and the reference zigzag written from the rule
 // (tests/reference/swings.js), both fed only the trades before the edge; the fixture's own design (which edge is before, inside and after the bar) asserted
 // first, so the scenario has teeth.
@@ -15,6 +18,7 @@ const { test: base, expect } = require("./fixtures.js");
 const paneCanvas = require("./pane-canvas.js");
 const refBars = require("../reference/bars.js");
 const refSwings = require("../reference/swings.js");
+const refInd = require("../reference/indicators.js");
 const S = require("./rows-support.js");
 
 const test = base.extend({
@@ -23,6 +27,13 @@ const test = base.extend({
     await use(paneCanvas.forPage(page));
   },
 });
+
+// Startup is over when the page has begun to poll the cube (its live poll is the last thing startup starts); `atRest` alone can pass before the page has
+// written its first loading caption, so a view with many days of bars to unpack was read while its first tiers were still coming in.
+async function ready(page, fake, probe) {
+  await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 30000 }).toBe(true);
+  await S.atRest(page, fake, probe);
+}
 
 const EPOCH_MS = Date.parse("2021-01-01T00:00:00Z");
 const HOUR = 3600000;
@@ -95,8 +106,8 @@ test.describe("B33 a 4-hour swing is known at the end of the bar that reversed f
     test(`replay at ${name}: the Lines row says what the reference says, with its finality and known-at`, async ({ page, probe, fakeFor, pane }) => {
       const fake = await fakeFor({ trades: SWING_TRADES, cutoffIso: SWING_CUTOFF });
       await page.setViewportSize({ width: 1500, height: 950 });
-      await page.goto(`${fake.url}/#t=${iso(TE - 36 * HOUR)}~${iso(TE + 30 * HOUR)}&p=24800~26000&vis=2&lines=swing4h&replay=1&at=${iso(edge)}`);
-      await S.atRest(page, fake, probe);
+      await page.goto(`${fake.url}/#t=${iso(TE - 36 * HOUR)}~${iso(TE + 30 * HOUR)}&p=24800~26000&r=6,3&vis=2&lines=swing4h&replay=1&at=${iso(edge)}`);
+      await ready(page, fake, probe);
       // the rows of the Lines popover are written while it is open
       await page.locator("#ol-lines").click();
       const row = page.locator('[data-line-value="swing4h"]');
@@ -192,8 +203,8 @@ test.describe("B33 a CME gap is known at the reopen and filled at the end of the
     test(`replay at ${name}: the gap's tooltip says what the reference says`, async ({ page, probe, fakeFor, pane }) => {
       const fake = await fakeFor({ trades: GAP_TRADES, cutoffIso: GAP_CUTOFF });
       await page.setViewportSize({ width: 1500, height: 950 });
-      await page.goto(`${fake.url}/#t=${iso(ms("2026-09-06T18:00:00Z"))}~${iso(ms("2026-09-07T06:00:00Z"))}&p=24800~25500&vis=2&lines=cme&replay=1&at=${iso(edge)}`);
-      await S.atRest(page, fake, probe);
+      await page.goto(`${fake.url}/#t=${iso(ms("2026-09-06T18:00:00Z"))}~${iso(ms("2026-09-07T06:00:00Z"))}&p=24800~25500&r=5,2&vis=2&lines=cme&replay=1&at=${iso(edge)}`);
+      await ready(page, fake, probe);
       const want = gapAt(edge);
       const frame = await pane.last();
       const boxes = frame.strokeRects.filter((r) => r.alpha === 0.7 && r.width === 1);
@@ -304,8 +315,8 @@ test.describe("B33 an RSI divergence and an equal pair are known at the later sw
     test(`replay at ${name}: the divergence and the pair are drawn as the reference says and their tooltips name when they are known`, async ({ page, probe, fakeFor, pane }) => {
       const fake = await fakeFor({ trades: DIVERGENCE_TRADES, cutoffIso: DIVERGENCE_CUTOFF });
       await page.setViewportSize({ width: 1500, height: 950 });
-      await page.goto(`${fake.url}/#t=${iso(T2 - 6 * HOUR)}~${iso(T2 + 72 * HOUR)}&p=24900~26000&vis=2&lines=swing4h&pane=rsi4h&replay=1&at=${iso(edge)}`);
-      await S.atRest(page, fake, probe);
+      await page.goto(`${fake.url}/#t=${iso(T2 - 6 * HOUR)}~${iso(T2 + 72 * HOUR)}&p=24900~26000&r=6,3&vis=2&lines=swing4h&pane=rsi4h&replay=1&at=${iso(edge)}`);
+      await ready(page, fake, probe);
       const want = divergenceAt(edge);
       const frame = await pane.last();
       const divs = frame.strokes.filter((k) => k.width === 2 && k.alpha === 0.95 && k.path.length === 2);
@@ -331,6 +342,202 @@ test.describe("B33 an RSI divergence and an equal pair are known at the later sw
       await page.mouse.move(box.x + (join.path[0][0] + join.path[1][0]) / 2, box.y + (join.path[0][1] + join.path[1][1]) / 2);
       await expect(tip).toHaveAttribute("data-event", candidate ? "equalSwings|so far" : "equalSwings|confirmed");
       await expect(tip.locator('dd[data-field="knownAt"]')).toHaveAttribute("data-canonical", candidate ? "null" : known);
+    });
+  }
+});
+
+// ---- crossings ---------------------------------------------------------------------------------------------------
+
+// 260 days of a slow fall, then a steady rally from day 190: the 50-day average crosses above the 200-day one some days after the 200-day one exists, and
+// MACD crosses its signal as the rally starts. Day k is [D0 + k days, D0 + (k + 1) days); a day's close is its last trade.
+const DAY = 24 * HOUR;
+const D0 = ms("2025-12-01T00:00:00Z");
+function crossPrice(t) {
+  const d = (t - D0) / DAY,
+    wiggle = 10 * Math.sin((2 * Math.PI * t) / (7 * HOUR));
+  return (d < 190 ? 26000 - 5 * d : 25050 + 60 * (d - 190)) + wiggle;
+}
+const CROSS_TRADES = tradesOf(D0, D0 + 260 * DAY, crossPrice);
+// the daily closes the page has at an edge (the day at the edge as it stands), and the crossings of a pair of series
+function dailyCloses(edge) {
+  const closes = [];
+  for (const x of tradesBefore(CROSS_TRADES, edge)) closes[Math.floor((x.t_ms - D0) / DAY)] = x.price / 100;
+  return closes;
+}
+function crossesAt(edge) {
+  const closes = dailyCloses(edge),
+    { macd, signal } = refInd.macd(closes);
+  return { golden: refInd.crosses(refInd.sma(closes, 50), refInd.sma(closes, 200)), macd: refInd.crosses(macd, signal), last: closes.length - 1 };
+}
+const FULL = crossesAt(D0 + 260 * DAY);
+const GOLDEN_DAY = FULL.golden.filter((c) => c.up).at(-1).i;
+const MACD_DAY = FULL.macd.at(-1).i;
+// (a replay edge is floored to the time step of the level the view is at: a view a few days wide is at a step of an hour or less, which the edges here are multiples of)
+const crossEdges = (day) => ({ notBegun: D0 + day * DAY, forming: D0 + day * DAY + 20 * HOUR, atEnd: D0 + (day + 1) * DAY, later: D0 + (day + 4) * DAY });
+
+test.describe("B33 a crossing is known at the end of its day and a candidate while the day forms", () => {
+  test("the scenario: each crossing is absent before its day, a candidate late in it, known at the day's end and the same after", () => {
+    expect(GOLDEN_DAY, "the 200-day average exists from day 199").toBeGreaterThanOrEqual(199);
+    for (const [name, day, pick] of [["golden", GOLDEN_DAY, (c) => c.golden.filter((x) => x.up)], ["macd", MACD_DAY, (c) => c.macd]]) {
+      const at = crossEdges(day);
+      const lastOf = (edge) => pick(crossesAt(edge)).at(-1);
+      expect(lastOf(at.notBegun)?.i ?? -1, `${name}: not yet on day ${day}`).toBeLessThan(day);
+      expect(lastOf(at.forming)?.i, `${name}: a candidate late in day ${day}`).toBe(day);
+      expect(crossesAt(at.forming).last, "the day forms").toBe(day);
+      expect(lastOf(at.atEnd)?.i, `${name}: confirmed at the day's end`).toBe(day);
+      expect(lastOf(at.later)?.i).toBe(day);
+    }
+  });
+
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const dayLabel = (i) => {
+    const d = new Date(D0 + i * DAY + EPOCH_MS);
+    return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+  };
+  for (const [kind, pane, lines, pick, day] of [
+    ["golden cross", "", "gdcross", (c) => c.golden.filter((x) => x.up), GOLDEN_DAY],
+    ["MACD cross", "macd1d", "", (c) => c.macd, MACD_DAY],
+  ])
+    for (const [name, edge] of Object.entries(crossEdges(day))) {
+      test(`${kind}, replay at ${name}: the marker's tooltip names when it is known`, async ({ page, probe, fakeFor, pane: rec }) => {
+        // the data ends five days after the crossing's day, so the view is inside the last seven days, which the page holds at the finest level: nothing
+        // to read, and the replay edge is not floored to a coarser tier
+        const cutoff = D0 + (day + 5) * DAY;
+        const fake = await fakeFor({ trades: CROSS_TRADES.filter((x) => x.t_ms < cutoff), cutoffIso: iso(cutoff) });
+        await page.setViewportSize({ width: 1500, height: 950 });
+        await page.goto(`${fake.url}/#t=${iso(D0 + day * DAY - 12 * HOUR)}~${iso(edge + 12 * HOUR)}&p=25000~27000&r=6,4&vis=2${lines ? `&lines=${lines}` : ""}${pane ? `&pane=${pane}` : ""}&replay=1&at=${iso(edge)}`);
+        await ready(page, fake, probe);
+        const all = crossesAt(edge),
+          list = pick(all),
+          want = list.at(-1);
+        if (lines) {
+          // the bars are read after the view's own reads: the Lines row says when the page has them, and what it found
+          await page.locator("#ol-lines").click();
+          const row = page.locator('[data-line-value="gdcross"]');
+          await expect(row, "the page's latest crossing is the reference's").toHaveText(want ? `Golden ${dayLabel(want.i)}` : "none");
+          await page.keyboard.press("Escape");
+          await expect(page.locator("#ol-lines-pop")).toBeHidden();
+        } else
+          await expect
+            .poll(async () => (await rec.last()).strokes.some((k) => k.width === 1.5 && k.stroke !== "#ffffff" && k.path.length >= 2), { message: "MACD is drawn" })
+            .toBe(true);
+        await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
+        const frame = await rec.last();
+        const arcs = frame.arcs.filter((a) => a.r >= 3);
+        if (!want) {
+          expect(arcs, "no crossing yet").toEqual([]);
+          return;
+        }
+        expect(arcs.length, "a marker for each crossing in view").toBeGreaterThan(0);
+        // the newest crossing in view is the one that ends last
+        const marker = arcs.reduce((a, b) => (b.x > a.x ? b : a));
+        const box = await page.locator("#ol-canvas").boundingBox();
+        // (two pixels inside the marker: a tooltip at the very edge of the data says the future is hidden)
+        await page.mouse.move(box.x + marker.x - 2, box.y + marker.y);
+        const tip = page.locator("#ol-tip");
+        await expect(tip).toBeVisible();
+        const candidate = edge % DAY !== 0 && want.i === all.last,
+          known = String(baseOf(D0 + (want.i + 1) * DAY));
+        await expect(tip).toHaveAttribute("data-event", candidate ? "cross|so far" : "cross|confirmed");
+        await expect(tip.locator('dd[data-field="knownAt"]')).toHaveAttribute("data-canonical", candidate ? "null" : known);
+        await expect(tip).toContainText(candidate ? /so far, not confirmed/ : /Status\s*Confirmed/);
+        await expect(tip).toContainText("daily bars");
+      });
+    }
+});
+
+// ---- a squeeze -----------------------------------------------------------------------------------------------------
+
+// 100 days of a wobbling price, 40 four-hour bars of a price that does not move at all, and seven more days of the wobble: the bandwidth falls below its
+// 10th percentile of the last 500 bars for a run of bars that starts in the quiet stretch and ends after it, while the wobble fills the window again. Its
+// lane in the event strip is the run's interval.
+const SQ0 = ms("2026-02-01T00:00:00Z");
+const QUIET = [SQ0 + 100 * DAY, SQ0 + 100 * DAY + 40 * 4 * HOUR];
+function squeezePrice(t) {
+  if (t >= QUIET[0] && t < QUIET[1]) return 25000;
+  return 25000 + 300 * Math.sin((2 * Math.PI * t) / (30 * HOUR)) + 120 * Math.sin((2 * Math.PI * t) / (7.3 * HOUR));
+}
+const SQ_END = SQ0 + 114 * DAY;
+const SQUEEZE_TRADES = tradesOf(SQ0, SQ_END, squeezePrice);
+const FOUR_HOURS = 4 * HOUR;
+// the 4-hour bars of the reference at an edge (the bar at the edge as it stands), the squeeze runs over them, and the last run's state for the record
+function squeezeAt(edge) {
+  const list = refBars.bars(tradesBefore(SQUEEZE_TRADES, edge), { n: 8, b0: 0, b1: Math.ceil(baseOf(edge)) });
+  const runs = refInd.runs(refInd.squeezeBelow(refInd.bandwidth(list.map((b) => b.close))));
+  const run = runs.length ? runs[runs.length - 1] : null;
+  if (!run) return { list, run: null };
+  const bar = (k) => [list[k].col * FOUR_HOURS, (list[k].col + 1) * FOUR_HOURS];
+  const bars = [];
+  for (let k = run[0]; k <= run[1]; k++) bars.push(bar(k));
+  const after = run[1] + 1 < list.length ? bar(run[1] + 1) : null;
+  const complete = bars[bars.length - 1][1] <= edge,
+    closed = complete && after !== null && after[1] <= edge;
+  const done = bars.filter((b) => b[1] <= edge);
+  return { list, run, bars, after, candidate: !complete, final: closed, knownAt: done.length ? done[done.length - 1][1] : null, runStart: bars[0][0] };
+}
+const FULL_SQUEEZE = squeezeAt(SQ_END);
+const RUN_START = FULL_SQUEEZE.runStart,
+  RUN_LAST = FULL_SQUEEZE.bars[FULL_SQUEEZE.bars.length - 1][1];
+const SQ_EDGE = {
+  notBegun: RUN_START,
+  firstBarForming: RUN_START + 2 * HOUR,
+  firstBarDone: RUN_START + FOUR_HOURS,
+  midRunForming: RUN_START + 5 * FOUR_HOURS + 2 * HOUR,
+  lastBarForming: RUN_LAST - 2 * HOUR,
+  lastBarDone: RUN_LAST,
+  nextBarForming: RUN_LAST + 2 * HOUR,
+  closed: RUN_LAST + FOUR_HOURS,
+  later: RUN_LAST + 24 * HOUR,
+};
+
+test.describe("B33 a squeeze run is known bar by bar and final once a later complete bar does not qualify", () => {
+  test("the scenario: the run sits in the quiet stretch and each edge is where the table says", () => {
+    expect(FULL_SQUEEZE.run, "a run").not.toBeNull();
+    expect(RUN_START).toBeGreaterThanOrEqual(QUIET[0]);
+    expect(RUN_LAST, "the run outlasts the quiet stretch while the wobble fills the window again, and ends before the data does").toBeLessThan(SQ_END - 24 * HOUR);
+    expect(squeezeAt(SQ_EDGE.notBegun).run === null || squeezeAt(SQ_EDGE.notBegun).runStart !== RUN_START, "before its first bar the run is not there").toBe(true);
+    const first = squeezeAt(SQ_EDGE.firstBarForming);
+    expect([first.runStart, first.candidate, first.knownAt]).toEqual([RUN_START, true, null]);
+    const done = squeezeAt(SQ_EDGE.firstBarDone);
+    expect([done.candidate, done.final, done.knownAt]).toEqual([false, false, RUN_START + FOUR_HOURS]);
+    expect(squeezeAt(SQ_EDGE.midRunForming).candidate).toBe(true);
+    expect(squeezeAt(SQ_EDGE.lastBarDone).final, "the last bar qualified; nothing after it yet").toBe(false);
+    expect(squeezeAt(SQ_EDGE.nextBarForming).final, "the bar after it is still forming").toBe(false);
+    const closed = squeezeAt(SQ_EDGE.closed);
+    expect([closed.candidate, closed.final, closed.knownAt]).toEqual([false, true, RUN_LAST]);
+    expect(squeezeAt(SQ_EDGE.later).final).toBe(true);
+  });
+
+  for (const [name, edge] of Object.entries(SQ_EDGE)) {
+    test(`replay at ${name}: the lane's tooltip says what the reference says`, async ({ page, probe, fakeFor, pane: rec }) => {
+      const fake = await fakeFor({ trades: SQUEEZE_TRADES.filter((x) => x.t_ms < SQ_END), cutoffIso: iso(SQ_END) });
+      await page.setViewportSize({ width: 1500, height: 950 });
+      await page.goto(`${fake.url}/#t=${iso(RUN_START - 12 * HOUR)}~${iso(edge + 12 * HOUR)}&p=24000~26000&r=6,4&vis=2&lines=bb4h&replay=1&at=${iso(edge)}`);
+      await ready(page, fake, probe);
+      const want = squeezeAt(edge);
+      const isRun = want.run !== null && want.runStart === RUN_START;
+      // the bars are read after the view's own reads: the lane appears when the page has them
+      if (!isRun) {
+        await probe.waitForQuiet({ quietMs: 800, timeout: 20000 });
+        const frame = await rec.last();
+        expect(frame.rects.filter((r) => r.h === 8 && r.alpha === 1 && r.w >= 2 && r.y > 600), "no squeeze interval before its first bar").toEqual([]);
+        return;
+      }
+      await expect.poll(async () => (await rec.last()).rects.some((r) => r.h === 8 && r.alpha === 1 && r.w >= 2), { message: "the squeeze lane is drawn", timeout: 20000 }).toBe(true);
+      await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
+      const frame = await rec.last();
+      const marks = frame.rects.filter((r) => r.h === 8 && r.alpha === 1 && r.w >= 2);
+      expect(marks.length, "one interval in the lane").toBe(1);
+      const box = await page.locator("#ol-canvas").boundingBox(),
+        r = marks[0];
+      await page.mouse.move(box.x + r.x + Math.min(r.w / 2, r.w - 1), box.y + r.y + r.h / 2);
+      const tip = page.locator("#ol-tip");
+      await expect(tip).toBeVisible();
+      await expect(tip).toHaveAttribute("data-event", want.final ? "squeeze|final" : "squeeze|so far");
+      await expect(tip.locator('dd[data-field="knownAt"]')).toHaveAttribute("data-canonical", want.knownAt === null ? "null" : String(baseOf(want.knownAt)));
+      await expect(tip).toContainText("4-hour bars");
+      await expect(tip).toContainText(want.final ? /Status\s*Final/ : /So far, not confirmed/);
+      if (want.candidate) await expect(tip).toContainText(/its last bar still forming until/);
     });
   }
 });

@@ -1,8 +1,9 @@
 "use strict";
 // B16b nonvalues.spec.js (R): the Rows half of the basic keyed non-value presentation (TESTPLAN 3.4 B16; owner R: the Relative-volume
 // zero-current row with its negative-infinity key and readout, and the Rows non-value marks). B16a (Cells) and B16c (Columns) are
-// the other owners' and live in their own files. Covers S1-052, S1-059, S1-063 (typed marks instead of a fake -2, a distinct
-// infinity mark, a no-reference mark, each counted) and S1-160 for the Rows roles.
+// the other owners' and live in their own files. Requirement ids listed for B16 in TESTPLAN 8.2: S1-040, S1-064, S1-065, S1-070,
+// S1-071 (typed non-values instead of a fake -2, a distinct infinity mark and readout, each counted) and S1-160 (the keys and the
+// marks come from one role table).
 //
 // The stream is the "disjoint" one of rows-support.js: against the 1-day period, on W = rows 199..211, the selection traded rows 200
 // and 210 only and the period rows 200..205, so by construction (a set statement, not a computed number)

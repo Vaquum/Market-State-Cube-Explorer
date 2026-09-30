@@ -1,7 +1,7 @@
 "use strict";
-// B10 rows.spec.js (R): Rows period, quality and row size (TESTPLAN 3.4 B10). Covers S1-016 to S1-018 (registered axes are not R's; the
-// Rows mapping is), S1-043 to S1-045 (Rows contexts: period identity, effective row size, quality, no n), S1-081 to S1-084 (the Rows
-// cohort is every measured row of the period, off-screen rows included), S1-140 to S1-144 (the period key at a rollover).
+// B10 rows.spec.js (R): Rows period, quality and row size (TESTPLAN 3.4 B10). Requirement ids listed for B10 in TESTPLAN 8.2: S1-016 to
+// S1-018, S1-043 to S1-045 (Rows contexts: period identity, effective row size, quality, no n), S1-081 to S1-084 (the Rows cohort is every
+// measured row of the period, off-screen rows included) and S1-140 to S1-144 (the period key at a rollover).
 //
 // What is asserted, through the chips and details of INTEGRATION.md D.18 (the observation surface the spine and the DOM package write):
 //   1. the Rows mapping is period-wide: its U is the maximum over ALL rows of the period from the exact reference, INCLUDING rows that

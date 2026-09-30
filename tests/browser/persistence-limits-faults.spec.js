@@ -26,7 +26,7 @@
 // the descriptors are dropped and the page shows no scale of the link's), and the banner's own markup (package U: the specs read the
 // D.18 contract of #ol-notice).
 const zlib = require("node:zlib");
-const { test, expect, observe } = require("./fixtures.js");
+const { test, expect } = require("./fixtures.js");
 const S = require("./persistence-support.js");
 
 const STORE = "market-state-cube-explorer:";
@@ -81,30 +81,39 @@ async function open(page, fake, hash = "") {
 }
 
 test.describe("B15 persistence: limits, malformed input and failing storage", () => {
-  test("a bad scale in an address keeps the settings, drops the descriptor visibly and rewrites the address without it", async ({ page, fakeFor, surface }) => {
+  // The fake cube is closed by a fixture that is torn down before the page is: a live page polling the pack in that gap logs a failed
+  // fetch, which is the harness's teardown order and no behaviour of the page. The pages are closed first.
+  test.afterEach(async ({ context }) => {
+    await Promise.all(context.pages().map((p) => p.close().catch(() => {})));
+  });
+
+  test("a bad scale in an address keeps the settings, drops the descriptor visibly and rewrites the address without it", async ({ page, fakeFor }) => {
     const fake = await fakeFor("mini");
     const good = S.address({ mode: "volume", pane: "volume" }, [S.valueRecord("volume", 4, 0, 1204551.25, 8830.5)]).hash;
     const bad = good.replace(/:[A-Za-z0-9_-]{16}$/, ":AAAAAAAAAAAAAAAA");
     expect(bad).not.toBe(good);
     await open(page, fake, bad);
     // every setting survived, the descriptor did not
-    expect((await S.where(page)).hash).toBe("#w=24h&vis=2&ap=" + S.AP + "&pane=volume");
-    const list = await S.notices(surface);
+    expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=24h&vis=2&ap=" + S.AP + "&pane=volume");
+    // the descriptor of the link is not in the address any more (a fresh Explore mapping may be)
+    expect(S.scOf((await S.where(page)).hash) ?? "c:e:").toMatch(/^c:e:/);
+    expect(S.scOf((await S.where(page)).hash) ?? "").not.toContain("AAAAAAAAAAAAAAAA");
+    const list = await S.notices(page);
     expect(list.map((n) => n.code)).toContain("scale-dropped");
-    expect(list.find((n) => n.code === "scale-dropped").text).toContain("hash mismatch");
+    expect(S.said(list.find((n) => n.code === "scale-dropped"))).toContain("hash mismatch");
   });
 
-  test("vis=3 is refused with its reason and the default view shows", async ({ page, fakeFor, surface }) => {
+  test("vis=3 is refused with its reason and the default view shows", async ({ page, fakeFor }) => {
     const fake = await fakeFor("mini");
     await open(page, fake, "#w=7d&vis=3&mode=delta");
-    expect((await S.where(page)).hash).toBe("#w=24h&vis=2&ap=" + S.AP);
-    const refused = (await S.notices(surface)).find((n) => n.code === "import-rejected");
+    expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=24h&vis=2&ap=" + S.AP);
+    const refused = (await S.notices(page)).find((n) => n.code === "import-rejected");
     expect(refused).toBeTruthy();
-    expect(refused.text).toContain("visual version");
-    expect(refused.text).toContain("3");
+    expect(S.said(refused)).toContain("visual version");
+    expect(S.said(refused)).toContain("3");
   });
 
-  test("a code over a limit is rejected whole: a 1 MiB + 1 byte bomb, an unknown version, a truncated gzip, a newer visualVersion", async ({ page, context, fakeFor, surface }) => {
+  test("a code over a limit is rejected whole: a 1 MiB + 1 byte bomb, an unknown version, a truncated gzip, a newer visualVersion", async ({ page, context, fakeFor }) => {
     await context.addInitScript(() => {
       // a spy: the bounded inflate must cancel its reader at the limit (the stream is not read to the end)
       window.__cancels = 0;
@@ -116,6 +125,8 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     });
     const fake = await fakeFor("mini");
     await open(page, fake, "#w=7d&vis=2&ap=" + S.AP + "&mode=delta");
+    // the fitted mapping of the view joins the address a moment after the first paint: wait for it, so "unchanged" is exact
+    await expect.poll(async () => S.scOf((await S.where(page)).hash), { timeout: 10000 }).toMatch(/^c:e:/);
     const pack = await packOf(page);
     const before = { where: await S.where(page) };
     const good = await codeOf(payloadOf(pack, [S.valueRecord("volume", 4, 0, 1204551.25, 8830.5)]));
@@ -139,7 +150,7 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
       await expect(page.locator("#ol-import-apply")).toBeEnabled();
     }
     expect(await page.evaluate(() => window.__cancels), "the bomb's reader was cancelled").toBeGreaterThanOrEqual(1);
-    const codes = (await S.notices(surface)).map((n) => n.code);
+    const codes = (await S.notices(page)).map((n) => n.code);
     expect(codes.filter((c) => c === "import-rejected").length).toBeGreaterThanOrEqual(1);
   });
 
@@ -155,6 +166,55 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     await S.importCode(page, code);
     await expect(page.locator("#ol-copy-status")).toHaveText("View restored");
     expect(S.param((await S.where(page)).hash, "lk")).toBe("1");
+  });
+
+  test("an import is one at a time and checked again after its wait: Apply is disabled while it runs, a second click starts nothing, a changed text is not applied", async ({ page, context, fakeFor }) => {
+    await context.addInitScript(() => {
+      // a slow decompression: every read of a stream waits, and every stream made is counted
+      window.__streams = 0;
+      const Original = window.DecompressionStream;
+      window.DecompressionStream = class extends Original {
+        constructor(format) {
+          super(format);
+          window.__streams++;
+        }
+      };
+      const read = ReadableStreamDefaultReader.prototype.read;
+      ReadableStreamDefaultReader.prototype.read = async function (...args) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        return read.apply(this, args);
+      };
+    });
+    const fake = await fakeFor("mini");
+    await open(page, fake);
+    const pack = await packOf(page);
+    const code = await codeOf(payloadOf(pack, [S.rankRecord("volume", 4, 0, S.DUPLICATE_VALUES)]));
+    await S.openQuery(page);
+    if (await page.locator("#ol-import").isHidden()) await page.locator("#ol-import-toggle").click();
+    await page.locator("#ol-import-text").fill(code);
+    await fake.idle({ quietMs: 300 });
+    // (the page's own data decoding uses streams too: count from here)
+    await page.evaluate(() => {
+      window.__streams = 0;
+    });
+    await page.locator("#ol-import-apply").click();
+    // while it runs: Apply is off, and pressing it again starts no second import
+    await expect(page.locator("#ol-import-apply")).toBeDisabled();
+    await page.locator("#ol-import-apply").evaluate((button) => button.click());
+    await expect(page.locator("#ol-copy-status")).toHaveText("View restored");
+    await expect(page.locator("#ol-import-apply")).toBeEnabled();
+    expect(await page.evaluate(() => window.__streams), "one stream for one import").toBe(1);
+    // a text that changes during the wait is not applied, and the page is as it was
+    await S.openQuery(page);
+    await page.locator("#ol-import-toggle").click();
+    const before = (await S.where(page)).hash;
+    const other = await codeOf(payloadOf(pack, [S.rankRecord("volume", 4, 0, S.DUPLICATE_VALUES)], { transform: "value", lock: false }));
+    await page.locator("#ol-import-text").fill(other);
+    await page.locator("#ol-import-apply").click();
+    await page.locator("#ol-import-text").fill("changed while it was read");
+    await expect(page.locator("#ol-copy-status")).toContainText("changed while it was being read");
+    expect(S.withoutSc((await S.where(page)).hash)).toBe(S.withoutSc(before));
+    await expect(page.locator("#ol-import-apply")).toBeEnabled();
   });
 
   test("a browser that cannot compress writes the uncompressed code (origo-cube:2j.), and any browser reads it back", async ({ page, context, fakeFor, freshContext }) => {
@@ -180,7 +240,7 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     expect(S.param((await S.where(tab)).hash, "bs")).toBe("i");
   });
 
-  test("more than 8192 characters: the address is scale ids only, the status names the level, Copy link offers the full code, the code restores exactly", async ({ page, context, fakeFor, freshContext, surface }) => {
+  test("more than 8192 characters: the address is scale ids only, the status names the level, Copy link offers the full code, the code restores exactly", async ({ page, context, fakeFor, freshContext }) => {
     const fake = await fakeFor("mini");
     await context.grantPermissions(CLIPBOARD, { origin: fake.url });
     await open(page, fake);
@@ -222,14 +282,13 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     const ids = await third.newPage();
     await ids.goto(link);
     await ids.locator("#ol-canvas").waitFor();
-    const dropped = (await S.notices(observe(ids))).find((n) => n.code === "scale-dropped");
-    expect(dropped.text).toContain("scale IDs only, not exact");
+    const dropped = (await S.notices(ids)).find((n) => n.code === "scale-dropped");
+    expect(S.said(dropped)).toContain("scale IDs only, not exact");
     expect(S.param((await S.where(ids)).hash, "lk")).toBe("1");
     // the two mappings the link carried in full are restored; the two it carried as ids are not (nothing is refitted to fill them)
     const after = (await S.where(ids)).hash;
     expect(after).not.toContain("q~");
     expect((after.match(/:q[A-Za-z0-9_-]{2000,}:/g) || []).length).toBe(2);
-    void surface;
   });
 
   test("a named view saved at a shortened address keeps the full code beside it, and opens exactly from it", async ({ page, fakeFor, freshContext }) => {
@@ -301,7 +360,7 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     expect((await S.where(page)).href.length).toBeLessThanOrEqual(S.ADDRESS_MAX);
   });
 
-  test("setItem throwing QuotaExceededError: the page keeps running, one storage-failed notice whose count grows", async ({ page, context, fakeFor, surface }) => {
+  test("setItem throwing QuotaExceededError: the page keeps running, one storage-failed notice whose count grows", async ({ page, context, fakeFor }) => {
     await context.addInitScript(() => {
       Storage.prototype.setItem = function () {
         throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
@@ -312,12 +371,12 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     for (let i = 0; i < 3; i++) await page.keyboard.press("m");
     // the running state is usable: the address followed the mode changes
     await expect.poll(async () => S.param((await S.where(page)).hash, "mode")).not.toBeNull();
-    const failed = (await S.notices(surface)).filter((n) => n.code === "storage-failed");
+    const failed = (await S.notices(page)).filter((n) => n.code === "storage-failed");
     expect(failed).toHaveLength(1);
     expect(failed[0].count).toBeGreaterThan(1);
   });
 
-  test("replaceState throwing: one history-failed notice and the running view is unchanged", async ({ page, context, fakeFor, surface }) => {
+  test("replaceState throwing: one history-failed notice and the running view is unchanged", async ({ page, context, fakeFor }) => {
     await context.addInitScript(() => {
       history.replaceState = function () {
         throw new DOMException("Too many calls.", "SecurityError");
@@ -326,13 +385,16 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     const fake = await fakeFor("mini");
     await open(page, fake);
     await page.keyboard.press("m");
-    await expect.poll(async () => (await S.notices(surface)).filter((n) => n.code === "history-failed").length).toBe(1);
+    // it is the most serious row, so the banner shows it; reading the banner empties it, so wait for it first and read once
+    await expect(page.locator('#ol-notice [data-code="history-failed"]')).toHaveCount(1);
+    const history = (await S.notices(page)).filter((n) => n.code === "history-failed");
+    expect(history).toHaveLength(1);
     // the bar kept its address; the running view moved on and the stored last view says how
     expect((await S.where(page)).hash).toBe("");
     await expect.poll(async () => JSON.parse((await S.storage(page)).local["view:v5"]).view).toContain("mode=");
   });
 
-  test("a denied clipboard: the status says so and the address is selected for copying", async ({ page, context, fakeFor, surface }) => {
+  test("a denied clipboard: the status says so and the address is selected for copying", async ({ page, context, fakeFor }) => {
     await context.addInitScript(() => {
       const deny = () => Promise.reject(new DOMException("denied", "NotAllowedError"));
       Object.defineProperty(navigator, "clipboard", { value: { write: deny, writeText: deny, readText: deny }, configurable: true });
@@ -342,11 +404,11 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     await S.openViews(page);
     await page.locator("#ol-copy-link").click();
     await expect(page.locator("#ol-copy-status")).toContainText("Selected for copy");
-    await expect(page.locator("#ol-query-text")).toHaveValue(/#w=24h&vis=2&ap=slate2-8f7890f7$/);
-    expect(await S.noticeCodes(surface)).toContain("clipboard");
+    await expect(page.locator("#ol-query-text")).toHaveValue(/#w=24h&vis=2&ap=slate2-8f7890f7(&sc=[^&]*)?$/);
+    expect(await S.noticeCodes(page)).toContain("clipboard");
   });
 
-  test("storage written by another version is kept: a newer view, named views and history are named and never lost", async ({ page, context, fakeFor, surface }) => {
+  test("storage written by another version is kept: a newer view, named views and history are named and never lost", async ({ page, context, fakeFor }) => {
     const foreignView = JSON.stringify({ version: 5, visualVersion: 3, prefs: {}, view: "#w=7d&vis=3" });
     const entry = { name: "Newer", live: false, span: 10, lead: 0, auto: true, mode: "volume", pane: "cells", rows: "off", period: "90d", hash: "#w=7d&vis=3", tA: 1, tB: 2, cut: 3, n: 6, m: 0, window: "7d", replay: false, visualVersion: 3 };
     const mine = { ...entry, name: "Mine", hash: "#w=24h&vis=2&ap=" + S.AP, visualVersion: 2 };
@@ -368,10 +430,10 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     const fake = await fakeFor("mini");
     await open(page, fake);
     // the default view shows, and the banner names what was left alone
-    expect((await S.where(page)).hash).toBe("#w=24h&vis=2&ap=" + S.AP);
-    const kept = (await S.notices(surface)).filter((n) => n.code === "import-rejected");
+    expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=24h&vis=2&ap=" + S.AP);
+    const kept = (await S.notices(page)).filter((n) => n.code === "import-rejected");
     expect(kept.length).toBeGreaterThanOrEqual(1);
-    expect(kept.some((n) => n.text.includes("newer or unknown version"))).toBe(true);
+    expect(kept.some((n) => S.said(n).includes("newer or unknown version"))).toBe(true);
     // the first write copies the foreign payload aside, verbatim, before replacing it
     await page.keyboard.press("m");
     await expect.poll(async () => (await S.storage(page)).local["backup:view:v5"]).toBe(foreignView);
@@ -389,7 +451,7 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     await expect(page.locator("#ol-saved .ol-saved-row")).toHaveCount(2);
   });
 
-  test("named views have no cap: many views are saved, a write that fails is a visible notice and the list stays usable", async ({ page, context, fakeFor, surface }) => {
+  test("named views have no cap: many views are saved, a write that fails is a visible notice and the list stays usable", async ({ page, context, fakeFor }) => {
     const many = Array.from({ length: 250 }, (_, i) => ({ name: "View " + i, live: false, span: 10, lead: 0, auto: true, mode: "volume", pane: "cells", rows: "off", period: "90d", hash: "#w=24h&vis=2&ap=" + S.AP, tA: 1, tB: 2, cut: 3, n: 6, m: 0, window: "24h", replay: false, visualVersion: 2 }));
     await context.addInitScript(
       ({ prefix, list }) => {
@@ -419,7 +481,7 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     await page.locator("#ol-view-name").fill("Refused");
     await page.locator("#ol-view-form button[type=submit]").click();
     await expect(page.locator("#ol-views-status")).toContainText("can't be saved");
-    expect((await S.notices(surface)).map((n) => n.code)).toContain("storage-failed");
+    expect(await S.noticeCodes(page)).toContain("storage-failed");
     await expect(page.locator("#ol-saved .ol-saved-row")).toHaveCount(251);
   });
 });

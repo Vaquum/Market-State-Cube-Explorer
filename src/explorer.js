@@ -15189,6 +15189,21 @@
   // A whole-number millisecond for the codec, which refuses fractions (an open column's cutoff has them).
   // Floored, so a restored record is never later than the data it was fitted on.
   const wholeMs = (x) => (Number.isFinite(x) ? Math.max(0, Math.floor(x)) : null);
+  // The cohort of a record, as much of it as the codec takes. The fit's own cohort names its `quality` after the
+  // read state it was taken from (a state word such as "ok"), while a portable record names a measurement
+  // quality class (exact, approx-start, approx-rows:<size>); a word that is not a class is left out rather than
+  // making the whole view code unwritable. Everything else is provenance the details list shows.
+  const COHORT_QUALITY = /^(exact|approx-start|approx-rows:[1-9]\d*)$/;
+  function cohortOf(c) {
+    if (!c || !Number.isInteger(c.n)) return null;
+    const out = {};
+    for (const k of ["kind", "n", "zeros", "nonzero", "excluded", "calibratedOn", "bounds", "level", "quality", "obsEndBase", "support"]) {
+      if (c[k] === undefined) continue;
+      if (k === "quality" && !(typeof c[k] === "string" && COHORT_QUALITY.test(c[k]))) continue;
+      out[k] = c[k];
+    }
+    return out;
+  }
   // A mapping record of the store, or a held one, as the codec writes it: the store's policy word as the
   // grammar's letter, the origin reduced to the three the grammar knows (an external comparison mapping is
   // a flag), only the members a payload may carry.
@@ -15202,13 +15217,7 @@
       origin: rec.origin === "manual" || rec.origin === "restored" ? rec.origin : "fit",
       desc: rec.desc,
       ctx: rec.ctx,
-      cohort: c && Number.isInteger(c.n)
-        ? Object.fromEntries(
-            ["kind", "n", "zeros", "nonzero", "excluded", "calibratedOn", "bounds", "level", "quality", "obsEndBase", "support"]
-              .filter((k) => c[k] !== undefined)
-              .map((k) => [k, c[k]]),
-          )
-        : null,
+      cohort: cohortOf(c),
       obsEndMs: wholeMs(rec.obsEndMs),
       cutMs: wholeMs(rec.cutMs),
       canonicalThroughMs: wholeMs(rec.canonicalThroughMs),
@@ -15230,8 +15239,9 @@
         if (ctx) add(channel, scaleRt.store.latest(ws, E.context.keyString(ctx)));
       };
     from("c", cellsContext());
-    // The Rows context is the Rows package's: present once it is merged, absent before.
-    if (S.rows !== "off" && typeof rowsContext === "function") from("r", rowsContext());
+    // The Rows context is the Rows block's own function (rowsContext), asked for here because the address
+    // must carry the mapping the Rows channel is showing; it is a lookup of the state, never a fit.
+    if (S.rows !== "off") from("r", rowsContext());
     for (const [key, rec] of Object.entries(S.scale.held ?? {})) add(key.charAt(0) === "r" ? "r" : "c", rec);
     if (scaleRt.local) add("l", scaleRt.local);
     return out;

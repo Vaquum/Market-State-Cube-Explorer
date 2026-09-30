@@ -77,13 +77,39 @@ function bombCode(extra = 1) {
 }
 
 // ---- page helpers ----
-// The notices of the banner as {code, count, text}. The banner is the U package's; a page without it fails here by name.
-async function notices(surface) {
-  return surface.notices();
+// The banner shows ONE notice at a time (the most serious, then the newest; the rest wait as "+N more"), so the list of everything the
+// page said is read the way a person reads it: take the visible one, with its details (the lines behind the Details toggle), dismiss
+// it, and look at the next. Each item is {notice, code, count, text, details, waiting}. It empties the banner, so a test calls it
+// LAST, or accepts that a dismissed row stays dismissed while the same thing keeps happening (E.notice.post).
+async function notices(page) {
+  const out = [];
+  for (let i = 0; i < 40; i++) {
+    const item = await page.evaluate(() => {
+      const box = document.getElementById("ol-notice");
+      if (!box || box.hidden) return null;
+      const n = box.querySelector("[data-notice]");
+      const queued = /\+(\d+) more/.exec(box.querySelector(".ol-notice-queued")?.textContent ?? "");
+      return {
+        notice: n.dataset.notice, code: n.dataset.code ?? null, count: n.dataset.count === undefined ? null : Number(n.dataset.count),
+        text: n.textContent.trim(), details: [...box.querySelectorAll("#ol-note-details li")].map((li) => li.textContent.trim()),
+        waiting: queued ? Number(queued[1]) : 0,
+      };
+    });
+    if (!item) break;
+    out.push(item);
+    // a DOM click: an open popover may sit over the banner, and what is read here is the queue, not the pointer path to its button
+    await page.locator("#ol-notice-dismiss").evaluate((button) => button.click());
+  }
+  return out;
 }
-async function noticeCodes(surface) {
-  return (await notices(surface)).map((n) => n.code);
+async function noticeCodes(page) {
+  return (await notices(page)).map((n) => n.code);
 }
+// The words of one notice, its details included.
+const said = (n) => [n.text, ...n.details].join(" ");
+// An address without its `sc` record: the active Explore mapping of the Cells context arrives a moment after the first paint (the
+// settled fit), so an assertion about the SETTINGS of an address compares this, and one about the mapping waits for `sc=`.
+const withoutSc = (hash) => hash.replace(/&sc=[^&]*/, "");
 // The address bar, and the history length and state of the tab.
 function where(page) {
   return page.evaluate(() => ({ hash: location.hash, href: location.href, length: history.length, state: JSON.stringify(history.state) }));
@@ -111,6 +137,24 @@ async function importCode(page, text) {
   await page.locator("#ol-import-text").fill(text);
   await page.locator("#ol-import-apply").click();
 }
+// One action of a chip's popover, by its name, the way a keyboard user takes it (open with Enter, activate with Enter, close again).
+async function popoverAction(page, surface, name, channel = "cells") {
+  const opened = await surface.openLegendDetails(channel);
+  const button = opened.popover.getByRole("button", { name: new RegExp(`^${name}`, "i") }).first();
+  await button.focus();
+  await page.keyboard.press("Enter");
+  await opened.close().catch(() => {});
+}
+// A digest of the pixels of the chart canvas at its own resolution (the harness runs at DPR 1), for "the same mapping draws the same".
+function canvasHash(page) {
+  return page.evaluate(() => {
+    const c = document.getElementById("ol-canvas");
+    const d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+    let h = 2166136261;
+    for (let i = 0; i < d.length; i++) h = Math.imul(h ^ d[i], 16777619) >>> 0;
+    return c.width + "x" + c.height + ":" + h;
+  });
+}
 // The clipboard of a page in a context that granted it.
 function clipboardText(page) {
   return page.evaluate(() => navigator.clipboard.readText());
@@ -122,6 +166,6 @@ async function openViews(page) {
 }
 
 module.exports = {
-  E, ENV, AP, ADDRESS_MAX, plain, view, address, cellsContext, valueRecord, rankRecord, DUPLICATE_VALUES, scOf, param,
-  gzipCode, bombCode, b64url, notices, noticeCodes, where, storage, openQuery, importCode, clipboardText, openViews,
+  E, ENV, AP, ADDRESS_MAX, plain, view, address, cellsContext, valueRecord, rankRecord, DUPLICATE_VALUES, scOf, param, said, withoutSc,
+  gzipCode, bombCode, b64url, canvasHash, popoverAction, notices, noticeCodes, where, storage, openQuery, importCode, clipboardText, openViews,
 };

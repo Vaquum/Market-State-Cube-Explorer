@@ -32,8 +32,11 @@
   // the centre (1x, "even"), then the halves. Indexes into ratTicks.
   const ratTickPriority = Object.freeze([0, 4, 2, 1, 3]);
 
+  // An empty total, named: 0 is a real empty count, an absent one (a column the level never listed) is the
+  // baseline's "none", and a negative number is nonsense that still cannot be divided by.
   function ratEmptyPopulation(name, value) {
-    return API.result.make("empty-population", { denominator: name, reason: name + " is " + (value === 0 ? "0" : "not positive") });
+    const why = value === 0 ? "0" : value === undefined || value === null ? "absent" : "not positive";
+    return API.result.make("empty-population", { denominator: name, reason: name + " is " + why });
   }
 
   // E.ratio.classify (API.md A.3, C.1.7): the generic D2 ladder. Applied strictly in this order, so a
@@ -42,8 +45,8 @@
   //   2. structure: "coarsest" -> no-coarser-parent; "open" -> waiting-for-complete-parent (open: true);
   //      "outside" -> unsupported (parent not covered by the block); "unavailable" -> unsupported (only the
   //      live cube can answer). "complete" or absent: carry on.
-  //   3. totals [{name, value}, ...]: the first that is not positive -> empty-population naming it; a
-  //      non-finite one -> invalid-input
+  //   3. totals [{name, value}, ...]: the first that is zero, negative or absent -> empty-population naming
+  //      it; a non-finite one -> invalid-input
   //   4. ordinary [{name, value}, ...]: a denominator that is not positive -> undefined naming it
   //   5. current and reference (non-negative amounts or shares), when both are given:
   //        both 0 -> empty-both; current 0 -> negative-infinite; reference 0 -> no-reference;
@@ -63,7 +66,8 @@
     if (totals) {
       for (let i = 0; i < totals.length; i++) {
         const x = totals[i].value;
-        if (!Number.isFinite(x)) return API.result.make("invalid-input", { reason: "non-finite" });
+        // Absent (undefined or null) is empty, not invalid: only a number that is not a number is invalid.
+        if (x !== undefined && x !== null && !Number.isFinite(x)) return API.result.make("invalid-input", { reason: "non-finite" });
         if (!(x > 0)) return ratEmptyPopulation(totals[i].name, x);
       }
     }

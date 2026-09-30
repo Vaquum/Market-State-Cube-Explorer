@@ -326,20 +326,33 @@
     return false;
   }
 
+  // The step of the drawn level in base units: given directly (k.ts, k.ps: what a frame that already holds
+  // them passes) or as the level {n, m} of the frame spec (2**n columns, 2**m rows). A kernel that names
+  // neither cannot say what a cell's nominal span is, so it is refused loudly rather than measured wrongly.
+  function msrStep(k, key, letter) {
+    if (k[key] !== undefined) return k[key];
+    if (k.level) return Math.pow(2, k.level[letter]);
+    throw new TypeError("the measure kernel needs level {n, m} (or the steps ts and ps)");
+  }
+
   function msrTs(k) {
-    return k.ts !== undefined ? k.ts : Math.pow(2, k.level.n);
+    return msrStep(k, "ts", "n");
   }
 
   function msrPs(k) {
-    return k.ps !== undefined ? k.ps : Math.pow(2, k.level.m);
+    return msrStep(k, "ps", "m");
   }
+
+  // Bounds, cutoff and motion end that a kernel leaves out mean "no limit" (an unbounded rectangle, no
+  // cutoff, no motion end), never NaN.
+  const msrUnbounded = Object.freeze([-Infinity, Infinity, -Infinity, Infinity]);
 
   // The kernel's exposure for the cell in `k.z`: covered seconds and measured width inside the rectangle,
   // the cutoff and (for the motion measures) the motion end. Fills and returns the kernel's ONE scratch
   // exposure object, created on first use.
   function msrKernelExposure(k, end) {
     const ex = k.exposure || (k.exposure = msrNewExposure());
-    return msrExposure(k.z, k.bounds, k.cut, end, msrTs(k), msrPs(k), k.geom, ex);
+    return msrExposure(k.z, k.bounds || msrUnbounded, k.cut === undefined ? Infinity : k.cut, end === undefined ? Infinity : end, msrTs(k), msrPs(k), k.geom, ex);
   }
 
   // ---- dwell validation (C.1.5) -----------------------------------------------------------------------

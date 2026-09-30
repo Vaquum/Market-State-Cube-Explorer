@@ -525,6 +525,7 @@ class Bridge {
       block: Object.fromEntries(Object.entries(meta).filter(([k]) => k !== "gzip_base64")), cells: cells[key],
     }]));
     this.pack = pack;
+    this.packTiers = tiers; // the current pack's own cells, whether or not it is still held
     this.stale = false;
     // A token built again moves to the end, so the oldest held pack is always first.
     this.held.delete(pack.state_token);

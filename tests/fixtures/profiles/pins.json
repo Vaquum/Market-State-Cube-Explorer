@@ -1,0 +1,106 @@
+{
+  "seed": 20260924,
+  "cutoff": "2026-09-24T12:02:00.000000Z",
+  "profiles": {
+    "mini": {
+      "trades": 11530,
+      "baseCells": 3196,
+      "tiers": {
+        "overview": {
+          "cells": 4,
+          "decodedBytes": 192
+        },
+        "recent": {
+          "cells": 3196,
+          "decodedBytes": 127872
+        },
+        "reference": {
+          "cells": 276,
+          "decodedBytes": 11072
+        }
+      },
+      "packDecodedBytes": 139136,
+      "recentSha256": "ae9f939ed843e2089188c818f65e7dfe77b7a1f14701657e4e1f9809a16a95f2"
+    },
+    "standard": {
+      "trades": 285755,
+      "baseCells": 98055,
+      "tiers": {
+        "overview": {
+          "cells": 192,
+          "decodedBytes": 7712
+        },
+        "recent": {
+          "cells": 11161,
+          "decodedBytes": 446472
+        },
+        "reference": {
+          "cells": 4106,
+          "decodedBytes": 164272
+        }
+      },
+      "packDecodedBytes": 618456,
+      "recentSha256": "838451922d66476d01d00250a408e81781c7b21e39793b600af30735b2429503"
+    },
+    "deep": {
+      "trades": 406665,
+      "baseCells": 215397,
+      "tiers": {
+        "overview": {
+          "cells": 871,
+          "decodedBytes": 34872
+        },
+        "recent": {
+          "cells": 11169,
+          "decodedBytes": 446792
+        },
+        "reference": {
+          "cells": 4074,
+          "decodedBytes": 162992
+        }
+      },
+      "packDecodedBytes": 644656,
+      "recentSha256": "5189c60436ac63eae324b6b1ef2d5995ed725b676e6c72b91493fdd88bc6a87b"
+    },
+    "uniform": {
+      "trades": 138247,
+      "baseCells": 15365,
+      "tiers": {
+        "overview": {
+          "cells": 2,
+          "decodedBytes": 112
+        },
+        "recent": {
+          "cells": 15365,
+          "decodedBytes": 614632
+        },
+        "reference": {
+          "cells": 960,
+          "decodedBytes": 38432
+        }
+      },
+      "packDecodedBytes": 653176,
+      "recentSha256": "56d4972b687ddb9ad6cf0f3a7e0594ceefc983fb8a85b35c4ad70e9e31db3fd4"
+    },
+    "skew": {
+      "trades": 34416,
+      "baseCells": 10247,
+      "tiers": {
+        "overview": {
+          "cells": 6,
+          "decodedBytes": 272
+        },
+        "recent": {
+          "cells": 10247,
+          "decodedBytes": 409912
+        },
+        "reference": {
+          "cells": 1018,
+          "decodedBytes": 40752
+        }
+      },
+      "packDecodedBytes": 450936,
+      "recentSha256": "308723b4fb40d4799ac1ac8eb69ab759e36cfe5c5c54241cc984d395ee8c60d7"
+    }
+  }
+}

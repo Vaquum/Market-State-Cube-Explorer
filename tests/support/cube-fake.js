@@ -540,7 +540,7 @@ class FakeCube {
     if (this.opts.mode === "recorded") return { mode: "recorded", pageRoot: this.pageRoot };
     const [pack] = this.bridge.currentPack();
     const tiers = Object.fromEntries(Object.entries(pack.blocks).map(([id, b]) => [id, { n: b.n, m: b.m, b0: b.b0, b1: b.b1, count: b.count, col0: b.col0, col1: b.col1 }]));
-    const held = this.bridge.held.get(pack.state_token).tiers.recent.cells;
+    const held = this.bridge.packTiers.recent.cells;
     let low = Infinity, high = -Infinity;
     for (const row of held.row) {
       if (row < low) low = row;
@@ -562,6 +562,7 @@ class FakeCube {
   reset() {
     this.clearFaults();
     this.entries = [];
+    this.seq = 0;
     this.boot();
     return this;
   }

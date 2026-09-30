@@ -72,7 +72,8 @@ async function open({ freshContext, fakeFor }, options = {}) {
 async function race({ page, fake, hold }) {
   const gate = fake.on({ route: /^\/cube\/tile/ }).gate();
   await page.goto(`${fake.url}/${A}`);
-  if (hold === "reference") await page.waitForFunction(() => window.__raf.held && window.__raf.queue.length > 0);
+  // (polled on a timer: the default polls on requestAnimationFrame, which this very test parks, and a parked poll never answers)
+  if (hold === "reference") await page.waitForFunction(() => window.__raf.held && window.__raf.queue.length > 0, null, { polling: 25 });
   await gate.arrived();
   gate.fail(503);
   // the failure is written (or derived) while the loop is parked

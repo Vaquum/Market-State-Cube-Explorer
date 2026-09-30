@@ -2410,11 +2410,16 @@
   }
   // The block the view is drawn from: one that covers the view's time and can
   // show its level, the finest first; failing that, the finest that covers it.
+  // A tile the lens alone asked for is not a candidate before Pin (lensOnly): a
+  // peek must not change the level, the colours or the Rows the view is drawn
+  // with. The tile the view itself now asks for is a candidate even when the
+  // lens read it first.
   function chooseSource() {
     const [start, end] = viewRange(),
       [wn, wm] = viewLevel(),
+      want = viewTileId(),
       covering = Object.values(sources).filter(
-        (s) => s.b0 <= start && s.b1 >= end - 2 ** s.n,
+        (s) => !lensOnly(s, want) && s.b0 <= start && s.b1 >= end - 2 ** s.n,
       ),
       able = covering.filter((s) => s.n <= wn && s.m <= wm),
       pick = (able.length ? able : covering).sort((a, b) => a.n - b.n || a.m - b.m)[0];
@@ -2488,7 +2493,13 @@
   // The coarsest such block has the fewest cells to sum.
   function exactSource(r, n, m) {
     const end = Math.min(r[1], activeCutoff()),
-      blocks = Object.values(sources).concat(referenceView ? [referenceView] : []);
+      want = viewTileId(),
+      // A lens-only tile that is finer than the drawn level and tiles the rectangle
+      // would flip the measurement from pending to exact merely because the lens
+      // opened (a different memo key, a different state): it is not a candidate.
+      blocks = Object.values(sources)
+        .filter((s) => !lensOnly(s, want))
+        .concat(referenceView ? [referenceView] : []);
     return (
       blocks
         .filter((s) => {
@@ -11075,6 +11086,10 @@
     for (const id of ids) {
       const raw = PACK.blocks[id],
         range = raw ? [raw.b0, raw.b1] : null;
+      // A tile only the lens asked for does not move the resolution plane: it is
+      // not the block shown and not the tile the view wants (viewTileId is asked
+      // only when a lens tile is met, so the plane's 210 calls stay cheap).
+      if (raw?.lens && id !== S.dataset && id !== viewTileId()) continue;
       if (
         !raw ||
         !range ||
@@ -11114,13 +11129,18 @@
       delete PACK.blocks[t.id];
     }
   }
-  function tileRead(t, label) {
+  // `lens` marks a tile only the lens asked for: the flag rides on the block and on the
+  // decoded tile, and chooseSource, exactSource and resolutionReadiness leave such a tile
+  // out until it is the block shown or the tile the view asks for (lensOnly); Pin clears
+  // it. It is set when the read starts and again when the answer is applied, which
+  // replaces the block's record.
+  function tileRead(t, label, lens = false) {
     return {
       key: ["tile", live.generation, t.id].join("|"),
       path: `/cube/tile?n=${t.n}&m=${t.m}&b0=${t.b0}&b1=${t.b1}`,
       loading: label,
       start: () => {
-        PACK.blocks[t.id] = { n: t.n, m: t.m, b0: t.b0, b1: t.b1 };
+        PACK.blocks[t.id] = { n: t.n, m: t.m, b0: t.b0, b1: t.b1, lens };
         loadState[t.id] = "loading";
       },
       drop: () => {
@@ -11131,8 +11151,10 @@
       apply: ({ tile, body }) => {
         const meta = { ...body.block };
         delete meta.gzip_base64;
+        meta.lens = lens;
         PACK.blocks[t.id] = meta;
         tile.used = performance.now();
+        tile.lens = lens;
         sources[t.id] = tile;
         loadState[t.id] = "ready";
         trimTiles([t.id, S.dataset, lensSource]);
@@ -11171,7 +11193,7 @@
   }
   function lensWant() {
     const t = lensTile();
-    return t && !loadState[t.id] ? tileRead(t, "") : null;
+    return t && !loadState[t.id] ? tileRead(t, "", true) : null;
   }
   // The continuations' history at the drawn level: each column's POC, volume
   // and taker-buy volume, for up to the last 100,000 columns.
@@ -12526,6 +12548,376 @@
   // Room for the lens caption tab: up to three 15px lines. The lens leaves twice
   // this free, so the tab fits above or below it wherever the lens goes.
   const LENS_CAPTION = 8 + 3 * 15;
+  // ---- The lens's scale (PRD-0002 S1) ----
+  // The lens draws with the Cells mapping the chart draws with (Shared), so a cell reads the same in the lens
+  // and outside it: it fits, initialises and touches nothing of its own. Local contrast is the one exception
+  // and it is explicit: its own descriptor, for this lens position and level, outside the store's 64 contexts
+  // (scaleRt.local, fitted by the settled tick from lensCohortInputs), labelled in the caption. Until it is
+  // fitted the lens keeps the last Local descriptor of the same chart context, marked Updating, or else draws
+  // the Shared mapping marked "Local contrast pending". A fixed measure (Flow, Dwell, Cascade) has one natural
+  // domain, so there is nothing to localise: it is the fixed mapping either way.
+  const LENS_ROLE = E.readout.ROLE,
+    // Below this many css px a pattern or an outline cannot be seen: a flat fill at a low alpha stands in.
+    LENS_NEG_INF = E.result.TAG["negative-infinite"],
+    LENS_NO_REF = E.result.TAG["no-reference"],
+    LENS_FLAT_PX = 4,
+    LENS_FLAT_ALPHA = 0.3,
+    LENS_SHARED_TEXT = "Shared scale",
+    lensRt = {
+      // the lens's own warning tally, reused every draw, and the plot rectangle it is clipped to
+      tally: E.warn.tally(),
+      clip: { x0: 0, y0: 0, x1: 0, y1: 0 },
+      // the legend model behind the caption, rebuilt only when an id it is made from changes
+      legendKey: "",
+      chipText: "",
+    },
+    lensFmt = (value, unit) => (unit === "share" ? `${+(value * 100).toPrecision(3)}%` : compact(value));
+  // What the lens shows, from the lens frame and the block it draws from: the level, the rectangle, whole
+  // cells of the block inside it. One function, so the cohort the settled tick fits from and the cells drawn
+  // can never describe different rectangles.
+  function lensParts(f) {
+    const { ta, tb, pa, pb, src, n, m } = f;
+    if (!src) return null;
+    const [start, end] = sourceRange(src),
+      a = Math.max(start, Math.floor(ta / 2 ** src.n) * 2 ** src.n),
+      b = Math.min(end, activeCutoff(), Math.ceil(tb / 2 ** src.n) * 2 ** src.n),
+      lensBounds = [
+        a,
+        b,
+        Math.max(0, Math.floor(pa / 2 ** src.m) * 2 ** src.m),
+        Math.ceil(pb / 2 ** src.m) * 2 ** src.m,
+      ];
+    return {
+      src,
+      n,
+      m,
+      ts: 2 ** n,
+      ps: 2 ** m,
+      start,
+      end,
+      b,
+      lensBounds,
+      q: aggregate(src, n, m, lensBounds),
+      fine: n < renderN() || m < renderM(),
+    };
+  }
+  // The lens's path and dwell: the motion block of the block it draws from, where it ends, and the motion
+  // cells over the lens rectangle (null while the block's motion is not read).
+  function lensMotionParts(p) {
+    const msrc = motionOf(p.src);
+    return {
+      msrc,
+      end: msrc ? Math.min(msrc.end, activeCutoff()) : -Infinity,
+      mq: msrc ? boundedMotion(msrc, p.n, p.m, p.lensBounds) : null,
+    };
+  }
+  // The Local-contrast context of this lens: the Cells context the chart is in, this lens level and this lens
+  // rectangle (rounded to the lens grid; the open column is not part of it, as it is not part of a cohort).
+  function lensContext(p, eff) {
+    return E.context.cellsKey({
+      measure: S.mode,
+      basis: eff.basis,
+      pathBasis: eff.pathBasis,
+      transform: eff.transform,
+      curve: eff.curve,
+      n: renderN(),
+      m: renderM(),
+      workspace: scaleWorkspace(),
+      instrument: INSTRUMENT,
+      lens: {
+        bounds: [p.lensBounds[0], Math.floor(p.lensBounds[1] / p.ts) * p.ts, p.lensBounds[2], p.lensBounds[3]],
+        n: p.n,
+        m: p.m,
+      },
+    });
+  }
+  // A Cascade cell of the lens, by the ladder of the measurement module: the structure (no parent, a parent
+  // the block holds only part of, one still open) is decided before the cell's own volume is looked at, then
+  // log2(4 x the cell's share of its parent). `c` is the context lensCascade builds over whole parents.
+  function lensCascadeEntry(c, z, out) {
+    let structure = "complete",
+      parentV;
+    if (!c.parent) structure = "coarsest";
+    else {
+      const pc = Math.floor(z.c / 2),
+        span = 2 ** (c.n + 1);
+      if (pc * span < c.start) structure = "outside";
+      else if ((pc + 1) * span > c.end) structure = c.end >= c.cut ? "open" : "outside";
+      else parentV = c.parent.map.get(pc + "," + Math.floor(z.r / 2))?.v;
+    }
+    const typed = E.ratio.cascade({ structure, childV: z.v, parentV, factor: 4 });
+    out.tag = E.result.TAG[typed.tag];
+    out.value = typed.tag === "finite" ? typed.value : NaN;
+    out.reason = typed.reason ?? null;
+    out.denominator = typed.denominator ?? null;
+  }
+  // The mapping the Cells chart draws with this frame, as a frame takes it, from what the frame the spine
+  // built says about itself: a lens never resolves one of its own (and never reads a store). Null when there
+  // is nothing to say (the inert frame of a fault).
+  function lensSharedMapping(input) {
+    return input
+      ? {
+          state: input.state,
+          desc: input.desc,
+          policy: input.policy,
+          origin: input.origin,
+          external: input.external,
+          record: input.calibration,
+          reason: input.reason,
+        }
+      : null;
+  }
+  // The lens's frame, for the rectangle and level of `p` (and the motion of `mp` under Path and Dwell): the
+  // frame of E.readout over the LENS level and bounds, with the mapping chosen above, wrapped with what the
+  // caption, the legend and the chip of the lens need. `scope` says whose mapping it is: "shared", "local",
+  // "local-updating" (the last Local descriptor of this chart context while the lens's own is fitted) or
+  // "local-pending" (the shared mapping while no Local descriptor exists yet).
+  function lensScaleFrame(sc, p, mp, cascade) {
+    const eff = E.policy.effective(S.scale, S.mode),
+      info = E.measure.MODES[S.mode],
+      cut = activeCutoff(),
+      lut = sc.lut;
+    let mapping,
+      scope = "shared",
+      contextKey = null,
+      record = null;
+    if (info.kind === "fixed") {
+      // the same descriptor the Cells chart resolves for a fixed measure: one natural domain, so one id
+      try {
+        mapping = E.scale.fixed(info.fixed.kind, eff.window);
+      } catch (error) {
+        mapping = E.scale.fixed(info.fixed.kind);
+      }
+      scope = "fixed";
+    } else if (info.kind === "occupancy") mapping = null;
+    else {
+      const shared = sc.cells?.legendInput?.() ?? null;
+      mapping = lensSharedMapping(shared);
+      contextKey = shared?.contextKey ?? null;
+      if (S.scale.local) {
+        const ctxLens = lensContext(p, eff),
+          key = E.context.keyString(ctxLens),
+          held = scaleRt.local ?? null,
+          mine = held && held.key === key,
+          // the last Local descriptor counts only for the same chart context and the same kind of mark
+          kin =
+            held?.ctx?.consumer === "lens" &&
+            E.context.keyString(held.ctx.base) === E.context.keyString(ctxLens.base) &&
+            held.desc?.signed === info.signed;
+        if (mine || kin) {
+          mapping = {
+            state: mine ? "ok" : "updating",
+            desc: held.desc,
+            policy: "local",
+            origin: held.origin ?? "fit",
+            external: false,
+            record: held,
+            reason: null,
+          };
+          scope = mine ? "local" : "local-updating";
+          record = held;
+        } else scope = "local-pending";
+        contextKey = key;
+        // One want for the settled tick, replaced by the next lens position; it fits from lensCohortInputs.
+        if (!mine && scaleRt.ctl.request("lens", "init", key)) scaleArm();
+      }
+    }
+    // a Local-contrast want that no longer applies (the option is off, or the measure has a fixed domain) is dropped
+    if (!scope.startsWith("local")) scaleRt.ctl.cancel("lens");
+    const frame = E.readout.cellsFrame({
+      mode: S.mode,
+      basis: eff.basis,
+      pathBasis: eff.pathBasis,
+      level: { n: p.n, m: p.m },
+      bounds: p.lensBounds,
+      cut,
+      cutMs: E.time.baseToMs(cut, T0, BASE),
+      end: mp ? mp.end : Infinity,
+      geom: { BASE, PR },
+      CUT,
+      replay: S.replay,
+      mapping,
+      lut,
+      read: null,
+      measured: null,
+      cascade,
+      contextKey,
+      t0: T0,
+    });
+    return Object.assign({}, frame, {
+      // the lens's own legend input: its channel, and Local contrast as its policy
+      legendInput: () => {
+        const input = frame.legendInput();
+        input.channel = "lens";
+        if (scope.startsWith("local") && scope !== "local-pending") input.policy = "local";
+        return input;
+      },
+      scope,
+      updating: scope === "local-updating",
+      pending: scope === "local-pending",
+      contextKey,
+      record,
+      bounds: p.lensBounds,
+    });
+  }
+  // The inputs of the Local-contrast cohort: the whole cells of the lens rectangle at the lens level, from the
+  // state at the moment the settled tick asks (registered as the lensCohort hook). Not the lens when it is
+  // closed, not Local contrast when it is off or the measure has a fixed domain. A lens tile still being read
+  // is `loading` and a motion block not read is pending, so nothing is fitted on a fragment. The tick fits
+  // E.cohort.cells(inputs) and keeps the result as scaleRt.local with this `key`; `ctx` and `key` ride along
+  // because only the lens knows its own rectangle.
+  function lensCohortInputs() {
+    if (!(S.lens || nav.alt || nav.hold) || !S.scale.local || E.measure.MODES[S.mode].kind !== "unbounded") return null;
+    const f = lensFrame(),
+      p = f && lensParts(f);
+    if (!p) return null;
+    const eff = E.policy.effective(S.scale, S.mode),
+      mp = movementMode() ? lensMotionParts(p) : null,
+      wanted = lensTile(),
+      reading = Boolean(wanted) && !cube.failed.has(["tile", live.generation, wanted.id].join("|")),
+      motionWant = mp && !mp.mq ? motionSourceWant(p.src) : null,
+      read = mp
+        ? { state: mp.mq ? "exact" : motionWant && motion.failed.has(motionWant.key) ? "failed" : "pending" }
+        : { state: "exact" },
+      ctxLens = lensContext(p, eff);
+    return {
+      kind: "lens",
+      calibratedOn: "lens",
+      cells: mp ? (mp.mq?.cells ?? []) : p.q.cells,
+      mode: S.mode,
+      basis: eff.basis,
+      pathBasis: eff.pathBasis,
+      b: p.lensBounds,
+      cut: activeCutoff(),
+      end: mp ? mp.end : Infinity,
+      CUT,
+      replay: S.replay,
+      level: { n: p.n, m: p.m },
+      geom: { BASE, PR },
+      measured: null,
+      cascade: null,
+      read,
+      loading: reading,
+      quality: "exact",
+      selection: false,
+      ctx: ctxLens,
+      key: E.context.keyString(ctxLens),
+    };
+  }
+  scaleHooks.lensCohort = lensCohortInputs;
+  // One mark of the lens, from what frame.encode left in ENC: a colour from the mapping is a fill; a typed
+  // non-value is a pattern from the role table; an occupied cell with no magnitude (Geometry, No calibration,
+  // an unsigned zero) is an outline in the occupancy ink. Marks under 4 css px are a flat low-alpha fill.
+  function lensMark(xa, ya, xb, yb) {
+    const w = xb - xa,
+      h = yb - ya,
+      role = ENC.role;
+    if (role === LENS_ROLE.NONE) return;
+    if (role === LENS_ROLE.OCCUPANCY || role === LENS_ROLE.ZERO) {
+      if (Math.min(w, h) < LENS_FLAT_PX) {
+        const alpha = ctx.globalAlpha;
+        ctx.globalAlpha = alpha * LENS_FLAT_ALPHA;
+        ctx.fillStyle = colors.occupancy;
+        ctx.fillRect(xa + 0.3, ya + 0.3, Math.max(0.5, w - 0.6), Math.max(0.5, h - 0.6));
+        ctx.globalAlpha = alpha;
+      } else {
+        ctx.strokeStyle = colors.occupancy;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(xa + 0.5, ya + 0.5, Math.max(0.4, w - 1), Math.max(0.4, h - 1));
+      }
+      return;
+    }
+    if (role === LENS_ROLE.PATTERN && Math.min(w, h) < LENS_FLAT_PX) {
+      const alpha = ctx.globalAlpha;
+      ctx.globalAlpha = alpha * LENS_FLAT_ALPHA;
+      ctx.fillStyle = colors.state;
+      ctx.fillRect(xa + 0.3, ya + 0.3, Math.max(0.5, w - 0.6), Math.max(0.5, h - 0.6));
+      ctx.globalAlpha = alpha;
+      return;
+    }
+    ctx.fillStyle = role === LENS_ROLE.PATTERN ? patternFor(ENC.pattern) : ENC.css;
+    ctx.fillRect(xa + 0.3, ya + 0.3, Math.max(0.5, w - 0.6), Math.max(0.5, h - 0.6));
+  }
+  // What the tally counts of one mark the lens drew: an occupied mark with a defined value, with the clipping
+  // the mapping gave it; negative infinity and a missing reference are their own counts.
+  function lensTallyMark(xa, ya, xb, yb) {
+    if (ENC.tag === 0) {
+      // a mark the mapping coloured (or a measured zero); an outline with no mapping is not a value on a scale
+      if ((ENC.role >= LENS_ROLE.UNSIGNED && ENC.role <= LENS_ROLE.MIDPOINT) || ENC.role === LENS_ROLE.ZERO)
+        lensRt.tally.addBox(xa, ya, xb, yb, lensRt.clip, ENC.idx, ENC.clip, true, ENC.value !== 0);
+    } else if (ENC.tag === LENS_NEG_INF) lensRt.tally.addBoxNegInf(xa, ya, xb, yb, lensRt.clip);
+    else if (ENC.tag === LENS_NO_REF) lensRt.tally.addNoRef();
+  }
+  // The third line of the lens caption: whose scale this is, its short id, the legend's short text of it
+  // (top of the scale, transform, policy, and at most one state) and the lens's own share of marks and area
+  // outside it. The legend model behind the text is rebuilt only when an id it is made from changes.
+  function lensLine(lens) {
+    if (S.mode === "geometry") return "Occupied cells";
+    if (!lens.scope) return E.text.state.noCalibration;
+    const report = E.warn.evaluate(lensRt.tally, { meaningful: E.measure.MODES[S.mode].kind === "unbounded" }),
+      c = report.counts,
+      key = E.legend.keyOf({
+        mappingId: lens.mappingId,
+        appearanceId: lens.fingerprint(),
+        themeEpoch: colourEpoch,
+        policy: lens.scope,
+        state: lens.mappingState,
+        warnStamp: [report.rangeExceeded, report.lowDiscrimination].join(","),
+        marker: null,
+        level: lens.level,
+      });
+    // the lens reports its own shares; the settled popover and the chip read them from here
+    scaleRt.warn.lens = { key, tally: lensRt.tally, report };
+    if (key !== lensRt.legendKey) {
+      lensRt.legendKey = key;
+      lensRt.chipText = E.legend.chip(
+        E.legend.build(lens, report, lensFmt, {
+          channel: "lens",
+          updating: lens.updating,
+          counts: {
+            "clip-low": c.low,
+            "clip-high": c.high,
+            "negative-infinite": c.negInf,
+            "no-reference": c.noRef,
+            "exact-low": c.exactLow,
+            "exact-high": c.exactHigh,
+          },
+        }),
+      ).text;
+    }
+    const parts = [];
+    if (lens.scope === "shared") parts.push(LENS_SHARED_TEXT);
+    else if (lens.pending) parts.push(E.text.state.localPending);
+    if (lens.mappingId) parts.push(lens.mappingId.slice(0, 6));
+    // the legend's short text can repeat a word (a fixed scale is both its transform and its policy): once is enough
+    if (lensRt.chipText) parts.push([...new Set(lensRt.chipText.split(" · "))].join(" · "));
+    if (report.shares.marks > 0 || report.shares.area > 0)
+      parts.push(`${lensFmt(report.shares.marks, "share")} of marks · ${lensFmt(report.shares.area, "share")} of area outside`);
+    return parts.join(" · ");
+  }
+  // What a Pin leaves behind for the next settled draw to disclose: the ids and context keys of the Cells and
+  // Rows mappings the chart was drawn with, and the level asked for and drawn, read from the last frame.
+  // A fault in reading them is not the Pin's: the ids are then unknown and the disclosure says so.
+  function lensPinBefore() {
+    const sc = last?.sc,
+      read = (frame) => {
+        try {
+          return { id: frame?.mappingId ?? "", key: frame?.legendInput?.()?.contextKey ?? null };
+        } catch (error) {
+          return { id: "", key: null };
+        }
+      },
+      cells = read(sc?.cells),
+      rows = read(sc?.rows);
+    return {
+      cellsKey: cells.key,
+      rowsKey: rows.key,
+      cellsId: cells.id,
+      rowsId: rows.id,
+      requested: { n: S.n, m: S.m },
+      effective: { n: renderN(), m: renderM() },
+    };
+  }
   function lensFrame() {
     if (!G.w) return null;
     const p =
@@ -12563,6 +12955,13 @@
   function pinLens() {
     const f = lensFrame();
     if (!f || !f.src) return false;
+    // Pin promotes the lens's region and level to the chart, so the Cells and Rows contexts may change: say
+    // what they were, and why, for the settled draw that discloses "Scale changed: pin/resolution".
+    scaleRt.pinBefore = lensPinBefore();
+    scaleRt.pinCause = nav.scaleCause = "pin";
+    // The tile is the chart's now: it stops being lens-only before confine() chooses the block to show.
+    f.src.lens = false;
+    if (PACK.blocks[f.src.id]) PACK.blocks[f.src.id].lens = false;
     transition = reduce
       ? null
       : { n: renderN(), m: renderM(), start: performance.now() };
@@ -12587,11 +12986,15 @@
     save();
     return true;
   }
-  function drawResolutionLens() {
-    if (!(S.lens || nav.alt || nav.hold)) return;
+  function drawResolutionLens(sc) {
+    if (!(S.lens || nav.alt || nav.hold)) {
+      // a closed lens has no Local-contrast want to wait for
+      scaleRt.ctl.cancel("lens");
+      return;
+    }
     const f = lensFrame();
     if (!f) return;
-    const { w, h, x, y, ta, tb, pa, pb, depth, src, n, m } = f;
+    const { w, h, x, y, ta, tb, depth, src } = f;
     ctx.save();
     ctx.beginPath();
     ctx.rect(x, y, w, h);
@@ -12600,121 +13003,77 @@
     ctx.fillRect(x, y, w, h);
     let label = "Detail unavailable",
       sub = "No finer recorded cells in this region",
-      localLegend = "";
+      third = "";
     if (src) {
-      const ts = 2 ** n,
-        ps = 2 ** m,
-        [start, end] = sourceRange(src),
-        fine = n < renderN() || m < renderM();
-      {
-        const a = Math.max(start, Math.floor(ta / 2 ** src.n) * 2 ** src.n),
-          b = Math.min(
-            end,
-            activeCutoff(),
-            Math.ceil(tb / 2 ** src.n) * 2 ** src.n,
-          ),
-          lensBounds = [
-            a,
-            b,
-            Math.max(0, Math.floor(pa / 2 ** src.m) * 2 ** src.m),
-            Math.ceil(pb / 2 ** src.m) * 2 ** src.m,
-          ],
-          q = aggregate(src, n, m, lensBounds),
-          whole = ts * BASE * ps * PR,
-          deltas = q.cells
-            .map((z) => Math.abs(2 * z.bv - z.v))
-            .filter(Boolean)
-            .sort((x, y) => x - y),
-          deltaMax = d3.quantileSorted(deltas, 0.995) || 1;
-        if (movementMode()) localLegend = lensMotion(src, q, n, m, lensBounds, b);
-        else {
-          // The lens's cells shade against each other, at their full-cell rates.
-          for (const z of q.cells)
-            markState.metrics.set(z, {
-              ...cellExposure(z, lensBounds, ts, ps),
-              whole,
-              delta: 2 * z.bv - z.v,
-            });
-          const sorted = amountScale(q);
-          if (S.mode === "cascade") q.cascade = lensCascade(src, n, m, lensBounds);
-          localLegend =
-            S.mode === "delta"
-              ? `Δ −${compact(deltaMax)} · 0 · +${compact(deltaMax)} USDT`
-              : S.mode === "flow" || S.mode === "flowtrades"
-                ? "Taker buys 25% · 50% · 75%"
-                : S.mode === "cascade"
-                  ? q.cascade.parent
-                    ? "−2 · 0 · +2 vs an even share"
-                    : "No coarser level to compare with"
-                  : S.mode === "geometry"
-                    ? "Occupied cells"
-                    : sorted.length
-                      ? `${compact(d3.quantileSorted(sorted, 0.05))} → ${compact(d3.quantileSorted(sorted, 0.95))} ${AMOUNT_UNITS[S.mode]}`
-                      : "";
-          for (const z of q.cells) {
-            const xa = G.X(z.c * ts),
-              xb = G.X(Math.min((z.c + 1) * ts, b)),
-              ya = G.Y((z.r + 1) * ps),
-              yb = G.Y(z.r * ps);
-            ctx.fillStyle = cellColour(z, q, deltaMax);
-            if (S.mode === "geometry") {
-              ctx.strokeStyle = colors.volume;
-              ctx.globalAlpha = 0.65;
-              ctx.strokeRect(
-                xa + 0.5,
-                ya + 0.5,
-                Math.max(0.4, xb - xa - 1),
-                Math.max(0.4, yb - ya - 1),
-              );
-              ctx.globalAlpha = 1;
-            } else
-              ctx.fillRect(
-                xa + 0.3,
-                ya + 0.3,
-                Math.max(0.5, xb - xa - 0.6),
-                Math.max(0.5, yb - ya - 0.6),
-              );
-          }
+      const p = lensParts(f),
+        { n, m, ts, ps, start, end, b, lensBounds, q, fine } = p,
+        mp = movementMode() ? lensMotionParts(p) : null,
+        cascade = S.mode === "cascade" ? lensCascade(src, n, m, lensBounds) : null;
+      // The lens's frame: the Cells mapping (or Local contrast's own) over the lens level and rectangle. A fault
+      // in building it is the scale display's, not the chart's: the lens then draws occupancy only.
+      let lens = INERT_SC.cells;
+      if (sc !== INERT_SC)
+        try {
+          lens = sc.lens = lensScaleFrame(sc, p, mp, cascade ? (z, out) => lensCascadeEntry(cascade, z, out) : null);
+        } catch (error) {
+          lens = scaleFault(error).cells;
         }
-        if (S.poc) {
-          ctx.beginPath();
-          let prev = null;
-          for (const c of q.cols) {
-            if (c.poc === null) continue;
-            const cx = G.X((c.c + 0.5) * ts),
-              cy = G.Y((c.poc + 0.5) * ps);
-            if (prev !== c.c - 1) ctx.moveTo(cx, cy);
-            else ctx.lineTo(cx, cy);
-            prev = c.c;
-          }
-          ctx.strokeStyle = colors.surface;
-          ctx.globalAlpha = 0.7;
-          ctx.lineWidth = 3.3;
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-          ctx.strokeStyle = colors.poc;
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
+      lensRt.clip.x0 = x;
+      lensRt.clip.y0 = y;
+      lensRt.clip.x1 = x + w;
+      lensRt.clip.y1 = y + h;
+      lensRt.tally.reset();
+      let status = "";
+      if (mp) status = lensMotion(src, q, n, m, lensBounds, b, lens, mp);
+      else
+        for (const z of q.cells) {
+          const xa = G.X(z.c * ts),
+            xb = G.X(Math.min((z.c + 1) * ts, b)),
+            ya = G.Y((z.r + 1) * ps),
+            yb = G.Y(z.r * ps);
+          lens.encode(z, ENC, lensBounds);
+          lensMark(xa, ya, xb, yb);
+          lensTallyMark(xa, ya, xb, yb);
         }
-        // Live, finer cells come from the cube: say so while they are read,
-        // and why when they can't be.
-        const wanted = fine ? null : lensTile(),
-          reading = wanted && loadState[wanted.id] === "loading",
-          failed = wanted && cube.failed.has(["tile", live.generation, wanted.id].join("|"));
-        label = `${fine ? `Lens −${depth}` : src.n === 0 && src.m === 0 ? "Base cells" : "Finest loaded"} · ${dur(BASE * ts)} × ${price(PR * ps)} USDT`;
-        sub = fine
-          ? "Finer cells · surroundings unchanged · Enter pins"
-          : src.n === 0 && src.m === 0
-            ? "Base cells · no finer level exists"
-            : failed
-              ? "The cube's finer cells couldn't be read"
-              : reading || wanted
-                ? "Reading finer cells from the cube…"
-                : "The recorded snapshot has no finer cells here";
-        if (ta < start || tb > end) {
-          label += " · partial";
-          sub = "Finer coverage ends inside lens";
+      third = status || lensLine(lens);
+      if (S.poc) {
+        ctx.beginPath();
+        let prev = null;
+        for (const c of q.cols) {
+          if (c.poc === null) continue;
+          const cx = G.X((c.c + 0.5) * ts),
+            cy = G.Y((c.poc + 0.5) * ps);
+          if (prev !== c.c - 1) ctx.moveTo(cx, cy);
+          else ctx.lineTo(cx, cy);
+          prev = c.c;
         }
+        ctx.strokeStyle = colors.surface;
+        ctx.globalAlpha = 0.7;
+        ctx.lineWidth = 3.3;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = colors.poc;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      // Live, finer cells come from the cube: say so while they are read,
+      // and why when they can't be.
+      const wanted = fine ? null : lensTile(),
+        reading = wanted && loadState[wanted.id] === "loading",
+        failed = wanted && cube.failed.has(["tile", live.generation, wanted.id].join("|"));
+      label = `${fine ? `Lens −${depth}` : src.n === 0 && src.m === 0 ? "Base cells" : "Finest loaded"} · ${dur(BASE * ts)} × ${price(PR * ps)} USDT`;
+      sub = fine
+        ? "Finer cells · surroundings unchanged · Enter pins"
+        : src.n === 0 && src.m === 0
+          ? "Base cells · no finer level exists"
+          : failed
+            ? "The cube's finer cells couldn't be read"
+            : reading || wanted
+              ? "Reading finer cells from the cube…"
+              : "The recorded snapshot has no finer cells here";
+      if (ta < start || tb > end) {
+        label += " · partial";
+        sub = "Finer coverage ends inside lens";
       }
     }
     ctx.restore();
@@ -12724,7 +13083,7 @@
     lensCaption(x, y, h, [
       [label, colors.ink],
       [sub, colors.muted],
-      ...(localLegend ? [[localLegend, colors.muted]] : []),
+      ...(third ? [[third, colors.muted]] : []),
     ]);
   }
   // The lens under Cascade: its finer cells and their parents, summed over the
@@ -12749,41 +13108,33 @@
       cells.cascade = cascadeContext(cells, parent, start, Math.min(stop, cut), cut);
     return cells.cascade;
   }
-  // The lens under Path or Dwell: its finer cells' path and dwell, shaded
-  // against each other, from the motion of the block it draws from; its
-  // legend, or why there is none yet.
-  function lensMotion(src, q, n, m, lensBounds, stop) {
-    const msrc = motionOf(src),
+  // The lens under Path or Dwell: its finer cells' path and dwell, from the motion of the block it draws from,
+  // through the lens frame (the Shared Path mapping, or Dwell's fixed share). A cell the price only moved
+  // through or held in is outlined in its colour, as in the chart; a cell of the block the motion has not
+  // reached is a pattern. Returns why there is nothing to draw while the motion is not read.
+  function lensMotion(src, q, n, m, lensBounds, stop, lens, mp) {
+    const { end, mq } = mp,
       ts = 2 ** n,
-      ps = 2 ** m,
-      end = msrc ? Math.min(msrc.end, activeCutoff()) : -Infinity,
-      mq = msrc ? boundedMotion(msrc, n, m, lensBounds) : null,
-      sorted = mq ? motionScale(mq, lensBounds, end, ts, ps) : null;
+      ps = 2 ** m;
     for (const z of mq ? mq.cells : []) {
       const xa = G.X(z.c * ts),
         xb = G.X(Math.min((z.c + 1) * ts, stop)),
         ya = G.Y((z.r + 1) * ps),
         yb = G.Y(z.r * ps);
-      motionMark(
-        ramp(rank(sorted, motionAmount(z, lensBounds, end, ts, ps))),
-        z.ct > 0 || q.map.has(z.c + "," + z.r),
-        xa,
-        ya,
-        xb - xa,
-        yb - ya,
-        0.6,
-      );
+      lens.encode(z, ENC, lensBounds);
+      // a fill role keeps the movement outline geometry of the chart; any other role is drawn as itself
+      if (ENC.role >= LENS_ROLE.UNSIGNED && ENC.role <= LENS_ROLE.MIDPOINT)
+        motionMark(ENC.css, z.ct > 0 || q.map.has(z.c + "," + z.r), xa, ya, xb - xa, yb - ya, 0.6);
+      else lensMark(xa, ya, xb, yb);
+      lensTallyMark(xa, ya, xb, yb);
     }
-    ctx.fillStyle = colors.line;
     for (const z of q.cells) {
       if ((z.c + 1) * ts <= end || (mq && mq.map.has(cellKey(z.c, z.r)))) continue;
-      const xa = G.X(z.c * ts),
-        xb = G.X(Math.min((z.c + 1) * ts, stop)),
-        ya = G.Y((z.r + 1) * ps),
-        yb = G.Y(z.r * ps);
-      ctx.fillRect(xa + 0.3, ya + 0.3, Math.max(0.5, xb - xa - 0.6), Math.max(0.5, yb - ya - 0.6));
+      ENC.role = LENS_ROLE.PATTERN;
+      ENC.pattern = "pending";
+      lensMark(G.X(z.c * ts), G.Y((z.r + 1) * ps), G.X(Math.min((z.c + 1) * ts, stop)), G.Y(z.r * ps));
     }
-    if (mq) return motionLegend(sorted);
+    if (mq) return "";
     const want = motionSourceWant(src);
     return want && motion.failed.has(want.key) ? "Path and dwell unavailable" : "Reading path and dwell…";
   }

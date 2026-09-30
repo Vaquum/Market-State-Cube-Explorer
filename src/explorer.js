@@ -2706,17 +2706,7 @@
     if (!ready) return;
     syncURL();
     saveHistory();
-    if (!window.explorerState) return;
-    try {
-      window.explorerState.save({
-        version: 5,
-        prefs: Object.fromEntries(PREFS.map((k) => [k, S[k]])),
-        view: viewHash(),
-      });
-    } catch (error) {
-      el("copy-status").textContent =
-        "This tab keeps the view; this browser's storage is unavailable.";
-    }
+    saveLastView();
   }
   function restorePrefs(x) {
     for (const k of ["sideOpen", "drawerOpen"])
@@ -2738,44 +2728,31 @@
       S.lensDepth = clamp(Math.round(x.lensDepth), 1, 4);
   }
   // The workspace and last view this browser saved; version 4 kept both in one
-  // object with the view as raw state.
-  function restore(x) {
-    if (!x || (x.version !== 4 && x.version !== 5)) return false;
+  // object with the view as raw state. The workspace always comes back. The view comes back only at a
+  // bare root (`skipView` false): a link owns the view, so the stored one is neither applied nor migrated
+  // nor reported. At a bare root a stored version-2 view restores silently, a stored legacy one restores
+  // with the legacy notice, and with nothing usable stored the default view shows with the one-time
+  // version-change notice (DR-14).
+  function restore(x, { skipView = false } = {}) {
+    if (!x || (x.version !== 4 && x.version !== 5)) {
+      if (!skipView) noteFirstVisit();
+      return false;
+    }
     restorePrefs(x.version === 5 ? x.prefs || {} : x);
+    if (skipView) return false;
     const view =
       x.version === 5
         ? typeof x.view === "string"
           ? readView(x.view)
           : null
-        : checkView({
-            window: x.window,
-            tA: x.tA,
-            tB: x.tB,
-            pA: x.pA,
-            pB: x.pB,
-            auto: x.auto !== false,
-            n: x.n,
-            m: x.m,
-            follow: x.diagonal
-              ? "diagonal"
-              : x.coupled
-                ? "coupled"
-                : x.refit === false
-                  ? "free"
-                  : "refit",
-            mode: x.mode,
-            poc: x.poc !== false,
-            area: x.area === true,
-            untested: x.untested === true,
-            selection: x.selection,
-            anchor: x.anchor,
-            replay: x.replay === true,
-            tab: x.tab,
-            evidenceKind: x.evidenceKind,
-            horizon: x.horizon,
-            barrier: x.barrier,
-          });
-    if (view) applyView(view);
+        : legacyStored(checkView(legacyRaw(x)), x);
+    if (view) {
+      applyView(view);
+      reportView(view);
+      // A legacy view is migrated once: it is stored as what it now is, so the next visit finds a
+      // version-2 view and owes no notice.
+      if (view.kind === "legacy") saveLastView();
+    } else noteFirstVisit();
     return Boolean(view);
   }
 
@@ -2911,153 +2888,48 @@
   const stamp = (b) =>
       date(b).toISOString().replace(".000Z", "Z").replace(/:00Z$/, "Z"),
     usd = (p) => String(+(p * PR).toFixed(2));
+  // The address of the view as shown: the codec writes it (E.codec.formatAddress) from the visual state,
+  // always with vis=2 and ap=, every other default omitted, and within the address budget by its ladder.
+  // The part of the address that can change is addressOf's; these two keep the baseline's names.
   function viewParams() {
-    const out = [],
-      add = (k, v) => out.push(k + "=" + v);
-    if (S.window) add("w", S.window);
-    else {
-      add("t", stamp(S.tA) + "~" + stamp(S.tB));
-      add("p", usd(S.pA) + "~" + usd(S.pB));
-    }
-    if (!S.auto) add("r", S.n + "," + S.m);
-    if (followMode() !== "refit") add("f", followMode());
-    if (S.mode !== "volume") add("mode", S.mode);
-    if (S.pane !== "cells") add("pane", S.pane);
-    if (S.rows !== "off") add("rows", S.rows);
-    if (S.period !== "90d") add("period", S.period);
-    if (S.level !== null) add("level", usd(S.level));
-    const marks = ["poc", "area", "untested"].filter((k) => S[k]).join(",");
-    if (marks !== "poc") add("marks", marks || "none");
-    if (S.lines.length) add("lines", S.lines.join(","));
-    if (S.selection) {
-      const [a, b, p, q] = S.selection;
-      add("sel", `${stamp(a)}~${stamp(b)},${usd(p)}~${usd(q)}`);
-    }
-    if (S.anchor !== null) add("at", stamp(S.anchor));
-    if (S.replay) add("replay", "1");
-    if (S.tab === "evidence") add("tab", "continuations");
-    if (S.evidenceKind === "barrier") add("outcome", "barrier");
-    if (S.horizon !== 1) add("h", S.horizon);
-    if (S.barrier !== 1) add("dist", S.barrier);
-    return out.join("&");
+    return viewHash().slice(1);
   }
-  const viewHash = () => "#" + viewParams();
-  // A view from an address, or null when it names no window or rectangle.
-  // Anything unreadable falls back to its default rather than being guessed.
+  function viewHash() {
+    return addressOf().hash;
+  }
+  // The parse of an address, whole: what kind it is (v2, legacy, bare, or a version this page refuses),
+  // the view it names, its descriptors, and every part it had to leave out.
+  function readAddress(hash) {
+    return E.codec.parseAddress(hash, viewEnv());
+  }
+  // A view from an address, or null when it names no window or rectangle. Anything unreadable falls back
+  // to its default rather than being guessed, and the view says what it was: `kind`, the descriptors it
+  // carries (`records`), what was dropped, and the text it came from (for the once-per-payload notice).
   function readView(hash) {
-    const q = new Map();
-    for (const part of String(hash).replace(/^#/, "").split("&")) {
-      const i = part.indexOf("=");
-      try {
-        if (i > 0) q.set(part.slice(0, i), decodeURIComponent(part.slice(i + 1)));
-      } catch {
-        // A malformed escape leaves its parameter out.
-      }
-    }
-    const time = (s) => (Date.parse(s) / 1000 - T0) / BASE,
-      rows = (s) => (s === "" ? NaN : Number(s) / PR),
-      pair = (s, f) => {
-        const x = String(s ?? "").split("~").map(f);
-        return x.length === 2 ? x : [NaN, NaN];
-      },
-      marks = String(q.get("marks") ?? "poc").split(","),
-      level = /^(\d+),(\d+)$/.exec(q.get("r") || ""),
-      [selT, selP = ""] = String(q.get("sel") ?? "").split(",");
-    return checkView({
-      window: windowKey(q.get("w")),
-      ...Object.fromEntries(
-        [...pair(q.get("t"), time), ...pair(q.get("p"), rows)].map((v, i) => [
-          ["tA", "tB", "pA", "pB"][i],
-          v,
-        ]),
-      ),
-      auto: !level,
-      n: level ? Number(level[1]) : NaN,
-      m: level ? Number(level[2]) : NaN,
-      follow: q.get("f") || "refit",
-      mode: q.get("mode") || "volume",
-      pane: q.get("pane") || "cells",
-      rows: q.get("rows") || "off",
-      period: q.get("period") || "90d",
-      level: q.has("level") ? rows(q.get("level")) : null,
-      poc: marks.includes("poc"),
-      area: marks.includes("area"),
-      untested: marks.includes("untested"),
-      lines: String(q.get("lines") ?? "").split(",").filter(Boolean),
-      selection: q.has("sel")
-        ? [...pair(selT, time), ...pair(selP, rows)].map(Math.round)
-        : null,
-      anchor: q.has("at") ? Math.round(time(q.get("at"))) : null,
-      replay: q.get("replay") === "1",
-      tab: q.get("tab") === "continuations" ? "evidence" : "context",
-      evidenceKind: q.get("outcome") === "barrier" ? "barrier" : "poc",
-      horizon: Number(q.get("h") || 1),
-      barrier: Number(q.get("dist") || 1),
-    });
+    return viewOfAddress(readAddress(hash), hash);
   }
-  // A view whose every part can be shown here, or null without a window or a
-  // rectangle. Parts that can't be are dropped: a replay after this page's
-  // cutoff, a selection outside its history.
+  function viewOfAddress(res, hash) {
+    return res.view
+      ? {
+          ...res.view,
+          kind: res.kind,
+          records: res.sc,
+          axes: [],
+          dropped: res.dropped,
+          reasons: res.reasons,
+          text: String(hash),
+        }
+      : null;
+  }
+  // A view whose every part can be shown here, or null without a window or a rectangle. Parts that can't
+  // be are dropped: a replay after this page's cutoff, a selection outside its history. The rules are the
+  // codec's; the page supplies what only it knows (viewEnv).
   function checkView(v) {
-    const ok = (...x) => x.every(Number.isFinite),
-      w = windowKey(v.window);
-    if (
-      !w &&
-      !(
-        ok(v.tA, v.tB, v.pA, v.pB) &&
-        v.tB > v.tA &&
-        v.pB > v.pA &&
-        v.tA < CUT &&
-        v.pA >= 0
-      )
-    )
-      return null;
-    const sel = Array.isArray(v.selection) ? v.selection : [],
-      anchor =
-        Number.isFinite(v.anchor) && v.anchor > 0 && v.anchor <= CUT
-          ? v.anchor
-          : null,
-      locked = v.auto === false && ok(v.n, v.m);
-    return {
-      window: w,
-      tA: v.tA,
-      tB: v.tB,
-      pA: v.pA,
-      pB: v.pB,
-      auto: !locked,
-      n: locked ? clamp(Math.round(v.n), 0, N_MAX) : null,
-      m: locked ? clamp(Math.round(v.m), 0, M_MAX) : null,
-      follow: FOLLOWS.includes(v.follow) ? v.follow : "refit",
-      mode: modes().includes(v.mode) ? v.mode : "volume",
-      // Choppiness and volume per path need the live cube.
-      pane: panes().includes(v.pane) ? v.pane : "cells",
-      // Time at price needs the live cube.
-      rows: rowsChoices().includes(v.rows) ? v.rows : "off",
-      period: validPeriod(v.period) ? v.period : "90d",
-      level: Number.isFinite(v.level) && v.level > 0 ? v.level : null,
-      poc: v.poc !== false,
-      area: v.area === true,
-      untested: v.untested === true,
-      lines: normalizeLines(v.lines),
-      selection:
-        sel.length === 4 &&
-        ok(...sel) &&
-        sel[0] >= 0 &&
-        sel[1] > sel[0] &&
-        sel[0] < CUT &&
-        sel[2] >= 0 &&
-        sel[3] > sel[2]
-          ? [sel[0], Math.min(sel[1], Math.ceil(CUT)), sel[2], sel[3]]
-          : null,
-      anchor,
-      replay: v.replay === true && anchor !== null,
-      tab: v.tab === "evidence" ? "evidence" : "context",
-      evidenceKind: v.evidenceKind === "barrier" ? "barrier" : "poc",
-      horizon: [1, 2, 4, 8].includes(v.horizon) ? v.horizon : 1,
-      barrier: [1, 2, 4].includes(v.barrier) ? v.barrier : 1,
-    };
+    return E.codec.checkView(v, viewEnv());
   }
-  // Put a checked view in place.
+  // Put a checked view in place. Where it is (window or rectangle, level, selection, anchor, replay) is
+  // written here; how it is shown is one loop over the codec's table (applyVisual), so a setting added to
+  // the table is applied, written and read back by the same entry.
   function applyView(v) {
     if (v.window) setWindow(v.window);
     else {
@@ -3069,28 +2941,8 @@
       S.n = v.n;
       S.m = v.m;
     }
-    S.refit = v.follow === "refit";
-    S.coupled = v.follow === "coupled";
-    S.diagonal = v.follow === "diagonal";
-    for (const k of [
-      "mode",
-      "pane",
-      "rows",
-      "period",
-      "level",
-      "poc",
-      "area",
-      "untested",
-      "lines",
-      "selection",
-      "anchor",
-      "replay",
-      "tab",
-      "evidenceKind",
-      "horizon",
-      "barrier",
-    ])
-      S[k] = v[k];
+    for (const k of ["selection", "anchor", "replay"]) S[k] = v[k];
+    applyVisual(v);
     hover = null;
     el("tip").hidden = true;
     confine();
@@ -3120,12 +2972,38 @@
                 ? `The cube's answer to these six parameters, in ${level} (the finest this span shows at once); totals and POCs don't depend on the column width.`
                 : "The cube's answer to these six parameters.";
   }
-  async function copyText(textToCopy, label) {
+  // Copy text to the clipboard. `source` is the text, a promise of it, or a function that makes either (a
+  // view code is made asynchronously: it is compressed). The clipboard is asked at once, inside the click,
+  // with the promise as the item's content, because a browser keeps the click's permission only for the
+  // call made in it; a browser without that form gets the text after it is made. When the clipboard
+  // refuses, the text is put in the Query tab's field and selected for the person to copy, and that is
+  // said where it can be seen. Answers whether the clipboard took it.
+  async function copyText(source, label) {
+    const made = Promise.resolve(typeof source === "function" ? source() : source),
+      blob = made.then((text) => new Blob([text], { type: "text/plain" }));
+    // A text that cannot be made is reported below, once; neither promise may also raise an unhandled rejection.
+    made.catch(() => {});
+    blob.catch(() => {});
     try {
-      await navigator.clipboard.writeText(textToCopy);
+      if (typeof ClipboardItem === "function" && navigator.clipboard?.write)
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+      else await navigator.clipboard.writeText(await made);
       copyFallbackActive = false;
       el("copy-status").textContent = label + " copied";
+      return true;
     } catch (error) {
+      let textToCopy;
+      try {
+        textToCopy = await made;
+      } catch (reason) {
+        // There is nothing to copy: the text could not be made (a view over a limit, say).
+        el("copy-status").textContent = `${label} could not be made: ${reason?.reason ?? reason?.message ?? reason}`;
+        postNotice({
+          code: "import-rejected",
+          text: E.text.fill(PERSIST_TEXT.codeFailed, { what: label, reason: reason?.reason ?? reason?.message ?? String(reason) }),
+        });
+        return false;
+      }
       copyFallbackActive = true;
       el("query-text").value = textToCopy;
       S.drawer = "query";
@@ -3134,29 +3012,86 @@
       el("query-text").focus();
       el("query-text").select();
       el("copy-status").textContent = "Selected for copy · ⌘C / Ctrl+C";
+      postNotice({ code: "clipboard" });
+      return false;
     }
   }
-  // Pasted text as a query or view-code object; null when it is neither, so
-  // the parser's own error never reaches the status line.
-  function readImport(text) {
+  // A view code or query pasted into the Import field is decoded and checked WHOLE before anything
+  // changes (E.codec.decodePortable, then validatePortable for a version-2 code), off the click, so the
+  // page can be used meanwhile: one import at a time, and what was pasted and whether the page is ready
+  // are checked again after the wait. A version, integrity or limit failure rejects the whole code and
+  // says why, here and in the banner; the page is left as it was.
+  async function applyImportedView() {
+    if (importing) return;
+    const field = el("import-text"),
+      text = field.value.trim(),
+      status = (words) => {
+        el("copy-status").textContent = words;
+      };
+    importing = true;
+    el("import-apply").disabled = true;
     try {
-      const obj = JSON.parse(
-        text.startsWith("origo-cube:")
-          ? decodeURIComponent(text.slice(11))
-          : text,
-      );
-      return obj && typeof obj === "object" ? obj : null;
-    } catch {
-      return null;
+      let decoded;
+      try {
+        decoded = await E.codec.decodePortable(text, { inflate: inflateBounded });
+      } catch (error) {
+        // A text that is not a code at all keeps the baseline's words; the rest name their reason.
+        const plain = ["type", "structure", "json", "percent", "base64"].includes(error.code);
+        status(
+          plain
+            ? "That isn't a cube query or a view code. Paste the JSON from Copy query, or a view code (it starts with origo-cube:)."
+            : `The view code was not applied: ${error.reason ?? error.message}`,
+        );
+        if (!plain)
+          postNotice({ code: "import-rejected", params: { reason: error.reason ?? error.message } });
+        return;
+      }
+      if (!ready || field.value.trim() !== text) {
+        status("The pasted text changed while it was being read. Apply it again.");
+        return;
+      }
+      if (decoded.kind === "v2") {
+        const checked = E.codec.validatePortable(decoded.payload, viewEnv());
+        if (!checked.ok) {
+          status(`The view code was not applied: ${checked.reasons.join("; ")}`);
+          postNotice({ code: "import-rejected", params: { reason: checked.reasons.join("; ") } });
+          return;
+        }
+        applyPortable(checked.value, checked.dropped);
+      } else {
+        applyLegacyImport(decoded.payload, decoded.kind === "legacy" ? text : null);
+      }
+    } finally {
+      importing = false;
+      el("import-apply").disabled = false;
     }
   }
-  function applyImportedView() {
-    const obj = readImport(el("import-text").value.trim());
-    if (!obj) {
-      el("copy-status").textContent =
-        "That isn't a cube query or a view code. Paste the JSON from Copy query, or a view code (it starts with origo-cube:).";
+  // A version-2 code's validated pieces, in place at once: the view as the codec checked it (its own
+  // window or rectangle, level, selection and replay), then the descriptors and the appearance.
+  function applyPortable(value, dropped) {
+    try {
+      applyView(portableView(value, value.id));
+    } catch (error) {
+      el("copy-status").textContent = error.message;
       return;
     }
+    recordView("Restored query");
+    update();
+    save();
+    if (dropped.length)
+      postNotice({
+        code: "import-partial",
+        text: E.text.fill(PERSIST_TEXT.importDropped, { list: dropped.map((d) => d.key).join(", ") }),
+        details: dropped.map((d) => `${d.key}: ${d.reason}`),
+      });
+    el("copy-status").textContent = "View restored";
+    el("import").hidden = true;
+  }
+  // A code from before version 2, or a bare cube query, applied as the baseline applied it (a code's own
+  // view fields are copied one by one, never merged into the state). A code with a view is a legacy
+  // payload: its settings are kept, the scale is the default, and the notice says what changed.
+  // `code` is the pasted text of a legacy code (null for a cube query, which is no view and owes no notice).
+  function applyLegacyImport(obj, code) {
     try {
       const q = obj.query || obj;
       const n = Math.log2(Number(q.tR) / BASE),
@@ -3224,6 +3159,12 @@
           z[3] > z[2]
         )
           [S.tA, S.tB, S.pA, S.pB] = z;
+        // A code made before the scales existed carries none: the preferences are the defaults, and what
+        // that changes is listed once for this code.
+        if (code !== null) {
+          S.scale = structuredClone(E.policy.DEFAULTS);
+          reportView({ kind: "legacy", text: code, ...obj.view, dropped: [] });
+        }
       }
       chooseSource();
       limits();
@@ -4675,35 +4616,8 @@
     el("copy-query").addEventListener("click", () =>
       copyText(JSON.stringify(cubeQuery(), null, 2), "Query"),
     );
-    el("copy-view").addEventListener("click", () =>
-      copyText(
-        "origo-cube:" +
-          encodeURIComponent(
-            JSON.stringify({
-              query: cubeQuery(),
-              view: {
-                mode: S.mode,
-                pane: S.pane,
-                poc: S.poc,
-                area: S.area,
-                untested: S.untested,
-                rows: S.rows,
-                period: S.period,
-                level: S.level,
-                lines: S.lines,
-                tab: S.tab,
-                replay: S.replay,
-                anchor: S.anchor,
-                horizon: S.horizon,
-                evidenceKind: S.evidenceKind,
-                barrier: S.barrier,
-                viewport: [S.tA, S.tB, S.pA, S.pB],
-              },
-            }),
-          ),
-        "View code",
-      ),
-    );
+    // The view code is made asynchronously (it is compressed), so the copy is handed the maker, not its text.
+    el("copy-view").addEventListener("click", () => copyText(viewCode, "View code"));
     el("import-toggle").addEventListener("click", () => {
       el("import").hidden = !el("import").hidden;
     });
@@ -6697,15 +6611,19 @@
     closePop();
     if (!el("keys").open) el("keys").showModal();
   }
+  // Copy the address of the view. It is written from the state now, not read back from the address bar
+  // (the bar may hold an older one if the browser refused a rewrite), and when the address had to be made
+  // shorter to stay within its budget the status names how and offers the full view code, which never
+  // loses anything (S1-169).
   async function copyLink() {
-    const url = new URL(location.href);
+    syncURL(true);
+    const url = new URL(location.href),
+      now = addressOf();
     url.username = url.password = "";
-    try {
-      await navigator.clipboard.writeText(url.href);
-      viewsStatus("Link copied.");
-    } catch {
-      viewsStatus("Copy the address from the browser's address bar.");
-    }
+    if (now.hash !== null) url.hash = now.hash;
+    const copied = await copyText(url.href, "Link");
+    viewsStatus(copied ? "Link copied." : "Copy the address from the browser's address bar.");
+    if (now.level > 0) offerViewCode(now.level);
   }
 
   let markState = {
@@ -14417,8 +14335,10 @@
   function replaceURL(entry) {
     try {
       history.replaceState({ explorer: entry.id }, "", entry.hash);
-    } catch {
-      // Browsers limit how often a page may rewrite its address; the view stands.
+    } catch (error) {
+      // Browsers limit how often a page may rewrite its address: the view stands, and the banner says the
+      // address in the bar is behind it (a run of these is one notice with a count).
+      postNotice({ code: "history-failed", details: [String(error?.message ?? error)] });
     }
   }
   // An entry is a place. A change that moves nothing (the encoding, the
@@ -14448,8 +14368,9 @@
       hist.index = hist.entries.length - 1;
       try {
         history.pushState({ explorer: entry.id }, "", entry.hash);
-      } catch {
+      } catch (error) {
         // As above.
+        postNotice({ code: "history-failed", details: [String(error?.message ?? error)] });
       }
     }
     hist.at = now;
@@ -14478,14 +14399,21 @@
     replaceURL(current);
     renderHistory();
   }
+  // The tab's list as stored: versioned, and with the scales left out of every entry but the current one
+  // (Back and Forward return to a place and ignore how an entry showed it, so an older entry's rank knots
+  // would only add up to fifty copies per write).
   function saveHistory() {
     try {
       window.explorerState?.saveHistory({
-        entries: hist.entries,
+        visualVersion: 2,
+        entries: hist.entries.map((x, i) =>
+          i === hist.index ? x : { ...x, hash: x.hash.replace(/&sc=[^&]*/, "") },
+        ),
         index: hist.index,
       });
-    } catch {
-      // The tab's list lasts until it closes; only a reload forgets it.
+    } catch (error) {
+      // The tab's list lasts until it closes; only a reload forgets it. The banner says so.
+      postNotice({ code: "storage-failed", details: [String(error?.message ?? error)] });
     }
   }
   // The tab's list survives a reload, when the address is still one of its
@@ -14493,7 +14421,15 @@
   function startHistory(label) {
     let kept = null;
     try {
-      kept = window.explorerState?.history();
+      const got = window.explorerState?.read("history:v1");
+      // A list made by a newer build, or one that cannot be read, is not continued and not overwritten
+      // (the storage module keeps a copy first): say so once.
+      if (got && (got.status === "unknown-version" || (got.status === "unreadable" && got.raw !== null)))
+        postNotice({
+          code: "import-rejected",
+          text: E.text.fill(PERSIST_TEXT.storedKept, { what: "history", reason: got.reason }),
+        });
+      kept = got?.status === "ok" ? got.value : null;
     } catch {
       // No list to continue.
     }
@@ -14571,36 +14507,24 @@
     el("breadcrumbs").replaceChildren(frag);
   }
   // Back and Forward return to a place and leave how it is shown alone; an
-  // address edited by hand is taken whole.
+  // address edited by hand is taken whole. "How it is shown" is every field of the codec's table (the
+  // settings and the scale preferences too), read from the state now; the descriptors of the entry's
+  // address are not adopted, so stepping through history never changes a calibration. Only an address this
+  // list does not know (edited by hand) is classified and reported: a known entry never owes a notice.
   addEventListener("popstate", (e) => {
     if (!ready) return;
-    const view = readView(location.hash);
-    if (!view) return;
+    const i = hist.entries.findIndex((x) => x.id === e.state?.explorer),
+      address = readAddress(location.hash),
+      view = viewOfAddress(address, location.hash);
+    if (!view) {
+      if (i < 0) reportRefused(address);
+      return;
+    }
     transition = reduce
       ? null
       : { n: renderN(), m: renderM(), start: performance.now() };
-    const i = hist.entries.findIndex((x) => x.id === e.state?.explorer);
-    applyView(
-      i < 0
-        ? view
-        : {
-            ...view,
-            follow: followMode(),
-            mode: S.mode,
-            pane: S.pane,
-            poc: S.poc,
-            area: S.area,
-            untested: S.untested,
-            rows: S.rows,
-            period: S.period,
-            level: S.level,
-            lines: S.lines,
-            tab: S.tab,
-            evidenceKind: S.evidenceKind,
-            horizon: S.horizon,
-            barrier: S.barrier,
-          },
-    );
+    applyView(i < 0 ? view : { ...view, ...visualOf(), records: undefined, axes: [], appearance: null });
+    if (i < 0) reportView(view);
     // The step after Back or Forward is new, whatever its kind.
     hist.at = 0;
     if (i >= 0) hist.index = i;
@@ -14626,30 +14550,46 @@
   // Named views, kept by this browser for every tab. A view saved while it
   // shows the cutoff is live: it opens on the latest data with the same span
   // and fits the price range again, as the price has moved since.
-  const views = { list: [], undo: null };
+  // `foreign` holds what this page cannot show but must not lose: an entry a newer build stamped with
+  // another visual version, and any entry that is not a view at all. A list rewrite puts them back as they
+  // were, so a view made by another version survives this page's saves and deletes (and the list is never
+  // shortened by anything but the person deleting a view).
+  const views = { list: [], foreign: [], undo: null };
   function loadViews() {
     let list = null;
     try {
-      list = window.explorerState?.views();
+      const got = window.explorerState?.read("views:v1");
+      list = got?.status === "ok" ? got.value : null;
+      // A list that is not a list, or one made by a newer build as a whole, stays in storage untouched; the
+      // storage module copies it aside before the first write that would replace it.
+      if (got && (got.status === "unknown-version" || (got.status === "unreadable" && got.raw !== null)))
+        postNotice({
+          code: "import-rejected",
+          key: "views-kept:" + got.status,
+          text: E.text.fill(PERSIST_TEXT.storedKept, { what: "views", reason: got.reason }),
+        });
     } catch {
       // No saved views to show.
     }
-    views.list = Array.isArray(list)
-      ? list.filter(
-          (x) =>
-            x &&
-            typeof x.name === "string" &&
-            typeof x.hash === "string" &&
-            [x.span, x.lead, x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite),
-        )
-      : [];
+    const usable = (x) =>
+      x &&
+      typeof x.name === "string" &&
+      typeof x.hash === "string" &&
+      [x.span, x.lead, x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite) &&
+      (x.visualVersion === undefined || x.visualVersion === 2);
+    views.list = Array.isArray(list) ? list.filter(usable) : [];
+    views.foreign = Array.isArray(list) ? list.filter((x) => !usable(x)) : [];
   }
+  // Every write is the whole list as it was read (plus the change), so two tabs saving at once both keep
+  // their views. A write that fails (the storage is full or blocked) is said in the banner as well as
+  // here, and the list on the page stays as it is: nothing is dropped to make room.
   function storeViews() {
     try {
-      window.explorerState.saveViews(views.list);
+      window.explorerState.saveViews([...views.list, ...views.foreign]);
       return true;
-    } catch {
+    } catch (error) {
       viewsStatus("This browser's storage is unavailable, so views can't be saved.");
+      postNotice({ code: "storage-failed", details: [String(error?.message ?? error)] });
       return false;
     }
   }
@@ -14662,14 +14602,16 @@
         : listRange(S.tA, Math.min(S.tB, CUT));
   }
   // Every change starts from the list as stored, so two tabs saving at once
-  // both keep their views.
-  function saveView(name) {
+  // both keep their views. A view is stamped with the visual version it was made under and carries its
+  // address; when that address had to be made shorter (scale ids only, or no scales) the full view code is
+  // kept beside it, unless it is larger than a browser's storage should be asked to hold for one view
+  // (then the view keeps the address and the banner says the code must be copied separately).
+  async function saveView(name) {
     name = name.trim().slice(0, 80);
     if (!name) {
       viewsStatus("Name the view to save it.");
       return;
     }
-    loadViews();
     const view = {
         name,
         live: !S.window && atCutoff(),
@@ -14681,18 +14623,47 @@
         rows: S.rows,
         period: S.period,
         ...summary(),
+        visualVersion: 2,
       },
-      i = views.list.findIndex((x) => x.name === name);
+      level = addr.level;
+    if (level > 0) {
+      let code = null;
+      try {
+        code = await viewCode();
+      } catch {
+        // The code could not be made; the view keeps its address alone.
+      }
+      if (code !== null && code.length <= NAMED_CODE_MAX) view.code = code;
+      else postNotice({ code: "code-not-stored" });
+    }
+    loadViews();
+    const i = views.list.findIndex((x) => x.name === name),
+      replaced = i >= 0 ? views.list[i] : null;
     if (i >= 0) views.list[i] = view;
     else views.list.push(view);
     views.undo = null;
     if (storeViews())
       viewsStatus(i >= 0 ? `Updated “${name}”.` : `Saved “${name}”.`);
+    // A view that could not be saved is not listed as if it were (the list is what storage holds).
+    else if (i >= 0) views.list[i] = replaced;
+    else views.list.pop();
     renderViews();
   }
-  function openView(x) {
-    const view = readView(x.hash);
+  // A saved view opens from its full code when it kept one (that is exact), else from its address. A view
+  // saved before visual version 2 is migrated as it opens, with one notice per view and tab, and is never
+  // rewritten: the stored entry stays as it was until the person saves the view again.
+  async function openView(x) {
+    let view = null;
+    if (typeof x.code === "string") {
+      try {
+        view = await viewOfCode(x.code);
+      } catch (error) {
+        postNotice({ code: "import-rejected", params: { reason: error.reason ?? error.message } });
+      }
+    }
+    view ??= readView(x.hash);
     if (!view) return;
+    if (x.visualVersion === undefined) view.text = x.name + "\n" + x.hash;
     if (x.live && !view.window) {
       view.tB = CUT + x.lead;
       view.tA = view.tB - x.span;
@@ -14701,6 +14672,7 @@
       ? null
       : { n: renderN(), m: renderM(), start: performance.now() };
     applyView(view);
+    reportView(view);
     if (x.live) {
       fit();
       if (S.auto) autoLevel();
@@ -14760,7 +14732,562 @@
       ...(x.rows && x.rows !== "off" && ROWS_INFO[x.rows] && validPeriod(x.period)
         ? [`${ROWS_INFO[x.rows].name} rows · ${periodName(x.period)}`]
         : []),
+      // A view saved before visual version 2 opens migrated, and says so in its row.
+      ...(x.visualVersion === undefined ? [PERSIST_TEXT.legacyRow] : []),
     ].join(" · ");
+  }
+  // ---- Persistence of the visual state (PRD-0002 S1, D9) ----
+  // How the view is shown (the scale preferences, the active mappings, the appearance) travels in the
+  // address, the stored last view, the tab's history, the named views and the portable view code, always
+  // marked visual version 2. The codec (E.codec) owns every format and every limit; this block is the
+  // page's side of it: what the state says, what a payload is allowed to change, what the person is told
+  // when a write fails or a payload is refused, and the browser-wide cache of the live calibrations.
+  // Nothing here refits, truncates or silently replaces anything: a payload this page cannot use is
+  // reported and left where it is.
+  //
+  // The most a named view keeps of its full view code (characters). A longer code is not stored with the
+  // view (the address is; the banner says the code must be copied separately), because one view should
+  // not be what fills a browser's storage.
+  const NAMED_CODE_MAX = 64 * 1024,
+    // A calibration commit or a policy action writes the address and the cache once it has settled, not
+    // once per change: Auto may commit twice a second and a write rewrites history and storage.
+    PERSIST_MS = 250,
+    // The names of the address ladder, index = level (E.text.address.level has their words).
+    LADDER = ["exact", "ids", "settings", "refused"],
+    // The one-letter policy codes of the address grammar, by the store's policy words.
+    POLICY_LETTER = { explore: "e", auto: "a", comparison: "k", local: "l" },
+    // Words that E.text does not hold yet (an amendment is raised for them): storage and import outcomes
+    // that are neither a failed write nor a rejected view code.
+    PERSIST_TEXT = {
+      codeFailed: "The {what} could not be made: {reason}",
+      importDropped: "The view code was applied. These settings are not available on this page: {list}.",
+      storedKept: "A saved {what} could not be used here and was kept unchanged: {reason}",
+      addressRejected: "This address was not applied: {reason}. The default view is shown.",
+      legacyRow: "saved before visual version 2",
+    },
+    // The address as last written: what copyLink and saveView read, and the level the ladder reached.
+    addr = { hash: "#w=24h", level: 0, dropped: [] },
+    persistRt = { timer: 0 };
+  // An import in progress: one at a time.
+  let importing = false;
+
+  // ---- reading the state through the codec's table ----
+  // The fields of every VISUAL_KEYS entry, read from the state: one object, the scale preferences under
+  // `scale`. The address, the Back and Forward override and the view code all read it, so a setting added to
+  // the table is carried by all of them at once (the baseline kept ten lists of these by hand).
+  function visualOf() {
+    const out = { scale: {} };
+    for (const entry of E.codec.VISUAL_KEYS)
+      for (const path of entry.fields) {
+        if (path.startsWith("scale.")) out.scale[path.slice(6)] = S.scale[path.slice(6)];
+        else out[path] = path === "follow" ? followMode() : S[path];
+      }
+    return out;
+  }
+  // What the codec needs to know about this page: the lattice and cutoff, which modes, panes and periods it
+  // offers (they differ between the live and the recorded page), its limits, and how long the address
+  // already is before its hash (origin, path and search, credentials left out: the string copyLink copies).
+  function viewEnv() {
+    const url = new URL(location.href);
+    url.username = url.password = "";
+    url.hash = "";
+    return {
+      T0,
+      BASE,
+      PR,
+      CUT,
+      windowKey,
+      modes,
+      panes,
+      rowsChoices,
+      validPeriod,
+      normalizeLines,
+      N_MAX,
+      M_MAX,
+      INSTRUMENT,
+      baseLength: url.href.length,
+    };
+  }
+  // The id of the appearance in use: its name and the hash of its tables, theme independent.
+  function appearanceId() {
+    return lutFor(scaleRt.appearance, scaleRt.theme).id;
+  }
+  // A whole-number millisecond for the codec, which refuses fractions (an open column's cutoff has them).
+  // Floored, so a restored record is never later than the data it was fitted on.
+  const wholeMs = (x) => (Number.isFinite(x) ? Math.max(0, Math.floor(x)) : null);
+  // A mapping record of the store, or a held one, as the codec writes it: the store's policy word as the
+  // grammar's letter, the origin reduced to the three the grammar knows (an external comparison mapping is
+  // a flag), only the members a payload may carry.
+  function recordOf(channel, rec) {
+    if (!rec?.desc || !rec.ctx) return null;
+    const c = rec.cohort;
+    return {
+      channel,
+      policy: POLICY_LETTER[rec.policy] ?? "e",
+      external: rec.origin === "external",
+      origin: rec.origin === "manual" || rec.origin === "restored" ? rec.origin : "fit",
+      desc: rec.desc,
+      ctx: rec.ctx,
+      cohort: c && Number.isInteger(c.n)
+        ? Object.fromEntries(
+            ["kind", "n", "zeros", "nonzero", "excluded", "calibratedOn", "bounds", "level", "quality", "obsEndBase", "support"]
+              .filter((k) => c[k] !== undefined)
+              .map((k) => [k, c[k]]),
+          )
+        : null,
+      obsEndMs: wholeMs(rec.obsEndMs),
+      cutMs: wholeMs(rec.cutMs),
+      canonicalThroughMs: wholeMs(rec.canonicalThroughMs),
+      token: typeof rec.token === "string" && /^[0-9a-f]{1,32}$/.test(rec.token) ? rec.token : null,
+    };
+  }
+  // The colour mappings the view is showing, as records for the address and the code: the active Cells
+  // and Rows mapping of the workspace in view (by lookup, never a refit), each mapping a Comparison lock
+  // or a manual domain holds, and the restored Local-contrast mapping. "No calibration" has no record and
+  // so is not written: a link never pretends to carry a scale it does not have.
+  function activeRecords() {
+    const ws = scaleWorkspace(),
+      out = [],
+      add = (channel, rec) => {
+        const r = recordOf(channel, rec);
+        if (r) out.push(r);
+      },
+      from = (channel, ctx) => {
+        if (ctx) add(channel, scaleRt.store.latest(ws, E.context.keyString(ctx)));
+      };
+    from("c", cellsContext());
+    // The Rows context is the Rows package's: present once it is merged, absent before.
+    if (S.rows !== "off" && typeof rowsContext === "function") from("r", rowsContext());
+    for (const [key, rec] of Object.entries(S.scale.held ?? {})) add(key.charAt(0) === "r" ? "r" : "c", rec);
+    if (scaleRt.local) add("l", scaleRt.local);
+    return out;
+  }
+  // The frozen axis domains of the workspace in view (a Comparison lock freezes each displayed Auto axis);
+  // an Auto axis needs no record, because an absent record means Auto under vis=2.
+  function frozenAxes() {
+    return scaleRt.axes
+      .list(scaleWorkspace())
+      .filter((r) => r.policy === "frozen")
+      .map((r) => ({ id: r.id, domain: r.domain, policy: "frozen", through: wholeMs(r.provenance?.through) }));
+  }
+  // The state the codec writes: the view as checkView returns it, the ten scale preferences (raw, never the
+  // effective view: a measure that cannot use a preference does not erase it), the appearance, and the
+  // active mappings and frozen axes. `withScales` false leaves the last two out (the address's own
+  // fallback when they cannot be written).
+  function visualState(withScales = true) {
+    return {
+      window: S.window,
+      tA: S.tA,
+      tB: S.tB,
+      pA: S.pA,
+      pB: S.pB,
+      auto: S.auto,
+      // whole levels: a level held while a gesture is still moving it is the one it will settle on
+      n: Number.isFinite(S.n) ? Math.round(S.n) : S.n,
+      m: Number.isFinite(S.m) ? Math.round(S.m) : S.m,
+      selection: S.selection,
+      anchor: S.anchor,
+      replay: S.replay,
+      ...visualOf(),
+      scale: { ...E.policy.DEFAULTS, ...E.policy.persisted(S.scale) },
+      appearance: appearanceId(),
+      scales: withScales ? activeRecords() : [],
+      axes: withScales ? frozenAxes() : [],
+    };
+  }
+  // ---- the address ----
+  // The address of the view, written by the codec within its budget of 8192 characters counted over the
+  // whole URL. It is the ladder's: full records, then scale ids only, then settings only, and past that
+  // the address is not rewritten (the bar keeps the one it has). A state the codec refuses (more than 16
+  // active scales) is written without its scales and says so; any other fault leaves the address that
+  // was last written. Returns {hash, level, dropped}; `addr` keeps the last one for copyLink and saveView.
+  function addressOf() {
+    const env = viewEnv();
+    let result;
+    try {
+      result = E.codec.formatAddress(visualState(true), env, { budget: true });
+    } catch (error) {
+      if (error?.name === "LimitError") postNotice({ code: "limit", params: { max: E.LIMITS.DESCRIPTORS_MAX } });
+      result = E.codec.formatAddress(visualState(false), env, { budget: true });
+      if (result.level === 0) result = { ...result, level: 2 };
+    }
+    // Past the last level the address is not rewritten: the bar keeps the one it has.
+    if (result.hash === null) result = { ...result, hash: location.hash || addr.hash };
+    // A shortened address is said once when it becomes one, not on every write that follows.
+    if (result.level !== addr.level) {
+      if (result.level > 0)
+        postNotice({
+          code: "address-degraded",
+          params: { level: E.text.address.level[LADDER[result.level]] },
+          details: result.dropped.map((d) => `${d.channel ?? d.key}: ${d.reason}`),
+        });
+      addr.level = result.level;
+    }
+    addr.hash = result.hash;
+    addr.dropped = result.dropped;
+    const status = el("copy-status");
+    if (status.dataset.addressLevel !== LADDER[result.level]) status.dataset.addressLevel = LADDER[result.level];
+    return result;
+  }
+  // After a shortened address was copied: which level it is, in the list's status line, with a button for
+  // the full view code (which never loses a scale).
+  function offerViewCode(level) {
+    const node = el("views-status"),
+      button = document.createElement("button");
+    node.append(` ${E.text.address.level[LADDER[level]]}. `);
+    button.type = "button";
+    button.className = "ol-action ol-s cursor-interaction";
+    button.textContent = E.text.ui.copyCode;
+    button.addEventListener("click", () => copyText(viewCode, "View code"));
+    node.append(button);
+  }
+  // ---- what a payload is allowed to change, and what the person is told ----
+  // The notices a view from outside owes: a payload from before visual version 2 (once per payload and
+  // tab, listing each setting whose meaning changed), and descriptors that could not be used (the settings
+  // stay, a fresh Explore scale is fitted). A stored or linked version-2 view owes nothing.
+  function reportView(v) {
+    if (!v) return;
+    if (v.kind === "legacy") {
+      const digest = E.codec.digest(v.text);
+      if (scaleRt.notices.mark("legacy:" + digest))
+        postNotice({
+          code: "legacy-migrated",
+          key: "legacy-migrated:" + digest,
+          details: [
+            ...E.codec.migrateLegacy(v).changes.map((c) => `${c.setting}: ${c.text}`),
+            E.text.notice.legacyUnsaved,
+          ],
+        });
+    }
+    const bad = (v.dropped ?? []).filter((d) => d.key === "sc");
+    if (bad.length) postNotice({ code: "scale-dropped", details: bad.map((d) => d.reason) });
+  }
+  // An address that names a version this page does not read is not applied; say which.
+  function reportRefused(address) {
+    if (address.kind === "reject")
+      postNotice({
+        code: "import-rejected",
+        text: E.text.fill(PERSIST_TEXT.addressRejected, { reason: address.reasons[0] ?? "" }),
+      });
+  }
+  // The raw view of a version-4 stored object (the last view and the workspace in one, the view as plain
+  // fields): where the view is, written out, and every other field by the codec's table, so a setting the
+  // table knows is read here too. `follow` was three flags then; checkView validates all of it.
+  function legacyRaw(x) {
+    const raw = {
+      window: x.window,
+      tA: x.tA,
+      tB: x.tB,
+      pA: x.pA,
+      pB: x.pB,
+      auto: x.auto !== false,
+      n: x.n,
+      m: x.m,
+      follow: x.diagonal ? "diagonal" : x.coupled ? "coupled" : x.refit === false ? "free" : "refit",
+      selection: x.selection,
+      anchor: x.anchor,
+      replay: x.replay === true,
+    };
+    for (const entry of E.codec.VISUAL_KEYS)
+      if (entry.legacy) for (const path of entry.fields) if (path !== "follow") raw[path] = x[path];
+    return raw;
+  }
+  // A version-4 stored view is a legacy payload: its choices are kept and the notice names what changed.
+  function legacyStored(view, x) {
+    return view
+      ? { ...view, kind: "legacy", records: [], axes: [], dropped: [], reasons: [], text: JSON.stringify(x) }
+      : null;
+  }
+  // Nothing usable is stored and no link was followed: the default view shows. Once per browser (a flag in
+  // storage; once per tab when storage is unavailable) the banner says that this version measures and
+  // colours differently, and a stored view that came from a newer build is named, because it is being
+  // kept and not shown.
+  function noteFirstVisit() {
+    const state = window.explorerState,
+      stored = state?.read?.("view:v5");
+    if (stored && (stored.status === "unknown-version" || (stored.status === "unreadable" && stored.raw !== null)))
+      postNotice({
+        code: "import-rejected",
+        text: E.text.fill(PERSIST_TEXT.storedKept, { what: "view", reason: stored.reason }),
+      });
+    if (state?.notice?.().status === "ok" || !scaleRt.notices.mark("version-default")) return;
+    postNotice({ code: "version-default" });
+    state?.saveNotice?.();
+  }
+  // The browser-wide cache of the live calibrations (scales:v1) is read ONCE, here, when the page loads,
+  // into the live store: it seeds the contexts this browser has already fitted, and never follows the
+  // `storage` event afterwards, so each tab keeps its own active mappings. A record that fails its checks
+  // is skipped and the rest are kept; a cache from another version is left in storage and named.
+  function loadScaleCache() {
+    const got = window.explorerState?.scales?.();
+    if (!got) return;
+    if (got.status === "ok") {
+      const out = scaleRt.store.mergeJSON(got.value, { workspace: "live" });
+      if (out.rejected)
+        postNotice({
+          code: "import-rejected",
+          text: E.text.fill(PERSIST_TEXT.storedKept, { what: "calibration cache", reason: out.rejected }),
+        });
+    } else if (got.status === "unknown-version" || (got.status === "unreadable" && got.raw !== null))
+      postNotice({
+        code: "import-rejected",
+        text: E.text.fill(PERSIST_TEXT.storedKept, { what: "calibration cache", reason: got.reason }),
+      });
+  }
+  loadScaleCache();
+  // The appearance an address or a code names: adopted when this page builds exactly that appearance (its
+  // name and the hash of its tables), otherwise the running one stays and the notice says which was asked
+  // for. Mapping ids do not depend on the appearance, so they still match.
+  function applyAppearance(ap) {
+    if (typeof ap !== "string") return;
+    const running = appearanceId();
+    if (ap === running) return;
+    const name = ap.slice(0, ap.lastIndexOf("-"));
+    if (Object.hasOwn(E.lut.APPEARANCES, name) && E.lut.appearanceId(name) === ap) {
+      scaleRt.appearance = name;
+      themeChanged();
+    } else postNotice({ code: "appearance-mismatch", params: { ap, current: running } });
+  }
+  // The mapping records of a view in place: the preferences and the descriptors are replaced TOGETHER by
+  // what the view carries, so a link without a lock does not keep this tab's lock. A record that is only an
+  // id is found in the live cache or left out; what cannot be placed is listed and the rest is applied.
+  // Nothing is refitted: a context with no record fits afresh once the view settles.
+  function adoptScales(v) {
+    const ws = scaleWorkspace(),
+      store = scaleRt.store,
+      dropped = [],
+      records = [];
+    for (const rec of v.records) {
+      let desc = rec.desc;
+      if (desc === null) {
+        let hit = null;
+        try {
+          hit = store.latest(ws, E.context.keyString(rec.ctx));
+        } catch {
+          // A context that has no key has no record.
+        }
+        if (hit?.desc.id !== rec.mappingId) {
+          dropped.push({ chan: rec.channel, reason: `${E.text.address.level.ids}; this browser does not hold that scale` });
+          continue;
+        }
+        desc = hit.desc;
+      }
+      records.push({
+        chan: rec.channel,
+        policy: rec.policy,
+        origin: rec.external ? "external" : rec.origin,
+        desc,
+        ctx: rec.ctx,
+        cohort: rec.cohort,
+        obsEndMs: rec.obsEndMs,
+        cutMs: rec.cutMs,
+        token: rec.token,
+        through: rec.obsEndMs,
+      });
+    }
+    const out = E.policy.restore({ scale: v.scale, records, axes: v.axes ?? [], replay: S.replay === true });
+    S.scale = out.scale;
+    // What is protected from eviction while these are committed: the context in view and every held one.
+    const cells = cellsContext(),
+      keep = () => [...(cells ? [E.context.keyString(cells)] : []), ...Object.values(out.scale.held).map((r) => r.key)];
+    for (const { workspace, record } of out.commits) {
+      // The mapping the view carries is the active one, not a newer fit this tab made for the same context.
+      store.remove(workspace, record.key);
+      store.commit(workspace, record, keep);
+    }
+    for (const axis of scaleRt.axes.list(ws))
+      if (axis.policy === "frozen") scaleRt.axes.unfreeze(axis.id, { workspace: ws });
+    for (const axis of out.frozen) {
+      try {
+        scaleRt.axes.freeze(axis.id, { workspace: ws, domain: axis.domain, through: axis.through });
+      } catch (error) {
+        dropped.push({ chan: "a." + axis.id, reason: error.message });
+      }
+    }
+    scaleRt.local = out.lens;
+    dropped.push(...out.dropped);
+    if (dropped.length)
+      postNotice({ code: "scale-dropped", details: dropped.map((d) => `${d.chan}: ${d.reason}`) });
+  }
+  // A view's visual fields in place, by the codec's table: the settings one by one, the scale preferences
+  // and descriptors as a whole when the view carries descriptors (`records`, even an empty list), else the
+  // preferences alone (Back and Forward return to a place and leave the calibrations as they are), and the
+  // appearance when the view names one.
+  function applyVisual(v) {
+    const prefs = E.codec.VISUAL_KEYS.filter((entry) => entry.id.startsWith("scale.")).map((entry) => entry.id.slice(6));
+    for (const entry of E.codec.VISUAL_KEYS)
+      for (const path of entry.fields) {
+        if (path === "follow") {
+          S.refit = v.follow === "refit";
+          S.coupled = v.follow === "coupled";
+          S.diagonal = v.follow === "diagonal";
+        } else if (!path.startsWith("scale.")) S[path] = v[path];
+      }
+    if (Array.isArray(v.records)) adoptScales(v);
+    else {
+      const next = E.policy.sanitize(v.scale),
+        scale = { ...S.scale };
+      for (const k of prefs) scale[k] = next[k];
+      S.scale = scale;
+    }
+    if (v.appearance) applyAppearance(v.appearance);
+  }
+
+  // ---- storage: the last persist, the cache ----
+  // This browser's last view and workspace. The key and `version: 5` stay, so an older build still reads
+  // what this one writes (it ignores the members it does not know); visualVersion says which reading of
+  // the colours the view was made under.
+  function saveLastView() {
+    if (!window.explorerState) return;
+    try {
+      window.explorerState.save({
+        version: 5,
+        visualVersion: 2,
+        prefs: Object.fromEntries(PREFS.map((k) => [k, S[k]])),
+        view: viewHash(),
+      });
+    } catch (error) {
+      // Not the copy status, which sits in a drawer panel that is usually closed: the banner says it, once
+      // for a run of failures, while this tab keeps the view.
+      postNotice({ code: "storage-failed", details: [String(error?.message ?? error)] });
+    }
+  }
+  // The address and the stored last view follow the descriptors after a commit, a policy action or a lock
+  // change (the spine calls this through `scaleHooks.persist`). Written once the change has settled, and the
+  // browser-wide cache is updated with the live contexts (their newest record each: the cache is for the
+  // next page load, and a context's older records would only fill storage).
+  function persistScale() {
+    clearTimeout(persistRt.timer);
+    persistRt.timer = setTimeout(persistNow, PERSIST_MS);
+  }
+  scaleHooks.persist = persistScale;
+  function persistNow() {
+    clearTimeout(persistRt.timer);
+    persistRt.timer = 0;
+    if (!ready) return;
+    save();
+    const state = window.explorerState;
+    if (!state?.saveScales) return;
+    const json = scaleRt.store.toJSON("live");
+    json.contexts = json.contexts.map((c) => ({ key: c.key, ctx: c.ctx, records: c.records.slice(-1) }));
+    if (!json.contexts.length) return;
+    const out = state.saveScales(json);
+    if (!out.ok) postNotice({ code: "storage-failed", details: [out.reason] });
+  }
+  // A tab that is closing keeps what was waiting.
+  addEventListener("pagehide", () => {
+    if (persistRt.timer) persistNow();
+  });
+
+  // ---- the portable view code ----
+  // Gzip through the platform's stream, for the code; a browser without it writes the uncompressed form.
+  async function deflateGzip(bytes) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  // The bounded inflate the codec requires: the stream is read through a reader with a running byte
+  // counter, and the moment more than `maxBytes` has come out the reader is cancelled and the error named
+  // TooLarge is thrown, so a small code that expands to gigabytes costs a megabyte, not the tab.
+  async function inflateBounded(bytes, maxBytes) {
+    if (typeof DecompressionStream !== "function") throw new Error("this browser cannot decompress a view code");
+    const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip")).getReader(),
+      chunks = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw Object.assign(new Error("the code decompresses to more than " + maxBytes + " bytes"), { name: "TooLarge" });
+      }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, at);
+      at += chunk.length;
+    }
+    return out;
+  }
+  // The frozen and the Auto axes of the view, for the code (which writes every axis policy; the address
+  // leaves Auto out because an absent record means Auto). A frozen axis with no extent cannot be written
+  // (its domain must run from low to high) and is left out.
+  function portableAxes() {
+    return scaleRt.axes
+      .list(scaleWorkspace())
+      .filter((r) => r.policy === "auto" || (r.policy === "frozen" && r.domain && r.domain[0] < r.domain[1]))
+      .map((r) => ({
+        id: r.id,
+        domain: r.policy === "frozen" ? r.domain : null,
+        policy: r.policy,
+        through: wholeMs(r.provenance?.through),
+      }));
+  }
+  // The view as a portable payload (API B.15): self-contained (its descriptors in full, not a pointer into
+  // the workspace cache), with the appearance, the model's provenance at the cutoff shown, and where the
+  // numbers came from. A descriptor is a scale fitted on observations, not a snapshot of the market data.
+  function portablePayload() {
+    const b = requestedBounds(),
+      state = visualState(true),
+      cutMs = E.time.baseToMs(activeCutoff(), T0, BASE),
+      visual = visualOf();
+    return {
+      visualVersion: 2,
+      kind: "view",
+      query: { t1: b[0], t2: b[1], p1: b[2], p2: b[3], tR: Math.round(S.n), pR: Math.round(S.m) },
+      view: {
+        // every field of the codec's table; `scale` is the ten raw preferences and nothing of the runtime state
+        ...visual,
+        // The view's place: a window or the rectangle, whether the level follows it, and the selection.
+        auto: S.auto,
+        window: S.window,
+        viewport: [S.tA, S.tB, S.pA, S.pB],
+        selection: S.selection ? [...S.selection] : null,
+        anchor: S.anchor,
+        replay: S.replay,
+        lines: [...S.lines],
+      },
+      appearance: { id: state.appearance },
+      scales: state.scales,
+      axes: portableAxes(),
+      models: [{ ...E.model.PROVENANCE, status: E.model.status(cutMs) }],
+      observation: {
+        source: String(PACK.source ?? "").slice(0, 200),
+        instrument: INSTRUMENT,
+        cutoffMs: wholeMs(cutMs),
+        canonicalThroughMs: CANON === null ? null : wholeMs(E.time.baseToMs(CANON, T0, BASE)),
+        token: typeof PACK.state_token === "string" ? PACK.state_token : null,
+        note: E.text.vintage,
+      },
+    };
+  }
+  // The view code of the view as shown now: gzip and base64url behind origo-cube:2. (uncompressed behind
+  // origo-cube:2j. where the browser cannot compress). It throws, naming the reason, when the view cannot
+  // be written within the limits: nothing is shortened to make it fit.
+  async function viewCode() {
+    return E.codec.encodePortable(portablePayload(), typeof CompressionStream === "function" ? { deflate: deflateGzip } : {});
+  }
+  // A view, in the shape readView gives, from a view code: decoded and validated whole (a named view that
+  // kept its code opens from it). It throws the codec's error, with a `reason`, when the code is refused.
+  async function viewOfCode(code) {
+    const decoded = await E.codec.decodePortable(code, { inflate: inflateBounded });
+    if (decoded.kind !== "v2") throw Object.assign(new Error("not a version-2 view code"), { reason: "not a version-2 view code" });
+    const checked = E.codec.validatePortable(decoded.payload, viewEnv());
+    if (!checked.ok) throw Object.assign(new Error(checked.reasons.join("; ")), { reason: checked.reasons.join("; ") });
+    return portableView(checked.value, code);
+  }
+  function portableView(value, text) {
+    return {
+      ...value.view,
+      kind: "v2",
+      records: value.scales,
+      axes: value.axes.filter((a) => a.policy === "frozen"),
+      appearance: value.appearance,
+      dropped: [],
+      text,
+    };
   }
   function renderViews() {
     if (el("hist-pop").hidden) return;
@@ -16533,11 +17060,17 @@
     ready = true;
     geometry();
     setWindow("24h");
-    // The address names the view; without one the page opens on the view this
-    // browser showed last. The workspace is this browser's either way.
-    const linked = readView(location.hash),
-      restored = restore(window.explorerState?.saved);
-    if (linked) applyView(linked);
+    // The address names the view; without one (a bare root) the page opens on the view this browser
+    // showed last, by the three-way rule of restore. A link, or an address this page refuses, restores
+    // the workspace only: the stored view is neither applied nor migrated nor reported. The workspace is
+    // this browser's either way.
+    const address = readAddress(location.hash),
+      linked = viewOfAddress(address, location.hash),
+      restored = restore(window.explorerState?.saved, { skipView: Boolean(linked) || address.kind === "reject" });
+    if (linked) {
+      applyView(linked);
+      reportView(linked);
+    } else reportRefused(address);
     transition = null;
     qsa("button,input,select").forEach((control) => (control.disabled = false));
     startHistory(linked ? "Link" : restored ? "Restored" : "Opened");

@@ -5215,6 +5215,8 @@
   function legendWrite(sc, under) {
     const inks = { state: colors.state, occupancy: colors.occupancy, surface: colors.surface },
       rowsChip = el("rows-legend");
+    // The axis popover's keys (drawn at the end of this call) use the same inks
+    scaleUi.inks = inks;
     legendChannel("cells", sc.cells, sc, el("legend"), "legend-text", "ramp", 64);
     // Rows show with the underlay; without a Rows frame there is nothing to map, and the chip says so.
     if (!under) {
@@ -5792,7 +5794,7 @@
         box.append(list);
         if (paneLegend) {
           const keys = uiEl("div", "ol-legend-keys");
-          keys.append(...uiKeyList(paneLegend.keys, { state: colors.state, occupancy: colors.occupancy, surface: colors.surface }, true));
+          keys.append(...uiKeyList(paneLegend.keys, scaleUi.inks, true));
           box.append(keys);
         }
         if (rec.policy === "frozen") box.append(uiEl("p", "ol-legend-note", E.text.axis.frozenBy));
@@ -9719,7 +9721,7 @@
       o = oscillatorOf(key),
       id = "pane." + key,
       // The registry's record, unless the scale display is off (then the pane holds its bars back).
-      axisOf = (spec) => {
+      oscAxis = (spec) => {
         if (sc === INERT_SC) return null;
         try {
           return axisFrame(id, spec);
@@ -9751,7 +9753,7 @@
         o.state === "failed"
           ? `the bars couldn't be read: ${o.error}`
           : `reading ${key === "rsi4h" ? "4-hour" : "8-hour"} bars from the cube…`;
-      rec = axisOf(key === "macd1d" ? { sign: "signed-symmetric", eligible: false, sig: "" } : { eligible: true, sig: "" });
+      rec = oscAxis(key === "macd1d" ? { sign: "signed-symmetric", eligible: false, sig: "" } : { eligible: true, sig: "" });
     } else {
       const f = o.frame,
         i0 = Math.max(0, endAt(f.ends, S.tA) - 1),
@@ -9789,7 +9791,7 @@
       if (key === "macd1d") {
         // One axis for the three series, fitted on the exact largest of them in view once their bars
         // are read; it holds through a gesture and Play (the chip says so) and is never 1 by default.
-        rec = axisOf({
+        rec = oscAxis({
           sign: "signed-symmetric",
           eligible: oscBarsCoherent(9),
           sig: [scaleWorkspace(), id, live.generation, barsVersion, cutEdge(), S.replay, key, i0, i1, o.state].join("|"),
@@ -9852,7 +9854,7 @@
       } else {
         // RSI's axis is fixed at 0 to 100, its guides at 30 and 70: the record's, so the line, the guides, the
         // labels and the tooltip place a value the same way.
-        rec = axisOf({ eligible: true, sig: "" });
+        rec = oscAxis({ eligible: true, sig: "" });
         if (rec?.typed === "finite") {
           const y = (v) => top + 4 + (1 - E.axis.coordinate(rec, v, place).t) * (h - 8),
             ticks = E.axis.ticks(rec, h - 8),
@@ -12158,10 +12160,12 @@
       const cx = full?.cascade,
         cols = cx ? full.cols : [];
       for (let i = bisectColumn(cols, Math.floor(from / ts)); i < cols.length && cols[i].c * ts < to; i++) {
-        // A copy: the level's entries are kept with the level and this adds what the pane needs.
+        // A copy: the level's entries are kept with the level and this adds what the pane needs. The entry
+        // already carries its typed result (C's cascadeTyped, factor 2, DD-38); the input is what the pane
+        // frame evaluates the column from.
         const e = cascadeColumn(cx, cols[i].c),
           input = paneCascadeRatio(e);
-        out.push({ ...e, typed: E.ratio.cascade(input), ctx: { ratio: input } });
+        out.push({ ...e, typed: e.res ?? E.ratio.cascade(input), ctx: { ratio: input } });
       }
     } else if (to > from) {
       const ex = efficiencyContext(renderN());

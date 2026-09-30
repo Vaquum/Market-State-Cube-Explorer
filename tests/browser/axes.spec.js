@@ -365,6 +365,40 @@ test.describe("B18: the ratio columns have a fixed axis", () => {
   }
 });
 
+// The Cascade pane's bars against the exact reference: a column's value is log2(2 x its column's volume over its parent column's volume)
+// (a column that IS its whole parent column sits at +1), drawn on the fixed axis -2..+2 about the centre line. The parent column is the
+// reference's column floor(c / 2) of the level above, over the same rectangle. This is what C's Cascade entries (DD-38) feed the pane.
+test.describe("B18: the Cascade pane reads its ratio from the Cascade entries", () => {
+  test("every bar is log2(2 x share of its parent column) of the reference, on the fixed axis (canvas)", async ({ page, fakeFor, probe, pane }) => {
+    const fake = await fakeFor("mini");
+    await page.goto(`${fake.url}/#t=${MINI.from}~${MINI.to}&p=${MINI.lo}~${MINI.hi}&r=${MINI.n},${MINI.m}&mode=cascade`);
+    await atRest(page, fake, probe);
+    const trades = tradeList(resolveProfile("mini").store);
+    const children = columnsOf(trades, rectOf(MINI));
+    const parents = new Map(columnsOf(trades, { ...rectOf(MINI), n: MINI.n + 1 }).map((c) => [c.c, c]));
+    const expected = children.map((c) => ({ c: c.c, value: Math.log2((2 * c.v) / parents.get(Math.floor(c.c / 2)).v) }));
+    expect(expected.length).toBe(48);
+    expect(expected.some((x) => Math.abs(x.value) > 1e-9), "by hand: not every column is its parent's whole").toBe(true);
+
+    const frame = await pane.last();
+    const colours = await pane.colours();
+    const area = paneCanvas.paneRect(frame, colours.surface);
+    const room = area.h / 2 - 4;
+    const zero = area.y + area.h / 2;
+    const up = paneCanvas.barsOf(frame, area, { fill: colours.positive, alpha: 0.85 });
+    const down = paneCanvas.barsOf(frame, area, { fill: colours.negative, alpha: 0.85 });
+    const bars = [...up, ...down].sort((a, b) => a.x - b.x);
+    const drawn = expected.filter((x) => Math.abs(x.value) > 1e-12);
+    expect(bars.length, "one bar per column with a non-zero value").toBe(drawn.length);
+    drawn.forEach((x, i) => {
+      // The bar's length is |value| / 2 of the room, clamped at the edge of the axis.
+      expect(bars[i].h, `column ${x.c} (${x.value.toFixed(4)})`).toBeCloseTo(Math.min(Math.abs(x.value) / 2, 1) * room, 6);
+      if (x.value > 0) expect(bars[i].y + bars[i].h, "a positive bar stands on the centre line").toBeCloseTo(zero, 9);
+      else expect(bars[i].y, "a negative bar hangs from it").toBeCloseTo(zero, 9);
+    });
+  });
+});
+
 // ---- the settle: a domain holds through a gesture and then follows, with no further input --------------------------------------------
 
 test.describe("B18: the domain holds during a gesture and follows once it has settled", () => {

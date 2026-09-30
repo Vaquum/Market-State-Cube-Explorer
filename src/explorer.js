@@ -2180,6 +2180,7 @@
   function draw() {
     if (!ready) return;
     geometry();
+    for (const k in markCount) markCount[k] = 0;
     const { src, cut, moving, sum, full, meas, b, query, shown, mv, ts, ps } = viewParts(),
       u = transition
         ? clamp((performance.now() - transition.start) / 170, 0, 1)
@@ -2270,10 +2271,13 @@
     grid();
     if (under) paintBands(under, sc.rows);
     // The whole block's cells are drawn as they are, selection or not: a selection is a boundary, never a fade.
+    // The marks are counted once: in the whole block's pass when there is a selection (its cells are painted again inside it), else in the one pass.
+    markTally = true;
     if (S.selection) {
       if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u, sc.cellsFull);
       else for (const z of full.cells) fillCell(z, full, u, sc.cellsFull);
     }
+    markTally = !S.selection;
     ctx.save();
     const x1 = G.X(b[0]),
       x2 = G.X(b[1]),
@@ -2284,6 +2288,7 @@
     ctx.clip();
     if (moving) paintMotion(shown, mv.shown, mv, b, u, sc.cells);
     else for (const z of shown.cells) fillCell(z, full, u, sc.cells);
+    markTally = false;
     ctx.restore();
     markings(shown, cut);
     occlusionPlan(cut);
@@ -2330,9 +2335,8 @@
     if (PACK.live && CANON !== null && CANON < cut) {
       const xp = G.X(CANON);
       if (xp > G.x && xp < G.x + G.w) {
-        ctx.setLineDash([2, 3]);
-        line(xp, G.y, xp, G.y + G.h, colors.muted, 1, 0.8);
-        ctx.setLineDash([]);
+        STROKE.provisional(ctx, xp - 0.5, G.y, 1, G.h);
+        markCount.provisional++;
         if (Math.min(xc, G.x + G.w) - xp > 90) chartLabel("Provisional", xp + 6, G.y + 12);
       } else if (xp <= G.x && xc > G.x + 90) chartLabel("Provisional", G.x + 8, G.y + 12);
     }
@@ -2347,38 +2351,41 @@
       ctx.setLineDash([]);
     }
     // The crosshair's price line and the cell under the pointer; its time line
-    // runs through both panes (see crosshair).
+    // runs through both panes (see crosshair). The cell is a two-tone boundary inside it, farther in where it
+    // meets the selection's edge, and tints nothing.
+    const hoverBox = (x, y, w, h) => {
+      let inset = 1.5;
+      if (S.selection) {
+        const sx1 = G.X(b[0]),
+          sx2 = G.X(b[1]),
+          sy1 = G.Y(b[3]),
+          sy2 = G.Y(b[2]);
+        if (Math.abs(x - sx1) < 1 || Math.abs(x + w - sx2) < 1 || Math.abs(y - sy1) < 1 || Math.abs(y + h - sy2) < 1) inset = 3.5;
+      }
+      STROKE.hover(ctx, x, y, w, h, inset);
+      markCount.hover++;
+    };
     if (hover && inPlot(hover) && hover.t < cut) {
       const y = Math.round(hover.y) + 0.5;
       line(G.x, y, G.x + G.w, y, colors.muted, 1, 0.6);
       const z = shown.map.get(
         Math.floor(hover.t / ts) + "," + Math.floor(hover.p / ps),
       );
-      if (z) {
-        ctx.strokeStyle = colors.ink;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(
+      if (z)
+        hoverBox(
           G.X(z.c * ts),
           G.Y((z.r + 1) * ps),
           G.X((z.c + 1) * ts) - G.X(z.c * ts),
           G.Y(z.r * ps) - G.Y((z.r + 1) * ps),
         );
-      }
     }
-    // The cell of the table row under the pointer, outlined on the chart.
+    // The cell of the table row under the pointer, linked on the chart in the same two-tone boundary.
     if (tableHover) {
       // The row stands at the level it was listed at, which is the drawn one unless it says otherwise.
       const { c, r } = tableHover,
         tt = tableHover.n === undefined ? ts : 2 ** tableHover.n,
         tp = tableHover.m === undefined ? ps : 2 ** tableHover.m;
-      ctx.strokeStyle = colors.ink;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(
-        G.X(c * tt) - 1,
-        G.Y((r + 1) * tp) - 1,
-        G.X((c + 1) * tt) - G.X(c * tt) + 2,
-        G.Y(r * tp) - G.Y((r + 1) * tp) + 2,
-      );
+      hoverBox(G.X(c * tt), G.Y((r + 1) * tp), G.X((c + 1) * tt) - G.X(c * tt), G.Y(r * tp) - G.Y((r + 1) * tp));
     }
     // The row under the pointer, over the prices or the profile, outlined
     // across the chart, as it is in the profile.
@@ -2430,6 +2437,7 @@
       if (regions) canvas.dataset.temporary = regions;
       else delete canvas.dataset.temporary;
     }
+    strokeKeysCommit();
     last = { full, query, shown, meas, b, cut, mv, under, sc };
     if (transition) {
       if (u >= 1) transition = null;
@@ -3386,12 +3394,12 @@
       x0 = clamp(G.X(start), G.x, G.x + G.w),
       xe = clamp(G.X(span && stop < cut ? Math.floor(stop / span) * span : stop), G.x, G.x + G.w),
       xc = clamp(G.X(cut), G.x, G.x + G.w);
-    hatchRect(G.x, G.y, x0 - G.x, G.h, colors.line, 11, 0.6);
+    hatchRect(G.x, G.y, x0 - G.x, G.h, colors.state, 11, 0.4);
     // Recorded time the source does not cover.
-    hatchRect(xe, G.y, xc - xe, G.h, colors.line, 11, 0.45);
+    hatchRect(xe, G.y, xc - xe, G.h, colors.state, 11, 0.3);
     // After the cutoff: hidden in replay, otherwise the future, left plain.
     if (S.replay)
-      hatchRect(xc, G.y, G.x + G.w - xc, G.h, colors.line, 11, 0.45);
+      hatchRect(xc, G.y, G.x + G.w - xc, G.h, colors.state, 11, 0.3);
     else {
       ctx.fillStyle = colors.bg;
       ctx.fillRect(xc, G.y, G.x + G.w - xc, G.h);
@@ -3414,13 +3422,14 @@
       xc - xe > 1 ||
       (S.replay && G.x + G.w - xc > 1) ||
       b.some((x, i) => x !== r[i]);
+    if (b[0] > r[0] || b[1] < r[1] || b[2] > r[2] || b[3] < r[3]) markCount.unavailable++;
     if (b[0] > r[0])
       hatchRect(
         Math.max(G.x, G.X(r[0])),
         G.y,
         G.X(b[0]) - Math.max(G.x, G.X(r[0])),
         G.h,
-        colors.poc,
+        colors.state,
         5,
         0.35,
       );
@@ -3430,7 +3439,7 @@
         G.y,
         Math.min(G.x + G.w, G.X(r[1])) - G.X(b[1]),
         G.h,
-        colors.poc,
+        colors.state,
         5,
         0.35,
       );
@@ -3440,7 +3449,7 @@
         G.Y(b[2]),
         G.X(b[1]) - G.X(b[0]),
         G.Y(r[2]) - G.Y(b[2]),
-        colors.poc,
+        colors.state,
         5,
         0.35,
       );
@@ -3450,7 +3459,7 @@
         G.Y(r[3]),
         G.X(b[1]) - G.X(b[0]),
         G.Y(b[3]) - G.Y(r[3]),
-        colors.poc,
+        colors.state,
         5,
         0.35,
       );
@@ -3465,24 +3474,28 @@
       span = parentSpan() || ts,
       c = Math.floor(cut / span);
     unfinishedShown = false;
+    // The open column: a neutral cap along its top edge and the word; the values under it are drawn as they are, never hatched.
     if ((!S.replay || span > ts) && cut % span !== 0) {
       const xa = Math.max(G.x, G.X(c * span)),
         xb = Math.min(G.x + G.w, G.X(cut));
-      hatchRect(xa, G.y, xb - xa, G.h, colors.poc, 7, 0.25);
       if (xb > G.x && xa < G.x + G.w) {
         unfinishedShown = span > ts;
-        line(xa, G.y, xb, G.y, colors.poc, 3, 0.8);
-        if (!S.replay) chartLabel("Open", clamp(xa + 3, G.x + 4, G.x + G.w - 36), G.y + 28, colors.poc);
+        STROKE.open(ctx, xa, G.y, xb - xa);
+        markCount.open++;
+        if (!S.replay) chartLabel("Open", clamp(xa + 3, G.x + 4, G.x + G.w - 36), G.y + 28, colors.state);
       }
     }
+    // Cells of a level coarser than asked for stand for more than their place: a short tick across the corner.
     if (renderN() > S.n || renderM() > S.m) {
       for (const z of query.cells) {
         const x = G.X(z.c * ts),
           y = G.Y((z.r + 1) * stepP()),
           w = G.X((z.c + 1) * ts) - x,
           h = G.Y(z.r * stepP()) - y;
-        if (w > 6 && h > 6)
-          line(x + 1, y + 6, x + 6, y + 1, colors.poc, 1, 0.65);
+        if (w > 6 && h > 6) {
+          STROKE.partial(ctx, x, y);
+          markCount.partial++;
+        }
       }
     }
   }
@@ -7513,38 +7526,230 @@
     ctx.stroke();
     ctx.restore();
   }
-  // A two-tone stroke: the same path drawn as a wide casing in the surface colour and then as a narrow core in ink,
-  // so at least one of the two contrasts with whatever fill, empty cell or state mark lies under it (the stroke
-  // table of the composition: selection 1.5 core in a 3.5 casing, hover and table link 1 in 3, lens frame 1.5 in
-  // 3.5). `draw` adds the path to the current context path; nothing under the stroke is tinted or faded.
-  function twoTone(draw, core = 1.5, casing = 3.5) {
-    ctx.save();
-    ctx.lineJoin = "miter";
-    ctx.beginPath();
-    draw();
-    ctx.strokeStyle = colors.surface;
-    ctx.lineWidth = casing;
-    ctx.stroke();
-    ctx.strokeStyle = colors.ink;
-    ctx.lineWidth = core;
-    ctx.stroke();
-    ctx.restore();
+  // ---- The stroke roles of the composition (PRD-0002 S2, section 1) ----
+  // ONE table of the marks that say how a cell or an edge stands besides what it measures: empty, open, partial, provisional, moved through,
+  // too small to resolve, selected, linked. The plot paints each with the function of its row on its own context, and the footer paints the key of
+  // each with the same function on a swatch, so a key cannot drift from its mark. Each paints inside the box it is given, takes its colours from
+  // the page's tokens, and tints nothing under it.
+  //
+  // A two-tone stroke: the same path drawn as a wide casing in the surface colour and then as a narrow core in ink, so at least one of the two
+  // contrasts with whatever fill, empty cell or state mark lies under it (selection 1.5 core in a 3.5 casing, hover and table link 1 in 3, lens
+  // frame 1.5 in 3.5). `draw` adds the path to the context path it is given.
+  function twoToneOn(c, draw, core = 1.5, casing = 3.5) {
+    c.save();
+    c.lineJoin = "miter";
+    c.beginPath();
+    draw(c);
+    c.strokeStyle = colors.surface;
+    c.lineWidth = casing;
+    c.stroke();
+    c.strokeStyle = colors.ink;
+    c.lineWidth = core;
+    c.stroke();
+    c.restore();
   }
-  // The selection's frame: its support edge, and a short tick outward of each corner along both edges. The ticks
-  // say where the rectangle ends; they are not handles and nothing drags them.
+  const twoTone = (draw, core, casing) => twoToneOn(ctx, draw, core, casing);
+  // How many of each mark the last draw painted: the footer shows the key of each that is on the plot, and says how many of the tiny moved-through
+  // cells could not be resolved.
+  let markTally = false;
+  const markCount = { empty: 0, open: 0, partial: 0, provisional: 0, moved: 0, detail: 0, selection: 0, hover: 0, unavailable: 0 };
+  const STROKE = {
+    // A cell with no trade: the surface with a hairline, as the plot leaves it.
+    empty(c, x, y, w, h) {
+      c.fillStyle = colors.surface;
+      c.fillRect(x, y, w, h);
+      c.strokeStyle = colors.line;
+      c.lineWidth = 1;
+      c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    },
+    // Open (the data's edge moves as trades arrive): a 1.5 px neutral cap along the top edge; the value under it is drawn as it is.
+    open(c, x, y, w) {
+      c.strokeStyle = colors.state;
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(x, y + 0.75);
+      c.lineTo(x + w, y + 0.75);
+      c.stroke();
+    },
+    // Partial or coarser than asked for: the cell stands for more than its place, cued by a short tick across its corner.
+    partial(c, x, y) {
+      c.strokeStyle = colors.state;
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(x + 1, y + 6);
+      c.lineTo(x + 6, y + 1);
+      c.stroke();
+    },
+    // The archive's edge: one 1 px neutral dashed line; what lies after it may still be revised.
+    provisional(c, x, y, w, h) {
+      c.save();
+      c.strokeStyle = colors.state;
+      c.lineWidth = 1;
+      c.setLineDash([2, 3]);
+      c.beginPath();
+      c.moveTo(x + w / 2, y);
+      c.lineTo(x + w / 2, y + h);
+      c.stroke();
+      c.restore();
+    },
+    // Moved through, no trade: the value's own colour as a 1.5 px core with up to 3.5 px of surface backing, inset from the cell, on a neutral
+    // interior, so no other row colour under the cell can be mistaken for the movement it encodes.
+    moved(c, x, y, w, h, colour) {
+      const m = Math.max(0.1, Math.min(w, h)),
+        casing = Math.min(3.5, m / 2),
+        core = Math.min(1.5, Math.max(1, casing - 1)),
+        half = casing / 2;
+      c.fillStyle = colors.surface;
+      c.fillRect(x, y, w, h);
+      c.lineWidth = casing;
+      c.strokeStyle = colors.surface;
+      c.strokeRect(x + half, y + half, Math.max(0.1, w - casing), Math.max(0.1, h - casing));
+      c.lineWidth = core;
+      c.strokeStyle = colour;
+      c.strokeRect(x + half, y + half, Math.max(0.1, w - casing), Math.max(0.1, h - casing));
+    },
+    // Too small to render an honest outline (a side of 3 px or less): a neutral occupancy mark, at full strength so that no alpha reads as a value.
+    detail(c, x, y, w, h) {
+      c.fillStyle = colors.occupancy;
+      c.fillRect(x, y, Math.max(1, w), Math.max(1, h));
+    },
+    // The selection: its support edge and a short tick outward of each corner along both edges. The ticks say where the rectangle ends; they are
+    // not handles and nothing drags them.
+    selection(c, x, y, w, h) {
+      const tick = 6,
+        x2 = x + w,
+        y2 = y + h;
+      twoToneOn(c, (k) => k.rect(x, y, w, h));
+      twoToneOn(c, (k) => {
+        for (const [cx, dx, cy, dy] of [[x, -1, y, -1], [x2, 1, y, -1], [x, -1, y2, 1], [x2, 1, y2, 1]]) {
+          k.moveTo(cx, cy);
+          k.lineTo(cx + dx * tick, cy);
+          k.moveTo(cx, cy);
+          k.lineTo(cx, cy + dy * tick);
+        }
+      });
+    },
+    // A cell or row the pointer or a table row links to: 1 px of ink in 3 px of surface, inside the boundary (farther in where it meets the
+    // selection's edge, which it never replaces).
+    hover(c, x, y, w, h, inset = 1.5) {
+      const i = Math.min(inset, Math.max(0, (Math.min(w, h) - 2) / 2));
+      twoToneOn(c, (k) => k.rect(x + i, y + i, w - 2 * i, h - 2 * i), 1, 3);
+    },
+    // Not available or not shown (an unread region, the hidden future): a neutral hatch.
+    unavailable(c, x, y, w, h) {
+      markHatch(c, x, y, w, h, colors.state, 4, 0.7);
+    },
+    // The total POC: a solid gold line ending in a filled triangle; the Buy POC: a dashed gold line ending in a hollow diamond (the two shapes
+    // and the letters P and B tell them apart, not two colours).
+    poc(c, x, y, w, h) {
+      c.strokeStyle = colors.poc;
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(x, y + h / 2);
+      c.lineTo(x + w - 6, y + h / 2);
+      c.stroke();
+      pocGlyph(c, x + w - 6, y + h / 2, false);
+    },
+    bpoc(c, x, y, w, h) {
+      c.save();
+      c.strokeStyle = colors.poc;
+      c.lineWidth = 1.5;
+      c.setLineDash([3, 2]);
+      c.beginPath();
+      c.moveTo(x, y + h / 2);
+      c.lineTo(x + w - 6, y + h / 2);
+      c.stroke();
+      c.restore();
+      pocGlyph(c, x + w - 6, y + h / 2, true);
+    },
+    // Not measured yet: the dots of the role table, as the plot draws them.
+    pending(c, x, y, w, h) {
+      E.role.paint(c, "pattern-dots", x + w / 2, y + h / 2, Math.min(w, h), colors.state, { ground: colors.surface, font: `${TYPE.s}px ${FONT}` });
+    },
+  };
+  // Hatch lines over a box on the context given (the plot's coverage gaps and the key swatch).
+  function markHatch(c, x, y, w, h, color, spacing = 10, alpha = 0.22) {
+    if (w <= 0 || h <= 0) return;
+    c.save();
+    c.beginPath();
+    c.rect(x, y, w, h);
+    c.clip();
+    c.strokeStyle = color;
+    c.lineWidth = 1;
+    c.globalAlpha *= alpha;
+    c.beginPath();
+    for (let k = -h; k < w; k += spacing) {
+      c.moveTo(x + k, y + h);
+      c.lineTo(x + k + h, y);
+    }
+    c.stroke();
+    c.restore();
+  }
+  // The selection's frame on the plot.
   function selectionFrame(x1, y1, x2, y2) {
-    const tick = 6;
-    twoTone(() => {
-      ctx.rect(x1, y1, x2 - x1, y2 - y1);
-    });
-    twoTone(() => {
-      for (const [x, dx, y, dy] of [[x1, -1, y1, -1], [x2, 1, y1, -1], [x1, -1, y2, 1], [x2, 1, y2, 1]]) {
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + dx * tick, y);
-        ctx.moveTo(x, y);
-        ctx.lineTo(x, y + dy * tick);
-      }
-    });
+    STROKE.selection(ctx, x1, y1, x2 - x1, y2 - y1);
+    markCount.selection++;
+  }
+  // The key swatches: each painted by its row's function on a canvas of 11 css px, over a neutral cell where the mark sits on one. Repainted when
+  // the palette or the pixel ratio changes.
+  const STROKE_KEYS = {
+    empty: { body: false },
+    open: { body: true },
+    partial: { body: true },
+    provisional: { body: false },
+    moved: { body: false, colour: () => colors.state },
+    detail: { body: false, box: [3.5, 3.5, 3, 3] },
+    selection: { body: true, box: [2.5, 2.5, 6, 6] },
+    hover: { body: true },
+    unavailable: { body: false },
+    pending: { body: false },
+    poc: { body: false },
+    bpoc: { body: false },
+  };
+  const strokeKeys = { epoch: -1, dpr: 0 };
+  function strokeSwatch(node, role) {
+    const dpr = devicePixelRatio || 1,
+      size = 11,
+      spec = STROKE_KEYS[role],
+      canvas = node.firstChild instanceof HTMLCanvasElement ? node.firstChild : document.createElement("canvas"),
+      c = canvas.getContext("2d");
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    canvas.setAttribute("aria-hidden", "true");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.fillStyle = colors.surface;
+    c.fillRect(0, 0, size, size);
+    if (spec.body) {
+      c.fillStyle = colors.muted;
+      c.globalAlpha = 0.3;
+      c.fillRect(1, 1, size - 2, size - 2);
+      c.globalAlpha = 1;
+    }
+    const [x, y, w, h] = spec.box ?? [0, 0, size, size];
+    STROKE[role](c, x, y, w, h, spec.colour?.());
+    if (!node.contains(canvas)) node.replaceChildren(canvas);
+  }
+  // Each draw: the keys of the marks on the plot are shown (the moved-through key says how many of the cells were too small to outline), and every
+  // swatch is repainted when the palette or the pixel ratio moved.
+  function strokeKeysCommit() {
+    const dpr = devicePixelRatio || 1;
+    if (strokeKeys.epoch !== colourEpoch || strokeKeys.dpr !== dpr) {
+      strokeKeys.epoch = colourEpoch;
+      strokeKeys.dpr = dpr;
+      for (const node of qsa("[data-stroke-role]")) strokeSwatch(node, node.dataset.strokeRole);
+    }
+    const show = (id, on) => {
+      const node = el(id);
+      if (node.hidden === on) node.hidden = !on;
+    };
+    show("key-provisional", markCount.provisional > 0);
+    show("key-detail", markCount.detail > 0);
+    show("key-selection", markCount.selection > 0);
+    show("key-hover", markCount.hover > 0);
+    if (markCount.detail > 0) {
+      const text = `Detail unresolved: ${markCount.detail} of ${markCount.detail + markCount.moved} moved-through cells`;
+      if (el("key-detail-text").textContent !== text) el("key-detail-text").textContent = text;
+    }
   }
   // ---- The profile tracks (PRD-0002 S2, section 3) ----
   // Two tracks side by side, right of the Rows strip, each with a heading of its own and its numeric domain under it. The CURRENT track is the
@@ -7623,27 +7828,27 @@
     return rec.sign === "signed-symmetric" ? "±" + uiFmt(hi, rec.unit) : rec.sign === "ratio" ? `${lo}–${hi}` : `${lo === 0 ? "0" : uiFmt(lo, rec.unit)}–${uiFmt(hi, rec.unit)}`;
   }
   // The endpoint glyphs: a filled triangle for the POC, a hollow diamond for the Buy POC, both in the gold profile role.
-  function pocGlyph(x, y, buy) {
-    ctx.save();
-    ctx.strokeStyle = colors.poc;
-    ctx.fillStyle = colors.poc;
-    ctx.lineWidth = 1.25;
-    ctx.beginPath();
+  function pocGlyph(c, x, y, buy) {
+    c.save();
+    c.strokeStyle = colors.poc;
+    c.fillStyle = colors.poc;
+    c.lineWidth = 1.25;
+    c.beginPath();
     if (buy) {
-      ctx.moveTo(x + 2.5, y - 3.5);
-      ctx.lineTo(x + 6, y);
-      ctx.lineTo(x + 2.5, y + 3.5);
-      ctx.lineTo(x - 1, y);
-      ctx.closePath();
-      ctx.stroke();
+      c.moveTo(x + 2.5, y - 3.5);
+      c.lineTo(x + 6, y);
+      c.lineTo(x + 2.5, y + 3.5);
+      c.lineTo(x - 1, y);
+      c.closePath();
+      c.stroke();
     } else {
-      ctx.moveTo(x, y - 3.5);
-      ctx.lineTo(x + 5, y);
-      ctx.lineTo(x, y + 3.5);
-      ctx.closePath();
-      ctx.fill();
+      c.moveTo(x, y - 3.5);
+      c.lineTo(x + 5, y);
+      c.lineTo(x, y + 3.5);
+      c.closePath();
+      c.fill();
     }
-    ctx.restore();
+    c.restore();
   }
   // The letters of a track's gutter, a line of room apart, each joined to its row by a short leader.
   function gutterLabels(labels, x, top, bottom) {
@@ -7654,7 +7859,7 @@
       for (let i = visible.length - 2; i >= 0; i--) visible[i].ly = Math.min(visible[i].ly, visible[i + 1].ly - 14);
     }
     for (const l of visible) {
-      if (l.glyph) pocGlyph(x, l.y, l.glyph === "buy");
+      if (l.glyph) pocGlyph(ctx, x, l.y, l.glyph === "buy");
       else markLine(x, l.y, x + 5, l.y, l.color, 1, 0.7);
       if (Math.abs(l.ly - l.y) > 1) markLine(x + 6, l.y, x + 8, l.ly, l.color, 1, 0.7);
       text(l.symbol, x + 8, l.ly, colors.ink, "left", 11);
@@ -10026,7 +10231,7 @@
     ctx.rect(G.x, top, G.w, h);
     ctx.clip();
     const xc = clamp(G.X(cut), G.x, right);
-    if (S.replay) hatchRect(xc, top, right - xc, h, colors.line, 11, 0.45);
+    if (S.replay) hatchRect(xc, top, right - xc, h, colors.state, 11, 0.3);
     else {
       ctx.fillStyle = colors.bg;
       ctx.fillRect(xc, top, right - xc, h);
@@ -12814,7 +13019,7 @@
     ctx.clip();
     // After the cutoff, as above: hidden in replay, otherwise plain.
     const xc = clamp(G.X(cut), G.x, G.x + G.w);
-    if (S.replay) hatchRect(xc, top, G.x + G.w - xc, h, colors.line, 11, 0.45);
+    if (S.replay) hatchRect(xc, top, G.x + G.w - xc, h, colors.state, 11, 0.3);
     else {
       ctx.fillStyle = colors.bg;
       ctx.fillRect(xc, top, G.x + G.w - xc, h);
@@ -12897,13 +13102,13 @@
       }
     }
     ctx.globalAlpha = 1;
-    // A ratio's columns whose parent runs past the data are unfinished, like the open column: hatched.
+    // A ratio's columns whose parent runs past the data are unfinished, like the open column: the same neutral cap.
     if (measure.ratio) {
       const span = 2 * ts,
         at = Math.floor(cut / span) * span;
       if (cut % span !== 0 && cols.some((x) => x.state === "open")) {
         const xa = Math.max(G.x, G.X(at));
-        hatchRect(xa, top, Math.min(G.x + G.w, G.X(cut)) - xa, h, colors.poc, 7, 0.25);
+        STROKE.open(ctx, xa, top, Math.min(G.x + G.w, G.X(cut)) - xa);
       }
     }
     ctx.restore();
@@ -14572,13 +14777,25 @@
     BOX.yb = yb;
     return true;
   }
-  // A cell with trades is filled; one the price only moved through or held in
-  // is outlined in its colour, or filled pale where too small to outline.
-  function motionMark(colour, traded, xa, ya, w, h, gap) {
+  // A cell with trades is filled; one the price only moved through or held in is outlined in its value's colour on a neutral interior (1.5 px
+  // core, up to 3.5 px of surface backing, inset), or, where a side is 3 px or less and no honest outline fits, a neutral occupancy mark that the
+  // footer keys as "detail unresolved" and counts. Nothing is filled at a fraction of alpha to look like a smaller value, no finer cells are
+  // invented and the resolution is not changed.
+  function motionMark(colour, traded, xa, ya, w, h, gap, tally = markTally) {
     if (traded) {
       ctx.fillStyle = colour;
       ctx.fillRect(xa + gap / 2, ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
     } else if (w > 3 && h > 3) {
+      STROKE.moved(ctx, xa + gap / 2, ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap), colour);
+      if (tally) markCount.moved++;
+    } else {
+      STROKE.detail(ctx, xa, ya, Math.max(0.1, w), Math.max(0.1, h));
+      if (tally) markCount.detail++;
+    }
+  }
+  // A zero (an unsigned zero or an occupied Geometry cell) in the occupancy ink: a 1 px outline, or a flat stand-in where the role table says.
+  function motionZero(colour, xa, ya, w, h, gap) {
+    if (w > 3 && h > 3) {
       ctx.strokeStyle = colour;
       ctx.lineWidth = 1;
       ctx.strokeRect(xa + 1, ya + 1, w - 2, h - 2);
@@ -14621,8 +14838,9 @@
           ctx.fillRect(BOX.xa + gap / 2, BOX.ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
         } else {
           // Outlined: a cell the price only moved through or held in (in the colour of its value), or a
-          // zero (in the occupancy ink). motionMark sets both colours itself.
-          motionMark(ENC.css, false, BOX.xa, BOX.ya, w, h, gap);
+          // zero (in the occupancy ink). Each sets its own colours.
+          if (ENC.role === ROLE_ZERO || ENC.role === ROLE_OCCUPANCY) motionZero(ENC.css, BOX.xa, BOX.ya, w, h, gap);
+          else motionMark(ENC.css, false, BOX.xa, BOX.ya, w, h, gap);
           passFill = passStroke = null;
         }
       }
@@ -16563,7 +16781,7 @@
       lens.encode(z, ENC, lensBounds);
       // a fill role keeps the movement outline geometry of the chart; any other role is drawn as itself
       if (ENC.role >= LENS_ROLE.UNSIGNED && ENC.role <= LENS_ROLE.MIDPOINT)
-        motionMark(ENC.css, z.ct > 0 || q.map.has(z.c + "," + z.r), xa, ya, xb - xa, yb - ya, 0.6);
+        motionMark(ENC.css, z.ct > 0 || q.map.has(z.c + "," + z.r), xa, ya, xb - xa, yb - ya, 0.6, false);
       else lensMark(xa, ya, xb, yb);
       lensTallyMark(xa, ya, xb, yb);
     }

@@ -19,7 +19,7 @@
 //
 // Not covered: the legend bar pixels and chips (U, B23), the tooltip (T, B03).
 const { test, expect, observe, probeTools } = require("./fixtures.js");
-const { addRecorder, lastDraw, openView, pageColours, rectOf, boxOf, opsOfBox } = require("./cells-support.js");
+const { addRecorder, lastDraw, openView, pageColours, rectOf, boxOf, opsOfBox, expectMovementMark } = require("./cells-support.js");
 const reference = require("../reference/index.js");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -146,7 +146,11 @@ function motionMarks(combo, colours) {
     const result = combo.mode === "dwell" ? (values[i] === 0 ? { role: "zero", idx: null } : { role: "unsigned", idx: round255(values[i]) }) : map(values[i]);
     const mark = valueMark(z, result, colours);
     // a cell the price only crossed or held in is an outline even when it has a value
-    if (z.ct === 0) mark.kind = "outline";
+    if (z.ct === 0) {
+      mark.kind = "outline";
+      // a value-coloured outline (not a zero in the occupancy ink) is the movement-only mark of the stroke table
+      mark.moved = result.role !== "zero";
+    }
     return mark;
   });
   for (const z of MIXED.expected.cells["0:0"].filter((x) => x.c >= 5)) marks.push({ c: z.c, r: z.r, kind: "pattern", style: colours.tiles["pattern-dots"] });
@@ -234,6 +238,10 @@ async function expectCanvas(page, draw, marks, colours, { n, m }, label) {
     const box = boxOf(plotRect, RECT, n, m, mark.c, mark.r, CUT);
     const ops = opsOfBox(draw, box);
     const what = `${label}: cell ${mark.c}:${mark.r}`;
+    if (mark.moved) {
+      expectMovementMark(expect, draw, box, mark.style, colours.surface, what);
+      return;
+    }
     expect(ops, `${what} is painted once`).toHaveLength(1);
     expect(ops[0].op, `${what}: a ${mark.kind}`).toBe(mark.kind === "outline" ? "strokeRect" : "fillRect");
     expect(ops[0].style, `${what}: the colour of the pinned Lut`).toBe(mark.style);

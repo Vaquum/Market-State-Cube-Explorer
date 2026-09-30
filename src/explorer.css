@@ -1478,36 +1478,6 @@
   border-radius: var(--r-s);
   background: var(--ol-panel);
 }
-#origo-lens .ol-data-key.zero {
-  background: transparent;
-  border: 1px solid var(--ol-line);
-}
-#origo-lens .ol-data-key.unfinished {
-  background: repeating-linear-gradient(
-    45deg,
-    var(--ol-poc) 0 1px,
-    transparent 1px var(--sp-1)
-  );
-}
-#origo-lens .ol-data-key.unavailable {
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--ol-line) 0 1px,
-    transparent 1px var(--sp-1)
-  );
-}
-#origo-lens .ol-data-key.coarse {
-  background: var(--ol-panel);
-  border-left: 3px solid var(--ol-poc);
-}
-#origo-lens .ol-data-key.moved {
-  background: transparent;
-  border: 1.5px solid var(--ol-muted);
-}
-#origo-lens .ol-data-key.plain {
-  background: var(--ol-line);
-}
-
 /* Inspector: its own scroll, so the chart stays in view. */
 #origo-lens .ol-side {
   display: flex;
@@ -2257,11 +2227,4 @@
   display: block;
   width: 11px;
   height: 11px;
-}
-/* "Not measured yet" is a pattern of dots in the state ink, as the plot draws it. */
-#origo-lens .ol-data-key.plain {
-  background:
-    radial-gradient(circle at 50% 50%, var(--ol-state) 0 1.2px, transparent 1.4px) 0 0 / 5px 5px,
-    var(--ol-surface);
-  box-shadow: inset 0 0 0 1px var(--ol-border);
 }

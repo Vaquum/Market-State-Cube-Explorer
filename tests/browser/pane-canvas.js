@@ -55,6 +55,10 @@ function install(canvasId) {
   wrap("lineTo", ([x, y]) => {
     path.push([x, y]);
   });
+  // a rectangle path is its four corners, so a two-tone boundary drawn with ctx.rect can be located
+  wrap("rect", ([x, y, w, h]) => {
+    path.push([x, y], [x + w, y], [x + w, y + h], [x, y + h]);
+  });
   wrap("fillRect", function ([x, y, w, h]) {
     cur.rects.push({ x, y, w, h, fill: style(this.fillStyle), alpha: this.globalAlpha });
   });

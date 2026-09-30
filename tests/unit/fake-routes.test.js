@@ -69,6 +69,7 @@ const decodeOf = (block) => {
   return out;
 };
 const near = (a, b) => Math.abs(a - b) <= 1e-12 * Math.max(Math.abs(a), Math.abs(b)) + 1e-12;
+const sum = (values) => values.reduce((a, b) => a + b, 0); // plain summation: the tolerance of `near` covers its rounding, and no code under test is used as the oracle
 const baseOf = (iso) => (Date.parse(iso) - Date.parse("2021-01-01T00:00:00Z")) / 56250;
 
 describe("validation and error shapes", () => {
@@ -411,7 +412,7 @@ describe("reads: the open column, the last closed column, coverage and summaries
     const query = await cube(fake, "query", params, token);
     assert.equal(query.json.summary.source, "cube+pack");
     assert.equal(query.json.summary.last_column_unfinished, true);
-    assert.equal(query.json.summary.volume, block.vol.length ? model.fsum(block.vol) : 0);
+    assert.ok(near(query.json.summary.volume, sum(block.vol)), "the summary's volume is the sum of the cells it merged");
     fake.reset();
   });
 
@@ -430,7 +431,7 @@ describe("reads: the open column, the last closed column, coverage and summaries
     const d = decodeOf(r.json.block);
     assert.equal(s.source, "cube");
     assert.equal(s.cell_count, d.count);
-    assert.ok(near(s.volume, model.fsum(d.vol)));
+    assert.ok(near(s.volume, sum(d.vol)));
     assert.equal(s.trade_count, d.cnt.reduce((a, x) => a + x, 0));
     assert.equal(s.taker_buy_trade_count, d.tbcnt.reduce((a, x) => a + x, 0));
     assert.deepEqual([s.tR, s.pR, s.p1, s.p2], [56.25 * 4, 250, 150 * 125, 300 * 125]);
@@ -546,7 +547,7 @@ describe("reads: the open column, the last closed column, coverage and summaries
     cols.col.forEach((col, i) => {
       const mine = cells.col.map((x, k) => [x, k]).filter(([x]) => x === col).map(([, k]) => k);
       assert.equal(cols.rows[i], new Set(mine.map((k) => cells.row[k])).size);
-      assert.ok(near(cols.volume[i], model.fsum(mine.map((k) => cells.vol[k]))));
+      assert.ok(near(cols.volume[i], sum(mine.map((k) => cells.vol[k]))));
     });
     const parents = r.json.parents;
     assert.deepEqual(parents.col, [...new Set(cells.col.map((x) => x >> 1))]);

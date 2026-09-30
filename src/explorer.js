@@ -4997,6 +4997,7 @@
     // A Readout's numeric key is column * 2^21 + row (cellKey above): the marker names the column and row
     UI_CELL_STRIDE = 2097152,
     // TEXT(S1): the labels of the scale-change fields when they are empty (E.legend words them when there is a change)
+    UI_SHORT_LABELS = { modelApplicability: "Model applies to" },
     UI_CHANGE_LABELS = { scaleChangeCause: "Changed by", scaleChangeFrom: "Was", scaleChangeTo: "Now" };
   function uiEl(tag, className, text) {
     const node = document.createElement(tag);
@@ -5457,7 +5458,7 @@
       dyn("bar", [bar, ticks]);
       const legendDetails = E.legend.details(legend),
         details = legendDetails.map((d) => {
-          const dt = uiEl("dt", "", d.label),
+          const dt = uiEl("dt", "", uiDetailLabel(d)),
             dd = uiEl("dd", "ol-num", uiUtcText(d));
           dd.dataset.field = d.field;
           if (d.canonical !== null && d.canonical !== undefined)
@@ -5466,11 +5467,12 @@
         }),
         list = uiEl("dl", "ol-legend-details");
       // Rows say what the rows are: the period, the row size, the quality and what they were read to
-      for (const d of channel === "rows" ? uiRowsInfo(scaleUi.rowsInfo).rows : []) {
+      for (const d of channel === "rows" ? uiRowsInfo(scaleUi.rowsInfo).rows.reverse() : []) {
         const dd = uiEl("dd", "ol-num", d.value);
         dd.dataset.field = d.field;
         if (d.canonical !== null && d.canonical !== undefined) dd.dataset.value = typeof d.canonical === "string" ? d.canonical : JSON.stringify(d.canonical);
-        details.push([uiEl("dt", "", d.label), dd]);
+        // first: what the rows are comes before how they are coloured
+        details.unshift([uiEl("dt", "", d.label), dd]);
       }
       // The scale change is always a field, empty when the last settle changed nothing, so that "no change was
       // announced" is something a reader of the page finds and not an absence
@@ -5501,6 +5503,10 @@
   function uiUtcMs(ms) {
     return new Date(ms).toISOString().replace(/(:\d\d)?\.000Z$/, "Z");
   }
+  // A detail row's label: the module's own, except where it is the same long sentence as the value (the model's
+  // applicability), which would make the label column as wide as the popover.
+  // TEXT(S1): the short label of that field
+  const uiDetailLabel = (d) => (d.label === d.value && d.label.length > 24 ? (UI_SHORT_LABELS[d.field] ?? d.field) : d.label);
   function uiUtcText(detail) {
     return ["fitThrough", "obsCutoff", "obsCanonical"].includes(detail.field) && typeof detail.canonical === "number"
       ? uiUtcMs(detail.canonical)
@@ -5637,6 +5643,13 @@
     part("why").textContent = [...new Set(reasons)].join(" · ");
     part("why").hidden = reasons.length === 0;
     uiPopForm(part("manual"), channel, subject, eff, offers);
+    // Clear is offered only where there is something to clear: a manual mapping, or a window
+    const clear = part("manual").querySelector("[data-action^='clear']");
+    if (clear)
+      clear.hidden =
+        clear.dataset.action === "clear-window"
+          ? S.scale.window === null
+          : scaleUi.models[cells ? "cells" : "rows"]?.details.find((d) => d.field === "fitOrigin")?.canonical !== "manual";
   }
   // The manual-domain form of a popover, rebuilt only when its kind changed (so a value being typed stays).
   function uiPopForm(form, channel, subject, eff, offers) {
@@ -5912,7 +5925,7 @@
         const dd = uiEl("dd", "ol-num", uiUtcText(d));
         dd.dataset.field = d.field;
         if (d.canonical !== null && d.canonical !== undefined) dd.dataset.value = typeof d.canonical === "string" ? d.canonical : JSON.stringify(d.canonical);
-        list.append(uiEl("dt", "", d.label), dd);
+        list.append(uiEl("dt", "", uiDetailLabel(d)), dd);
       }
       const keys = uiEl("div", "ol-legend-keys");
       keys.append(...uiKeyList(legend.keys, inks, true));

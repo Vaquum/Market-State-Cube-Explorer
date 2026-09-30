@@ -313,7 +313,7 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     const names = await page.locator('#ol-rows-menu [data-scale-item]').evaluateAll((items) => items.map((item) => item.dataset.scaleItem));
     // Rows Delta: Values only (no Relative rank for a signed measure), the policies, the lock and Fit; no Local contrast.
     expect(names).toEqual(["transform:log", "transform:linear", "policy:explore", "policy:auto", "lock", "fit"]);
-    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");    await fake.idle({ quietMs: 400, timeoutMs: 20000 });
   });
 
   test("Fit, Auto color, Comparison lock and Local contrast are native controls with names; nothing is named by a title alone", async ({ page, fakeFor, probe }) => {
@@ -585,6 +585,50 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
       });
   }
 
+  // The axis chip, its popover (the pane's axes, details and keys with counts) and the footer's generated keys: the pane is
+  // Efficiency, whose details carry the model's provenance, so the popover is as long as it gets.
+  const AXIS_VIEW = "#w=24h&mode=volume&rows=volume&pane=efficiency";
+  for (const scheme of ["light", "dark"]) {
+    test(`contrast, size and numerals of the axis chip, its popover and the footer keys in the ${scheme} theme`, async ({ fakeFor, freshContext }) => {
+      const fake = await fakeFor("mini");
+      const context = await freshContext({ colorScheme: scheme });
+      const page = await context.newPage();
+      await load(page, fake, probeTools.forPage(page), AXIS_VIEW);
+      const problems = [];
+      const seen = [];
+      await expect(page.locator("#ol-axis-chip")).toBeVisible();
+      checkContrast(await page.evaluate(COLLECT, { selectors: ["#ol-axis-chip", "#ol-keys-scale"], boundaries: ["#ol-axis-chip"] }), `${scheme} axis chip`, problems, seen);
+      await page.focus("#ol-axis-chip");
+      await page.keyboard.press("Enter");
+      await expect(page.locator("#ol-axis-pop")).toBeVisible();
+      checkContrast(await page.evaluate(COLLECT, { selectors: ["#ol-axis-pop"], boundaries: ["#ol-axis-pop .ol-action", "#ol-axis-pop"] }), `${scheme} axis popover`, problems, seen);
+      expect(await smallControls(page.locator("#ol-axis-pop")), "axis popover controls under 24 css px").toEqual([]);
+      expect(await page.locator('#ol-axis-pop [data-field="modelStatus"]').count(), "the model's provenance is in the popover").toBe(1);
+      await page.keyboard.press("Escape");
+      expect(await page.evaluate(() => document.activeElement?.id), "Escape returns the focus to the axis chip").toBe("ol-axis-chip");
+      expect(seen.length, "the check looked at something").toBeGreaterThan(20);
+      expect(problems).toEqual([]);
+    });
+  }
+
+  for (const [width, height] of [[375, 812], [600, 800]]) {
+    test(`the axis popover fits at ${width}x${height}`, async ({ fakeFor, freshContext }) => {
+      const fake = await fakeFor("mini");
+      const context = await freshContext({ viewport: { width, height } });
+      const page = await context.newPage();
+      await load(page, fake, probeTools.forPage(page), AXIS_VIEW);
+      await page.focus("#ol-axis-chip");
+      await page.keyboard.press("Enter");
+      await expect(page.locator("#ol-axis-pop")).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+      const box = await page.locator("#ol-axis-pop").boundingBox();
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+    });
+  }
+
   for (const [width, height] of [[375, 812], [600, 800]]) {
     test(`no horizontal overflow at ${width}x${height}, and the popover stays inside the viewport`, async ({ fakeFor, freshContext }) => {
       const fake = await fakeFor("mini");
@@ -646,6 +690,12 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     await form.locator('input[name="k"]').fill("5");
     await form.getByRole("button", { name: "Apply" }).click();
     await expect(error).toBeHidden();
+    // ... and with the spine in the page it is a held manual mapping: the module's id of the typed numbers, origin manual.
+    await expect(page.locator("#ol-legend")).toHaveAttribute("data-policy", "comparison");
+    const id = await page.evaluate(() => window.explorerEncoding.scale.manual({ kind: "value-log1p", signed: false, U: 10, k: 5 }).descriptor.id);
+    await expect(page.locator("#ol-legend")).toHaveAttribute("data-mapping-id", id);
+    await expect(page.locator('#ol-legend-pop [data-field="fitOrigin"]')).toHaveAttribute("data-value", "manual");
+    await fake.idle({ quietMs: 400, timeoutMs: 20000 });
   });
 
   test("B09c, the share window: an asymmetric Taker flow window is refused with the window's reason, a symmetric one is not", async ({ page, fakeFor, probe }) => {
@@ -668,5 +718,6 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     const addressKnowsScale = await page.evaluate(() => location.hash.includes("vis=2"));
     test.info().annotations.push({ type: "address", description: addressKnowsScale ? "address written by P: checked" : "address half not run: the address writer of P is not merged at this base" });
     if (addressKnowsScale) expect(await page.evaluate(() => location.hash)).toContain("sw=0.45~0.55");
+    await fake.idle({ quietMs: 400, timeoutMs: 20000 });
   });
 });

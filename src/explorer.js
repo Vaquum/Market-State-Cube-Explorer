@@ -11390,12 +11390,16 @@
       else postNotice({ code: "code-not-stored" });
     }
     loadViews();
-    const i = views.list.findIndex((x) => x.name === name);
+    const i = views.list.findIndex((x) => x.name === name),
+      replaced = i >= 0 ? views.list[i] : null;
     if (i >= 0) views.list[i] = view;
     else views.list.push(view);
     views.undo = null;
     if (storeViews())
       viewsStatus(i >= 0 ? `Updated “${name}”.` : `Saved “${name}”.`);
+    // A view that could not be saved is not listed as if it were (the list is what storage holds).
+    else if (i >= 0) views.list[i] = replaced;
+    else views.list.pop();
     renderViews();
   }
   // A saved view opens from its full code when it kept one (that is exact), else from its address. A view
@@ -11659,7 +11663,8 @@
       result = E.codec.formatAddress(visualState(false), env, { budget: true });
       if (result.level === 0) result = { ...result, level: 2 };
     }
-    if (result.hash === null) result = { ...result, hash: addr.hash };
+    // Past the last level the address is not rewritten: the bar keeps the one it has.
+    if (result.hash === null) result = { ...result, hash: location.hash || addr.hash };
     // A shortened address is said once when it becomes one, not on every write that follows.
     if (result.level !== addr.level) {
       if (result.level > 0)
@@ -11792,7 +11797,7 @@
           // A context that has no key has no record.
         }
         if (hit?.desc.id !== rec.mappingId) {
-          dropped.push({ chan: rec.channel, reason: "only the scale id was carried, and this browser does not hold that scale" });
+          dropped.push({ chan: rec.channel, reason: `${E.text.address.level.ids}; this browser does not hold that scale` });
           continue;
         }
         desc = hit.desc;

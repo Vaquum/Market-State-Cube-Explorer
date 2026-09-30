@@ -293,6 +293,47 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     void surface;
   });
 
+  test("the original build opens a vis=2 address and reads what this build stored (rollback, B22's persistence half)", async ({ page, fakeFor, baselinePage }) => {
+    const fake = await fakeFor("mini");
+    const descriptor = S.address({ mode: "delta", scale: { basis: "intensity" } }, [S.valueRecord("delta", 4, 0, 1204551.25, 8830.5, { policy: "k", origin: "manual" })]);
+    await page.goto(fake.url + "/" + descriptor.hash);
+    await fake.idle();
+    await S.openViews(page);
+    await page.locator("#ol-view-name").fill("Kept");
+    await page.locator("#ol-view-form button[type=submit]").click();
+    await expect.poll(async () => (await S.storage(page)).local["views:v1"]).toContain("Kept");
+    // any action that saves writes the last view (a named view writes only its own list)
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("i");
+    await expect.poll(async () => (await S.storage(page)).local["view:v5"]).toContain("visualVersion");
+    const written = await S.storage(page);
+    // the keys, envelopes and entries this build writes are the ones the original build reads
+    expect(JSON.parse(written.local["view:v5"])).toMatchObject({ version: 5, visualVersion: 2 });
+    expect(JSON.parse(written.session["history:v1"])).toMatchObject({ visualVersion: 2 });
+    expect(JSON.parse(written.local["views:v1"])[0]).toMatchObject({ name: "Kept", visualVersion: 2 });
+    // the original build, given that storage and then an address with the version-2 parameters
+    const seedStorage = ({ local, session }) => {
+      try {
+        if (localStorage.getItem("__seeded")) return;
+        localStorage.setItem("__seeded", "1");
+        for (const [k, v] of Object.entries(local)) localStorage.setItem("market-state-cube-explorer:" + k, v);
+        for (const [k, v] of Object.entries(session)) sessionStorage.setItem("market-state-cube-explorer:" + k, v);
+      } catch {
+        // a blank page
+      }
+    };
+    const strip = (area) => Object.fromEntries(Object.entries(area).filter(([k]) => !k.startsWith("notice:") && !k.startsWith("backup:")));
+    const { page: old } = await baselinePage({ mode: "live", url: "/", initScripts: [{ fn: seedStorage, arg: { local: strip(written.local), session: {} } }] });
+    await old.locator("#ol-canvas").waitFor();
+    // a stored last view with version-2 members: restored by its place and settings, the members it does not know ignored
+    await expect.poll(async () => (await S.where(old)).hash).toBe("#w=24h&mode=delta");
+    await S.openViews(old);
+    await expect(old.locator("#ol-saved")).toContainText("Kept");
+    const { page: linked } = await baselinePage({ mode: "live", url: "/" + descriptor.hash });
+    await linked.locator("#ol-canvas").waitFor();
+    await expect.poll(async () => (await S.where(linked)).hash).toBe("#w=24h&mode=delta");
+  });
+
   test("a live advance leaves the address, history.length and history.state of a view with a mapping untouched (DD-92)", async ({ page, fakeFor }) => {
     const fake = await fakeFor("mini");
     const made = S.address({ auto: false, n: 4, m: 0 }, [S.valueRecord("volume", 4, 0, 1204551.25, 8830.5)]);

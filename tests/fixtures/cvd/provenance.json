@@ -1,0 +1,9 @@
+{
+  "kind": "published-constants",
+  "expectationSource": "published",
+  "generator": null,
+  "seed": null,
+  "source": "The three colour-vision-deficiency simulation matrices of Machado, Oliveira and Fernandes, 'A Physiologically-based Model for Simulation of Color Vision Deficiency', IEEE Transactions on Visualization and Computer Graphics 15(6), 2009, severity 1.0, applied to linear sRGB; and the BT.709 / WCAG 2.x relative-luminance weights for grayscale. Transcribed from the paper's tables into simulations.json.",
+  "extractedOn": "2026-10-01",
+  "notes": "Nothing here is computed by the page or by the code under test: tests/browser/cvd-plane.spec.js applies these matrices to screenshots of real tiles. The numbers are a transcription: a typo would make a simulation differ from the published one, not hide a defect of the page, since the assertion is that two tiles that differ stay different after ANY of these projections."
+}

@@ -1,6 +1,6 @@
 {
-  "kind": "published-constants",
-  "expectationSource": "published",
+  "kind": "published",
+  "expectationSource": "published-table",
   "generator": null,
   "seed": null,
   "source": "The three colour-vision-deficiency simulation matrices of Machado, Oliveira and Fernandes, 'A Physiologically-based Model for Simulation of Color Vision Deficiency', IEEE Transactions on Visualization and Computer Graphics 15(6), 2009, severity 1.0, applied to linear sRGB; and the BT.709 / WCAG 2.x relative-luminance weights for grayscale. Transcribed from the paper's tables into simulations.json.",

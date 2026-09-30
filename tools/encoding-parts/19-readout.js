@@ -128,6 +128,19 @@
     return [mappingId, state, lut.id, lut.theme].join("|");
   }
 
+  // The coordinate function a legend uses to place its ticks and to check its marker: the frame's OWN plan,
+  // so a tick sits exactly where the encoder would put the value (S1-019). null without a mapping.
+  function rdoApplier(plan) {
+    if (plan === null) return null;
+    const sc = { t: 0, clip: 0, state: null };
+    return (value, out) => {
+      plan.apply(value, sc);
+      out.t = sc.t;
+      out.clip = sc.clip;
+      return out;
+    };
+  }
+
   function rdoContextKey(spec, map) {
     if (spec.ctx !== undefined && spec.ctx !== null) return API.context.keyString(spec.ctx);
     if (typeof spec.contextKey === "string") return spec.contextKey;
@@ -458,6 +471,7 @@
         observation: spec.observation !== undefined ? spec.observation : null,
         model: spec.model !== undefined ? spec.model : null,
         composite: null,
+        apply: rdoApplier(plan),
       };
     }
 
@@ -689,6 +703,7 @@
         model: spec.model !== undefined ? spec.model : null,
         composite: rdoRowsComposite(spec, lut, map.desc, info),
         info: spec.info !== undefined ? spec.info : null,
+        apply: rdoApplier(plan),
       };
     }
 
@@ -907,6 +922,17 @@
         model: spec.model !== undefined ? spec.model : null,
         composite: null,
         axis,
+        apply: (value, out) => {
+          if (plan === null) {
+            out.t = 0;
+            out.clip = value === 0 || !zeroOnly ? 0 : 2;
+            return out;
+          }
+          plan.apply(value, sc);
+          out.t = axisSigned ? 2 * sc.t - 1 : sc.t;
+          out.clip = sc.clip;
+          return out;
+        },
       };
     }
 

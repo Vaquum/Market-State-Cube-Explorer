@@ -232,3 +232,70 @@ real("the module text never reads storage, the clock or a random source, and can
   assert.ok(!/<!--/.test(source), "the module text holds <!--");
   assert.ok(!/__EXPLORER_/.test(source), "the module text holds a build marker");
 });
+
+// ---------------------------------------------------------------------------------------------------
+// Drift that the arity check above cannot see (package WX, the Wave-1 exit scan): a member the module exports
+// that API.md A.3 does not list (a helper that leaked into the frozen surface), and an exported function whose
+// definition carries no comment of its own (every public function documents what it promises, in the code
+// where the next reader is looking, at the density of its neighbours).
+
+// extraMembers(E) -> [message]: a namespace member that is not in SPEC. E.text is a table of strings plus fill
+// and fillStrict, so it is checked by its functions only.
+function extraMembers(E) {
+  const problems = [];
+  for (const [ns, members] of Object.entries(SPEC)) {
+    const space = E[ns];
+    if (space === undefined || space === null || typeof space !== "object") continue;
+    const listed = new Set(Object.keys(members));
+    for (const name of Object.keys(space)) {
+      if (ns === "text" && typeof space[name] !== "function") continue;
+      if (!listed.has(name)) problems.push(`E.${ns}.${name} is exported but API.md A.3 does not list it`);
+    }
+  }
+  return problems;
+}
+
+// undocumented(source, E) -> [message]: for each `API.<ns> = Object.freeze({ ... })` block of the module text, every
+// member that is a function (by its runtime type) must have its named definition preceded directly by a comment
+// line. A member written `name: (args) => helper(...)` is documented by `helper`'s comment.
+function undocumented(source, E) {
+  const lines = source.split("\n");
+  const problems = [];
+  const open = /^ {2}API\.(\w+) = Object\.freeze\(\{\s*$/;
+  for (let i = 0; i < lines.length; i++) {
+    const m = open.exec(lines[i]);
+    if (!m) continue;
+    const ns = m[1];
+    for (let j = i + 1; j < lines.length && !/^ {2}\}\);/.test(lines[j]); j++) {
+      const member = /^ {4}(?:(\w+): )?(?:\([^)]*\) => )?(\w+)(?:\(.*)?,?$/.exec(lines[j].replace(/,\s*$/, ""));
+      if (!member) continue;
+      const name = member[1] || member[2];
+      const ident = member[2];
+      if (!E[ns] || typeof E[ns][name] !== "function") continue;
+      const def = new RegExp(`^\\s*(?:async )?function ${ident}\\(`);
+      const at = lines.findIndex((l) => def.test(l));
+      if (at < 0) problems.push(`E.${ns}.${name}: the definition of ${ident} was not found`);
+      else if (!/^\s*(\/\/|\*\/)/.test(lines[at - 1])) problems.push(`E.${ns}.${name}: ${ident} (line ${at + 1}) has no comment directly above it`);
+    }
+  }
+  return problems;
+}
+
+test("the drift checkers: a leaked helper and a bare function are named, a documented module passes", () => {
+  const good = handMade();
+  assert.deepEqual(extraMembers(good), []);
+  const leaked = Object.freeze({ ...good, util: Object.freeze({ ...good.util, helper: () => {} }) });
+  assert.deepEqual(extraMembers(leaked), ["E.util.helper is exported but API.md A.3 does not list it"]);
+  const src = ["  // documents f", "  function f() {}", "", "  function g() {}", "  API.demo = Object.freeze({", "    f,", "    g,", "    h: (x) => f(x),", "    K: 3,", "  });"].join("\n");
+  const E = { demo: { f() {}, g() {}, h() {}, K: 3 } };
+  assert.deepEqual(undocumented(src, E), ["E.demo.g: g (line 4) has no comment directly above it"]);
+  assert.deepEqual(undocumented(src.replace("  function g", "  // documents g\n  function g"), E), []);
+});
+
+real("no namespace exports a member that API.md A.3 does not list", () => {
+  assert.deepEqual(extraMembers(enc()), []);
+});
+
+real("every exported function of the module has a comment directly above its definition", () => {
+  assert.deepEqual(undocumented(TARGET.source(), enc()), []);
+});

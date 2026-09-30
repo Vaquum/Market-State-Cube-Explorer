@@ -11,8 +11,6 @@
 // outside the support) written out from the rule, not from the code under test.
 const R = require("./rational.js");
 
-const fromNumbers = (values) => values.map((x) => R.fromDouble(x));
-
 function assertSorted(values) {
   for (let i = 1; i < values.length; i++) {
     if (!(values[i - 1] <= values[i])) throw new RangeError(`typeSeven: the sample is not sorted ascending at index ${i}`);
@@ -85,4 +83,4 @@ function rankApply(knots, x) {
   return { t: R.toDouble(R.div(R.add(R.q(j), along), R.q(256))), clip: "none" };
 }
 
-module.exports = { typeSeven, typeSevenExact, median7, knots257, rankApply, fromNumbers };
+module.exports = { typeSeven, typeSevenExact, median7, knots257, rankApply };

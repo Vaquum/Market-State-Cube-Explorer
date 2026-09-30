@@ -440,3 +440,291 @@ describe("typeseven.js: Type-7 quantiles and the 257-knot rank in exact arithmet
     assert.deepEqual(ref.rankApply(k, 9.001), { t: 1, clip: "high" });
   });
 });
+
+// ---- the Python goldens, checked by a second implementation in another language ----
+//
+// golden.py (fractions, decimal) wrote tests/fixtures/scales and tests/fixtures/indicators. Here every indicator series is recomputed
+// in exact rationals in JavaScript, written separately from the Python, the rank knots and mappings by tests/reference/typeseven.js, and
+// the Value transform by double-precision Math.log1p against the 80-digit decimal values: two languages, two algorithms, one number.
+// Agreement is exact where both sides round an exact rational once (indicators, rank), and within 1e-14 relative where one side is IEEE
+// log1p (Value). The hand vectors quoted from TESTPLAN U15/U16 and API.md A.3 pin the files to the documents.
+const golden = (rel) => JSON.parse(fs.readFileSync(path.join(FIXTURES, rel), "utf8"));
+const fromText = (x) => (x === "NaN" ? NaN : x);
+const floats = (list) => list.map(fromText);
+
+// exact JavaScript versions of the five indicators (rationals in, correctly rounded doubles out)
+const Q = R.q;
+const sumQ = (xs) => xs.reduce(R.add, R.ZERO);
+const asQ = (x) => R.fromDouble(x);
+const out = (list) => list.map((x) => (x === null ? NaN : R.toDouble(x)));
+function smaQ(closes, n) {
+  const c = closes.map(asQ);
+  return c.map((_, i) => (i < n - 1 ? null : R.div(sumQ(c.slice(i - n + 1, i + 1)), Q(n))));
+}
+function emaQ(values, n, from = 0) {
+  const res = values.map(() => null);
+  if (values.length - from < n) return res;
+  const alpha = Q(2, n + 1);
+  let e = R.div(sumQ(values.slice(from, from + n)), Q(n));
+  res[from + n - 1] = e;
+  for (let i = from + n; i < values.length; i++) {
+    e = R.add(R.mul(alpha, values[i]), R.mul(R.sub(R.ONE, alpha), e));
+    res[i] = e;
+  }
+  return res;
+}
+function rsiQ(closes, n) {
+  const c = closes.map(asQ);
+  const res = c.map(() => null);
+  if (c.length <= n) return res;
+  let up = R.ZERO;
+  let down = R.ZERO;
+  for (let i = 1; i <= n; i++) {
+    const d = R.sub(c[i], c[i - 1]);
+    if (R.sign(d) > 0) up = R.add(up, d);
+    else down = R.sub(down, d);
+  }
+  up = R.div(up, Q(n));
+  down = R.div(down, Q(n));
+  const value = () => (R.sign(down) === 0 ? Q(100) : R.sign(up) === 0 ? R.ZERO : R.sub(Q(100), R.div(Q(100), R.add(R.ONE, R.div(up, down)))));
+  res[n] = value();
+  for (let i = n + 1; i < c.length; i++) {
+    const d = R.sub(c[i], c[i - 1]);
+    up = R.div(R.add(R.mul(Q(n - 1), up), R.sign(d) > 0 ? d : R.ZERO), Q(n));
+    down = R.div(R.add(R.mul(Q(n - 1), down), R.sign(d) < 0 ? R.neg(d) : R.ZERO), Q(n));
+    res[i] = value();
+  }
+  return res;
+}
+function macdQ(closes) {
+  const c = closes.map(asQ);
+  const fast = emaQ(c, 12);
+  const slow = emaQ(c, 26);
+  const line = c.map((_, i) => (i < 25 ? null : R.sub(fast[i], slow[i])));
+  const signal = emaQ(line.map((x) => x ?? R.ZERO), 9, 25);
+  const hist = c.map((_, i) => (line[i] === null || signal[i] === null ? null : R.sub(line[i], signal[i])));
+  return { line, signal, hist };
+}
+// floor(sqrt(n)) for a BigInt n by Newton's iteration
+function isqrt(n) {
+  if (n < 2n) return n;
+  let x = 1n << BigInt((n.toString(2).length + 1) >> 1);
+  for (;;) {
+    const y = (x + n / x) >> 1n;
+    if (y >= x) return x;
+    x = y;
+  }
+}
+function bollingerQ(closes, n, k) {
+  const c = closes.map(asQ);
+  const res = { mid: [], upper: [], lower: [], width: [] };
+  for (let i = 0; i < c.length; i++) {
+    if (i < n - 1) {
+      for (const key of Object.keys(res)) res[key].push(null);
+      continue;
+    }
+    const window = c.slice(i - n + 1, i + 1);
+    const m = R.div(sumQ(window), Q(n));
+    const variance = R.div(sumQ(window.map((x) => R.mul(R.sub(x, m), R.sub(x, m)))), Q(n));
+    // sd = sqrt(p / q) to 45 decimal places: floor(sqrt(p q 10^90)) / (q 10^45)
+    const scale = 10n ** 45n;
+    const sd = variance.n === 0n ? R.ZERO : Q(isqrt(variance.n * variance.d * scale * scale), variance.d * scale);
+    const up = R.add(m, R.mul(Q(k), sd));
+    const low = R.sub(m, R.mul(Q(k), sd));
+    res.mid.push(m);
+    res.upper.push(up);
+    res.lower.push(low);
+    res.width.push(R.div(R.sub(up, low), m));
+  }
+  return res;
+}
+const exactly = (got, want, label) => {
+  assert.equal(got.length, want.length, `${label}: length`);
+  got.forEach((x, i) => assert.ok(same(x, fromText(want[i])), `${label}[${i}]: ${x} vs ${want[i]}`));
+};
+
+describe("Python goldens: indicators, recomputed in exact rationals in JavaScript", () => {
+  const files = { sma: golden("indicators/sma.json"), ema: golden("indicators/ema.json"), rsi: golden("indicators/rsi.json"), macd: golden("indicators/macd.json"), bollinger: golden("indicators/bollinger.json") };
+
+  it("the five files cover the same seven close series, each a list of exact quarter-tick doubles", () => {
+    const names = files.sma.cases.map((c) => c.name);
+    assert.deepEqual(names, ["walk120", "walk300", "flat60", "rising40", "falling40", "ramp10", "sawtooth50"]);
+    for (const file of Object.values(files)) assert.deepEqual(file.cases.map((c) => c.name), names);
+    for (const c of files.sma.cases) for (const x of c.closes) assert.ok(Number.isInteger(x * 4) && x > 0, `${c.name}: ${x}`);
+  });
+
+  it("SMA(n): the golden equals the exact mean of the window (bit for bit)", () => {
+    for (const c of files.sma.cases) for (const run of c.runs) exactly(out(smaQ(c.closes, run.n)), run.expected, `sma ${c.name} n=${run.n}`);
+  });
+
+  it("EMA(n, from): alpha = 2/(n+1), seeded with the SMA of the first n values from `from`", () => {
+    for (const c of files.ema.cases) for (const run of c.runs) exactly(out(emaQ(c.closes.map(asQ), run.n, run.from)), run.expected, `ema ${c.name} n=${run.n} from=${run.from}`);
+  });
+
+  it("RSI(n): Wilder smoothing, first value at index n, 100 when the average loss is 0", () => {
+    for (const c of files.rsi.cases) for (const run of c.runs) exactly(out(rsiQ(c.closes, run.n)), run.expected, `rsi ${c.name} n=${run.n}`);
+  });
+
+  it("MACD: EMA12 - EMA26 from index 25, signal EMA9 seeded at index 25, histogram their difference", () => {
+    for (const c of files.macd.cases) {
+      const m = macdQ(c.closes);
+      exactly(out(m.line), c.macd, `macd ${c.name}`);
+      exactly(out(m.signal), c.signal, `signal ${c.name}`);
+      exactly(out(m.hist), c.hist, `hist ${c.name}`);
+    }
+  });
+
+  it("Bollinger(n, k): mean +- k population standard deviations, width = (upper - lower)/mean (root to 45 places against 60 in Python)", () => {
+    for (const c of files.bollinger.cases) {
+      for (const run of c.runs) {
+        const b = bollingerQ(c.closes, run.n, run.k);
+        for (const key of ["mid", "upper", "lower", "width"]) exactly(out(b[key]), run[key], `bollinger ${c.name} n=${run.n} ${key}`);
+      }
+    }
+  });
+
+  it("hand-checkable entries: ramp, flat, rising and falling series", () => {
+    const at = (file, name) => file.cases.find((c) => c.name === name);
+    // SMA(3) of 1..10 is 2, 3, ..., 9 from index 2
+    assert.deepEqual(floats(at(files.sma, "ramp10").runs[0].expected), [NaN, NaN, 2, 3, 4, 5, 6, 7, 8, 9].map((x) => x));
+    // EMA(3) of 1..10: seed SMA(1,2,3) = 2 at index 2, alpha 1/2: 3, 4, ... i.e. the value minus one
+    assert.deepEqual(floats(at(files.ema, "ramp10").runs[0].expected), [NaN, NaN, 2, 3, 4, 5, 6, 7, 8, 9]);
+    // flat series: RSI is 100 by the zero-loss rule, Bollinger has zero width, MACD and its histogram are 0
+    assert.ok(floats(at(files.rsi, "flat60").runs[0].expected).slice(14).every((x) => x === 100));
+    assert.ok(floats(at(files.bollinger, "flat60").runs[0].width).slice(19).every((x) => x === 0));
+    const flat = at(files.macd, "flat60");
+    assert.ok(floats(flat.macd).slice(25).every((x) => x === 0) && floats(flat.hist).slice(33).every((x) => x === 0));
+    // strictly rising: no losses, RSI 100; strictly falling: no gains, RSI 0
+    assert.ok(floats(at(files.rsi, "rising40").runs[0].expected).slice(14).every((x) => x === 100));
+    assert.ok(floats(at(files.rsi, "falling40").runs[0].expected).slice(14).every((x) => x === 0));
+    // Bollinger(5, 2) of 1..5 in the last window: mean 3, variance 2, sd sqrt 2 = 1.4142135623730951
+    const b = at(files.bollinger, "ramp10").runs.find((r) => r.n === 5);
+    assert.equal(fromText(b.mid[4]), 3);
+    assert.equal(b.upper[4], 3 + 2 * 1.4142135623730951);
+    assert.ok(Math.abs(b.width[4] - (4 * 1.4142135623730951) / 3) < 1e-15);
+    // warm-up: the first value index of each indicator
+    assert.equal(floats(at(files.rsi, "walk120").runs[0].expected).findIndex((x) => !Number.isNaN(x)), 14);
+    assert.equal(floats(at(files.macd, "walk120").signal).findIndex((x) => !Number.isNaN(x)), 33);
+    assert.equal(floats(at(files.macd, "walk120").macd).findIndex((x) => !Number.isNaN(x)), 25);
+  });
+});
+
+describe("Python goldens: Value transform", () => {
+  const file = golden("scales/value-vectors.json");
+  const byName = Object.fromEntries(file.cases.map((c) => [c.name, c]));
+
+  it("U and k are the maximum magnitude and the Type-7 median of the nonzero magnitudes (recomputed in exact JavaScript)", () => {
+    for (const c of file.cases) {
+      const mags = c.cohort.filter((x) => x !== 0).map(Math.abs).sort((a, b) => a - b);
+      if (c.state !== "ok") {
+        assert.equal(c.U, null);
+        assert.ok(c.state === "no-calibration" ? c.cohort.length === 0 : mags.length === 0, c.name);
+        continue;
+      }
+      assert.equal(c.U, mags[mags.length - 1], `${c.name}: U`);
+      assert.equal(c.k, ref.typeSeven(mags, R.q(1, 2)), `${c.name}: k`);
+    }
+  });
+
+  it("the hand vectors of TESTPLAN U15 and API.md A.3", () => {
+    const a = byName["hand-unsigned-1-2-3-4-100"];
+    assert.deepEqual([a.U, a.k], [100, 3]);
+    const t = (c, kind, x) => c[kind].find((p) => p.x === x);
+    assert.ok(Math.abs(t(a, "log1p", 3).t - 0.19601931707907) < 1e-13);
+    assert.equal(t(a, "log1p", 3).index, 50);
+    assert.ok(Math.abs(t(a, "log1p", 1).t - 0.08135536717084396) < 2e-16, "the quoted value is one ulp below the exact one; both are within 1e-15");
+    assert.equal(t(a, "log1p", 1).index, 21);
+    assert.equal(t(a, "log1p", 100).t, 1);
+    assert.equal(t(a, "log1p", 100).atU, true);
+    assert.equal(t(a, "log1p", 100).index, 255);
+    assert.ok(Math.abs(t(a, "log1p", 200).t - 1.191870644681009) < 1e-15);
+    assert.equal(t(a, "log1p", 200).over, true);
+    assert.equal(t(a, "linear", 50).t, 0.5);
+    const s = byName["hand-signed-m5-m1-0-2-10"];
+    assert.deepEqual([s.U, s.k], [10, 3.5]);
+    assert.ok(Math.abs(t(s, "log1p", -5).t - -0.6572973064836486) < 1e-15);
+    assert.ok(Math.abs(t(s, "log1p", 2).t - 0.3348219707545264) < 1e-15);
+    assert.equal(t(s, "log1p", 0).t, 0);
+    assert.deepEqual([byName["hand-all-equal-5"].U, byName["hand-all-equal-5"].k], [5, 5]);
+    assert.deepEqual([byName["hand-even-count-1-2-3-10"].U, byName["hand-even-count-1-2-3-10"].k], [10, 2.5]);
+    assert.deepEqual([byName["hand-signed-m3-3-0-9"].U, byName["hand-signed-m3-3-0-9"].k], [9, 3]);
+    assert.equal(byName["hand-zero-only"].state, "zero-only");
+    assert.equal(byName["hand-empty"].state, "no-calibration");
+  });
+
+  it("every t agrees with IEEE Math.log1p within 1e-14 relative (and the linear transform exactly), every index with the clamped t", () => {
+    let probes = 0;
+    let worst = 0;
+    for (const c of file.cases.filter((x) => x.state === "ok")) {
+      for (const p of c.log1p) {
+        const a = Math.abs(p.x);
+        const t = a === 0 ? 0 : Math.log1p(a / c.k) / Math.log1p(c.U / c.k);
+        const want = Math.abs(p.t);
+        if (want) worst = Math.max(worst, Math.abs(t - want) / want);
+        assert.ok(Math.abs(t - want) <= 1e-14 * Math.max(want, 1e-300), `${c.name} x=${p.x}: ${t} vs ${want}`);
+        assert.equal(p.over, a > c.U);
+        assert.equal(p.atU, a === c.U);
+        assert.equal(Math.sign(p.t) === -1, c.signed && p.x < 0 && a !== 0, `${c.name} x=${p.x}: sign`);
+        if (p.index !== null) assert.equal(p.index, Math.floor(Math.min(Math.max(t, 0), 1) * 255 + 0.5), `${c.name} x=${p.x}: index`);
+        probes++;
+      }
+      for (const p of c.linear) {
+        assert.equal(Math.abs(p.t), Math.abs(p.x) / c.U, `${c.name} linear x=${p.x}`);
+        probes++;
+      }
+    }
+    assert.ok(probes > 200, `${probes} probes`);
+    assert.ok(worst < 1e-14, `worst relative difference against IEEE log1p: ${worst}`);
+  });
+
+  it("the cohorts are what their names say and the seeded ones are large enough to matter", () => {
+    const sizes = file.cases.filter((c) => c.name.startsWith("seeded")).map((c) => c.cohort.length);
+    assert.deepEqual(sizes, [7, 50, 200, 500, 37]);
+    assert.ok(file.cases.some((c) => c.signed && c.state === "ok" && c.cohort.some((x) => x < 0) && c.cohort.some((x) => x === 0)), "a signed cohort with zeros");
+  });
+});
+
+describe("Python goldens: 257-knot rank", () => {
+  const file = golden("scales/rank-vectors.json");
+
+  it("the knots of every cohort equal the exact-rational Type-7 of tests/reference (JavaScript against Python, bit for bit)", () => {
+    for (const c of file.cases) {
+      assert.equal(c.knots.length, 257, c.name);
+      assert.deepEqual(ref.knots257(c.cohort), c.knots, c.name);
+    }
+  });
+
+  it("every probe equals the rank mapping of tests/reference (t bit for bit, clip exactly)", () => {
+    let probes = 0;
+    for (const c of file.cases) {
+      for (const p of c.probes) {
+        assert.deepEqual(ref.rankApply(c.knots, p.x), { t: p.t, clip: p.clip }, `${c.name} x=${p.x}`);
+        probes++;
+      }
+    }
+    assert.ok(probes > 100, `${probes} probes`);
+  });
+
+  it("the hand vectors of API.md A.3 and TESTPLAN U16 are in the file", () => {
+    const api = file.cases.find((c) => c.name.startsWith("api-a3"));
+    assert.deepEqual(api.knots.slice(254), [20.4375, 20.71875, 21]);
+    const t = (c, x) => c.probes.find((p) => p.x === x);
+    assert.deepEqual([t(api, 1).t, t(api, 2).t, t(api, 4).t, t(api, 5).t, t(api, 21).t], [0.109375, 1 / 3, 0.5, 0.611328125, 1]);
+    assert.deepEqual(t(api, 30), { x: 30, t: 1, clip: "high" });
+    assert.deepEqual(t(api, 0.5), { x: 0.5, t: 0, clip: "low" });
+    const two = file.cases.find((c) => c.name.startsWith("two-groups"));
+    assert.deepEqual([t(two, 5).t, t(two, 7).t, t(two, 9).t], [0.25, 0.501953125, 0.751953125]);
+    assert.deepEqual(t(two, 4.999), { x: 4.999, t: 0, clip: "low" });
+    assert.deepEqual(t(two, 9.001), { x: 9.001, t: 1, clip: "high" });
+    assert.equal(t(file.cases.find((c) => c.name.startsWith("all-equal")), 7).t, 0.5);
+    assert.equal(t(file.cases.find((c) => c.name.startsWith("single")), 42).t, 0.5);
+  });
+
+  it("a jump cohort and a long plateau restore exactly: equal knots, mapped to the midpoint of their group", () => {
+    const plateau = file.cases.find((c) => c.name.startsWith("plateau"));
+    assert.ok(plateau.knots.filter((k) => k === 3).length > 150);
+    const jump = file.cases.find((c) => c.name.startsWith("jump"));
+    assert.equal(jump.knots[256], 1e9);
+    assert.ok(jump.knots[255] < 1e9 && jump.knots[255] > 1e7, "the last knot before the top group is pulled towards the huge value (Type 7 interpolates)");
+  });
+});

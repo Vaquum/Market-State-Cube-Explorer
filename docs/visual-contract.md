@@ -279,6 +279,14 @@ A Wave-2 package that adds a NEW top-level helper reading `colors.*` under a nam
 | ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
 |---|---|---|---|---|---|---|---|---|
 
+### 3.8 Slice S2 additions (#47)
+
+| ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
+|---|---|---|---|---|---|---|---|---|
+| N-30 | Two-tone boundary painter: a surface casing under an ink core for the selection frame, its corner ticks and the lens frame | src/explorer.js: `twoTone()`, `selectionFrame()` (new in S2) | Selection: `colors.accent` 1.5 px plus a 0.25 fade of everything outside; lens frame: `colors.accent` 1.5 px | `IX` interaction (ink core, surface casing) | - | #47 | U50 | todo-S2 |
+| N-31 | Event strip: one lane per enabled event kind (4h squeeze, 1D squeeze, CME gap), opaque marks in the state ink, the lane name in the price column | src/explorer.js: `paintEvents()`, `eventLanes()` (new in S2) | The squeezes and the CME gap were translucent areas over the cells (`drawFill` alpha 0.24, `drawClock` alpha 0.16) | `STATE` ink, fixed role | EVENT | #47 | U50 | todo-S2 |
+| N-32 | Rows strip: the row values at full strength in a fixed 12 px column right of the heatmap, one block per effective row | src/explorer.js: `paintRowsStrip()` (new in S2) | Rows only drew a 16% projection over the cells and a second profile | the Rows mapping's unsigned or signed arms (`UM`, `+/-`) at alpha 1 | ROW | #47 | U50 | todo-S2 |
+
 ## 4. The retired-role ratchet
 
 `tests/unit/role-lint.test.js` (U35) flags retired rendering roles and never the substring buy or sell. It classifies by colour-token namespace: `colors.<key>`, `--ol-<name>` (including `var(--ol-<name>)` and `--ol-tier-${tier}-width`) and the prose "<role> colour". Taker-buy DATA names (`bv`, `bt`, `bpoc`, `buyShare`, `taker_buy_volume`, sort keys, ids such as `#ol-buypoc-value`, labels such as "Buy USDT") live in no colour namespace and can never be hit. The prefix hazard `--ol-line` versus `--ol-line-*` is handled by matching whole token names.
@@ -639,6 +647,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | U47 | `tests/unit/assemble.test.js` | assembler lint rules, ordering and requires-closure loading | W1-X |
 | U48 | `tests/unit/notice.test.js` | notice coalescing, once-per-digest, dismissal | W1-F |
 | U49 | `tests/unit/hot-path.test.js` | no allocation, sort or d3 call in the steady-frame encoder | W1-F |
+| U50 | `tests/unit/two-tone.test.js` | a two-tone boundary has a 3:1 component over every fill, empty and state backdrop | #47 |
 | B01 | `tests/browser/boot.spec.js` | boot in recorded and live mode, the 29 module keys, production globals | H7b |
 | B02 | `tests/browser/recorded-snapshot.spec.js` | real recorded blocks through the page | K |
 | B03 | `tests/browser/readout-agreement.spec.js` | tooltip, table row, legend marker and pixel agree for every measure | T |

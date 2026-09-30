@@ -155,6 +155,28 @@ test.describe("B25 the adjacent profile tracks", () => {
     expect(domains.map((d) => d.text).sort()).toEqual([chip.currentDomain, chip.referenceDomain].sort());
   });
 
+  test("the current track is the view's Volume whatever the Cells measure is; the 70% area marks both tracks; POC and Buy POC are two shapes", async ({ page, probe, fakeFor, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    const base = await open(page, fake, probe, pane, addressOf(sc));
+    const widths = (t, y) => sc.current.filter((x) => x.v > 0).map((x) => barOf(t.cur, y, x.r)?.w);
+    const before = widths(base.tracks, base.y);
+    expect(before.every((w) => typeof w === "number")).toBe(true);
+    // the Cells measure changes to Delta: the profile's bars do not
+    const other = await open(page, fake, probe, pane, addressOf(sc, { extra: "&mode=delta&marks=poc,area" }));
+    expect(widths(other.tracks, other.y), "the same lengths under Delta").toEqual(before);
+    expect(other.frame.texts.some((t) => t.text === "Volume"), "headed Volume").toBe(true);
+    // the 70% area: H and L letters beside the current track, a 2 px bar down the edge of the reference track
+    expect(other.frame.texts.filter((t) => t.text === "H" || t.text === "L").length, "H and L for the current track").toBe(2);
+    const refX = Math.min(...other.tracks.ref.map((b) => b.x));
+    expect(other.frame.rects.some((r) => r.x === refX && r.w === 2 && r.fill === other.colours.ink && Math.abs(r.alpha - 0.4) < 1e-9), "the period's 70% area as a bar down the reference track's edge").toBe(true);
+    // the two POC shapes: a filled gold triangle (3 points) and a hollow gold diamond (4 points, 1.25 px stroke), each beside a letter
+    const gold = other.colours.poc;
+    expect(other.frame.fills.filter((f) => f.fill === gold && f.path.length === 3).length, "a filled triangle for each POC").toBeGreaterThanOrEqual(2);
+    expect(other.frame.strokes.filter((k) => k.stroke === gold && k.width === 1.25 && k.path.length === 4).length, "one hollow diamond for the Buy POC").toBeGreaterThanOrEqual(1);
+    expect(other.frame.texts.filter((t) => t.text === "B").length).toBe(1);
+  });
+
   test("Rows off leaves the one current track", async ({ page, probe, fakeFor, pane }) => {
     const sc = scenario();
     const fake = await fakeFor("standard");
@@ -210,6 +232,23 @@ test.describe("B25 the adjacent profile tracks", () => {
     expect(JSON.parse(await fieldValue(pop, "window"))).toEqual({ first, last, bins: last - first + 1 });
   });
 
+  test("row share over a window where the view did not trade is undefined, not zero", async ({ page, probe, fakeFor, pane }) => {
+    // The disjoint stream: the last day trades rows 200 to 205; two hours three days earlier only rows 200 and 210 traded. The view is those
+    // two hours over rows 201 to 209: the window W is rows 201 to 205 (inside the view and the 1 day period's support), and the view has no
+    // trade in it.
+    const stream = S.disjoint();
+    const fake = await fakeFor({ name: stream.name, trades: stream.trades, cutoffIso: stream.cutoffIso });
+    const { frame } = await open(page, fake, probe, pane, S.address({ cols: stream.early, rows: [201, 210], rowsKind: "volume", period: "1d", extra: "&vis=2&pc=s" }));
+    const chip = await page.locator("#ol-profile-chip").evaluate((e) => ({ ...e.dataset }));
+    expect(chip.state).toBe("undefined");
+    expect(chip.reason).toBe("zero-total");
+    expect(frame.texts.filter((t) => t.text === "Undefined").length, "each track says so").toBe(2);
+    const pop = await popover(page);
+    expect(Number(await fieldValue(pop, "denominatorCurrent")), "the zero total is reported as it is").toBe(0);
+    expect(Number(await fieldValue(pop, "denominatorReference")), "the period's own total over W").toBeGreaterThan(0);
+    expect(JSON.parse(await fieldValue(pop, "window"))).toEqual({ first: 201, last: 205, bins: 5 });
+  });
+
   test("Delta cannot share an axis with Volume or be a row-share distribution: both choices are disabled, each with its reason", async ({ page, probe, fakeFor, pane }) => {
     const sc = scenario();
     const fake = await fakeFor("standard");
@@ -258,6 +297,81 @@ test.describe("B25 the adjacent profile tracks", () => {
     await expect.poll(() => page.evaluate(() => location.hash)).not.toContain("pc=");
   });
 
+  test("the Comparison lock freezes both track domains: the peak leaves the view and the domains stay, in the address too", async ({ page, probe, fakeFor, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    await open(page, fake, probe, pane, addressOf(sc));
+    const before = await page.locator("#ol-profile-chip").evaluate((e) => ({ cur: e.dataset.currentDomain, ref: e.dataset.referenceDomain }));
+    // engage the lock from the axis popover
+    await page.locator("#ol-axis-chip").click();
+    await page.locator('#ol-axis-pop button[data-action="lock"]').click();
+    await expect.poll(() => page.evaluate(() => location.hash), { message: "the lock is in the address" }).toContain("lk=1");
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.press("ArrowUp");
+      await probe.waitForQuiet({ quietMs: 200 });
+    }
+    await S.atRest(page, fake, probe);
+    const after = await page.locator("#ol-profile-chip").evaluate((e) => ({ cur: e.dataset.currentDomain, ref: e.dataset.referenceDomain }));
+    expect(after, "the lock keeps what was declared").toEqual(before);
+    await expect.poll(() => page.evaluate(() => location.hash)).toMatch(/a\.profile\.current:/);
+    expect(await page.evaluate(() => location.hash)).toMatch(/a\.profile\.reference\.volume:/);
+    // the frozen domains come back from the address in a fresh page
+    const hash = await page.evaluate(() => location.hash);
+    await page.goto("about:blank");
+    await page.goto(`${fake.url}/${hash}`);
+    await S.atRest(page, fake, probe);
+    const restored = await page.locator("#ol-profile-chip").evaluate((e) => ({ cur: e.dataset.currentDomain, ref: e.dataset.referenceDomain }));
+    expect(restored, "the domains the address carried").toEqual(before);
+  });
+
+  test("control for the lock: without it the same pan moves the Auto domains", async ({ page, probe, fakeFor, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    await open(page, fake, probe, pane, addressOf(sc));
+    const before = await page.locator("#ol-profile-chip").evaluate((e) => ({ cur: e.dataset.currentDomain, ref: e.dataset.referenceDomain }));
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.press("ArrowUp");
+      await probe.waitForQuiet({ quietMs: 200 });
+    }
+    await S.atRest(page, fake, probe);
+    await expect
+      .poll(async () => (await page.locator("#ol-profile-chip").evaluate((e) => e.dataset.referenceDomain)) !== before.ref, { message: "the reference domain follows the rows in view", timeout: 8000 })
+      .toBe(true);
+  });
+
+  test("a view with no trades has no domain: No data, no bars, never a maximum of 1", async ({ page, probe, fakeFor, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    const empty = { ...sc, view: [sc.peak.r + 200, sc.peak.r + 212] };
+    const { frame, tracks } = await open(page, fake, probe, pane, addressOf(empty));
+    const chip = await page.locator("#ol-profile-chip").evaluate((e) => ({ ...e.dataset }));
+    expect(chip.currentDomain).toBe("No data");
+    expect(tracks.cur.length, "no current bar").toBe(0);
+    expect(frame.texts.filter((t) => t.text === "No data").length, "said on the canvas, once for each track that has none").toBeGreaterThanOrEqual(1);
+  });
+
+  test("a legacy address is independent with both domains labelled, whatever pc it carries", async ({ page, probe, fakeFor, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    const legacy = S.address({ cols: sc.day, rows: sc.view, rowsKind: "volume", period: "7d", extra: "&pc=a&po=1" });
+    const { frame } = await open(page, fake, probe, pane, legacy);
+    const chip = await page.locator("#ol-profile-chip").evaluate((e) => ({ ...e.dataset }));
+    expect(chip.asked).toBe("independent");
+    expect(chip.comparison).toBe("independent");
+    expect(frame.texts.filter((t) => /^0[–-]/.test(t.text)).length, "both domains are printed").toBe(2);
+  });
+
+  test("the period's POC stays Volume-derived under Delta, with its glyph and letter, and the popover says so", async ({ page, probe, fakeFor, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    const { frame } = await open(page, fake, probe, pane, addressOf(sc, { kind: "delta" }));
+    const letters = frame.texts.filter((t) => t.text === "P");
+    expect(letters.length, "a P for the current track and one for the reference track").toBe(2);
+    const pop = await popover(page);
+    expect(await fieldValue(pop, "pocSource")).toBe("volume");
+    expect(await pop.locator('[data-field="pocSource"]').textContent()).toMatch(/Volume-derived/);
+  });
+
   test("under 600 px the tracks are a disclosure: none is drawn, the chip summarises the domains, its button shows them, and po travels", async ({ page, probe, fakeFor, pane }) => {
     const sc = scenario();
     const fake = await fakeFor("standard");
@@ -268,6 +382,12 @@ test.describe("B25 the adjacent profile tracks", () => {
     await expect(chip).toHaveAttribute("data-collapsed", "true");
     const text = await chip.textContent();
     expect(text, "the visible summary names both measures and both domains").toMatch(/Volume 0[–-][\d.]+ ?[kMB]? · Volume 0[–-][\d.]+ ?[kMB]?/);
+    // the rows stay inspectable while collapsed: hovering the Rows strip reads the period's row
+    const layout = await page.locator("#ol-canvas").evaluate((c) => c.dataset.layout.split(",").map(Number));
+    const box = await page.locator("#ol-canvas").boundingBox();
+    await page.mouse.move(box.x + layout[4] + layout[5] / 2, box.y + layout[1] + layout[3] / 2);
+    await expect(page.locator("#ol-tip")).toContainText("Volume · 7 days");
+    await page.mouse.move(box.x + 5, box.y + 5);
     const pop = await popover(page);
     const show = pop.locator('button[data-action="profile-open"]');
     await expect(show).toHaveAttribute("aria-pressed", "false");

@@ -124,6 +124,13 @@ async function scaleShown(surface, page) {
   return { ok: true };
 }
 
+// The legend marker as the page shows it NOW, without waiting: the DOM package removes data-coordinate and data-readout when it hides
+// the marker, so the D.18 selector #ol-legend-marker[data-coordinate][data-readout] that observe.legendMarker() waits for exists only
+// while the marker is shown. A spec that asserts the marker is CLEARED must read `hidden` itself instead of waiting for attributes.
+function markerNow(page) {
+  return page.locator("#ol-legend-marker").evaluate((el) => ({ visible: !el.hidden, coordinate: el.dataset.coordinate ?? null, readout: el.dataset.readout ?? null }));
+}
+
 // The canonical value of a field of a readout as text, "none" where the record has no such field (a cell with no coordinate).
 const canon = (read, name) => (read.fields[name] ? read.fields[name].canonical : "none");
 const same = (a, b) => a === b || (Number.isFinite(Number(a)) && Number.isFinite(Number(b)) && Math.abs(Number(a) - Number(b)) <= 1e-9 * Math.max(1, Math.abs(Number(a))));
@@ -161,7 +168,7 @@ test.describe("B03 readout agreement", () => {
       const tipCoordinate = canon(tip, "coordinate");
       const tipIndex = canon(tip, "index");
       if (shown.ok) {
-        const marker = await surface.legendMarker();
+        const marker = await markerNow(page);
         expect(marker.visible, "the marker is on the legend while the tip shows").toBe(true);
         expect(marker.readout, "the marker names the tip's readout").toBe(KEY);
         expect(Number(marker.coordinate), "the marker stands where the tip says").toBeCloseTo(Number(tipCoordinate), 9);
@@ -184,13 +191,13 @@ test.describe("B03 readout agreement", () => {
       // --- hovering the row puts its value on the legend, and leaving clears it within a frame ---
       if (shown.ok) {
         await page.locator(`tr[data-cell-key="${KEY}"]`).hover();
-        await expect.poll(async () => (await surface.legendMarker()).visible, { message: "a hovered row shows its marker" }).toBe(true);
-        const marker = await surface.legendMarker();
+        await expect.poll(async () => (await markerNow(page)).visible, { message: "a hovered row shows its marker" }).toBe(true);
+        const marker = await markerNow(page);
         expect(marker.readout).toBe(KEY);
         expect(Number(marker.coordinate)).toBeCloseTo(Number(tipCoordinate), 9);
         await page.mouse.move(canvas.x + 5, canvas.y + 5);
         await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-        expect((await surface.legendMarker()).visible, "the marker is cleared within a frame of the pointer leaving the row").toBe(false);
+        expect((await markerNow(page)).visible, "the marker is cleared within a frame of the pointer leaving the row").toBe(false);
       }
     });
   }

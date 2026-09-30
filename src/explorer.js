@@ -3886,7 +3886,7 @@
       popKey: { cells: "", rows: "", axis: "" },
     },
     // The markers to a Readout key: the cell key is column * 2^21 + row (cellKey)
-    CELL_STRIDE = 2097152;
+    UI_CELL_STRIDE = 2097152;
   function uiEl(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -3895,7 +3895,7 @@
   }
   // Numbers as a chart reads them: compact magnitudes, a share as a percentage, durations in their units.
   // The canonical number always travels beside its text (data-value), so this never changes what a value is.
-  function scaleFmt(value, unit) {
+  function uiFmt(value, unit) {
     if (typeof value !== "number" || !Number.isFinite(value)) return String(value);
     if (unit === "share") return +(value * 100).toPrecision(3) + "%";
     if (unit === "seconds") return dur(value);
@@ -3921,7 +3921,7 @@
   }
   // What the settled warnings pass said about a channel, as a short string: the legend is rebuilt when the
   // shares, the clip counts or the warning set moved, and not when the pass re-ran to the same answer.
-  function warnStamp(channel) {
+  function uiWarnStamp(channel) {
     const report = scaleRt.warn[channel]?.report;
     if (!report) return "";
     const c = report.counts ?? {};
@@ -3973,7 +3973,7 @@
       paused = auto && S.scale.lock ? "lock" : auto && scaleRt.playing ? "play" : false;
     return {
       input,
-      legend: E.legend.build(input, scaleRt.warn[channel]?.report ?? null, scaleFmt, {
+      legend: E.legend.build(input, scaleRt.warn[channel]?.report ?? null, uiFmt, {
         channel,
         counts: legendCounts(channel),
         measureLabel: channel === "rows" ? (ROWS_INFO[S.rows]?.name ?? S.rows) : MODE_NAMES[S.mode],
@@ -4031,10 +4031,10 @@
   }
   // The position of a marker along a bar, clamped to the bar's ends (a value beyond the domain sits at the
   // end and the key counts it).
-  const barLeft = (p) => clamp(p, 0, 1) * 100 + "%";
+  const uiBarLeft = (p) => clamp(p, 0, 1) * 100 + "%";
   // One key swatch: the role table's glyph painted by the same function the plot uses, so a key cannot drift
   // from its mark. The inks come from the caller (this helper reads no palette itself).
-  function keySwatch(glyph, inks) {
+  function uiKeySwatch(glyph, inks) {
     const dpr = devicePixelRatio || 1,
       size = 11,
       canvas = document.createElement("canvas"),
@@ -4055,7 +4055,7 @@
   }
   // The keys of a legend as list items: `[data-key]` with the glyph id as its role and the count of marks.
   // `all` lists the keys with no marks too (a popover), else only those with marks (the footer).
-  function keyList(keys, inks, all) {
+  function uiKeyList(keys, inks, all) {
     const out = [];
     for (const key of keys) {
       if (!all && key.count <= 0) continue;
@@ -4063,7 +4063,7 @@
       item.dataset.key = key.id;
       if (key.glyph) item.dataset.role = key.glyph;
       item.dataset.count = String(key.count);
-      if (key.glyph) item.append(keySwatch(key.glyph, inks));
+      if (key.glyph) item.append(uiKeySwatch(key.glyph, inks));
       item.append(document.createTextNode(key.label + (all ? ` ${key.count}` : "")));
       out.push(item);
     }
@@ -4085,7 +4085,7 @@
       themeEpoch: colourEpoch,
       policy: legendPolicy(channel),
       state: frame.mappingState,
-      warnStamp: warnStamp(channel),
+      uiWarnStamp: uiWarnStamp(channel),
       marker: null,
       level: frame.level,
     });
@@ -4146,7 +4146,7 @@
           if (seen) seen.count += key.count;
           else merged.set(key.id, { ...key });
         }
-      el("keys-scale").replaceChildren(...keyList([...merged.values()], inks, false));
+      el("keys-scale").replaceChildren(...uiKeyList([...merged.values()], inks, false));
     }
     axisChipCommit();
   }
@@ -4164,7 +4164,7 @@
         themeEpoch: colourEpoch,
         policy: S.scale.local ? "local" : "shared",
         state: frame.mappingState,
-        warnStamp: warnStamp("lens"),
+        uiWarnStamp: uiWarnStamp("lens"),
         marker: null,
         level: frame.level,
       });
@@ -4214,14 +4214,14 @@
       note.textContent = "";
       return;
     }
-    const at = barLeft(found.p);
+    const at = uiBarLeft(found.p);
     marker.style.left = at;
     marker.dataset.coordinate = String(found.t);
     marker.dataset.clip = String(found.clip);
     // The cell key is column * 2^21 + row; the readout's attribute names its level first, as the tooltip's does
     if (typeof readout.key === "number") {
-      const r = ((readout.key % CELL_STRIDE) + CELL_STRIDE) % CELL_STRIDE;
-      marker.dataset.readout = `${readout.level?.n}:${readout.level?.m}:${(readout.key - r) / CELL_STRIDE}:${r}`;
+      const r = ((readout.key % UI_CELL_STRIDE) + UI_CELL_STRIDE) % UI_CELL_STRIDE;
+      marker.dataset.readout = `${readout.level?.n}:${readout.level?.m}:${(readout.key - r) / UI_CELL_STRIDE}:${r}`;
     } else marker.dataset.readout = String(readout.key);
     // TEXT(S1): the sentence for assistive technology, which cannot see where a marker sits on a bar
     note.textContent = `Value under the pointer at ${Math.round(clamp(found.p, 0, 1) * 100)}% of the scale`;
@@ -4237,7 +4237,7 @@
       chip = el(channel === "rows" ? "rows-legend" : "legend"),
       legend = scaleUi.models[channel],
       inks = { state: colors.state, occupancy: colors.occupancy, surface: colors.surface };
-    if (!panel.firstChild) popSkeleton(panel, channel);
+    if (!panel.firstChild) uiPopSkeleton(panel, channel);
     const part = (name) => panel.querySelector(`[data-part="${name}"]`),
       focused = panel.contains(document.activeElement) ? document.activeElement : null,
       action = focused?.dataset.action,
@@ -4273,7 +4273,7 @@
           row = left < rowEnd[0] ? 1 : 0;
         rowEnd[row] = Math.max(rowEnd[row], left + width);
         node.dataset.kind = tick.kind;
-        node.style.left = barLeft(tick.p);
+        node.style.left = uiBarLeft(tick.p);
         node.style.top = 2 + row * 14 + "px";
         node.dataset.align = align;
         ticks.append(node);
@@ -4282,7 +4282,7 @@
       dyn("bar", [bar, ticks]);
       const details = E.legend.details(legend).map((d) => {
           const dt = uiEl("dt", "", d.label),
-            dd = uiEl("dd", "ol-num", utcText(d));
+            dd = uiEl("dd", "ol-num", uiUtcText(d));
           dd.dataset.field = d.field;
           if (d.canonical !== null && d.canonical !== undefined)
             dd.dataset.value = typeof d.canonical === "string" ? d.canonical : JSON.stringify(d.canonical);
@@ -4292,19 +4292,19 @@
       list.append(...details.flat());
       const notes = legend.notes.map((text) => uiEl("p", "ol-legend-note", text));
       dyn("details", [...notes, list]);
-      dyn("keys", keyList(legend.keys, inks, true));
-      dyn("warnings", warningList(legend.warnings, channel));
-      dyn("lens", channel === "cells" && S.lens ? lensBlock(inks) : []);
+      dyn("keys", uiKeyList(legend.keys, inks, true));
+      dyn("warnings", uiWarnings(legend.warnings, channel));
+      dyn("lens", channel === "cells" && S.lens ? uiLensBlock(inks) : []);
     }
     part("appearance").textContent = legend ? E.text.fill(E.text.ui.appearance, { id: legend.summary.appearance }) : "";
-    popActions(panel, channel);
+    uiPopActions(panel, channel);
     // A rebuilt warning action that had the focus gets it back; a popover that lost it gets it itself
     if (focused && !focused.isConnected) (action && panel.querySelector(`[data-action="${action}"]`))?.focus() ?? panel.focus();
-    popPlace(panel, chip, channel === "rows" ? "start" : "end");
+    uiPopPlace(panel, chip, channel === "rows" ? "start" : "end");
   }
   // The details that are instants arrive as milliseconds (the canonical number stays in data-value); they
   // read as UTC times.
-  function utcText(detail) {
+  function uiUtcText(detail) {
     return ["fitThrough", "obsCutoff", "obsCanonical"].includes(detail.field) && typeof detail.canonical === "number"
       ? new Date(detail.canonical).toISOString().replace(/(:\d\d)?\.000Z$/, "Z")
       : detail.value;
@@ -4312,7 +4312,7 @@
   // The warnings of a legend: each with its text, its detail and the actions that answer it. A warning
   // never recolours or refits anything by itself; it offers Fit, Auto color, Open lens (the main chart) or
   // Local contrast (the lens), and each is a real button.
-  function warningList(warnings, channel) {
+  function uiWarnings(warnings, channel) {
     return warnings.map((w) => {
       const box = uiEl("div", "ol-legend-warning");
       box.dataset.warning = w.id;
@@ -4335,7 +4335,7 @@
   }
   // The lens's own block in the Cells popover: whether it shares the Cells mapping or has a mapping of its
   // own, that mapping, and its shares of marks outside its scale (the lens reports its own tally).
-  function lensBlock(inks) {
+  function uiLensBlock(inks) {
     const box = uiEl("div", "ol-legend-lens"),
       report = scaleRt.warn.lens?.report,
       model = scaleUi.models.cells,
@@ -4352,19 +4352,19 @@
     // TEXT(S1): the lens block's mapping label
     add("Mapping", scaleUi.lensId || model?.summary.scaleId || "", "mappingId", scaleUi.lensId || model?.summary.scaleId);
     if (report) {
-      add("Marks outside the scale", scaleFmt(report.shares.marks, "share"), "shareMarks", report.shares.marks);
-      add("Area outside the scale", scaleFmt(report.shares.area, "share"), "shareArea", report.shares.area);
+      add("Marks outside the scale", uiFmt(report.shares.marks, "share"), "shareMarks", report.shares.marks);
+      add("Area outside the scale", uiFmt(report.shares.area, "share"), "shareArea", report.shares.area);
     }
     box.append(list);
     const warnings = [];
     if (report?.rangeExceeded) warnings.push({ id: "range-exceeded", text: E.text.warn.rangeExceeded, shares: report.shares, actions: ["fit", "auto", "local"] });
     if (report?.lowDiscrimination)
       warnings.push({ id: "low-discrimination", text: E.text.warn.lowDisc, shares: report.shares, actions: ["fit", "auto", "local"] });
-    box.append(...warningList(warnings, "lens"));
+    box.append(...uiWarnings(warnings, "lens"));
     return [box];
   }
   // The static skeleton of a colour popover: parts the builder fills and two it builds once.
-  function popSkeleton(panel, channel) {
+  function uiPopSkeleton(panel, channel) {
     const head = uiEl("div", "ol-pop-head");
     head.append(uiEl("span", "", channel === "rows" ? E.text.ui.scale + " · Rows" : E.text.ui.details));
     panel.append(head);
@@ -4406,7 +4406,7 @@
   // The buttons of the popover: their pressed state and whether the measure offers them, with the reason
   // beside them when it does not (never a title). The manual form follows the measure: a Value scale takes U
   // and k (U alone when linear), a manual share window takes a low and a high.
-  function popActions(panel, channel) {
+  function uiPopActions(panel, channel) {
     const cells = channel !== "rows",
       subject = cells ? S.mode : S.rows,
       part = (name) => panel.querySelector(`[data-part="${name}"]`);
@@ -4439,10 +4439,10 @@
     if (!local.hidden) set("local", { pressed: S.scale.local, enabled: offers.local || S.scale.local, reason: offers.reasons.local });
     part("why").textContent = [...new Set(reasons)].join(" · ");
     part("why").hidden = reasons.length === 0;
-    popForm(part("manual"), channel, subject, eff, offers);
+    uiPopForm(part("manual"), channel, subject, eff, offers);
   }
   // The manual-domain form of a popover, rebuilt only when its kind changed (so a value being typed stays).
-  function popForm(form, channel, subject, eff, offers) {
+  function uiPopForm(form, channel, subject, eff, offers) {
     const window = subject === "flow" || subject === "flowtrades" || subject === "dwell",
       kind = window ? "window" : offers.fit ? (eff.curve === "linear" && eff.transform === "value" ? "value-linear" : "value-log1p") : "";
     form.hidden = kind === "" || eff.transform === "rank";
@@ -4483,7 +4483,7 @@
   // Where a popover sits: under its chip, or over it where the window has more room above (the axis chip
   // sits at the bottom of the plot), within the host it is positioned in, kept inside the viewport, and no
   // taller than the room it has.
-  function popPlace(panel, chip, align) {
+  function uiPopPlace(panel, chip, align) {
     const host = panel.offsetParent;
     if (!host) return;
     const at = chip.getBoundingClientRect(),
@@ -4499,7 +4499,7 @@
   }
   // The manual form's submit: checked here so the reason shows beside the number that caused it (the same
   // checks the reducer makes, through the module), then handed to the spine like any other choice.
-  function applyManual(form) {
+  function uiApplyManual(form) {
     const channel = form.dataset.channel,
       kind = form.dataset.kind,
       value = (name) => (form.elements[name].value.trim() === "" ? NaN : Number(form.elements[name].value)),
@@ -4529,7 +4529,7 @@
   // What a popover button does. The warnings' buttons and the action row share the names: Fit, Auto color
   // and Comparison lock toggle state through the spine's scaleSet; Open lens only moves the focus to the lens
   // tool and changes nothing (a warning is advice, never a state change); Local contrast is the lens's own.
-  function popAction(button) {
+  function uiPopAction(button) {
     const name = button.dataset.action,
       channel = button.dataset.channel === "rows" ? "rows" : "cells";
     if (name === "warn-open-lens") {
@@ -4547,29 +4547,29 @@
   // ---- the axis chip ----
   // The text of an axis chip from its registry record: the policy and the exact domain, or why there is none
   // (no data, updating, paused by Play).
-  function axisText(rec) {
+  function uiAxisText(rec) {
     const t = E.text;
     if (!rec || rec.typed === "none") return t.axis.none;
     if (rec.hold === "play") return t.axis.paused;
     if (rec.hold === "waiting") return t.axis.waiting;
     if (rec.hold) return t.axis.updating;
     const name = rec.policy === "frozen" ? t.policy.axisFrozen : rec.policy === "fixed" ? t.policy.fixed : t.policy.axisAuto;
-    return [name, axisDomain(rec)].filter(Boolean).join(" · ");
+    return [name, uiAxisDomain(rec)].filter(Boolean).join(" · ");
   }
   // The words of an axis unit id (an id with no string of its own reads as itself)
-  function axisUnit(unit) {
+  function uiAxisUnit(unit) {
     const u = E.text.unit;
     return { usdt: u.usdt, trades: u.trades, "usdt-per-trade": u.usdtPerTrade, "log2-ratio": u.log2, seconds: u.seconds }[unit] ?? unit ?? "";
   }
   // "±1.92 B USDT", "0 – 100", "−2 – 2 log2 ratio": the domain as the chart's own numbers read it
-  function axisDomain(rec) {
+  function uiAxisDomain(rec) {
     if (rec.typed === "zero-only" || !Array.isArray(rec.domain)) return E.text.axis.zero;
     const [lo, hi] = rec.domain,
-      span = rec.sign === "signed-symmetric" ? "±" + scaleFmt(hi, rec.unit) : `${scaleFmt(lo, rec.unit)} – ${scaleFmt(hi, rec.unit)}`;
-    return rec.unit ? `${span} ${axisUnit(rec.unit)}` : span;
+      span = rec.sign === "signed-symmetric" ? "±" + uiFmt(hi, rec.unit) : `${uiFmt(lo, rec.unit)} – ${uiFmt(hi, rec.unit)}`;
+    return rec.unit ? `${span} ${uiAxisUnit(rec.unit)}` : span;
   }
   // The axis state of D.18 for a record
-  function axisState(rec) {
+  function uiAxisState(rec) {
     if (!rec || rec.typed === "none") return "none";
     if (rec.hold === "play") return "paused";
     if (rec.hold) return "updating";
@@ -4615,7 +4615,7 @@
     if (scaleUi.axisKey === key) return;
     scaleUi.axisKey = key;
     scaleUi.axisRecords = records;
-    const text = axisText(rec);
+    const text = uiAxisText(rec);
     if (el("axis-chip-text").textContent !== text) el("axis-chip-text").textContent = text;
     const label = `${E.text.ui.scale}: ${text}`;
     if (chip.getAttribute("aria-label") !== label) chip.setAttribute("aria-label", label);
@@ -4634,7 +4634,7 @@
       updating: String(Boolean(rec.hold) && rec.hold !== "play"),
       axisId: rec.id,
       domain: Array.isArray(rec.domain) ? rec.domain.join(",") : "",
-      axisState: axisState(rec),
+      uiAxisState: uiAxisState(rec),
     };
     for (const [name, value] of Object.entries(attrs)) if (chip.dataset[name] !== value) chip.dataset[name] = value;
     axisPop();
@@ -4667,12 +4667,12 @@
             list.append(uiEl("dt", "", label), dd);
           };
         box.dataset.axisId = rec.id;
-        box.append(uiEl("strong", "", `${rec.id} · ${axisText(rec)}`));
+        box.append(uiEl("strong", "", `${rec.id} · ${uiAxisText(rec)}`));
         add(E.text.ui.policy, rec.policy === "frozen" ? E.text.policy.axisFrozen : rec.policy === "fixed" ? E.text.policy.fixed : E.text.policy.axisAuto, "policy", rec.policy);
         if (rec.mappingId) add("Mapping", rec.mappingId, "mappingId", rec.mappingId);
-        add("Domain", axisDomain(rec), "domain", rec.domain);
-        if (rec.unit) add("Unit", axisUnit(rec.unit), "unit", rec.unit);
-        if (rec.provenance?.through) add("Fitted through", utcText({ field: "fitThrough", canonical: rec.provenance.through, value: String(rec.provenance.through) }), "fitThrough", rec.provenance.through);
+        add("Domain", uiAxisDomain(rec), "domain", rec.domain);
+        if (rec.unit) add("Unit", uiAxisUnit(rec.unit), "unit", rec.unit);
+        if (rec.provenance?.through) add("Fitted through", uiUtcText({ field: "fitThrough", canonical: rec.provenance.through, value: String(rec.provenance.through) }), "fitThrough", rec.provenance.through);
         if (rec.hold) add("Hold", rec.hold, "hold", rec.hold);
         if (rec.clipped) {
           add(E.text.key.below, String(rec.clipped.low), "clipLowFinite", rec.clipped.low);
@@ -4687,18 +4687,18 @@
     const lock = panel.querySelector('[data-action="lock"]');
     lock.setAttribute("aria-pressed", String(S.scale.lock));
     if (focused && !focused.isConnected) lock.focus();
-    popPlace(panel, chip, "end");
+    uiPopPlace(panel, chip, "end");
   }
   // ---- the Scale sections of the Cells and Rows menus ----
   // One item of the Scale section: a native button with an accessible name and, when there is one, a
   // description (why it is not offered, what an approximation is). A disabled item stays in the list and
   // says why, so nothing is explained by a hover.
-  function scaleItem(spec) {
+  function uiScaleItem(spec) {
     const b = menuItem(
       spec.role,
       [svgIcon("check", "ol-icon ol-check"), itemText(spec.id, spec.name, spec.desc ?? "")],
       () => {
-        if (!spec.disabled) scaleChoose(spec.channel, spec.key);
+        if (!spec.disabled) uiScaleChoose(spec.channel, spec.key);
       },
     );
     b.setAttribute("aria-labelledby", `ol-${spec.id}-name`);
@@ -4712,7 +4712,7 @@
   // The Scale section of a menu, from what the measure offers (E.policy.offers decides which groups and
   // items exist; nothing is hard-coded here). Basis, Transform (Value (log), Value (linear), Relative
   // rank), Scale policy, and the lock, Local contrast and Fit. No item has a shortcut of its own.
-  function scaleSection(channel) {
+  function uiScaleSection(channel) {
     const cells = channel === "cells",
       subject = cells ? S.mode : S.rows;
     if (!subject || subject === "off" || (cells && E.measure.MODES[subject].kind === "occupancy")) return [];
@@ -4733,13 +4733,13 @@
         parts.push(box);
       },
       item = (key, label, extra) =>
-        scaleItem({
+        uiScaleItem({
           channel,
           key,
           id: `scale-${channel}-${key.replace(":", "-")}`,
           name: label,
           role: extra.role ?? "menuitemradio",
-          checked: scaleChecked(channel, key),
+          checked: uiScaleChecked(channel, key),
           disabled: extra.disabled,
           desc: extra.disabled ? extra.reason : extra.desc,
         });
@@ -4779,7 +4779,7 @@
     return parts;
   }
   // Whether a Scale item is on, from the raw preferences through what the measure reads of them.
-  function scaleChecked(channel, key) {
+  function uiScaleChecked(channel, key) {
     const cells = channel === "cells",
       subject = cells ? S.mode : S.rows,
       [group, value] = key.split(":");
@@ -4795,7 +4795,7 @@
   }
   // What choosing a Scale item does: one action, or two for a Transform that also leaves Relative rank
   // (the reducer never rewrites a field it was not asked to set).
-  function scaleChoose(channel, key) {
+  function uiScaleChoose(channel, key) {
     const field = channel === "cells" ? "transform" : "rowsTransform",
       [group, value] = key.split(":");
     if (group === "basis") scaleSet({ type: "basis", value });
@@ -4824,7 +4824,7 @@
     el("lens-local-label").hidden = !E.policy.offers("cells", S.mode, s, Boolean(PACK.live)).local;
     if (toggle.checked !== s.local) toggle.checked = s.local;
     for (const b of qsa("#ol-mode-menu [data-scale-item], #ol-rows-menu [data-scale-item]")) {
-      const on = String(scaleChecked(b.dataset.scaleChannel, b.dataset.scaleItem));
+      const on = String(uiScaleChecked(b.dataset.scaleChannel, b.dataset.scaleItem));
       if (b.getAttribute("aria-checked") !== on) b.setAttribute("aria-checked", on);
     }
     if (pop.open) {
@@ -4853,7 +4853,7 @@
     const box = el("notice"),
       cur = queue.current(),
       was = box.hidden;
-    if (scaleRt.fault) scaleFaultUi();
+    if (scaleRt.fault) uiFault();
     if (!cur) {
       box.hidden = true;
     } else {
@@ -4891,7 +4891,7 @@
   }
   // After a fault the page draws the legacy legend lines into the chip's text; the chip's own label would
   // be stale, so it is dropped and the chip says it failed.
-  function scaleFaultUi() {
+  function uiFault() {
     const chip = el("legend");
     chip.removeAttribute("aria-label");
     chip.dataset.state = "failed";
@@ -4900,7 +4900,7 @@
   // ---- binding ----
   // The popover of a colour chip or the axis chip opened: built from the model, positioned, and the first
   // control focused, so the keyboard lands inside the dialog it opened.
-  function openScalePop(channel) {
+  function uiOpenPop(channel) {
     const panel = el(channel === "rows" ? "rows-legend-pop" : channel === "axis" ? "axis-pop" : "legend-pop");
     if (channel === "axis") axisPop();
     else legendPop(channel);
@@ -4909,18 +4909,18 @@
   }
   // The controls of the scale display, bound once at startup (registered as `bindUi`).
   function bindScaleUi() {
-    bindPop("legend", "legend-pop", () => openScalePop("cells"));
-    bindPop("rows-legend", "rows-legend-pop", () => openScalePop("rows"));
-    bindPop("axis-chip", "axis-pop", () => openScalePop("axis"));
+    bindPop("legend", "legend-pop", () => uiOpenPop("cells"));
+    bindPop("rows-legend", "rows-legend-pop", () => uiOpenPop("rows"));
+    bindPop("axis-chip", "axis-pop", () => uiOpenPop("axis"));
     for (const id of ["legend-pop", "rows-legend-pop", "axis-pop"]) {
       const panel = el(id);
       panel.addEventListener("click", (e) => {
         const button = e.target.closest?.("button[data-action]");
-        if (button) popAction(button);
+        if (button) uiPopAction(button);
       });
       panel.addEventListener("submit", (e) => {
         e.preventDefault();
-        if (e.target.matches?.("form[data-part='manual']")) applyManual(e.target);
+        if (e.target.matches?.("form[data-part='manual']")) uiApplyManual(e.target);
       });
       // A number field keeps its keys, so Escape would never reach the page's own handler from inside one
       // (TEXT_FIELDS): every input of the form closes the popover itself and returns the focus to its chip.
@@ -5083,7 +5083,7 @@
       parts.push(group);
     }
     // The Scale section: basis, transform, policy, lock, Local contrast and Fit, from what the measure offers
-    parts.push(...scaleSection("cells"));
+    parts.push(...uiScaleSection("cells"));
     el("mode-menu").replaceChildren(...parts);
   }
   // The pane's measures, grouped as the encodings are, each with what it shows.
@@ -5155,7 +5155,7 @@
       parts.push(group);
     }
     // The matching Transform and policy groups of the Rows measure
-    parts.push(...scaleSection("rows"));
+    parts.push(...uiScaleSection("rows"));
     el("rows-menu").replaceChildren(...parts);
   }
   // The Rows menu's button, and its period's, written only when they change:

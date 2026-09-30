@@ -15623,8 +15623,10 @@
         // One want for the settled tick, replaced by the next lens position; it fits from lensCohortInputs. It goes
         // through `scaleWant` (which records what was asked for, as the tick reads it back: a bare controller
         // request would leave the tick with nothing to fit), and a lens position that found nothing to fit is not
-        // asked again (the tick leaves its key in `noFit`, as it does for a chart context).
-        if (!mine && scaleRt.noFit.lens !== key + "|") scaleWant("lens", "init", key, { ctx: ctxLens, ctxKey: key, memo: "" });
+        // asked again (the tick leaves its key in `noFit`, as it does for a chart context). The pack generation is
+        // the memo: a descriptor fitted from earlier data answers for this position only within one generation.
+        const memo = "g" + live.generation;
+        if (!mine && scaleRt.noFit.lens !== key + "|" + memo) scaleWant("lens", "init", key, { ctx: ctxLens, ctxKey: key, memo });
       }
     }
     // a Local-contrast want that no longer applies (the option is off, or the measure has a fixed domain) is dropped

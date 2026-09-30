@@ -18,7 +18,8 @@
 //      assertions of B12 about ids: the lens shares the Cells mapping (same id, caption names Shared), Local contrast has its own
 //      id that repeats at the same lens bounds and never enters the persisted 64-context cache, opening and moving the lens leaves
 //      the Cells and Rows ids, `data-fit-seq` and the Rows period alone and issues no Rows read, and Pin discloses
-//      "Scale changed: pin/resolution" with the old and new ids of the channels that changed. A D.18 element the page does not have
+//      "Scale changed: pin/resolution" with the old and new ids of the channels that changed, and, on the canvas, that the lens's
+//      pixels are entries of the pinned ramp (Shared stays below the top of it, Local contrast reaches it). A D.18 element the page does not have
 //      yet makes the test say so and skip with that reason (a skipped test is listed by the runner); with CONVERGENCE=1 (K, CI) it
 //      FAILS instead, so the assertions can never be skipped at the end.
 //
@@ -305,6 +306,47 @@ test.describe("B12 the lens's scale, Local contrast and Pin (D.18 chips)", () =>
     // The Local descriptor is ephemeral: no context of the browser-local cache (scales:v1) is a lens context.
     const stored = await page.evaluate(() => Object.keys(localStorage).filter((key) => key.includes("scales")).map((key) => localStorage.getItem(key)));
     for (const value of stored) expect(value, "the persisted workspace holds no lens context").not.toContain("lens|");
+  });
+
+  // The canvas, not the DOM: the lens's pixels are colours of the pinned ramp of the active appearance (E.lut.build is the oracle:
+  // its hash is pinned by the unit tests, and it is the table the page paints from), and the two scopes differ where they must. The
+  // Shared mapping is the chart's, so a window without the chart's largest cell stays below the top of the ramp; Local
+  // contrast is fitted to the lens's own cells, so its largest cell takes the top of the ramp.
+  test("the lens paints from the ramp: Shared stays inside the chart's mapping, Local contrast reaches the top of the ramp", async ({ fakeFor, page, surface, probe }) => {
+    const fake = await fakeFor("standard");
+    await page.goto(`${fake.url}/#w=7d`);
+    await atRest(page, fake, probe);
+    await needSurface(surface, ["cells", "lens"]);
+    const box = await page.locator("#ol-canvas").boundingBox();
+    const at = { x: box.x + box.width * 0.5, y: box.y + box.height * 0.45 };
+    await openLens(page, fake, probe, { moves: [[0.5, 0.45]] });
+    // The ramp entries of the window inside the lens (200 x 140 css px around the pointer; the lens is 230 x 170), by index.
+    const ramp = () =>
+      page.evaluate(({ cx, cy }) => {
+        const E = window.explorerEncoding;
+        const canvas = document.getElementById("ol-canvas");
+        const r = canvas.getBoundingClientRect();
+        const dpr = canvas.width / r.width;
+        const index = new Map();
+        E.lut.build("slate2", "light").unsigned.css.forEach((css, i) => index.set(parseInt(css.slice(1), 16), i));
+        const data = canvas.getContext("2d", { willReadFrequently: true }).getImageData(Math.round((cx - r.x - 100) * dpr), Math.round((cy - r.y - 70) * dpr), Math.round(200 * dpr), Math.round(140 * dpr)).data;
+        const seen = new Set();
+        for (let i = 0; i < data.length; i += 4) {
+          const at = index.get((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
+          if (at !== undefined) seen.add(at);
+        }
+        const sorted = [...seen].sort((a, b) => a - b);
+        return { dpr, count: sorted.length, max: sorted.length ? sorted[sorted.length - 1] : -1 };
+      }, { cx: at.x, cy: at.y });
+    const shared = await ramp();
+    expect(shared.dpr, "pixels are read at device pixel ratio 1").toBe(1);
+    expect(shared.count, "the lens paints with several entries of the ramp").toBeGreaterThan(8);
+    await page.locator("#ol-lens-local").check();
+    await atRest(page, fake, probe);
+    await expect.poll(async () => (await idsOf(surface, "lens")).policy, { timeout: 10000 }).toBe("local");
+    const local = await ramp();
+    expect(local.max, "Local contrast: the largest cell of the lens takes the top of the ramp").toBeGreaterThanOrEqual(250);
+    expect(shared.max, "where the Shared mapping, fitted on the whole chart, did not (this window holds no cell of the chart's maximum)").toBeLessThan(local.max);
   });
 
   test("opening and moving the lens leaves the Cells and Rows ids, data-fit-seq and the Rows period unchanged and reads no Rows", async ({ fakeFor, page, surface, probe, allowConsole }) => {

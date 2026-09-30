@@ -1,0 +1,20 @@
+"use strict";
+const { test, expect } = require("./fixtures.js");
+const { calm, identity, field, popoverAction, tradesOf, priceRowsOf } = require("./scale-helpers.js");
+const FINE = { from: "2026-09-22T00:00Z", to: "2026-09-23T00:00Z", n: 7, m: 0 };
+const COARSE = { from: "2026-09-17T00:00Z", to: "2026-09-24T00:00Z", n: 9, m: 0 };
+const hashOf = (r, rows) => `#t=${r.from}~${r.to}&p=${rows[0] * 125}~${rows[1] * 125}&r=${r.n},${r.m}`;
+test("dbg", async ({ page, fakeFor, probe, surface }) => {
+  const fake = await fakeFor("standard");
+  const ctx = { page, fake, probe, surface };
+  const trades = tradesOf("standard");
+  const rows = priceRowsOf(trades, COARSE.from, COARSE.to);
+  await page.goto(`${fake.url}/${hashOf(FINE, rows)}`);
+  const fine = await calm(ctx);
+  await popoverAction(page, surface, "cells", "Comparison lock");
+  let data = await calm(ctx);
+  console.log("after lock", data.policy, await page.evaluate(() => JSON.stringify(window.__dbg.S.scale)));
+  await page.evaluate((h) => { location.hash = h; }, hashOf(COARSE, rows));
+  data = await calm(ctx);
+  console.log("after level", data.policy, data.effectiveN, await page.evaluate(() => JSON.stringify({ s: window.__dbg.S.scale, cur: { c: window.__dbg.scaleRt.cur.cells.resolved.policy, r: window.__dbg.scaleRt.cur.cells.resolved.detail, st: window.__dbg.scaleRt.cur.cells.resolved.state } })));
+});

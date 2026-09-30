@@ -4975,6 +4975,9 @@
       // The Legend model of each colour channel, built when its key changed: the popover, the marker and the
       // footer keys read it, so nothing is built twice for one state.
       models: { cells: null, rows: null, pane: null },
+      rowsInfo: null,
+      inks: null,
+      fallback: { cells: "", rows: "" },
       // What the marker drew last, and the footer keys' last write key
       markerKey: "",
       keysKey: "",
@@ -4992,7 +4995,9 @@
       menuKey: "",
     },
     // A Readout's numeric key is column * 2^21 + row (cellKey above): the marker names the column and row
-    UI_CELL_STRIDE = 2097152;
+    UI_CELL_STRIDE = 2097152,
+    // TEXT(S1): the labels of the scale-change fields when they are empty (E.legend words them when there is a change)
+    UI_CHANGE_LABELS = { scaleChangeCause: "Changed by", scaleChangeFrom: "Was", scaleChangeTo: "Now" };
   function uiEl(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -5060,6 +5065,7 @@
     return [
       Object.values(chip.attrs).join("~"),
       n ? [n.causes?.join("/"), n.from, n.to].join(">") : "",
+      chip.fallback ?? "",
       o.evicted ? "e" : "",
       o.afterEdge ? "a" : "",
       o.paused || "",
@@ -5089,8 +5095,13 @@
   // scale change, the counts of its settled pass, the paused and evicted states); a channel with no chip of
   // its own (the lens) is built from its own tally.
   function legendOf(channel, frame, chip) {
-    const input = frame.legendInput();
+    let input = frame.legendInput();
     if (!input) return null;
+    // The recorded model's standing at the effective cutoff is disclosed wherever a scale is (DD-35, S1-147: it
+    // follows the cutoff in every mode, and is not a property of the scale's eligibility): a Cells frame that
+    // names no model of its own carries the one behind the price-axis diagonal.
+    if (channel === "cells" && !input.model && typeof input.observation?.cutoffMs === "number")
+      input = { ...input, model: E.model.describe("diagonal", input.observation.cutoffMs, input.level?.n ?? renderN()) };
     const auto = S.scale[channel === "lens" ? "cells" : channel] === "auto",
       paused = auto && S.scale.lock ? "lock" : auto && scaleRt.playing ? "play" : false,
       base = chip
@@ -5187,22 +5198,60 @@
     }
     return out;
   }
-  // The text of a chip and its accessible name, written only when it changed.
-  function legendChip(node, textId, legend) {
+  // What the Rows frame says about the rows behind the bands (its `info`, which E.legend.build does not read):
+  // the period, the row size in USDT, the quality class, where the period starts and what it was read to,
+  // Time at price's seconds and Relative volume's counts. Returned as the short words the chip adds and as
+  // the detail rows of its popover.
+  function uiRowsInfo(info) {
+    if (!info) return { words: [], rows: [] };
+    const words = [info.periodLabel, `${compact(info.rowUsdt)} USDT rows`],
+      rows = [],
+      add = (field, label, text, canonical) => rows.push({ field, label, value: text, canonical });
+    // TEXT(S1): the labels and words of the Rows details
+    if (info.approximate) words.unshift("≈");
+    add("rowPeriod", "Period", info.periodLabel, info.period);
+    add("rowSize", "Row size", `${compact(info.rowUsdt)} USDT`, info.effectiveM);
+    if (info.effectiveM !== info.requestedM) add("rowSizeAsked", "Row size asked for", `${compact(PR * 2 ** info.requestedM)} USDT`, info.requestedM);
+    add("rowQuality", "Quality", info.approximate ? `Approximate (${info.quality})` : "Exact", info.quality);
+    if (info.fromBase !== null) add("rowFrom", "Period starts", uiUtcMs(E.time.baseToMs(info.fromBase, T0, BASE)), E.time.baseToMs(info.fromBase, T0, BASE));
+    if (info.trimmedFromBase !== null)
+      add("rowTrimmed", "Coarse rows start", uiUtcMs(E.time.baseToMs(info.trimmedFromBase, T0, BASE)), E.time.baseToMs(info.trimmedFromBase, T0, BASE));
+    if (info.throughBase !== null && info.throughBase !== undefined)
+      add("rowThrough", "Read through", uiUtcMs(E.time.baseToMs(info.throughBase, T0, BASE)), E.time.baseToMs(info.throughBase, T0, BASE));
+    if (info.stale) add("rowStale", "Rows", "Updating", true);
+    if (info.time) {
+      add("rowTimeCovered", "Seconds covered", dur(info.time.coveredSeconds), info.time.coveredSeconds);
+      add("rowTimeAttributed", "Seconds attributed to rows", dur(info.time.attributedSeconds), info.time.attributedSeconds);
+      if (info.time.cubeSeconds !== null) add("rowTimeCube", "Seconds the cube reports", dur(info.time.cubeSeconds), info.time.cubeSeconds);
+    }
+    if (info.relvol) {
+      const c = info.relvol.counts ?? {};
+      add("rowRelvolCounts", "Rows compared", JSON.stringify(c), c);
+      if (info.relvol.support) add("rowRelvolSupport", "Comparison support", JSON.stringify(info.relvol.support), info.relvol.support);
+      if (info.relvol.restriction) add("rowRelvolRestriction", "Restriction", String(info.relvol.restriction.text ?? JSON.stringify(info.relvol.restriction)), info.relvol.restriction);
+    }
+    return { words, rows };
+  }
+  // The text of a chip and its accessible name, written only when it changed. Rows add the period, the row size
+  // and the quality after the scale's own words (a long chip is cut at its end, and the scale is what matters).
+  function legendChip(node, textId, legend, rows) {
     const chip = E.legend.chip(legend),
-      text = el(textId);
-    if (text.textContent !== chip.text) text.textContent = chip.text;
-    if (node.getAttribute("aria-label") !== chip.label) node.setAttribute("aria-label", chip.label);
+      text = el(textId),
+      more = rows ? uiRowsInfo(rows).words.join(" · ") : "",
+      shown = more ? `${chip.text} · ${more}` : chip.text,
+      label = more ? `${chip.label}, ${more}` : chip.label;
+    if (text.textContent !== shown) text.textContent = shown;
+    if (node.getAttribute("aria-label") !== label) node.setAttribute("aria-label", label);
   }
   // One colour channel's chip, written when the key computed from its ids changed; in a steady frame that
   // is one object and a few string joins, and no Legend model is built (DD-90).
-  function legendChannel(channel, frame, sc, node, textId, barId, barWidth) {
+  function legendChannel(channel, frame, sc, node, textId, barId, barWidth, under) {
     const chip = sc.chip[channel],
       key = E.legend.keyOf({
         mappingId: frame.mappingId,
         appearanceId: sc.lut.id,
         themeEpoch: colourEpoch,
-        policy: legendPolicy(channel) + "|" + uiChipStamp(chip),
+        policy: legendPolicy(channel) + "|" + uiChipStamp(chip) + (under ? "|" + [under.period, under.bands?.m, under.quality, under.stale, under.through, under.exact].join(",") : ""),
         state: frame.mappingState,
         warnStamp: uiWarnStamp(channel),
         marker: null,
@@ -5213,7 +5262,10 @@
     const built = legendOf(channel, frame, chip);
     if (!built) return;
     scaleUi.models[channel] = built.legend;
-    legendChip(node, textId, built.legend);
+    // why this channel is not what the lock holds (Not held by Comparison lock: ...), for its popover
+    scaleUi.fallback[channel] = chip?.fallback ?? "";
+    if (channel === "rows") scaleUi.rowsInfo = built.input.info ?? null;
+    legendChip(node, textId, built.legend, channel === "rows" ? built.input.info : null);
     legendAttrs(node, channel, built);
     // A warning shows on the chip's border too, for the moment its text is cut short
     node.dataset.warn = String(built.legend.warnings.some((w) => w.id === "range-exceeded" || w.id === "low-discrimination"));
@@ -5229,6 +5281,8 @@
   function legendWrite(sc, under) {
     const inks = { state: colors.state, occupancy: colors.occupancy, surface: colors.surface },
       rowsChip = el("rows-legend");
+    // the popovers built outside this function (an axis popover refreshed by renderUi) take the same inks
+    scaleUi.inks = inks;
     legendChannel("cells", sc.cells, sc, el("legend"), "legend-text", "ramp", 64);
     // Rows show with the underlay; without a Rows frame there is nothing to map, and the chip says so.
     if (!under) {
@@ -5241,7 +5295,7 @@
       scaleRt.legendKey.rows = "";
     } else {
       if (rowsChip.hidden) rowsChip.hidden = false;
-      if (sc.rows) legendChannel("rows", sc.rows, sc, rowsChip, "rows-legend-text", "rows-ramp", 36);
+      if (sc.rows) legendChannel("rows", sc.rows, sc, rowsChip, "rows-legend-text", "rows-ramp", 36, under);
       else if (scaleRt.legendKey.rows !== "none") {
         scaleRt.legendKey.rows = "none";
         scaleUi.models.rows = null;
@@ -5401,7 +5455,8 @@
       });
       if (rowEnd[1] > -Infinity) ticks.style.height = "30px";
       dyn("bar", [bar, ticks]);
-      const details = E.legend.details(legend).map((d) => {
+      const legendDetails = E.legend.details(legend),
+        details = legendDetails.map((d) => {
           const dt = uiEl("dt", "", d.label),
             dd = uiEl("dd", "ol-num", uiUtcText(d));
           dd.dataset.field = d.field;
@@ -5410,8 +5465,26 @@
           return [dt, dd];
         }),
         list = uiEl("dl", "ol-legend-details");
+      // Rows say what the rows are: the period, the row size, the quality and what they were read to
+      for (const d of channel === "rows" ? uiRowsInfo(scaleUi.rowsInfo).rows : []) {
+        const dd = uiEl("dd", "ol-num", d.value);
+        dd.dataset.field = d.field;
+        if (d.canonical !== null && d.canonical !== undefined) dd.dataset.value = typeof d.canonical === "string" ? d.canonical : JSON.stringify(d.canonical);
+        details.push([uiEl("dt", "", d.label), dd]);
+      }
+      // The scale change is always a field, empty when the last settle changed nothing, so that "no change was
+      // announced" is something a reader of the page finds and not an absence
+      for (const name of ["scaleChangeCause", "scaleChangeFrom", "scaleChangeTo"])
+        if (!legendDetails.some((d) => d.field === name)) {
+          const dd = uiEl("dd", "ol-num", "");
+          dd.dataset.field = name;
+          dd.dataset.value = "";
+          details.push([uiEl("dt", "", UI_CHANGE_LABELS[name]), dd]);
+        }
       list.append(...details.flat());
-      const notes = legend.notes.map((text) => uiEl("p", "ol-legend-note", text));
+      const notes = [...(scaleUi.fallback[channel] ? [scaleUi.fallback[channel]] : []), ...legend.notes].map((text) =>
+        uiEl("p", "ol-legend-note", text),
+      );
       dyn("details", [...notes, list]);
       dyn("keys", uiKeyList(legend.keys, inks, true));
       dyn("warnings", uiWarnings(legend.warnings, channel));
@@ -5425,9 +5498,12 @@
   }
   // The details that are instants arrive as milliseconds (the canonical number stays in data-value); they
   // read as UTC times.
+  function uiUtcMs(ms) {
+    return new Date(ms).toISOString().replace(/(:\d\d)?\.000Z$/, "Z");
+  }
   function uiUtcText(detail) {
     return ["fitThrough", "obsCutoff", "obsCanonical"].includes(detail.field) && typeof detail.canonical === "number"
-      ? new Date(detail.canonical).toISOString().replace(/(:\d\d)?\.000Z$/, "Z")
+      ? uiUtcMs(detail.canonical)
       : detail.value;
   }
   // The warnings of a legend: each with its text, its detail and the actions that answer it. A warning
@@ -5582,10 +5658,10 @@
       wrap.append(uiEl("span", "", label), input);
       return wrap;
     };
-    // TEXT(S1): the names of the numbers of a manual domain and of a share window
+    // TEXT(S1): the title of a share window; its numbers are named lo and hi, as a manual domain's are U and k
     const legend = uiEl("span", "ol-legend-form-title", share ? "Share window" : E.text.ui.manual);
     const fields = share
-      ? [field("lo", "Low", { min: 0, max: 1 }), field("hi", "High", { min: 0, max: 1 })]
+      ? [field("lo", "lo", { min: 0, max: 1 }), field("hi", "hi", { min: 0, max: 1 })]
       : kind === "value-linear"
         ? [field("U", "U", { min: 0 })]
         : [field("U", "U", { min: 0 }), field("k", "k", { min: 0 })];
@@ -5831,7 +5907,7 @@
     const legend = scaleUi.models.pane;
     if (legend) {
       const list = uiEl("dl", "ol-legend-details"),
-        inks = { state: colors.state, occupancy: colors.occupancy, surface: colors.surface };
+        inks = scaleUi.inks;
       for (const d of E.legend.details(legend)) {
         const dd = uiEl("dd", "ol-num", uiUtcText(d));
         dd.dataset.field = d.field;

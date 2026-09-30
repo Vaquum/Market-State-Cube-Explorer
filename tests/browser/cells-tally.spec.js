@@ -125,4 +125,34 @@ test.describe("the Cells marks feed the tally and the keys", () => {
     expect(details.keys.find((k) => k.key === "pending").count).toBe(unread);
     await context.close();
   });
+
+  test("every generated key of a Cells legend names a glyph of the role table, for every measure", async ({ freshContext, fakeFor }) => {
+    // B16: "every legend key data-role exists in the glyph table". The page's own table (window.explorerEncoding) is the list of ids;
+    // the keys are read from the Cells popover for each family of keys (unsigned, signed, share, dwell, cascade, geometry).
+    const views = [
+      ["micro:nonvalues", "volume"],
+      ["micro:nonvalues", "delta"],
+      ["micro:nonvalues", "flow"],
+      ["micro:nonvalues", "dwell"],
+      ["micro:nonvalues", "cascade"],
+      ["micro:nonvalues", "geometry"],
+    ];
+    const { page, surface, context } = await open({ freshContext, fakeFor }, views[0][0], `${VIEW}&r=0,0&mode=volume${A}`);
+    const glyphs = await page.evaluate(() => Object.keys(window.explorerEncoding.role.GLYPHS));
+    for (const [, mode] of views) {
+      await page.evaluate((h) => (location.hash = h), `${VIEW}&r=${mode === "cascade" ? "1,1" : "0,0"}&mode=${mode}${A}`);
+      // Geometry has no mapping (its chip is the outline); every other measure names itself in its context key.
+      await expect
+        .poll(async () => {
+          const data = (await surface.chip("cells")).data;
+          return mode === "geometry" ? data.state : data.context;
+        }, { timeout: 10000 })
+        [mode === "geometry" ? "toBe" : "toContain"](mode === "geometry" ? "outline" : `|${mode}|`);
+      await page.waitForTimeout(700);
+      const details = await surface.details("cells");
+      expect(details.keys.length, `${mode}: the popover lists its keys`).toBeGreaterThan(0);
+      for (const key of details.keys) expect(glyphs, `${mode}: key ${key.key} names the glyph ${key.role}`).toContain(key.role);
+    }
+    await context.close();
+  });
 });

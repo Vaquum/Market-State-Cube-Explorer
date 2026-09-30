@@ -4345,6 +4345,10 @@
     const onLine = last && lineHits.length && inPlot(p) ? lineAt(p) : null,
       onClock = !onLine && last && clockHits.length && inPlot(p) ? clockAt(p) : null;
     hover.line = onLine?.id || null;
+    // Cleared first, so a branch that names no readout (a line, a clock event, a profile row, an unavailable
+    // cell) leaves none behind; a branch that does (the pane sections name theirs through paneTipFields,
+    // which runs inside the branch) is not overwritten below.
+    if (tip.dataset.readout) tip.dataset.readout = "";
     if (onLine) {
       lineTip(tip, onLine);
       syncRowHover(null);
@@ -4493,7 +4497,7 @@
     // The readout the tip was built from (a cell's here; a pane's or a row's set by their own sections):
     // named on the tip so the same record can be found in the table, and located on the legend.
     if (readout) scaleRt.tipReadout = readout;
-    tip.dataset.readout = readoutId(scaleRt.tipReadout);
+    if (scaleRt.tipReadout) tip.dataset.readout = readoutId(scaleRt.tipReadout);
     tipMarker(scaleRt.tipReadout);
     // A derivation inside a draw (refreshTip) asks for no frame: it is in one.
     if (redraw) requestDraw();

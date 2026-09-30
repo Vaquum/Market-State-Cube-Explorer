@@ -202,6 +202,35 @@ test.describe("B03 readout agreement", () => {
     });
   }
 
+  // The tooltip names the readout it was built from and only that one (INTEGRATION.md D.18): a pane column or an oscillator bar names
+  // its own ("pane:<axis id>:<column>"), and a tip of any other kind (a cell, a rectangle of no trades, a profile row) does not carry
+  // the name of the one before it. The oscillator has no Readout record of the module's, so its name comes from the pane's own code
+  // and the tooltip must not overwrite it (X's note in the stage 2a reports).
+  for (const [pane, view] of [["choppiness", VIEW], ["rsi1d", "#w=30d"]]) {
+    test(`a ${pane} pane tip names its own readout and the next tip does not keep it`, async ({ page, fakeFor, surface, probe }) => {
+      const fake = await fakeFor(pane === "rsi1d" ? "standard" : "micro:mixed");
+      await page.goto(`${fake.url}/${view}&pane=${pane}`);
+      await atRest(page, fake, probe);
+      const canvas = await page.locator("#ol-canvas").boundingBox();
+      // The pane sits under the plot: scan its band for a point whose tip names a pane readout.
+      let paneKey = null;
+      for (let y = canvas.height - 12; y > canvas.height * 0.6 && !paneKey; y -= 8)
+        for (let x = 60; x < canvas.width - 60 && !paneKey; x += 40) {
+          const key = await readoutAt(page, canvas, x, y);
+          if (key && key.startsWith("pane:")) paneKey = { key, x, y };
+        }
+      expect(paneKey, "some point of the pane band shows a tip that names a pane readout").not.toBeNull();
+      expect(paneKey.key).toMatch(/^pane:[^:]+:\d+$/);
+      // Then a point of the price plot that has no cell: the tip is another kind and names nothing of the pane.
+      await page.mouse.move(canvas.x + paneKey.x, canvas.y + 50);
+      const after = await page.evaluate(() => {
+        const tip = document.getElementById("ol-tip");
+        return { hidden: tip.hidden, readout: tip.dataset.readout ?? null };
+      });
+      expect(after.readout === null || !after.readout.startsWith("pane:"), `the tip over the plot does not keep "${paneKey.key}" (it says "${after.readout}")`).toBe(true);
+    });
+  }
+
   test("Intensity: the tooltip and the table row carry one record, where the page offers the basis", async ({ page, fakeFor, surface, probe }) => {
     const fake = await fakeFor("micro:mixed");
     await page.goto(`${fake.url}/${VIEW}`);

@@ -5283,7 +5283,7 @@
             "data-effective-n": String(input.level?.n ?? ""),
             "data-effective-m": String(input.level?.m ?? ""),
             "data-fit-through": String(input.calibration?.obsEndMs ?? ""),
-            "data-fit-seq": String(scaleRt.seq.lens),
+            "data-fit-seq": String(scaleRt.fitSeq.lens),
             "data-override": input.external ? "external" : "",
             "data-updating": String(legend.state === "updating"),
           };
@@ -6010,7 +6010,7 @@
       basis: "",
       context: rec.id,
       fitThrough: String(rec.provenance?.through ?? ""),
-      fitSeq: String(scaleRt.seq.axis ?? 0),
+      fitSeq: String(scaleRt.fitSeq.axis ?? 0),
       override: "",
       updating: String(Boolean(rec.hold) && rec.hold !== "play"),
       axisId: rec.id,

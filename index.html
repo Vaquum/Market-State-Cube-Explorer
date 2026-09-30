@@ -22972,8 +22972,8 @@
     if (S.area && va) {
       const ya = G.Y(Math.min(va.r1 * ps, b[3])),
         yb = G.Y(Math.max(va.r0 * ps, b[2]));
-      ctx.fillStyle = colors.volume;
-      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = colors.muted;
+      ctx.globalAlpha = 0.14;
       ctx.fillRect(x0, ya, TRACK_BARS, yb - ya);
       ctx.globalAlpha = 1;
     }

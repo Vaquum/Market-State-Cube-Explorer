@@ -23,19 +23,6 @@
     },
     {
       "file": "src/explorer.js",
-      "pattern": "colors.volume",
-      "count": 1,
-      "rows": [
-        "C-05",
-        "C-11c",
-        "C-12a",
-        "C-25",
-        "T-07"
-      ],
-      "owner": "#47"
-    },
-    {
-      "file": "src/explorer.js",
       "pattern": "colors.evidence",
       "count": 5,
       "rows": [

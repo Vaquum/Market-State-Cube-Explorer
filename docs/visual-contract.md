@@ -97,11 +97,11 @@ The `draw()` order at the baseline is: 973 background, 981 coverage, 982 grid, 9
 | C-09b | Rows Delta band | `bandTone` 4528-4530 | `buy\|sell`, alpha `0.16*sqrt(\|Δ\|/peakInView)` | `+/-/mid`; symmetric U [slices: S1, S2] | ROW | #46, #47 | U15, U16, U43, U20, B10 | todo-S2 |
 | C-09c | Rows Relative volume band | `bandTone` 4528-4530, `relativeVolume` 7093, `paintBands` 4542 | `value/2` clipped to 1 -> alpha 0.16*t; `none` rows = -2 (full sell); populations differ (rectangle vs period) | `+/-/mid` on fixed log2 -2...+2; Relative volume v2 on common W; typed negative-infinite / no-reference / outside-W (outside W is not a zero-current row) [slices: S1 (v2 semantics, typed cases), S2 (draw only within W)] | FIXED | #46, #47 | U12, U13, U14 (identity=0 on several W), U15, U16, U43, B11 | todo-S2 |
 | C-09d | Rows Time-at-price band | `bandTone` 4527, `paintBands` 4541 (top 0.3) | `colors.time` mauve, alpha `0.3*sqrt(w/peak)` | `UM` (common unsigned language; mauve retired) [slices: S1 (token, scale), S2 (composition)] | ROW | #46, #47 | U15, U16, U43, U20, B10 | todo-S2 |
-| C-10 | Rows second profile | `underProfile` 4560-4612 | volume: `ink` alpha 0.16 + 1 px edge alpha 0.6; time: `colors.time` alpha 0.28; delta/relvol: `buy\|sell` alpha 0.35 from a centre line (`colors.line`, 4595); value-area bar `ink` alpha 0.4 2 px; POC dashed `[3,2]` ink 0.6 | length on an Independent Auto axis, labelled; adjacent track (S2); gold volume-derived POC/VA (S3) [slices: S1 (axis registry replaces `underlayPeak`), S2 (tracks), S3 (gold)] | PROF | #46, #47, #48 | U28, B18, B10 | todo-S2 |
-| C-11a | Current profile bars | `profile` 4365-4402, max at 4367 | total: `muted` alpha 0.32; POC row `colors.poc` alpha 0.75; length `v/max`, `max = d3.max(rows.v) \|\| 1` per draw | neutral length on Auto axis; gold POC [slices: S1 (axis), S2 (tracks)] | PROF | #46, #47 | U28, B18 | todo-S2 |
-| C-11b | Taker-buy subset bar | `profile` 4394-4401 | `colors.buy` alpha 0.85, 0.7-2 px tall (a DATA-NAME rendered with a retired ROLE token) | neutral labelled inset on the current axis (unsigned; not positive blue) | PROF | #47 | U35 (allow only while listed), S2: profile | todo-S2 |
-| C-11c | Profile value-area fill | `profile` 4377-4384 | `colors.volume` alpha 0.08 | REF:Profile (volume-derived), no market hue as fill [slices: S2/S3] | - | #47, #48 | - | todo-S2 |
-| C-11d | P / B POC lines, H/L value area, Level, pointer row, heading | `profile` 4404-4481 | P `colors.poc`, B `colors.buy` 1.5 px alpha 0.95 with leader and ink letter; H/L `muted` lines; Level dashed `[6,4]` ink 1.3; pointer-row ink 1 px; heading `muted` | REF:Profile gold for P and B (labels/endpoint glyphs distinguish), REF:User Level ink, IX [slices: S2 (profile tracks: gold POC and Buy POC glyphs), S3 (reference language, Level); unchanged in S1, blocks retiring `colors.buy`] | - | #46, #47, #48 | U35 | todo-S2 |
+| C-10 | Rows second profile | `paintReferenceTrack`, `referenceAxis` (was `underProfile` 4560-4612) | volume: `ink` alpha 0.16 + 1 px edge alpha 0.6; time: `colors.time` alpha 0.28; delta/relvol: `buy\|sell` alpha 0.35 from a centre line (`colors.line`, 4595); value-area bar `ink` alpha 0.4 2 px; POC dashed `[3,2]` ink 0.6 | length on an Independent Auto axis, labelled; adjacent track (S2); gold volume-derived POC/VA (S3) [slices: S1 (axis registry replaces `underlayPeak`), S2 (tracks), S3 (gold)] | PROF | #46, #47, #48 | U28, B18, B10 | todo-S3 |
+| C-11a | Current profile bars | `paintCurrentTrack` (was `profile` 4365-4402, max at 4367) | total: `muted` alpha 0.32; POC row `colors.poc` alpha 0.75; length `v/max`, `max = d3.max(rows.v) \|\| 1` per draw | neutral length on Auto axis; gold POC [slices: S1 (axis), S2 (tracks)] | PROF | #46, #47 | U28, B18 | done |
+| C-11b | Taker-buy subset bar | `paintCurrentTrack` (was `profile` 4394-4401) | `colors.buy` alpha 0.85, 0.7-2 px tall (a DATA-NAME rendered with a retired ROLE token) | neutral labelled inset on the current axis (unsigned; not positive blue) | PROF | #47 | U35 (allow only while listed), S2: profile | done |
+| C-11c | Profile value-area fill | `paintCurrentTrack` (was `profile` 4377-4384) | `colors.volume` alpha 0.08 | REF:Profile (volume-derived), no market hue as fill [slices: S2/S3] | - | #47, #48 | - | done |
+| C-11d | P / B POC lines, H/L value area, Level, pointer row, heading | `paintCurrentTrack`, `paintReferenceTrack`, `gutterLabels`, `pocGlyph`, `profile` (was `profile` 4404-4481) | P `colors.poc`, B `colors.buy` 1.5 px alpha 0.95 with leader and ink letter; H/L `muted` lines; Level dashed `[6,4]` ink 1.3; pointer-row ink 1 px; heading `muted` | REF:Profile gold for P and B (labels/endpoint glyphs distinguish), REF:User Level ink, IX [slices: S2 (profile tracks: gold POC and Buy POC glyphs), S3 (reference language, Level); unchanged in S1, blocks retiring `colors.buy`] | - | #46, #47, #48 | U35 | todo-S3 |
 | C-12a | Column bars, unsigned | `activity` 8776-8814 | `colors.volume` alpha 0.65 for Volume, Trades, Trade size, Choppiness, Volume per path; `max = d3.max(\|value\|) \|\| 1` per draw over columns in view | `UM` constant neutral fill + length; labelled Auto axis over settled displayed data; undefined denominators -> typed non-value, not 0 | AXIS | #46 | U28, B18, U12, U13, U14, B16 | done |
 | C-12b | Column bars, signed | `activity` 8808-8811 | `buy\|sell` alpha 0.65 about `zero` line (`colors.line` 8795) | `+/-/mid` sign/side with labelled symmetric axis | AXIS | #46 | U28, B18, U15, U16, U43 | done |
 | C-12c | Column bars, ratios (Cascade column share, Efficiency) | `activity` 8803-8807, `ratioColumns` 8744, `cascadeColumnEntry` 4260, `efficiencyFrom` 8959 | value clamped +/-2, `divergingColour(v/2, 1)` alpha 0.85; non-ok columns: no bar | `+/-/mid` on fixed log2 with 1/4x..4x ticks; clipping counted (finite under/overflow triangle, negative-infinity marker); Efficiency may exceed +/-2; column Cascade +1 does not acquire +2 colour; model provenance | FIXED | #46 | U15, U16, U43, U12, U13, U14, U20, B19, B16 | done |
@@ -286,6 +286,9 @@ A Wave-2 package that adds a NEW top-level helper reading `colors.*` under a nam
 | N-30 | Two-tone boundary painter: a surface casing under an ink core for the selection frame, its corner ticks and the lens frame | src/explorer.js: `twoTone()`, `selectionFrame()` (new in S2) | Selection: `colors.accent` 1.5 px plus a 0.25 fade of everything outside; lens frame: `colors.accent` 1.5 px | `IX` interaction (ink core, surface casing) | - | #47 | U50 | todo-S2 |
 | N-31 | Event strip: one lane per enabled event kind (4h squeeze, 1D squeeze, CME gap), opaque marks in the state ink, the lane name in the price column | src/explorer.js: `paintEvents()`, `eventLanes()` (new in S2) | The squeezes and the CME gap were translucent areas over the cells (`drawFill` alpha 0.24, `drawClock` alpha 0.16) | `STATE` ink, fixed role | EVENT | #47 | U50 | todo-S2 |
 | N-32 | Rows strip: the row values at full strength in a fixed 12 px column right of the heatmap, one block per effective row | src/explorer.js: `paintRowsStrip()` (new in S2) | Rows only drew a 16% projection over the cells and a second profile | the Rows mapping's unsigned or signed arms (`UM`, `+/-`) at alpha 1 | ROW | #47 | U50 | todo-S2 |
+| N-33 | Endpoint glyphs and gutter letters of a profile track: a filled triangle for the POC, a hollow diamond for the Buy POC, both gold, each with its letter a line of room apart | src/explorer.js: `pocGlyph()`, `gutterLabels()` (new in S2) | P and B letters on leader lines at the strip's edge, B in `colors.legacyBuy` | `REF:Profile` gold, the shape and the letter distinguish the two | PROF | #47 | B25 | todo-S2 |
+| N-34 | The current track: the view's or selection's Volume with the taker-buy subset as a neutral ink inset, POC and Buy POC lines, the 70% area as a neutral fill | src/explorer.js: `paintCurrentTrack()` (new in S2) | One overpainted strip; the subset was a thin bar in `colors.legacyBuy` | neutral length on an Independent or shared axis | PROF | #47 | B25, U51 | todo-S2 |
+| N-35 | The reference track and the domains printed under the tracks | src/explorer.js: `paintReferenceTrack()`, `paintProfileDomains()` (new in S2) | The reference was painted behind the current bars at alpha 0.16 to 0.35, its axis not shown | the Rows measure over its period on its own or the shared axis; the domain as text under each track | PROF | #47 | B25, U51 | todo-S2 |
 
 ## 4. The retired-role ratchet
 
@@ -387,8 +390,8 @@ Verified by scanning `git show 8c82ca1:src/explorer.js` with comments blanked; t
 
 | Case | Location | Why it matters |
 |---|---|---|
-| taker-buy subset bar in `colors.buy` | `profile` 4394-4401 | S2 makes it a neutral labelled inset; until then it blocks retiring `colors.buy` |
-| Buy POC line/label in `colors.buy` | `profile` 4432, 4437; F-08 | S2 (profile tracks) and S3 move it to the gold profile role with a distinguishing label/glyph |
+| taker-buy subset bar in `colors.buy` | `paintCurrentTrack` (was `profile` 4394-4401) | resolved in S2: a neutral inset in the ink on the current axis |
+| Buy POC line/label in `colors.buy` | `paintCurrentTrack`; F-08 | the canvas mark is gold in S2 (dashed line, hollow diamond glyph, letter B); the footer key F-08 follows with the generated keys of section 4 |
 | `S.mode === "flow"` naming ("Taker flow") drawn positive/negative | `cellColour` 4278 | fine: the name is data, the colours become `+/-/mid` |
 | README/help prose describing a data measure in role words | README.md, docs/data-and-semantics.md, help strings (R-13, R-14, R-15) | reword by role, keep data names |
 
@@ -648,6 +651,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | U48 | `tests/unit/notice.test.js` | notice coalescing, once-per-digest, dismissal | W1-F |
 | U49 | `tests/unit/hot-path.test.js` | no allocation, sort or d3 call in the steady-frame encoder | W1-F |
 | U50 | `tests/unit/two-tone.test.js` | a two-tone boundary has a 3:1 component over every fill, empty and state backdrop | #47 |
+| U51 | `tests/unit/profile-tracks.test.js` | the shared partition, windows and shares of the profile tracks against exact rational sums | #47 |
 | B01 | `tests/browser/boot.spec.js` | boot in recorded and live mode, the 29 module keys, production globals | H7b |
 | B02 | `tests/browser/recorded-snapshot.spec.js` | real recorded blocks through the page | K |
 | B03 | `tests/browser/readout-agreement.spec.js` | tooltip, table row, legend marker and pixel agree for every measure | T |
@@ -672,6 +676,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B22 | `tests/browser/persistence-fresh.spec.js` | the original build opens a vis=2 address and reads what this build stored (rollback) | S1 |
 | B23 | `tests/browser/controls-a11y.spec.js` | keyboard reach, names and computed contrast of S1-introduced UI | U |
 | B24 | `tests/browser/probe-selfcheck.spec.js` | the probe and the observation helpers themselves | H7a |
+| B25 | `tests/browser/profile-tracks.spec.js` | the adjacent profile tracks: geometry, independent and shared axes, disclosure, persistence | S2 |
 
 ## 10. Migration status per slice
 
@@ -680,12 +685,12 @@ Rendered from the Status column at S1's convergence: `done` is S1's own work shi
 | Prefix | Rows | keep | todo-S1 | todo-S2 | todo-S3 | done |
 |---|---|---|---|---|---|---|
 | T | 34 | 17 | 0 | 6 | 4 | 7 |
-| C | 48 | 2 | 0 | 29 | 10 | 7 |
+| C | 48 | 2 | 0 | 24 | 12 | 10 |
 | D | 21 | 7 | 0 | 4 | 8 | 2 |
 | F | 10 | 0 | 0 | 8 | 2 | 0 |
 | R | 15 | 0 | 0 | 2 | 5 | 8 |
-| N | 23 | 0 | 0 | 0 | 0 | 23 |
-| all | 151 | 26 | 0 | 49 | 29 | 47 |
+| N | 29 | 0 | 0 | 6 | 0 | 23 |
+| all | 157 | 26 | 0 | 50 | 31 | 50 |
 
 ## 11. Contributor checklist
 

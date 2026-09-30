@@ -403,7 +403,9 @@ test.describe("B18: the domain holds during a gesture and follows once it has se
     const held = log.find((m) => m.name === "data-axis-state" && m.value === "updating");
     expect(held, "the chip said Updating").toBeTruthy();
     expect(held.t, "while the old domain was still in force").toBeLessThan(written.t);
-    expect(held.t - pressedAt, "from the step itself").toBeLessThan(150);
+    // From the step itself: written by the first draw after it, not by a later one. (A wall-clock bound would fail on a loaded machine.)
+    const first = (await probe.frames())[0];
+    expect(held.t - first.t, "by the first draw frame after the step").toBeLessThan(50);
   });
 });
 

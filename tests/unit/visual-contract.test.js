@@ -170,6 +170,38 @@ const testIds = new Set(testIndex.rows.map((r) => r.cells[0]));
 // Whole-word mention of an identifier, a token or an id anywhere in the rows.
 const named = (name) => new RegExp(`(?<![\\w$-])${name.replace(/[.#$*]/g, "\\$&")}(?![\\w$-])`).test(rowText);
 
+// Structural rules over the text of a contract, as a pure function so that it can be tried on synthetic
+// documents (negative fixtures) as well as on the real one. Each problem names the rule it breaks.
+function structureProblems(text, knownTestIds) {
+  const d = parseDoc(text);
+  const problems = [];
+  const add = (rule, message) => problems.push({ rule, message });
+  const seen = new Set();
+  for (const t of d.tables.filter((x) => x.header[1] === "Consumer")) {
+    if (JSON.stringify(t.header) !== JSON.stringify(COLUMNS)) add("columns", `table under "${t.heading}" (line ${t.line}) has columns ${t.header.join(" | ")}`);
+    if (new Set(t.rows.map((r) => r.cells[0][0])).size > 1) add("prefix", `table under "${t.heading}" mixes prefixes`);
+    for (const { cells: c } of t.rows) {
+      const id = c[0];
+      if (c.length !== COLUMNS.length) { add("cells", `${id} has ${c.length} cells (an unescaped | in a cell?)`); continue; }
+      c.forEach((x, i) => { if (x === "") add("cells", `${id}: empty ${COLUMNS[i]}`); });
+      if (!ROW_ID.test(id)) add("id", `malformed id ${id}`);
+      if (seen.has(id)) add("id", `duplicate id ${id}`);
+      seen.add(id);
+      if (!STATUSES.includes(c[8])) add("vocabulary", `${id}: status "${c[8]}"`);
+      const own = c[6].split(/\s*,\s*/).filter(Boolean);
+      if (!own.length) add("vocabulary", `${id}: no owner`);
+      for (const o of own) if (!OWNERS.includes(o)) add("vocabulary", `${id}: owner "${o}"`);
+      if (new Set(own).size !== own.length) add("vocabulary", `${id}: owners repeat`);
+      const slice = { "todo-S1": "#46", "todo-S2": "#47", "todo-S3": "#48" }[c[8]];
+      if (slice && !own.includes(slice)) add("owner-status", `${id}: ${c[8]} but owners ${c[6]}`);
+      const ids = c[7].replace(/S[23]:[^,;]*/g, "").match(TEST_ID) || [];
+      for (const x of ids) if (!knownTestIds.has(x)) add("tests", `${id}: test ${x} is not in the test index`);
+      if (own.includes("#46") && !ids.length) add("tests", `${id} is owned by #46 and names no test id ("${c[7]}")`);
+    }
+  }
+  return problems;
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Scanning the sources (the completeness ratchet)
 // ---------------------------------------------------------------------------------------------------
@@ -199,57 +231,90 @@ const NEW_TOKENS = ["--ol-positive", "--ol-negative", "--ol-midpoint", "--ol-occ
 // Tests
 // ---------------------------------------------------------------------------------------------------
 describe("docs/visual-contract.md: structure of the inventory", () => {
+  const problems = structureProblems(read(DOC), testIds);
+  const only = (rule) => problems.filter((p) => p.rule === rule).map((p) => p.message);
+
   it("has inventory tables for every prefix, each with the eight D1 columns after the id", () => {
     assert.ok(inventory.length >= 8, "tokens, three canvas tables, DOM, footer keys, readouts, new consumers");
-    for (const t of inventory) assert.deepEqual(t.header, COLUMNS, `table under "${t.heading}" (line ${t.line})`);
-    const prefixes = new Set(rows.map((r) => r.id[0]));
-    assert.deepEqual([...prefixes].sort(), ["C", "D", "F", "N", "R", "T"]);
+    assert.deepEqual(only("columns"), []);
+    assert.deepEqual([...new Set(rows.map((r) => r.id[0]))].sort(), ["C", "D", "F", "N", "R", "T"]);
+    assert.deepEqual(COLUMNS.slice(1), ["Consumer", "File / function / CSS rule", "Current", "Target role", "Measurement / channel", "Owner", "Tests", "Status"], "the eight columns of parent D1");
   });
 
   it("has well-formed cells: nine per row, none empty", () => {
-    for (const r of rows) {
-      assert.equal(r.cells.length, COLUMNS.length, `${r.id} has ${r.cells.length} cells (an unescaped | in a cell?)`);
-      r.cells.forEach((c, i) => assert.ok(c !== "", `${r.id}: empty ${COLUMNS[i]}`));
-    }
+    assert.deepEqual(only("cells"), []);
   });
 
   it("has unique, well-formed ids in the table of their prefix", () => {
-    const seen = new Set();
-    for (const r of rows) {
-      assert.match(r.id, ROW_ID, r.id);
-      assert.ok(!seen.has(r.id), `duplicate id ${r.id}`);
-      seen.add(r.id);
-    }
-    for (const t of inventory) assert.equal(new Set(t.rows.map((r) => r.cells[0][0])).size, 1, `table under "${t.heading}" mixes prefixes`);
+    assert.deepEqual(only("id"), []);
+    assert.deepEqual(only("prefix"), []);
   });
 
   it("uses only the vocabulary: status keep|todo-S1|todo-S2|todo-S3|done, owner #46|#47|#48", () => {
-    for (const r of rows) {
-      assert.ok(STATUSES.includes(r.cells[8]), `${r.id}: status "${r.cells[8]}"`);
-      const o = owners(r);
-      assert.ok(o.length > 0, `${r.id}: no owner`);
-      for (const x of o) assert.ok(OWNERS.includes(x), `${r.id}: owner "${x}"`);
-      assert.deepEqual([...new Set(o)], o, `${r.id}: owners repeat`);
-    }
+    assert.deepEqual(only("vocabulary"), []);
   });
 
   it("gives every todo row an owner among the slices that still have work", () => {
-    const slice = { "todo-S1": "#46", "todo-S2": "#47", "todo-S3": "#48" };
-    for (const r of rows) if (slice[r.cells[8]]) assert.ok(owners(r).includes(slice[r.cells[8]]), `${r.id}: ${r.cells[8]} but owners ${r.cells[6]}`);
+    assert.deepEqual(only("owner-status"), []);
   });
 
   it("names an existing test id in every row owned by #46, and only existing ids anywhere", () => {
-    for (const r of rows) {
-      const tests = r.cells[7].replace(/S[23]:[^,;]*/g, "");
-      const ids = tests.match(TEST_ID) || [];
-      for (const id of ids) assert.ok(testIds.has(id), `${r.id}: test ${id} is not in the test index`);
-      if (owners(r).includes("#46")) assert.ok(ids.length > 0, `${r.id} is owned by #46 and names no test id ("${r.cells[7]}")`);
-    }
+    assert.deepEqual(only("tests"), []);
   });
 
   it("keeps every row count at or above the baseline's", () => {
     const min = readJson(`${FIXTURES}/consumer-baseline.json`).minRows;
     for (const [prefix, n] of Object.entries(min)) assert.ok(rows.filter((r) => r.id[0] === prefix).length >= n, `${prefix}- rows: fewer than the baseline ${n}`);
+  });
+});
+
+describe("the structure rules on synthetic documents (negative fixtures)", () => {
+  const ids = new Set(["U01", "B01"]);
+  const HEADER = `| ${COLUMNS.join(" | ")} |\n|${COLUMNS.map(() => "---").join("|")}|`;
+  const row = (over = {}) => {
+    const c = { id: "C-01", consumer: "x", file: "f", current: "c", target: "t", channel: "CELL", owner: "#46", tests: "U01", status: "todo-S1", ...over };
+    return `| ${[c.id, c.consumer, c.file, c.current, c.target, c.channel, c.owner, c.tests, c.status].join(" | ")} |`;
+  };
+  const doc = (...rs) => `# d\n\n${HEADER}\n${rs.join("\n")}\n`;
+  const rules = (text) => [...new Set(structureProblems(text, ids).map((p) => p.rule))];
+
+  it("accepts a well-formed table", () => {
+    assert.deepEqual(structureProblems(doc(row(), row({ id: "C-02", owner: "#46, #47", tests: "U01, B01, S2: pixel" })), ids), []);
+    assert.deepEqual(structureProblems(doc(row({ id: "T-01", owner: "#48", status: "keep", tests: "-" })), ids), []);
+  });
+
+  it("rejects a table without the eight D1 columns", () => {
+    assert.deepEqual(rules(doc(row()).replace("File / function / CSS rule", "Location")), ["columns"]);
+    assert.deepEqual(rules(doc(row()).replace(" | Tests | Status |", " | Status |").replace(" | U01 | todo-S1 |", " | todo-S1 |")), ["columns", "cells"]);
+  });
+
+  it("rejects a duplicate or malformed id and a table that mixes prefixes", () => {
+    assert.deepEqual(rules(doc(row(), row())), ["id"]);
+    assert.deepEqual(rules(doc(row({ id: "C-1" }))), ["id"]);
+    assert.deepEqual(rules(doc(row({ id: "X-01" }))), ["id"]);
+    assert.deepEqual(rules(doc(row(), row({ id: "D-01" }))), ["prefix"]);
+  });
+
+  it("rejects a status or owner outside the vocabulary, and a todo row without its slice", () => {
+    assert.deepEqual(rules(doc(row({ status: "todo-S9" }))), ["vocabulary"]);
+    assert.deepEqual(rules(doc(row({ status: "wip" }))), ["vocabulary"]);
+    assert.deepEqual(rules(doc(row({ owner: "S1" }))), ["vocabulary", "owner-status"]);
+    assert.deepEqual(rules(doc(row({ owner: "#46, #46" }))), ["vocabulary"]);
+    assert.deepEqual(rules(doc(row({ owner: "#47", status: "todo-S1" }))), ["owner-status"]);
+  });
+
+  it("rejects an empty cell and a stray pipe", () => {
+    assert.deepEqual(rules(doc(row({ current: "" }))), ["cells"]);
+    assert.deepEqual(rules(doc(row({ current: "a | b" }))), ["cells"]);
+    assert.deepEqual(structureProblems(doc(row({ current: "a \\| b" })), ids), [], "an escaped pipe is text");
+  });
+
+  it("requires an existing test id in a row owned by #46, and rejects an unknown one anywhere", () => {
+    assert.deepEqual(rules(doc(row({ tests: "-" }))), ["tests"]);
+    assert.deepEqual(rules(doc(row({ tests: "S2: pixel" }))), ["tests"]);
+    assert.deepEqual(rules(doc(row({ tests: "U99" }))), ["tests"]);
+    assert.deepEqual(rules(doc(row({ id: "C-06", owner: "#47", status: "todo-S2", tests: "-" }))), []);
+    assert.deepEqual(rules(doc(row({ id: "C-06", owner: "#47", status: "todo-S2", tests: "B99" }))), ["tests"]);
   });
 });
 

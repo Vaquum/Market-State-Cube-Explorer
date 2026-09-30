@@ -269,7 +269,7 @@ function scopeNames(file, hit) {
   if (kind === "js") return hit.scope === "(top level)" ? [] : [hit.scope];
   if (kind === "css") {
     if (hit.scope.startsWith("--ol-")) return [hit.scope];
-    return hit.scope.match(/[.#][A-Za-z][\w-]*/g) || [];
+    return [...new Set(hit.scope.match(/[.#][A-Za-z][\w-]*/g) || [])];
   }
   return [path.basename(file)];
 }
@@ -284,9 +284,43 @@ function scan() {
 }
 const tally = (hits) => {
   const counts = new Map();
-  for (const h of hits) counts.set(`${h.file}\u0000${h.pattern}`, (counts.get(`${h.file}\u0000${h.pattern}`) || 0) + 1);
+  for (const h of hits) counts.set(keyOf(h.file, h.pattern), (counts.get(keyOf(h.file, h.pattern)) || 0) + 1);
   return counts;
 };
+
+// ---------------------------------------------------------------------------------------------------
+// The ratchet as pure functions (so it can be tested on synthetic input, not only on today's sources)
+// ---------------------------------------------------------------------------------------------------
+const keyOf = (file, pattern) => `${file}\u0000${pattern}`;
+
+// counts: Map (file, pattern) -> hits. The ceiling half, run in every worktree.
+function ceilingProblems(counts, allowlist, baseline) {
+  const ceiling = (file, pattern) => (baseline.counts[file] && baseline.counts[file][pattern]) || 0;
+  const allowed = (file, pattern) => (allowlist.entries.find((e) => e.file === file && e.pattern === pattern) || { count: 0 }).count;
+  const problems = [];
+  for (const [k, n] of counts) {
+    const [file, pattern] = k.split("\u0000");
+    if (n > allowed(file, pattern)) problems.push({ rule: "outside-allowlist", message: `${file} ${pattern}: ${n} hits, ${allowed(file, pattern)} allowed` });
+  }
+  for (const e of allowlist.entries) {
+    if (e.count > ceiling(e.file, e.pattern)) problems.push({ rule: "above-ceiling", message: `${e.file} ${e.pattern}: allows ${e.count}, ceiling ${ceiling(e.file, e.pattern)}` });
+    if (!PATTERNS.includes(e.pattern)) problems.push({ rule: "entry", message: `unknown pattern ${e.pattern}` });
+    if (!Number.isInteger(e.count) || e.count <= 0) problems.push({ rule: "entry", message: `${e.file} ${e.pattern}: count ${e.count} (delete an entry that reached zero)` });
+  }
+  const seen = new Set();
+  for (const e of allowlist.entries) {
+    if (seen.has(keyOf(e.file, e.pattern))) problems.push({ rule: "entry", message: `duplicate entry ${e.file} ${e.pattern}` });
+    seen.add(keyOf(e.file, e.pattern));
+  }
+  return problems;
+}
+
+// The equality half, run with CONVERGENCE=1: a removed hit must lower the count.
+function equalityProblems(counts, allowlist) {
+  return allowlist.entries
+    .filter((e) => (counts.get(keyOf(e.file, e.pattern)) || 0) !== e.count)
+    .map((e) => ({ rule: "stale-count", message: `${e.file} ${e.pattern}: allowlist ${e.count}, actual ${counts.get(keyOf(e.file, e.pattern)) || 0}` }));
+}
 
 // ---------------------------------------------------------------------------------------------------
 // Tests
@@ -327,15 +361,66 @@ describe("the lint classifies by token namespace (truth table)", () => {
   });
 });
 
+describe("the ratchet logic on synthetic input (negative fixtures)", () => {
+  const baseline = { counts: { "a.js": { "colors.buy": 3, "colors.sell": 2 }, "b.css": { "--ol-buy": 1 } } };
+  const counts = (o) => new Map(Object.entries(o).map(([k, n]) => [k.replace("|", "\u0000"), n]));
+  const list = (...entries) => ({ entries: entries.map(([file, pattern, count]) => ({ file, pattern, count, rows: ["C-01"], owner: "#46" })) });
+  const rules = (ps) => ps.map((p) => p.rule);
+
+  it("passes when every hit is allowed and the allowance is within the ceiling", () => {
+    assert.deepEqual(ceilingProblems(counts({ "a.js|colors.buy": 3 }), list(["a.js", "colors.buy", 3]), baseline), []);
+  });
+
+  it("passes a worktree that removed a hit without lowering the allowlist (only the equality half objects)", () => {
+    const c = counts({ "a.js|colors.buy": 2 }), l = list(["a.js", "colors.buy", 3]);
+    assert.deepEqual(ceilingProblems(c, l, baseline), []);
+    assert.deepEqual(equalityProblems(c, l).map((p) => p.message), ["a.js colors.buy: allowlist 3, actual 2"]);
+  });
+
+  it("flags a hit in a file or pattern the allowlist does not name", () => {
+    assert.deepEqual(rules(ceilingProblems(counts({ "new.js|colors.buy": 1 }), list(["a.js", "colors.buy", 3]), baseline)), ["outside-allowlist"]);
+    assert.deepEqual(rules(ceilingProblems(counts({ "a.js|colors.sell": 1 }), list(["a.js", "colors.buy", 3]), baseline)), ["outside-allowlist"]);
+  });
+
+  it("flags one hit more than allowed", () => {
+    assert.deepEqual(rules(ceilingProblems(counts({ "a.js|colors.buy": 4 }), list(["a.js", "colors.buy", 3]), baseline)), ["outside-allowlist"]);
+  });
+
+  it("flags an allowance above the immutable ceiling, even when the actual count matches it", () => {
+    assert.deepEqual(rules(ceilingProblems(counts({ "a.js|colors.buy": 4 }), list(["a.js", "colors.buy", 4]), baseline)), ["above-ceiling"]);
+    assert.deepEqual(rules(ceilingProblems(counts({}), list(["c.js", "colors.buy", 1]), baseline)), ["above-ceiling"], "a file the baseline never had has a ceiling of zero");
+  });
+
+  it("flags a malformed allowlist: zero count, unknown pattern, duplicate", () => {
+    assert.deepEqual(rules(ceilingProblems(counts({}), list(["a.js", "colors.buy", 0]), baseline)), ["entry"]);
+    assert.deepEqual(rules(ceilingProblems(counts({}), list(["a.js", "colors.nope", 1]), baseline)), ["above-ceiling", "entry"]);
+    assert.deepEqual(rules(ceilingProblems(counts({}), list(["a.js", "colors.buy", 1], ["a.js", "colors.buy", 1]), baseline)), ["entry"]);
+  });
+
+  it("makes the equality half exact in both directions", () => {
+    assert.deepEqual(equalityProblems(counts({ "a.js|colors.buy": 3 }), list(["a.js", "colors.buy", 3])), []);
+    assert.equal(equalityProblems(counts({ "a.js|colors.buy": 4 }), list(["a.js", "colors.buy", 3])).length, 1);
+    assert.equal(equalityProblems(counts({}), list(["a.js", "colors.buy", 3])).length, 1, "an entry with no hit left is stale");
+  });
+
+  it("maps a scope to the names a row must carry", () => {
+    assert.deepEqual(scopeNames("src/explorer.js", { scope: "bandTone" }), ["bandTone"]);
+    assert.deepEqual(scopeNames("src/explorer.js", { scope: "(top level)" }), []);
+    assert.deepEqual(scopeNames("src/explorer.css", { scope: "#origo-lens .ol-plane button.ol-plane-loading, #origo-lens .ol-plane-key i.ol-plane-loading" }).sort(), ["#origo-lens", ".ol-plane", ".ol-plane-key", ".ol-plane-loading"].sort());
+    assert.deepEqual(scopeNames("src/explorer.css", { scope: "--ol-buy" }), ["--ol-buy"]);
+    assert.deepEqual(scopeNames("README.md", { scope: "(text)" }), ["README.md"]);
+    assert.ok(mentions("`i.ol-res-coarse` dot", ".ol-res-coarse"));
+    assert.ok(!mentions("`bandToner`", "bandTone"));
+    assert.ok(!mentions("the x-bandTone", "bandTone"));
+  });
+});
+
 describe("the ratchet over the real sources", () => {
   const baseline = readJson(`${FIXTURES}/role-baseline.json`);
   const allowlist = readJson(`${FIXTURES}/role-allowlist.json`);
   const rows = contractRows();
   const hits = scan();
   const counts = tally(hits);
-  const key = (file, pattern) => `${file}\u0000${pattern}`;
-  const ceiling = (file, pattern) => (baseline.counts[file] && baseline.counts[file][pattern]) || 0;
-  const allowed = (file, pattern) => (allowlist.entries.find((e) => e.file === file && e.pattern === pattern) || { count: 0 }).count;
 
   if (process.env.ROLE_LINT_REPORT === "1")
     it("report", () => {
@@ -352,28 +437,19 @@ describe("the ratchet over the real sources", () => {
     }
   });
 
+  const problems = ceilingProblems(counts, allowlist, baseline);
+  const only = (rule) => problems.filter((p) => p.rule === rule).map((p) => p.message);
+
   it("has no hit outside the allowlist", () => {
-    const over = [];
-    for (const [k, n] of counts) {
-      const [file, pattern] = k.split("\u0000");
-      if (n > allowed(file, pattern)) over.push(`${file} ${pattern}: ${n} hits, ${allowed(file, pattern)} allowed`);
-    }
-    assert.deepEqual(over, [], "a retired rendering role is back, or a new file uses one; use the role tokens (positive, negative, midpoint, occupancy, state) or register the consumer in docs/visual-contract.md");
+    assert.deepEqual(only("outside-allowlist"), [], "a retired rendering role is back, or a new file uses one; use the role tokens (positive, negative, midpoint, occupancy, state) or register the consumer in docs/visual-contract.md");
   });
 
   it("never allows more than the immutable baseline ceiling", () => {
-    const bad = allowlist.entries.filter((e) => e.count > ceiling(e.file, e.pattern)).map((e) => `${e.file} ${e.pattern}: allows ${e.count}, ceiling ${ceiling(e.file, e.pattern)}`);
-    assert.deepEqual(bad, []);
+    assert.deepEqual(only("above-ceiling"), []);
   });
 
   it("keeps the allowlist well formed: known patterns, no duplicates, positive counts", () => {
-    const seen = new Set();
-    for (const e of allowlist.entries) {
-      assert.ok(PATTERNS.includes(e.pattern), `unknown pattern ${e.pattern}`);
-      assert.ok(Number.isInteger(e.count) && e.count > 0, `${e.file} ${e.pattern}: count ${e.count} (delete an entry that reached zero)`);
-      assert.ok(!seen.has(key(e.file, e.pattern)), `duplicate entry ${e.file} ${e.pattern}`);
-      seen.add(key(e.file, e.pattern));
-    }
+    assert.deepEqual(only("entry"), []);
     for (const [file, pats] of Object.entries(baseline.counts)) for (const p of Object.keys(pats)) assert.ok(PATTERNS.includes(p), `baseline names unknown pattern ${p} for ${file}`);
   });
 
@@ -406,12 +482,7 @@ describe("the ratchet over the real sources", () => {
   });
 
   it("equals the actual count for every allowlisted pattern (CONVERGENCE=1: a removed hit forces a lower count)", { skip: CONVERGENCE ? false : "committed-equality half: runs with CONVERGENCE=1 (TESTPLAN DD-T29)" }, () => {
-    const stale = [];
-    for (const e of allowlist.entries) {
-      const n = counts.get(key(e.file, e.pattern)) || 0;
-      if (n !== e.count) stale.push(`${e.file} ${e.pattern}: allowlist ${e.count}, actual ${n}`);
-    }
-    assert.deepEqual(stale, [], "lower the count in tests/fixtures/lint/role-allowlist.json (delete the entry at zero) and update docs/visual-contract.md");
+    assert.deepEqual(equalityProblems(counts, allowlist).map((p) => p.message), [], "lower the count in tests/fixtures/lint/role-allowlist.json (delete the entry at zero) and update docs/visual-contract.md");
   });
 
   it("re-derives the baseline ceiling from git and finds it unchanged", { skip: reachable("8c82ca1") ? false : "commit 8c82ca1 is not reachable (shallow clone)" }, () => {

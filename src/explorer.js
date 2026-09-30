@@ -11832,6 +11832,8 @@
         if (!mine && scaleRt.ctl.request("lens", "init", key)) scaleArm();
       }
     }
+    // a Local-contrast want that no longer applies (the option is off, or the measure has a fixed domain) is dropped
+    if (!scope.startsWith("local")) scaleRt.ctl.cancel("lens");
     const frame = E.readout.cellsFrame({
       mode: S.mode,
       basis: eff.basis,
@@ -11997,7 +11999,8 @@
     if (lens.scope === "shared") parts.push(LENS_SHARED_TEXT);
     else if (lens.pending) parts.push(E.text.state.localPending);
     if (lens.mappingId) parts.push(lens.mappingId.slice(0, 6));
-    if (lensRt.chipText) parts.push(lensRt.chipText);
+    // the legend's short text can repeat a word (a fixed scale is both its transform and its policy): once is enough
+    if (lensRt.chipText) parts.push([...new Set(lensRt.chipText.split(" · "))].join(" · "));
     if (report.shares.marks > 0 || report.shares.area > 0)
       parts.push(`${lensFmt(report.shares.marks, "share")} of marks · ${lensFmt(report.shares.area, "share")} of area outside`);
     return parts.join(" · ");

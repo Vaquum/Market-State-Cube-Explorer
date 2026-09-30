@@ -326,12 +326,12 @@ test("the id of knots 1..257 is the published vector of API.md A.2", () => {
   assert.equal(E.scale.id({ v: 1, kind: "rank-type7-257", signed: false, params: { knots, q: "j/256" }, clip: "clamp01@1" }), "YOsRNro-FFbbskXX");
 });
 
-test("fitRank uses finite POSITIVE values only: zeros, negatives and non-finite values are not members; an empty set is No calibration", () => {
+test("fitRank uses finite POSITIVE values only: zeros, negatives and non-finite values are not members; nothing finite and non-negative is No calibration", () => {
   const f = E.scale.fitRank({ values: Float64Array.from([0, 0, -4, NaN, Infinity, 2, 4, 6, 8, 0]) });
   assert.deepEqual(knotsOf(f)[0], 2);
   assert.deepEqual(knotsOf(f)[256], 8);
   assert.equal(f.descriptor.id, fitRank([2, 4, 6, 8]).descriptor.id, "the zeros do not compress the low end");
-  for (const values of [[], [0, 0, 0], [-1, NaN, -Infinity]]) {
+  for (const values of [[], [-1, NaN, -Infinity], [-3, -0.5]]) {
     const r = fitRank(values);
     assert.equal(r.state, "no-calibration");
     assert.equal(r.descriptor, null);
@@ -382,3 +382,37 @@ test("plan refuses a rank descriptor without 257 knots instead of evaluating gar
 });
 
 test("goldens vs tests/fixtures/scales/rank-vectors.json (Python decimal, package H3): the third oracle", { todo: "package H3 has not committed tests/fixtures/scales/rank-vectors.json" }, () => {});
+
+// DR-40 / D3 ("All-zero valid cohort produces a zero-only calibration"): a rank cohort holds positive values
+// only, so an ALL-ZERO cohort is not "empty positives" but a measured zero-only one, exactly as fitValue has it.
+test("an ALL-ZERO cohort gives the zero-only calibration exactly as fitValue does (DR-40); an empty one stays No calibration", () => {
+  for (const values of [[0], [0, 0, 0], [-0, 0], [0, 0, -4, NaN, Infinity], [-0]]) {
+    const r = fitRank(values);
+    assert.equal(r.state, "ok", JSON.stringify(values));
+    assert.equal(r.descriptor.kind, "zero-only");
+    assert.equal(r.descriptor.signed, false, "rank is unsigned");
+    assert.equal(r.descriptor.params, null);
+    assert.equal(r.descriptor.algorithm, "value-fit@1", "the same record fitValue makes, algorithm string included");
+    assert.equal(r.descriptor.id, "C5LleVNGDTk1DpfK", "the hand-pinned id of the unsigned zero-only mapping (scale-value.test.js)");
+    assert.deepEqual(plain(r), plain(E.scale.fitValue({ values: Float64Array.from(values) }, { signed: false })), "record for record the Value answer");
+    assert.equal(E.scale.validate(r.descriptor, { requireId: true }).ok, true);
+  }
+  // Its apply is the zero-only one (DD-95): a measured zero is t = 0 with no indication, anything else is
+  // out of domain, clipped HIGH and flagged until a fit replaces it.
+  const d = fitRank([0, 0]).descriptor;
+  assert.deepEqual(at(d, 0), { t: 0, clip: CLIP.NONE });
+  const out = {};
+  E.scale.apply(d, 3, out);
+  assert.equal(out.t, 1);
+  assert.equal(out.clip, CLIP.HIGH);
+  assert.equal(out.state, "out-of-domain");
+  // One positive value anywhere makes it a real rank fit again: the zeros are still not members.
+  const mixed = fitRank([0, 0, 5]);
+  assert.equal(mixed.descriptor.kind, "rank-type7-257");
+  assert.equal(mixed.descriptor.id, fitRank([5]).descriptor.id);
+  // Nothing measured, or nothing but values that are not members, is not a zero cohort.
+  for (const values of [[], [NaN], [-1, -2], [Infinity, -Infinity]]) assert.equal(fitRank(values).state, "no-calibration", JSON.stringify(values));
+  assert.equal(E.scale.fitRank({ values: [] }).reason, "empty cohort");
+  assert.equal(E.scale.fitRank(null).state, "no-calibration");
+});
+

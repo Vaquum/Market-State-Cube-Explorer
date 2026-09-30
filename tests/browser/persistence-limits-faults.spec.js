@@ -232,6 +232,45 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     void surface;
   });
 
+  test("a named view saved at a shortened address keeps the full code beside it, and opens exactly from it", async ({ page, fakeFor, freshContext }) => {
+    const fake = await fakeFor("mini");
+    await open(page, fake);
+    const pack = await packOf(page);
+    await S.importCode(page, await codeOf(payloadOf(pack, heldRanks())));
+    await expect(page.locator("#ol-copy-status")).toHaveAttribute("data-address-level", "ids");
+    const exact = (await S.where(page)).hash;
+    await S.openViews(page);
+    await page.locator("#ol-view-name").fill("Four ranks");
+    await page.locator("#ol-view-form button[type=submit]").click();
+    await expect.poll(async () => (await S.storage(page)).local["views:v1"]).toContain("Four ranks");
+    const [entry] = JSON.parse((await S.storage(page)).local["views:v1"]);
+    // the entry is versioned, carries its (shortened) address, and the code that is exact
+    expect(entry.visualVersion).toBe(2);
+    expect(entry.hash).toContain("q~");
+    expect(entry.code).toMatch(/^origo-cube:2\./);
+    expect(entry.code.length).toBeLessThanOrEqual(64 * 1024);
+    // in a fresh browser with only that list, opening the view restores the two mappings the address alone could not
+    const other = await freshContext();
+    await other.addInitScript(
+      ({ prefix, list }) => {
+        try {
+          if (localStorage.getItem("__seeded")) return;
+          localStorage.setItem("__seeded", "1");
+          localStorage.setItem(prefix + "views:v1", list);
+        } catch {
+          // a blank page has no storage
+        }
+      },
+      { prefix: STORE, list: JSON.stringify([entry]) },
+    );
+    const tab = await other.newPage();
+    await tab.goto(fake.url + "/");
+    await tab.locator("#ol-canvas").waitFor();
+    await S.openViews(tab);
+    await tab.locator("#ol-saved .ol-entry").first().click();
+    await expect.poll(async () => (await S.where(tab)).hash).toBe(exact);
+  });
+
   test("the ladder's second and third level: settings only, then the address is not rewritten; the URL never exceeds 8192 characters", async ({ page, context, fakeFor }) => {
     const fake = await fakeFor("mini");
     await context.grantPermissions(CLIPBOARD, { origin: fake.url });

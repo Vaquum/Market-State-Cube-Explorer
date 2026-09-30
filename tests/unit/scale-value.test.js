@@ -10,8 +10,9 @@
 // as inequalities, not recomputed with the module.
 // The module may be evaluated in a vm context (ENCODING_PARTS_DIR): its arrays and errors are of another
 // realm, so records are compared through JSON and errors by name.
-// Not here: the goldens scales/value-vectors.json (decimal at 50 digits, package H3) are a todo until that
-// fixture exists; cohort EXTRACTION (placeholders, partial and open cells, unread) is U17 (part 09).
+// The Python decimal goldens (tests/fixtures/scales/value-vectors.json, 80 digits, package H3) are compared in
+// the last test of this file: a third oracle that shares neither code nor arithmetic with the module.
+// Not here: cohort EXTRACTION (placeholders, partial and open cells, unread) is U17 (part 09).
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const E = require("../support/enc");
@@ -429,6 +430,65 @@ test("property: tiny and huge magnitudes, subnormal-adjacent k and U/k that stay
   }
 });
 
-// A todo with no body until package H3 commits the fixture: its format is defined by tests/reference/golden.py,
-// which is not in the repository yet, so a comparison cannot be written against it today.
-test("goldens vs tests/fixtures/scales/value-vectors.json at 1e-15 relative (package H3)", { todo: "package H3 has not committed tests/fixtures/scales/value-vectors.json" }, () => {});
+// The golden fixture of package H3 (format value-golden-1, see its `note`): t is evaluated at 80 significant
+// digits and rounded once to a double, NOT clipped, so the module's clipped coordinate is compared with
+// min(|t|, 1) carrying the sign of x. Tolerance 1e-15 relative (the stated one; two libm log1p evaluations
+// may differ by a few ulps, an ulp of a number near 1 is 1.1e-16). `over` (|x| above U) must raise the HIGH
+// flag, `atU` the exact-end flag; `index` is compared unless it is null, which says that a double t could fall
+// on either side of a rounding tie, so then either neighbour is acceptable. NaN travels as the string "NaN".
+const fs = require("node:fs");
+const path = require("node:path");
+const GOLDEN = JSON.parse(fs.readFileSync(path.join(__dirname, "../fixtures/scales/value-vectors.json"), "utf8"));
+const fromJson = (x) => (x === "NaN" ? NaN : x === "Infinity" ? Infinity : x === "-Infinity" ? -Infinity : x === "-0" ? -0 : x);
+
+test("goldens vs tests/fixtures/scales/value-vectors.json at 1e-15 relative (package H3)", () => {
+  assert.equal(GOLDEN.format, "value-golden-1");
+  assert.ok(GOLDEN.cases.length >= 12, "the fixture holds its twelve cases");
+  let probes = 0;
+  let ties = 0;
+  for (const c of GOLDEN.cases) {
+    const cohort = c.cohort.map(fromJson);
+    for (const linear of [false, true]) {
+      const kind = linear ? "linear" : "log1p";
+      const f = fit(cohort, { signed: c.signed, linear });
+      const tag = c.name + " " + kind;
+      if (c.state === "no-calibration") {
+        assert.equal(f.state, "no-calibration", tag);
+        assert.equal(f.descriptor, null, tag);
+        continue;
+      }
+      assert.equal(f.state, "ok", tag);
+      if (c.state === "zero-only") {
+        assert.equal(f.descriptor.kind, "zero-only", tag);
+        continue;
+      }
+      const d = f.descriptor;
+      assert.equal(d.kind, linear ? "value-linear" : "value-log1p", tag);
+      assert.equal(d.signed, c.signed, tag);
+      assert.equal(d.params.U, fromJson(c.U), tag + ": U is a selected cohort value, so it is exact");
+      if (!linear) assert.equal(d.params.k, fromJson(c.k), tag + ": k = " + c.kExact + " is an exact double");
+      for (const p of c[kind]) {
+        const x = fromJson(p.x);
+        const got = at(d, x);
+        const want = fromJson(p.t);
+        const at1 = Math.max(-1, Math.min(1, want));
+        assert.ok(Math.abs(got.t - at1) <= 1e-15 * Math.max(1, Math.abs(at1)), tag + " x " + x + ": t " + got.t + ", golden " + want);
+        if (Math.abs(want) > 1) assert.ok(Math.abs(got.t) === 1, tag + " x " + x + ": the drawing coordinate is clipped to the end");
+        assert.equal(got.clip === CLIP.HIGH, p.over, tag + " x " + x + ": HIGH exactly above U");
+        assert.equal(got.clip === CLIP.EXACT_HIGH, p.atU, tag + " x " + x + ": the exact-end flag exactly at U");
+        if (p.over === false && p.atU === false) assert.equal(got.clip, CLIP.NONE, tag + " x " + x + ": no flag inside the fitted range");
+        const idx = E.scale.index(got.t);
+        if (p.index === null) {
+          ties++;
+          // either side of the tie: the two neighbours of round(|t| * 255) differ by one, and idx is one of them
+          assert.ok(Math.abs(idx / 255 - Math.min(1, Math.abs(want))) <= 0.5 / 255 + 1e-9, tag + " x " + x + ": index " + idx + " is a neighbour of the tie");
+        } else {
+          assert.equal(idx, p.index, tag + " x " + x + ": index");
+        }
+        probes++;
+      }
+    }
+  }
+  assert.ok(probes >= 250, "a fixture that compares nothing proves nothing: " + probes + " probes");
+  assert.ok(ties > 0, "the tie rule is exercised");
+});

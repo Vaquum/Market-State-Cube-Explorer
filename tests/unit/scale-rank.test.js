@@ -11,8 +11,9 @@
 // (the module bisects), so the two share no structure. Restoration is checked bit-exactly through
 // Buffer (node's own big-endian double codec) and JSON.
 // The module may be evaluated in a vm context (ENCODING_PARTS_DIR): records are compared through JSON.
-// Not here: rank-vectors.json (Python decimal goldens, package H3) is a todo until that fixture exists;
-// the availability table (rank is not offered for signed Delta, fixed shares and ratios, RSI) is
+// A third oracle, the Python exact-rational goldens of package H3 (tests/fixtures/scales/rank-vectors.json), is
+// compared in the test "goldens vs ...rank-vectors.json" below.
+// Not here: the availability table (rank is not offered for signed Delta, fixed shares and ratios, RSI) is
 // E.policy.offers (U26b, package W1-E).
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -381,7 +382,41 @@ test("plan refuses a rank descriptor without 257 knots instead of evaluating gar
   assert.throws(() => E.scale.plan({ v: 1, kind: "rank-type7-257", signed: false, params: { knots: [1, 2], q: "j/256" }, clip: "clamp01@1" }), (e) => /Error$/.test(e.name));
 });
 
-test("goldens vs tests/fixtures/scales/rank-vectors.json (Python decimal, package H3): the third oracle", { todo: "package H3 has not committed tests/fixtures/scales/rank-vectors.json" }, () => {});
+// The golden fixture of package H3 (format rank-golden-1, see its `note`): knots in exact rationals rounded once
+// to a double, t(x) and the clip word of every probe likewise. Tolerances are those the test above states for
+// its own exact oracle: a knot within 2 ulp (the module interpolates in doubles, the fixture rounds once),
+// a coordinate within 8 ulp or 1e-15 absolute. Clip words: "low" is LOW, "high" is HIGH, "none" is NONE or
+// one of the exact-end flags (a probe that sits on the end knot is in range, not out of it).
+const fs = require("node:fs");
+const GOLDEN = JSON.parse(fs.readFileSync(require("node:path").join(__dirname, "../fixtures/scales/rank-vectors.json"), "utf8"));
+const fromJson = (x) => (x === "NaN" ? NaN : x === "Infinity" ? Infinity : x === "-Infinity" ? -Infinity : x === "-0" ? -0 : x);
+
+test("goldens vs tests/fixtures/scales/rank-vectors.json (Python exact rationals, package H3): the third oracle", () => {
+  assert.equal(GOLDEN.format, "rank-golden-1");
+  assert.ok(GOLDEN.cases.length >= 11, "the fixture holds its eleven cases");
+  let probes = 0;
+  for (const c of GOLDEN.cases) {
+    const f = fitRank(c.cohort.map(fromJson));
+    assert.equal(f.state, "ok", c.name);
+    const k = knotsOf(f);
+    assert.equal(k.length, 257, c.name);
+    for (let j = 0; j < 257; j++) {
+      const want = fromJson(c.knots[j]);
+      assert.ok(ulps(k[j], want) <= 2 || k[j] === want, c.name + " knot " + j + ": module " + k[j] + ", golden " + want);
+    }
+    for (const p of c.probes) {
+      const x = fromJson(p.x);
+      const got = at(f.descriptor, x);
+      const want = fromJson(p.t);
+      assert.ok(ulps(got.t, want) <= 8 || Math.abs(got.t - want) < 1e-15, c.name + " x " + x + ": t " + got.t + ", golden " + want);
+      if (p.clip === "low") assert.equal(got.clip, CLIP.LOW, c.name + " x " + x);
+      else if (p.clip === "high") assert.equal(got.clip, CLIP.HIGH, c.name + " x " + x);
+      else assert.ok(got.clip === CLIP.NONE || got.clip === CLIP.EXACT_LOW || got.clip === CLIP.EXACT_HIGH, c.name + " x " + x + ": in range, got clip " + got.clip);
+      probes++;
+    }
+  }
+  assert.ok(probes >= 150, "a fixture that compares nothing proves nothing: " + probes + " probes");
+});
 
 // DR-40 / D3 ("All-zero valid cohort produces a zero-only calibration"): a rank cohort holds positive values
 // only, so an ALL-ZERO cohort is not "empty positives" but a measured zero-only one, exactly as fitValue has it.

@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "kind": "navigation-benchmark-config",
+  "note": "D12 (issue45.md) and TESTPLAN.md section 5. Committed BEFORE any candidate result: changing a number here after seeing a result is a new configuration version (navigation.v2.json), never an edit. Every key below is read by tools/benchmark_navigation.mjs; nothing is defaulted in code.",
+  "seed": 20260930,
+  "data": {
+    "profile": "bench",
+    "seed": 20260924,
+    "cutoff": "2026-09-24T12:02:00.000000Z"
+  },
+  "viewport": { "width": 1500, "height": 950 },
+  "dpr": 1,
+  "browser": {
+    "mode": "chromium-new-headless",
+    "expectMajor": 153,
+    "reducedMotion": "reduce"
+  },
+  "trial": {
+    "loadTimeoutMs": 60000,
+    "idleQuietMs": 300,
+    "idleTimeoutMs": 20000,
+    "pauseMs": 300
+  },
+  "gesture": {
+    "wheel": { "in": 12, "out": 12, "intervalMs": 40, "deltaY": 100, "at": "canvas-center" },
+    "drags": [
+      { "dx": 300, "dy": 0 },
+      { "dx": 0, "dy": 300 },
+      { "dx": -300, "dy": 0 },
+      { "dx": 0, "dy": -300 }
+    ],
+    "dragSteps": 10,
+    "dragStepMs": 16
+  },
+  "protocol": {
+    "aaPairs": 10,
+    "screeningPairs": 5,
+    "confirmationPairs": 20,
+    "heavyPairs": 5,
+    "bootstrapResamples": 10000,
+    "alpha": 0.01,
+    "familySize": 16,
+    "floorPercentile": 0.95,
+    "floorMinMs": "measured timer resolution",
+    "environmentInconclusiveMeanDrawMs": 0.2
+  },
+  "budgets": {
+    "p95DrawMs": 10,
+    "p95FrameMs": 20,
+    "gestureIntervalOver33_3MsMaxShare": 0.01,
+    "p95InputToPaintMs": 50,
+    "drawOverMs": 16.7,
+    "frameOverMs": 50
+  },
+  "core": [
+    { "id": "recorded-24h", "mode": "recorded", "view": "#w=24h" },
+    { "id": "recorded-7d", "mode": "recorded", "view": "#w=7d" },
+    { "id": "recorded-all", "mode": "recorded", "view": "#w=all" },
+    { "id": "recorded-old-week", "mode": "recorded", "view": "#t=2026-09-03T00:00Z~2026-09-10T00:00Z&p=76000~87500" },
+    { "id": "fake-live-24h", "mode": "fake-live", "view": "#w=24h" },
+    { "id": "fake-live-7d", "mode": "fake-live", "view": "#w=7d" },
+    { "id": "fake-live-all", "mode": "fake-live", "view": "#w=all" },
+    { "id": "fake-live-old-week", "mode": "fake-live", "view": "#t=2026-08-10T00:00Z~2026-08-17T00:00Z&p=24700~27200" }
+  ],
+  "heavy": [
+    { "id": "rows-volume", "mode": "fake-live", "view": "#w=30d&rows=volume", "note": "Rows, Amount" },
+    { "id": "rows-relvol", "mode": "fake-live", "view": "#w=30d&rows=relvol", "note": "Rows, relative volume" },
+    { "id": "movement-path", "mode": "fake-live", "view": "#w=7d&mode=path", "note": "movement encoding Path" },
+    { "id": "movement-dwell", "mode": "fake-live", "view": "#w=7d&mode=dwell", "note": "movement encoding Dwell" },
+    { "id": "reference-families", "mode": "fake-live", "view": "#w=30d&lines=1d,7d,30d,ema21,sma50,bb1d,svwap", "note": "profile period lines, moving averages, Bollinger and session VWAP" },
+    { "id": "rsi", "mode": "fake-live", "view": "#w=30d&pane=rsi1d", "note": "RSI pane" },
+    { "id": "macd", "mode": "fake-live", "view": "#w=30d&pane=macd1d", "note": "MACD pane" },
+    { "id": "continuations", "mode": "fake-live", "view": "#w=24h&tab=continuations", "note": "continuations tab" },
+    { "id": "lens", "mode": "fake-live", "view": "#w=24h", "preGesture": { "keys": ["l"], "moveTo": "canvas-center" }, "note": "resolution lens on" },
+    { "id": "geometry-outline", "mode": "fake-live", "view": "#w=24h&mode=geometry", "note": "Geometry outline" }
+  ],
+  "smoke": {
+    "note": "What `npm run benchmark:smoke` runs: the same code path on a reduced protocol, to prove the tool works and its report validates. Its numbers are never evidence.",
+    "aaPairs": 2,
+    "screeningPairs": 2,
+    "confirmationPairs": 2,
+    "heavyPairs": 1,
+    "bootstrapResamples": 200,
+    "coreIds": ["recorded-24h", "fake-live-24h"],
+    "heavyIds": ["rows-volume", "lens"]
+  }
+}

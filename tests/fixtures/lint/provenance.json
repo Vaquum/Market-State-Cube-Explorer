@@ -1,0 +1,9 @@
+{
+  "kind": "hand-computed",
+  "expectationSource": "hand-computed",
+  "generator": null,
+  "seed": null,
+  "source": "Lint truth table authored by hand from the token namespaces of maps/consumer-inventory.md 2.8; role-baseline.json and consumer-baseline.json recorded from `git show 8c82ca1:<file>` (the pinned baseline) by the engine of tests/unit/role-lint.test.js and cross-checked with grep counts; role-allowlist.json starts equal to the baseline and is lowered by convergence.",
+  "extractedOn": "2026-09-30",
+  "notes": "The expected hit counts are the baseline's own, not the output of the code under test in a later commit: the engine was run once over the baseline sources and its numbers were compared with independent grep counts and with the consumer map (drift is reported in the H11 report)."
+}

@@ -87,7 +87,8 @@ async function notices(page) {
     const item = await page.evaluate(() => {
       const box = document.getElementById("ol-notice");
       if (!box || box.hidden) return null;
-      const n = box.querySelector("[data-notice]");
+      // every waiting notice is in the banner; only the current one is not hidden
+      const n = box.querySelector("[data-notice]:not([hidden])");
       const queued = /\+(\d+) more/.exec(box.querySelector(".ol-notice-queued")?.textContent ?? "");
       return {
         notice: n.dataset.notice, code: n.dataset.code ?? null, count: n.dataset.count === undefined ? null : Number(n.dataset.count),

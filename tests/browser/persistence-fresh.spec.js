@@ -101,10 +101,16 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect(opened).toBe(made.hash);
     expect(S.param(opened, "lk")).toBe("1");
     expect(S.scOf(opened)).toContain("a.pane.volume:x:d0,1920000000");
+    // Rows is on, so the page fits its Rows mapping once the view has settled, and that active mapping travels in the address
+    // beside the ones the link carried (an Explore record: r:e:...)
+    await expect.poll(async () => S.scOf((await S.where(page)).hash), { message: "the Rows mapping joins the address" }).toContain(";r:e:");
+    const settled = (await S.where(page)).hash;
+    expect(settled.startsWith(made.hash.split("&sc=")[0]), "the settings did not change").toBe(true);
+    expect(S.scOf(settled)).toContain(S.scOf(made.hash).split(";")[0]);
     // copy the link: the clipboard holds the address the page wrote
     await page.locator("#ol-hist").click();
     await page.locator("#ol-copy-link").click();
-    await expect.poll(() => S.clipboardText(page)).toContain(made.hash);
+    await expect.poll(() => S.clipboardText(page)).toContain(settled);
     const link = await S.clipboardText(page);
     // a fresh context (storage empty) opens the link: the same address, no scales:v1 written, no notice about a scale
     const other = await freshContext();
@@ -112,7 +118,7 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect((await other.storageState()).origins).toEqual([]);
     await tab.goto(link);
     await tab.locator("#ol-canvas").waitFor();
-    await expect.poll(async () => (await S.where(tab)).hash).toBe(made.hash);
+    await expect.poll(async () => (await S.where(tab)).hash).toBe(settled);
     expect(await S.noticeCodes(tab)).not.toContain("scale-dropped");
     // the view code: copied here, pasted there, gives the same view and the same address
     await S.openQuery(page);
@@ -125,11 +131,13 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     await pasted.locator("#ol-canvas").waitFor();
     await S.importCode(pasted, code);
     await expect(pasted.locator("#ol-copy-status")).toHaveText("View restored");
+    // the Rows mapping the code carried joins the address once it first displays
+    await expect.poll(async () => S.scOf((await S.where(pasted)).hash), { message: "the restored Rows mapping is in the address" }).toContain(";r:e:");
     const restored = (await S.where(pasted)).hash;
     expect(S.param(restored, "mode")).toBe("path");
     expect(S.param(restored, "lk")).toBe("1");
     expect(S.param(restored, "bs")).toBe("i");
-    expect(S.scOf(restored)).toBe(S.scOf(made.hash));
+    expect(S.scOf(restored)).toBe(S.scOf(settled));
     expect(S.param(restored, "ap")).toBe(S.AP);
   });
 

@@ -2171,6 +2171,14 @@
           sc.stamp = scaleStamp(sc);
         }
         scaleRt.sc = sc;
+        // The address carries the mappings the page is showing. A mapping restored from a link or the cache is
+        // shown without ever being committed, so the first draw that shows a different set of them writes the
+        // address (debounced, like every commit).
+        const shownIds = sc.cells.mappingId + "|" + (sc.rows?.mappingId ?? "") + "|" + (sc.lens?.mappingId ?? "");
+        if (shownIds !== persistRt.shown) {
+          persistRt.shown = shownIds;
+          scaleHooks.persist?.();
+        }
         // What this settled draw disclosed is told once.
         scaleSpendCauses();
       } catch (error) {
@@ -14668,7 +14676,7 @@
     },
     // The address as last written: what copyLink and saveView read, and the level the ladder reached.
     addr = { hash: "#w=24h", level: 0, dropped: [] },
-    persistRt = { timer: 0 };
+    persistRt = { timer: 0, shown: "" };
   // An import in progress: one at a time.
   let importing = false;
 

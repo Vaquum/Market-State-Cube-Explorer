@@ -7067,22 +7067,43 @@
   // The warnings pass: every drawn mark of the Cells channel, encoded through the frame the settled mapping
   // gives now, into the tally with its box (css px, the plot's and the rectangle's clip come in `clip`). A
   // mark that is not a value is not counted; negative infinity is counted as a mark and as out of range.
-  // The frame is built here from the current state rather than taken from the last draw, because a fit that
-  // has just committed is not drawn yet and the tally must describe the mapping about to be drawn.
-  function cellsMarks(tally, clip, vp) {
-    if (S.mode === "geometry") return;
+  // Nothing here depends on the last draw: the frame is built from the state now (a fit that has just
+  // committed is not drawn yet, and the tally must describe the mapping about to be drawn, so the
+  // frame of `last.sc` would be the old one), and what the frame reads lazily (the Cascade level, where the
+  // motion read ends) is set from `vp` before the first mark, so the pass gives the same answer when it runs
+  // twice or after another draw. `keys`, when the caller passes it, gets the marks of each generated key
+  // of the legend by key id (an unsigned zero, each kind of non-value, Geometry's occupied cells) and the
+  // marks with short exposure, for the legend's keys and its short-exposure line.
+  function cellsMarks(tally, clip, vp, keys) {
+    const count = (id) => {
+      if (keys) keys[id] = (keys[id] ?? 0) + 1;
+    };
+    if (S.mode === "geometry") {
+      for (const z of vp.shown.cells) if (cellBox(z, 1, vp.ts, vp.ps, vp.cut)) count("occupied");
+      return;
+    }
     const frame = scaleFrame(vp.cut, vp).cells,
       cells = vp.moving ? vp.mv?.shown?.cells : vp.shown.cells;
-    if (!cells) return;
+    if (S.mode === "cascade") levelCascade(vp.full, vp.src, vp.sum);
     if (vp.moving) {
-      motionEnd = vp.mv.src ? vp.mv.end : -Infinity;
+      motionEnd = vp.mv?.src ? vp.mv.end : -Infinity;
       motionTs = vp.ts;
+      // The base cells the motion read has not reached, or never answered for, draw as the pending or failed
+      // pattern (see paintMotion): they are keyed, never counted as values.
+      const covered = vp.mv?.shown?.map,
+        kind = !vp.mv?.src && motionIssue() ? "failed" : "pending";
+      for (const z of vp.shown.cells)
+        if ((z.c + 1) * vp.ts > motionEnd && !covered?.has(cellKey(z.c, z.r)) && cellBox(z, 1, vp.ts, vp.ps, vp.cut)) count(kind);
     }
+    if (!cells) return;
     for (const z of cells) {
       if (!cellBox(z, 1, vp.ts, vp.ps, vp.cut)) continue;
       frame.encode(z, ENC);
       if (ENC.tag === CASCADE_NEGATIVE_INFINITE) tally.addBoxNegInf(BOX.xa, BOX.ya, BOX.xb, BOX.yb, clip);
       else tally.addBox(BOX.xa, BOX.ya, BOX.xb, BOX.yb, clip, ENC.idx, ENC.clip, ENC.tag === CASCADE_FINITE, ENC.value !== 0);
+      if (ENC.tag !== CASCADE_FINITE) count(E.result.TAGS[ENC.tag]);
+      else if (ENC.role === ROLE_ZERO) count("zero");
+      if (ENC.short) count("short-exposure");
     }
   }
   scaleHooks.cellsMarks = cellsMarks;

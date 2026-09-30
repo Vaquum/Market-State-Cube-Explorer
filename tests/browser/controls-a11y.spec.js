@@ -403,7 +403,8 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     await expect(banner).toBeVisible();
     await expect(banner).toHaveAttribute("role", "status");
     expect(await banner.evaluate((node) => node.closest("[aria-live]") === null && !node.hasAttribute("aria-live")), "a status role and no extra aria-live").toBe(true);
-    const item = page.locator("#ol-notice [data-notice][data-code]");
+    // every waiting notice is in the banner; one shows
+    const item = page.locator("#ol-notice [data-notice][data-code]:not([hidden])");
     await expect(item).toHaveAttribute("data-code", "scale-fault");
     await expect(item).toHaveAttribute("data-count", "1");
     await expect(banner).toContainText("The scale display hit an error and was turned off for this session; the chart shows occupancy only. Reload the page.");

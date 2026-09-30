@@ -6016,25 +6016,41 @@
     if (scaleRt.fault) uiFault();
     if (!cur) {
       box.hidden = true;
+      el("notice-text").replaceChildren();
     } else {
-      const item = uiEl("span", "ol-notice-item"),
-        waiting = queue.list().filter((row) => !row.dismissed).length - 1;
-      item.dataset.notice = cur.id;
-      item.dataset.code = cur.code;
-      item.dataset.count = String(cur.count);
-      item.dataset.level = cur.level;
-      // TEXT(S1): the level word, for a reader that cannot see the box's border
-      if (cur.level !== "info") item.append(uiEl("span", "ol-sr", cur.level === "error" ? "Error: " : "Warning: "));
-      item.append(document.createTextNode(cur.text + (cur.count > 1 ? ` (×${cur.count})` : "")));
-      el("notice-text").replaceChildren(item, ...(waiting > 0 ? [uiEl("span", "ol-notice-queued", ` +${waiting} more`)] : []));
+      // Every notice still waiting is in the banner's DOM (so the observation surface and a reader of the page
+      // find each one with its count and its lines), and only the current one shows: the rest are hidden until
+      // this one is dismissed.
+      const waiting = queue.list().filter((row) => !row.dismissed),
+        items = waiting.map((row) => {
+          const item = uiEl("span", "ol-notice-item"),
+            here = row.id === cur.id;
+          item.dataset.notice = row.id;
+          item.dataset.code = row.code;
+          item.dataset.count = String(row.count);
+          item.dataset.level = row.level;
+          item.hidden = !here;
+          // TEXT(S1): the level word, for a reader that cannot see the box's border
+          if (row.level !== "info") item.append(uiEl("span", "ol-sr", row.level === "error" ? "Error: " : "Warning: "));
+          item.append(document.createTextNode(row.text + (row.count > 1 ? ` (×${row.count})` : "")));
+          if (row.details.length) {
+            const list = uiEl("ul", "ol-note-details");
+            list.append(...row.details.map((line) => uiEl("li", "", line)));
+            // the lines are there for every notice; only the current one's can be opened
+            list.hidden = !(here && scaleUi.noticeOpen === row.id);
+            if (here) list.id = "ol-note-details";
+            item.append(list);
+          }
+          return item;
+        });
+      // TEXT(S1): the count of the notices that wait behind the one shown
+      if (waiting.length > 1) items.push(uiEl("span", "ol-notice-queued", ` +${waiting.length - 1} more`));
+      el("notice-text").replaceChildren(...items);
       box.dataset.level = cur.level;
-      const more = el("notice-more"),
-        list = el("note-details");
-      more.hidden = cur.details.length === 0;
       if (scaleUi.noticeOpen !== cur.id) scaleUi.noticeOpen = "";
-      list.replaceChildren(...cur.details.map((line) => uiEl("li", "", line)));
-      list.hidden = more.hidden || scaleUi.noticeOpen !== cur.id;
-      more.setAttribute("aria-expanded", String(!list.hidden));
+      const more = el("notice-more");
+      more.hidden = cur.details.length === 0;
+      more.setAttribute("aria-expanded", String(scaleUi.noticeOpen === cur.id));
       box.dataset.noticeId = cur.id;
       box.hidden = false;
     }
@@ -6093,9 +6109,9 @@
     el("lens-local").addEventListener("change", () => scaleSet({ type: "local", value: el("lens-local").checked }));
     el("notice-dismiss").addEventListener("click", () => noticeHide(el("notice").dataset.noticeId));
     el("notice-more").addEventListener("click", () => {
-      const list = el("note-details"),
-        open = list.hidden;
-      list.hidden = !open;
+      const list = document.getElementById("ol-note-details"),
+        open = Boolean(list?.hidden);
+      if (list) list.hidden = !open;
       scaleUi.noticeOpen = open ? el("notice").dataset.noticeId : "";
       el("notice-more").setAttribute("aria-expanded", String(open));
     });

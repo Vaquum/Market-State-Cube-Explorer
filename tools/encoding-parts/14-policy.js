@@ -1,5 +1,5 @@
   // @part 14-policy
-  // @requires 04-text 05-measure 08-scale 10-context
+  // @requires 04-text 05-measure 08-scale 10-context 13-store
   // @prefix pol
   // @provides policy
   // == §14 policy: the scale preferences, what a measure offers, the reducers and the mapping resolution (API.md B.8, C.9, DR-04, DR-05, DR-07, DR-09, DD-65, DD-82) ==
@@ -382,8 +382,9 @@
   //   {type:"fit", channel}                     (explicit Fit: an effect; a manual domain of that channel is cleared)
   //   {type:"local", value:boolean}                                   (Local contrast, unbounded Cells only)
   //   {type:"window", value:[lo, hi] | null}    (DD-66: Taker flow symmetric about 0.5, Dwell any 0 <= lo < hi <= 1)
-  //   {type:"manual", channel, kind:"value-log1p"|"value-linear", U, k}   (a manual domain: holds ONE channel and
-  //                                                                   ONE class, does not engage the lock)
+  //   {type:"manual", channel, kind?, U, k}   (a manual domain for the channel's current context: (U, k) for a log
+  //        context, U alone for a linear one; `kind` "value-log1p" | "value-linear" must agree with it. Holds ONE
+  //        channel and ONE class and does not engage the lock)
   //   {type:"clearManual", channel, classKey?}
   //   {type:"hold", channel, record}     (the page, after an explicit Fit under the lock: the new mapping replaces
   //                                       the held one and the lock stays on)
@@ -513,9 +514,13 @@
         if (!offers.fit) return polReject(cur, "manual", offers.reasons.fit || polNotOffered(polCapitalise(channel === "cells" ? e.label || e.mode : e.rowsLabel || e.rows)));
         const ctx = polIsObject(e.contexts) ? e.contexts[channel] : null;
         if (!polIsObject(ctx)) return polReject(cur, "manual", API.text.state.noCalibration);
-        if (action.kind !== "value-log1p" && action.kind !== "value-linear") return polReject(cur, "manual", API.text.reject.manual);
+        // The mapping follows the context it is for: a log context takes (U, k), a linear one U alone; a Rank or
+        // fixed context has no manual U, k. A `kind` that says otherwise is refused, not reinterpreted.
+        const want = ctx.transform === "value-log" ? "value-log1p" : ctx.transform === "value-linear" ? "value-linear" : null;
+        const kind = action.kind === undefined ? want : action.kind;
+        if (want === null || kind !== want) return polReject(cur, "manual", API.text.reject.manual);
         const signed = API.context.compatClass(ctx).split("|")[2] === "s";
-        const fit = API.scale.manual({ kind: action.kind, signed, U: action.U, k: action.k });
+        const fit = API.scale.manual({ kind, signed, U: action.U, k: action.k });
         if (fit.state !== "ok") return polReject(cur, "manual", API.text.reject.manual);
         const held = polHeldCopy(cur);
         const name = polHeldKey(channel, API.context.compatClass(ctx));
@@ -672,7 +677,6 @@
         drop(chanRaw, "unknown policy");
         continue;
       }
-      count++;
       if (chanRaw.indexOf("a.") === 0) {
         const id = chanRaw.slice(2);
         const p = rec.desc.params;
@@ -683,11 +687,17 @@
         }
         frozen[id] = { lo: domain[0], hi: domain[1] };
         frozenList.push({ id, domain, through: polNumber(rec.through) ? rec.through : null });
+        count++;
         continue;
       }
       const letter = chanRaw === "c" || chanRaw === "cells" ? "c" : chanRaw === "r" || chanRaw === "rows" ? "r" : chanRaw === "l" || chanRaw === "lens" ? "l" : null;
       if (letter === null) {
         drop(chanRaw, "unknown channel");
+        continue;
+      }
+      // A colour channel is Explore, Auto or an explicit comparison; the lens carries Local contrast.
+      if (letter === "l" ? policy !== "local" : policy !== "explore" && policy !== "auto" && policy !== "comparison") {
+        drop(chanRaw, "a " + (letter === "l" ? "lens" : "colour") + " record cannot have the policy " + policy);
         continue;
       }
       if (!polIsObject(rec.ctx) || !polNumber(rec.obsEndMs)) {
@@ -728,6 +738,7 @@
       } else {
         commits.push({ workspace, record: Object.freeze(record) });
       }
+      count++;
     }
     const axes = Array.isArray(src.axes) ? src.axes : [];
     for (let i = 0; i < axes.length; i++) {

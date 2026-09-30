@@ -446,8 +446,9 @@
     }
 
     // unfreeze(id, {workspace?}) -> record | null: a frozen axis goes back to Auto, keeping its domain until the
-    // next eligible `frame()` refits it (its signature is cleared and no cap applies, so the refit is
-    // immediate once the settle time has passed). Null when the axis was not frozen.
+    // next eligible `frame()` refits it. `freeze` made its slot with no signature and no last update, so the
+    // next frame re-evaluates at once and no cap applies (the refit is immediate once the settle time has
+    // passed). Null when the axis was not frozen.
     function unfreezeAxis(id, options2) {
       axsEntryOf(id);
       const ws = axsWorkspace(axsIsObject(options2) ? options2.workspace : undefined);
@@ -458,8 +459,6 @@
       rec.provenance.kind = "auto";
       rec.external = false;
       rec.hold = null;
-      slot.sig = null;
-      slot.lastUpdateMs = -Infinity;
       return rec;
     }
 

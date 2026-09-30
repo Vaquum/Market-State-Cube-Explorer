@@ -7051,6 +7051,9 @@
       level: { n: renderN(), m: renderM() },
       geom: { BASE, PR },
       read,
+      // The Cells quality class is "exact" whatever tier the read came from (exact, recorded or cube): the
+      // portable code only accepts the classes of a context, so the read's own state is no quality.
+      quality: "exact",
       loading: Object.values(loadState).includes("loading"),
       selection: Boolean(S.selection),
       calibratedOn: S.selection ? "selection" : "view",

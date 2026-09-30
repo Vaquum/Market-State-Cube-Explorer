@@ -17,6 +17,7 @@
 // ratio ticks (12 px between two kept labels, ends first, then the centre, then the halves) and the RSI guides (top + 4 + (1 - v / 100)
 // * (height - 8)).
 const { test: base, expect } = require("./fixtures.js");
+const { observe } = require("./observe.js");
 const paneCanvas = require("./pane-canvas.js");
 const ref = require("../reference/index.js");
 const { resolveProfile, EPOCH_MS } = require("../support/profiles.js");
@@ -451,10 +452,59 @@ test.describe("B18: a bar's tooltip and the axis agree", () => {
 // ---- Comparison lock ---------------------------------------------------------------------------------------------------------------
 
 test.describe("B18: Comparison lock freezes an axis", () => {
-  // The lock itself is the spine's (S), its action is the legend popover's (U) and the address that restores it is P's: none of them is in
-  // a page that has only this package. The steps, for the merged page: pane Volume on `mini` at the address of MINI, open the axis chip's
-  // details, press Comparison lock (the chip says `frozen`, with the domain it had), scrub the view to a day with a larger maximum and see
-  // the domain unchanged and the bars beyond it clamped with their triangle and count; copy the link, open it in a fresh context (storage
-  // empty) and find the same frozen domain to the last digit, `data-axis-state` `frozen`.
-  test.fixme("Comparison lock freezes the domain and the address restores it in a fresh context (needs S, U and P)", async () => {});
+  // Volume on `mini` in replay at the edge that closes the column before the largest one (the same set-up as the settle test above). The
+  // lock is pressed in the axis chip's details; then one step forward reveals the largest column: the domain stays at what it was, the
+  // column above it is drawn at the top with a triangle and counted, and the address carries the frozen domain to the last digit.
+  test("Comparison lock freezes the domain across a replay step, clamps what lies beyond it with a counted triangle, and the address restores it in a fresh context", async ({ page, fakeFor, probe, surface, pane, openLink }) => {
+    const fake = await fakeFor("mini");
+    const columns = columnsOf(tradeList(resolveProfile("mini").store), rectOf(MINI));
+    const vmax = Math.max(...columns.map((c) => c.v));
+    const at = columns.findIndex((c) => c.v === vmax);
+    const held = Math.max(...columns.slice(0, at).map((c) => c.v));
+    expect(held, "the maximum grows when the largest column appears").toBeLessThan(vmax);
+    const edge = new Date(EPOCH_MS + columns[at].c * 2 ** MINI.n * BASE_MS).toISOString().slice(0, 16) + "Z";
+    await page.goto(`${fake.url}/${addressOf(MINI, "volume")}&replay=1&at=${edge}`);
+    await atRest(page, fake, probe);
+    await needChip(surface);
+    const auto = await axisChip(surface);
+    expect(auto.state).toBe("auto");
+    expect(Math.abs(auto.domain[1] - held) / held, "an Auto axis is the exact maximum of what is shown").toBeLessThan(1e-12);
+
+    // The action is in the axis chip's own details (U) and it is a real button.
+    const opened = await surface.openLegendDetails("axis");
+    const button = opened.popover.getByRole("button", { name: /^Comparison lock/ });
+    await button.focus();
+    await page.keyboard.press("Enter");
+    await opened.close().catch(() => {});
+    await expect.poll(async () => (await axisChip(surface)).state, { message: "the chip says frozen" }).toBe("frozen");
+    expect((await axisChip(surface)).domain, "at the domain it had").toEqual(auto.domain);
+
+    // One step forward reveals the largest column: the frozen domain is not refitted, however long one waits.
+    await page.keyboard.press(".");
+    await atRest(page, fake, probe);
+    await probe.waitForQuiet({ quietMs: 600, timeout: 20000 });
+    const stepped = await axisChip(surface);
+    expect(stepped.state).toBe("frozen");
+    expect(stepped.domain, "the frozen domain is not refitted").toEqual(auto.domain);
+
+    // On the canvas: the column above the domain is a full bar with a triangle at the top edge; the others are their value over the domain.
+    const frame = await pane.last();
+    const colours = await pane.colours();
+    const area = paneCanvas.paneRect(frame, colours.surface);
+    const bars = paneCanvas.barsOf(frame, area, { fill: colours.bar, alpha: 0.65 });
+    const shown = columns.slice(0, at + 1);
+    expect(bars.length).toBe(shown.length);
+    shown.forEach((column, i) => expect(bars[i].h, `column ${column.c}`).toBeCloseTo(Math.min(column.v / held, 1) * (area.h - 4), 6));
+    expect(paneCanvas.glyphsOf(frame, colours.state).triUp.length, "one triangle for the one column beyond the frozen domain").toBe(1);
+    expect(Number((await surface.details("axis")).fields.clipHighFinite.value), "the details count it").toBe(1);
+    expect((await surface.details("axis")).keys.find((k) => k.key === "clip-high")?.count, "and so does the pane's key").toBe(1);
+
+    // The address carries the lock and the frozen domain; a fresh context (no storage) finds the same domain to the last digit.
+    const address = page.url();
+    expect(address, "the lock is in the address").toMatch(/[#&]lk=1(&|$)/);
+    const other = await openLink(address);
+    const fresh = observe(other);
+    await expect.poll(async () => (await fresh.chip("axis")).data.axisState, { timeout: 15000, message: "the fresh context says frozen" }).toBe("frozen");
+    expect((await fresh.chip("axis")).data.domain, "to the last digit").toBe(stepped.data.domain);
+  });
 });

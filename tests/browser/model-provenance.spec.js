@@ -14,8 +14,10 @@
 // 2026-09-24, the conservative bound 2026-09-25T00:00Z, ISO_A -1.06, ISO_B 0.486, baseline 2 ** (0.486 - 1), fitted levels 6 to 13, history
 // start 2021-01-01); the status boundaries are hand-written dates; the Efficiency values of `micro:mixed` come from the exact-rational
 // reference calculator (tests/reference), each column's USDT over the rows it touched and its parent's.
-const { test: base, expect } = require("./fixtures.js");
+const { test: base, expect, probeTools } = require("./fixtures.js");
 const paneCanvas = require("./pane-canvas.js");
+const S = require("./persistence-support.js");
+const { observe } = require("./observe.js");
 const ref = require("../reference/index.js");
 const { resolveProfile, EPOCH_MS } = require("../support/profiles.js");
 
@@ -229,8 +231,39 @@ test.describe("B19: the model's provenance in the chip details (needs package U)
   });
 
   // The portable view code round trip (P) and a fresh context: the status is recomputed from the payload's cutoff, never stored as eligible.
-  test.fixme("a portable code opened in a fresh context keeps the status (needs package P)", async () => {
-    // Replay to 2026-09-20 with an eligible scale, copy the portable view code, open it in a fresh context: the chip still says
-    // `retrospective` (E.model.status is recomputed from the code's cutoff, B.13). Written when P's copy/import path exists.
+  // Replay to 2026-09-20 (the model was estimated on later data), copy the view code, paste it into a context with no storage: the pane, the
+  // plane status and the chip's details all still say `retrospective`.
+  test("a portable code opened in a fresh context keeps the status (replay to 2026-09-20: retrospective)", async ({ page, context, fakeFor, probe, pane, freshContext }) => {
+    const fake = await fakeFor("standard");
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: fake.url });
+    await page.goto(`${fake.url}/#w=7d&pane=efficiency&replay=1&at=2026-09-20T00:00Z`);
+    await atRest(page, fake, probe);
+    const model = await words(page);
+    expect(await paneLabel(pane), "the status before the copy").toContain(model.retrospective);
+
+    await S.openQuery(page);
+    await page.locator("#ol-copy-view").click();
+    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:2\./);
+    const code = await S.clipboardText(page);
+
+    const other = await freshContext();
+    expect((await other.storageState()).origins, "a context with no storage").toEqual([]);
+    const tab = await other.newPage();
+    await paneCanvas.addRecorder(tab);
+    await tab.goto(`${fake.url}/`);
+    await tab.locator("#ol-canvas").waitFor();
+    await S.importCode(tab, code);
+    await expect(tab.locator("#ol-copy-status")).toHaveText("View restored");
+    await tab.locator("#ol-loading").waitFor({ state: "hidden" });
+    await fake.idle({ quietMs: 400, timeoutMs: 20000 });
+    await probeTools.forPage(tab).waitForQuiet({ quietMs: 400, timeout: 20000 });
+
+    const label = await paneLabel(paneCanvas.forPage(tab));
+    expect(label, "the pane of the restored view").toContain(model.retrospective);
+    expect(label).not.toContain(model.timingUnverified);
+    expect(label).not.toContain(model.eligibleByBound);
+    expect(await planeStatus(tab), "the diagonal chooser of the restored view").toContain(model.retrospective);
+    const { fields } = await observe(tab).details("axis");
+    expect(fields.modelStatus.value, "the chip's details").toBe("retrospective");
   });
 });

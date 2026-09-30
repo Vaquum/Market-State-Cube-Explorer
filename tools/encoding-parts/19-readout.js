@@ -272,8 +272,10 @@
     rdoRequire(level !== null && typeof level === "object" && Number.isFinite(level.n) && Number.isFinite(level.m), "cellsFrame needs the effective level {n, m}");
     const lut = spec.lut;
     rdoRequire(lut !== null && typeof lut === "object" && lut.unsigned !== undefined && lut.occupancy !== undefined, "cellsFrame needs a Lut (E.lut.build)");
-    const map = rdoMapping(spec.mapping);
     const geometry = mode === "geometry";
+    // Geometry has no mapping to wait for: without one it is simply ok (it is an outline, never "No
+    // calibration").
+    const map = geometry && (spec.mapping === null || spec.mapping === undefined) ? rdoMapping({ state: "ok", desc: null, policy: "fixed" }) : rdoMapping(spec.mapping);
     if (!geometry) rdoCheckSigned(map, info.signed, mode);
     const drawable = !geometry && rdoDrawable(map);
     const plan = drawable ? API.scale.plan(map.desc) : null;

@@ -82,7 +82,8 @@
     return legT().fill(template, params);
   }
 
-  // The text of a measure basis id (E.measure.FORMULAS basisKind) and of a unit id, by E.text. An id with no
+  // The text of a measure basis id (E.measure.FORMULAS basisKind, or the basis a cell measurement names:
+  // Path says spans, usdt or perMinute) and of a unit id, by E.text. An id with no
   // string of its own reads as itself: a wrong wording is visible, a missing legend is not.
   function legBasisText(basis) {
     const t = legT();
@@ -95,14 +96,18 @@
       case "mean":
         return t.basis.mean;
       case "row-spans":
+      case "spans":
         return t.basis.spans;
       case "usdt-moved":
+      case "usdt":
         return t.basis.usdt;
       case "row-spans-per-min":
+      case "perMinute":
         return t.basis.perMinute;
       case "share":
         return t.unit.share;
       case "log2-ratio":
+      case "log2":
         return t.unit.log2;
       default:
         return typeof basis === "string" ? basis : "";

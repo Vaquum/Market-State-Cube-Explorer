@@ -4100,9 +4100,11 @@
     node.dataset.warn = String(built.legend.warnings.some((w) => w.id === "range-exceeded" || w.id === "low-discrimination"));
     el(barId).hidden = false;
     legendBar(el(barId), built.legend, barWidth, 8);
-    // The footer keys and an open popover follow the model
+    // The footer keys and the popover follow the model. The popover is built whether or not it is open: its
+    // fields, warnings and keys are the page's observation surface (INTEGRATION D.18), written by the draw that
+    // paints, and this runs only when the chip's key changed.
     scaleUi.keysKey = "";
-    if (pop.open?.panel === el(channel === "rows" ? "rows-legend-pop" : "legend-pop")) legendPop(channel);
+    legendPop(channel);
   }
   // The legend chips, the lens status and the generated keys, once per draw (registered as `legend`).
   function legendWrite(sc, under) {
@@ -4115,7 +4117,9 @@
         rowsChip.hidden = true;
         if (pop.open?.button === rowsChip) closePop();
       }
+      // The next Rows legend is written afresh, even if its ids equal the last one's
       scaleUi.models.rows = null;
+      scaleRt.legendKey.rows = "";
     } else {
       if (rowsChip.hidden) rowsChip.hidden = false;
       if (sc.rows) legendChannel("rows", sc.rows, sc, rowsChip, "rows-legend-text", "rows-ramp", 36);
@@ -4633,7 +4637,7 @@
       axisState: axisState(rec),
     };
     for (const [name, value] of Object.entries(attrs)) if (chip.dataset[name] !== value) chip.dataset[name] = value;
-    if (pop.open?.panel === el("axis-pop")) axisPop();
+    axisPop();
   }
   // The axis popover: every axis the frame drew (the pane, the profiles), each with its policy, domain,
   // unit, provenance, hold reason and clip counts, and the Comparison lock, which freezes them all.

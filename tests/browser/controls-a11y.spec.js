@@ -43,7 +43,10 @@ function STAND_IN() {
   let real = null;
   const wrap = (E) => {
     const resolved = (spec, channel) => {
-      const fit = E.scale.fitValue([1200, 4000, 9000, 30000, 120000, 480000, 26800000], { signed: false });
+      // Delta (and Rows Delta) is signed: its mapping must be too, or the module refuses the pair
+      const signed = spec.mode === "delta" || spec.kind === "delta";
+      const values = [1200, 4000, 9000, 30000, 120000, 480000, 26800000];
+      const fit = E.scale.fitValue(signed ? values.concat(values.map((v) => -v / 2)) : values, { signed });
       const record = {
         v: 1,
         key: spec.contextKey || "k",
@@ -71,7 +74,7 @@ function STAND_IN() {
       readout: {
         ...E.readout,
         cellsFrame: (spec) => (spec.mapping && spec.mapping.state === "no-calibration" && !fixedModes.includes(spec.mode) ? cellsFrame({ ...spec, mapping: resolved(spec, "cells") }) : cellsFrame(spec)),
-        rowsFrame: (spec) => (spec.mapping && spec.mapping.state === "no-calibration" ? rowsFrame({ ...spec, mapping: resolved(spec, "rows") }) : rowsFrame(spec)),
+        rowsFrame: (spec) => (spec.mapping && spec.mapping.state === "no-calibration" && spec.kind !== "relvol" ? rowsFrame({ ...spec, mapping: resolved(spec, "rows") }) : rowsFrame(spec)),
       },
     };
   };

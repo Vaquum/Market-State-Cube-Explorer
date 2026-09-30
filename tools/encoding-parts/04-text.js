@@ -41,8 +41,6 @@
   // function). A name the caller did not give (absent, undefined or null) is "missing"; an extra name is
   // ignored. The names of missing parameters are appended to `missing`.
   const txtPattern = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
-  const txtWarnMax = 64;
-  const txtWarned = new Set();
 
   function txtSubstitute(template, params, missing) {
     const have = params !== null && typeof params === "object" ? params : null;
@@ -56,32 +54,17 @@
     });
   }
 
-  // The warning of E.text.fill (DD-91): once per (template, name), through `console` when the host has one
-  // (a bare vm context has none), and never more than txtWarnMax entries, so a bug that repeats at 60 Hz
-  // costs one line and a bounded set. This set is the only mutable module state in the file (DD-02 says
-  // none): it is diagnostic, it never changes a returned string, and it is capped.
-  function txtWarn(template, names) {
-    if (typeof console === "undefined" || console === null || typeof console.warn !== "function") return;
-    for (const name of names) {
-      const key = name + "|" + template;
-      if (txtWarned.size >= txtWarnMax || txtWarned.has(key)) continue;
-      txtWarned.add(key);
-      console.warn("E.text.fill: no value for {" + name + "} in " + JSON.stringify(template));
-    }
-  }
-
-  // E.text.fill (API.md A.3, DD-91): the production substitution. It NEVER throws: the page must not lose
-  // a tooltip because a caller forgot a parameter. A missing name leaves its `{name}` visible in the text
-  // and warns once; a template that is not a string answers "" (a caller bug, not a reason to fail a
-  // draw); a value that cannot be turned into text (an object without toString) leaves the template as it
-  // was.
+  // E.text.fill (API.md A.3, DD-02, DD-91, DR-41): the production substitution. It is STATELESS and it NEVER
+  // throws: the page must not lose a tooltip because a caller forgot a parameter. A missing name leaves its
+  // literal `{name}` visible in the text, which is the whole report (an earlier version also warned once
+  // per name through a module-level Set; that was the only mutable state in the module, it made two loads
+  // differ by what they had already said, and a visible `{name}` is easier to find than a console line).
+  // A template that is not a string answers "" (a caller bug, not a reason to fail a draw); a value that
+  // cannot be turned into text (an object without toString) leaves the template as it was.
   function txtFill(template, params) {
     try {
       if (typeof template !== "string") return "";
-      const missing = [];
-      const out = txtSubstitute(template, params, missing);
-      if (missing.length > 0) txtWarn(template, missing);
-      return out;
+      return txtSubstitute(template, params, []);
     } catch (error) {
       return typeof template === "string" ? template : "";
     }
@@ -234,6 +217,40 @@
       noCalibration: "No calibration",
       emptyBoth: "Empty in both",
       outside: "Outside comparison support",
+      // DR-41: the signed zero tick of a column bar ("Zero", where the unsigned outline of key.zero says
+      // "Zero (occupied)") and the key of a parent that runs past the data ("Open").
+      zeroTick: "Zero",
+      open: "Open",
+    },
+    // DR-41: the 24 strings of the mark-role table (E.role.ROLES, B.9). `role.<camelId>` is the short label
+    // of a role (a key's name, a swatch caption) and `role.<camelId>Name` its accessible name, the sentence
+    // a screen reader hears where the swatch is the only carrier of the meaning (S1-160). The three
+    // reserved rows belong to S2 and S3; their strings exist so the table is complete and never reassigned.
+    role: {
+      unsigned: "Magnitude",
+      unsignedName: "Magnitude fill, from the lowest to the highest value of the scale",
+      positive: "Positive",
+      positiveName: "Positive arm, from the midpoint toward the largest positive value",
+      negative: "Negative",
+      negativeName: "Negative arm, from the midpoint toward the largest negative value",
+      midpoint: "Midpoint",
+      midpointName: "Midpoint: zero, or an even split between the two sides",
+      occupancy: "Occupied",
+      occupancyName: "Occupancy outline: the cell has data and no magnitude is shown",
+      zeroOutline: "Zero",
+      zeroOutlineName: "Zero outline: the cell was measured and is exactly zero",
+      unsignedBar: "Bar",
+      unsignedBarName: "Constant bar fill for an unsigned column or profile length",
+      stateInk: "State",
+      stateInkName: "State ink of the patterns and glyphs that mark a value that is not a number",
+      rowsProjection: "Rows band",
+      rowsProjectionName: "Contextual price-row band at a fixed low opacity",
+      familyReference: "Family reference",
+      familyReferenceName: "Reserved for family reference marks",
+      interaction: "Interaction",
+      interactionName: "Reserved for hover and selection marks",
+      regionReplacement: "Region replacement",
+      regionReplacementName: "Reserved for marks of a replaced region",
     },
     typed: {
       finite: "{value}",

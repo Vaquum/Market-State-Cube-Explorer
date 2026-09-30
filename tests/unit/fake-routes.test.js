@@ -816,7 +816,7 @@ describe("determinism pins of the generated profiles (self-pin, tests/fixtures/p
 });
 
 describe("the page root and materialised builds", () => {
-  const D3_SHA256 = "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539"; // vendor/d3.min.js, pinned in THIRD_PARTY_NOTICES.md and by U01
+  const D3_SHA256 = "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539"; // vendor/d3.min.js, pinned by U01
   const sha256 = (buffer) => crypto.createHash("sha256").update(buffer).digest("hex");
   const tmp = () => tmpdir("fake-root-");
   const page = (dir) => {

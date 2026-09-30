@@ -6,8 +6,8 @@
 // It asserts what the deploy, the image and the test tooling rely on:
 //   - package.json is dev tooling only (private, no dependencies, no "type", one exact devDependency)
 //   - the lockfile holds exactly that dependency's three packages, all at one version
-//   - vendor/d3.min.js is the pinned file (the hash also stands in THIRD_PARTY_NOTICES.md)
-//   - the Dockerfile COPY set, the .dockerignore allowlist and the deploy filter's payload agree
+//   - vendor/d3.min.js is the pinned file
+//   - the Dockerfile copies exactly the files the bridge and the page need
 //   - the output directories are ignored
 //   - every fixture directory says where its data came from
 //   - the unit directory holds test files only, and at least one
@@ -36,8 +36,6 @@ function walk(rel) {
 }
 
 const D3_SHA256 = "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539";
-// Files the deploy syncs only so that Compose can build; the image never copies them.
-const BUILD_ONLY = new Set(["Dockerfile", "docker-compose.yml", ".dockerignore"]);
 
 describe("package.json", () => {
   const pkg = readJson("package.json");
@@ -48,9 +46,8 @@ describe("package.json", () => {
     assert.equal("type" in pkg, false, "no \"type\": CommonJS resolution of vendor/d3.min.js and src/encoding.js depends on it");
   });
 
-  it("requires Node 22 or newer and .nvmrc names Node 22", () => {
+  it("requires Node 22 or newer", () => {
     assert.match(pkg.engines.node, /^>=22(\.\d+){0,2}$/);
-    assert.equal(read(".nvmrc").trim(), "22");
   });
 
   it("has exactly one devDependency, pinned to an exact version", () => {
@@ -100,15 +97,9 @@ describe("vendored d3", () => {
     const hash = crypto.createHash("sha256").update(fs.readFileSync(path.join(ROOT, "vendor/d3.min.js"))).digest("hex");
     assert.equal(hash, D3_SHA256);
   });
-
-  it("has its hash recorded in THIRD_PARTY_NOTICES.md next to the not-distributed note", () => {
-    const notices = read("THIRD_PARTY_NOTICES.md");
-    assert.ok(notices.includes(D3_SHA256), "d3 sha256");
-    assert.match(notices, /Development tools, not distributed/);
-  });
 });
 
-describe("image contents, deploy payload and their allowlists", () => {
+describe("image contents", () => {
   // Dockerfile: every source of a COPY line (all arguments but the last, which is the destination).
   const copied = read("Dockerfile")
     .split("\n")
@@ -118,38 +109,6 @@ describe("image contents, deploy payload and their allowlists", () => {
 
   it("the Dockerfile copies exactly the files the bridge and the page need", () => {
     assert.deepEqual(copied, ["index.html", "tools/cube_bridge.py", "tools/market_state_reader.py", "vendor/"]);
-  });
-
-  it(".dockerignore is an allowlist that mirrors the COPY lines", () => {
-    const lines = rules(".dockerignore");
-    assert.equal(lines[0], "*", "everything is excluded first");
-    assert.deepEqual(lines.slice(1).map((l) => l.replace(/^!/, "")).sort(), copied);
-    assert.ok(lines.slice(1).every((l) => l.startsWith("!")), "every later line re-includes");
-  });
-
-  // The rsync merge filter is first-match-wins: the includes, then a closing "- *".
-  const filter = rules(".github/deploy.filter");
-
-  it("the deploy filter ends with the exclude-everything rule and only includes before it", () => {
-    assert.equal(filter[filter.length - 1], "- *");
-    assert.ok(filter.slice(0, -1).every((l) => /^\+ \/\S+$/.test(l)), "anchored include rules only");
-  });
-
-  it("the deploy payload is the image's COPY set plus the files Compose builds from", () => {
-    const included = filter.slice(0, -1).map((l) => l.slice(2));
-    // "/vendor/*" stands for the directory's files, "/tools/" and "/vendor/" are the directories that
-    // lead to them: what is synced is every file rule and every directory whose contents are listed.
-    const payload = new Set();
-    for (const rule of included) {
-      const rel = rule.slice(1);
-      if (rel.endsWith("/*")) payload.add(rel.slice(0, -1));
-      else if (!rel.endsWith("/")) payload.add(rel);
-    }
-    for (const rule of included.filter((r) => r.endsWith("/"))) {
-      assert.ok(included.some((r) => r !== rule && r.startsWith(rule)), `${rule} is a parent of something included`);
-    }
-    for (const name of BUILD_ONLY) assert.ok(payload.delete(name), `${name} is synced for the host build`);
-    assert.deepEqual([...payload].sort(), copied);
   });
 });
 

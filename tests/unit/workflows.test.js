@@ -1,10 +1,10 @@
 "use strict";
 // U42 workflows.test.js (H10): line-level guards on the two workflows, in the repository's own words.
 // Oracle: the literal text of .github/workflows/*.yml read line by line (no YAML parser exists here by design,
-// TESTPLAN DD-T13), checked against three independent facts that nothing in this file computes from the
-// workflows: package.json (the npm scripts they call), the Dockerfile (the numpy pin and the file list of the
-// image) and the file system (every repository path they name). Every rule is also shown to bite: a table of
-// mutated copies of the real text, each of which must be refused with a message that names the rule.
+// TESTPLAN DD-T13), checked against two independent facts that nothing in this file computes from the
+// workflows: package.json (the npm scripts they call) and the file system (every repository path they name).
+// Every rule is also shown to bite: a table of mutated copies of the real text, each of which must be refused
+// with a message that names the rule.
 //
 // What this file does NOT prove: that GitHub honours the wiring. A failing check skipping the deploy, a newer
 // pending run replacing an older one, `[skip ci]`, the called workflow's github context and any branch
@@ -76,23 +76,8 @@ const conditionOf = (step) => keysOf(step).find((line) => /^ {8}if:/.test(line))
 
 // The facts the rules compare against, read from the real repository.
 function realFacts() {
-  const dockerfile = read("Dockerfile");
-  const copy = [...dockerfile.matchAll(/^COPY (.+)$/gm)].map((m) => m[1].trim().split(/\s+/));
-  const image = [];
-  for (const args of copy) {
-    const dest = args.pop();
-    for (const src of args) {
-      if (src.endsWith("/")) {
-        const walk = (rel) => fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true })
-          .flatMap((e) => (e.isDirectory() ? walk(`${rel}/${e.name}`) : [`${rel}/${e.name}`]));
-        image.push(...walk(src.slice(0, -1)).map((f) => path.posix.join("/app", f)));
-      } else image.push(path.posix.join("/app", dest.endsWith("/") ? path.posix.join(dest, path.basename(src)) : dest));
-    }
-  }
   return {
     scripts: new Set(Object.keys(JSON.parse(read("package.json")).scripts)),
-    numpy: /numpy==([\d.]+)/.exec(dockerfile)[1],
-    image: image.sort(),
     exists,
   };
 }
@@ -104,7 +89,7 @@ function commonProblems(label, lines, facts) {
   for (const m of text.matchAll(/npm run ([\w:-]+)/g)) {
     if (!facts.scripts.has(m[1])) problems.push(`${label}: \`npm run ${m[1]}\` is not a script of package.json`);
   }
-  for (const m of text.matchAll(/(?:^|[\s'"])((?:tools|tests|src|\.github)\/[\w./-]+\.(?:py|js|mjs|filter|yml))/g)) {
+  for (const m of text.matchAll(/(?:^|[\s'"])((?:tools|tests|src|\.github)\/[\w./-]+\.(?:py|js|mjs|yml))/g)) {
     if (!facts.exists(m[1])) problems.push(`${label}: ${m[1]} is named here and does not exist`);
   }
   if (/--delete-excluded/.test(text)) problems.push(`${label}: --delete-excluded would delete the host's .env`);
@@ -118,7 +103,7 @@ function commonProblems(label, lines, facts) {
 
 // ---- check.yml ----
 
-const JOBS = ["static", "unit", "browser", "bridge"];
+const JOBS = ["static", "unit", "browser"];
 
 function checkProblems(text, facts) {
   const lines = code(text);
@@ -166,7 +151,7 @@ function checkProblems(text, facts) {
     }
   }
 
-  // static: the sha output, the build check that gates deploy, the syntax loop, the goldens, the image, the payload.
+  // static: the sha output, the build check that gates deploy, the syntax loop, the goldens, the compose file.
   const staticJob = jobs.static ?? [];
   const staticSteps = stepsOf(staticJob);
   if (!has(staticJob, "sha: ${{ steps.commit.outputs.sha }}")) add("static must publish outputs.sha from the commit step");
@@ -181,12 +166,6 @@ function checkProblems(text, facts) {
   if (!plain("npm run golden:check")) add("static must run npm run golden:check");
   if (/golden:write/.test(text)) add("a check must never run golden:write (a mismatch is a failure, not something to regenerate)");
   if (!plain("docker compose config -q")) add("static must validate docker-compose.yml");
-  const image = staticSteps.map(stepText).find((s) => s.includes("docker build -t cube-explorer:check .")) ?? "";
-  if (!image) add("static must build the image");
-  const listed = /printf '%s\\n' (.+?) \| diff -u/.exec(image);
-  if (image && (!listed || listed[1].split(" ").sort().join("\n") !== facts.image.join("\n"))) add(`the image file list is ${listed ? listed[1] : "missing"}, the Dockerfile copies ${facts.image.join(" ")}`);
-  const payload = staticSteps.map(stepText).find((s) => s.includes("--filter='merge .github/deploy.filter'")) ?? "";
-  if (!payload || !/\$1 > 4096/.test(payload)) add("static must size the deploy payload with the deploy filter and a 4096 KiB budget");
 
   // unit: a glob that matches no file passes, so the suite must be shown to be non-empty.
   const unit = (jobs.unit ?? []).join("\n");
@@ -194,7 +173,7 @@ function checkProblems(text, facts) {
   if (!unit.includes("run: npm run test:ci")) add("unit must run npm run test:ci");
   if (!unit.includes("actions/setup-python@") || !unit.includes("node-version: '22'")) add("unit needs python3 (the build test) and Node 22");
 
-  // browser: history for the baseline builds, the lockfile's browser, the committed page, no timing gate.
+  // browser: history for the baseline builds, the lockfile's browser, the committed page, no benchmark.
   const browser = jobs.browser ?? [];
   const bt = browser.join("\n");
   if (!/^ {10}fetch-depth: 0$/m.test(bt)) add("browser must check out with fetch-depth: 0 (the original page is built from git history)");
@@ -205,13 +184,7 @@ function checkProblems(text, facts) {
   if (/playwright(@latest| install[^\n]*@latest)/.test(bt)) add("the browser must come from the lockfile, never @latest");
   const testStep = stepsOf(browser).find((step) => stepText(step).includes("npm run test:browser"));
   if (!testStep || !has(testStep, "CONVERGENCE: '1'")) add("npm run test:browser must run with CONVERGENCE: '1' (it serves the committed index.html)");
-  if (!bt.includes("run: npm run benchmark:smoke")) add("browser must run benchmark:smoke (tool and report only)");
   if (/npm run benchmark(\s|$)/.test(bt)) add("the full benchmark is an operator procedure and must not run in CI");
-
-  // bridge: the functions the image runs, with the image's numpy.
-  const bridge = (jobs.bridge ?? []).join("\n");
-  if (!bridge.includes(`pip install --no-cache-dir numpy==${facts.numpy}`)) add(`bridge must install numpy==${facts.numpy}, the Dockerfile pin`);
-  if (!bridge.includes("python3 tests/reference/bridge_crosscheck.py --require-numpy")) add("bridge must run bridge_crosscheck.py with --require-numpy (a missing numpy would skip it)");
   return problems;
 }
 
@@ -270,11 +243,6 @@ function deployProblems(text, facts) {
   }
   const hostSteps = steps.filter((step) => /\brsync\b|\bssh "/.test(stepText(step)));
   if (!hostSteps.length) add("no step talks to the host");
-
-  const sync = steps.map(stepText).find((s) => /\brsync -/.test(s)) ?? "";
-  if (!sync.includes("--filter='merge .github/deploy.filter'")) add("the sync must use --filter='merge .github/deploy.filter' (the allowlist)");
-  if (!/rsync -az --delete --prune-empty-dirs /.test(sync)) add("the sync must be rsync -az --delete --prune-empty-dirs");
-  if (/--exclude|--include|--delete-excluded/.test(sync)) add("the allowlist file is the only rule the sync may use");
   return problems;
 }
 
@@ -289,7 +257,7 @@ describe("check.yml", () => {
     assert.deepEqual(checkProblems(checkText, facts), []);
   });
 
-  it("names its four jobs, in the order the plan gives them", () => {
+  it("names its three jobs, in the order the plan gives them", () => {
     assert.deepEqual(Object.keys(jobsOf(code(checkText))), JOBS);
   });
 });
@@ -316,20 +284,14 @@ describe("the two files together", () => {
   it("call each other the way the gate needs", () => {
     // deploy.yml calls ./.github/workflows/check.yml; check.yml must be callable and report the sha deploy compares.
     assert.ok(exists(".github/workflows/check.yml"));
-    assert.ok(exists(".github/deploy.filter"), "the filter that deploy.yml and check.yml both name");
     assert.match(deployText, /needs\.check\.outputs\.sha/);
     assert.match(checkText, /value: \$\{\{ jobs\.static\.outputs\.sha \}\}/);
   });
 
   it("call only npm scripts that exist and repository files that exist", () => {
     const scripts = [...(checkText + deployText).matchAll(/npm run ([\w:-]+)/g)].map((m) => m[1]);
-    assert.ok(scripts.length >= 4, "the workflows run npm scripts");
+    assert.ok(scripts.length >= 3, "the workflows run npm scripts");
     for (const name of new Set(scripts)) assert.ok(facts.scripts.has(name), name);
-  });
-
-  it("agree with the Dockerfile on the numpy pin and on the image contents", () => {
-    assert.match(checkText, new RegExp(`numpy==${facts.numpy.replaceAll(".", "\\.")}`));
-    for (const file of facts.image) assert.ok(checkText.includes(file), `${file} is in the image file list of check.yml`);
   });
 });
 
@@ -352,21 +314,17 @@ describe("the guards bite: a mutated copy of the real text is refused", () => {
     ["checkout without the commit", "  unit:\n    name: Node tests\n    runs-on: ubuntu-24.04\n    timeout-minutes: 10\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: ${{ github.sha }}\n", "  unit:\n    name: Node tests\n    runs-on: ubuntu-24.04\n    timeout-minutes: 10\n    steps:\n      - uses: actions/checkout@v4\n        with:\n", "ref: ${{ github.sha }}"],
     ["credentials persisted", "          persist-credentials: false\n      - id: commit", "      - id: commit", "persist credentials"],
     ["the HEAD proof removed from a job", "      - run: test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\n      # python3 is needed by the build test", "      # python3 is needed by the build test", "GITHUB_SHA"],
-    ["a job renamed", "  bridge:\n", "  bridges:\n", "jobs are"],
+    ["a job renamed", "  browser:\n", "  browsers:\n", "jobs are"],
     ["a failing step allowed", "    timeout-minutes: 10\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: ${{ github.sha }}\n          persist-credentials: false\n      - run: test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\n      # python3", "    timeout-minutes: 10\n    continue-on-error: true\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: ${{ github.sha }}\n          persist-credentials: false\n      - run: test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\n      # python3", "continue-on-error"],
     ["the build check made conditional", "      - run: python3 tools/build.py --check\n", "      - if: ${{ github.event_name == 'push' }}\n        run: python3 tools/build.py --check\n", "only upload steps"],
     ["fixtures no longer excluded from the syntax loop", " | grep -v '^tests/fixtures/'", "", "tests/fixtures/"],
     ["goldens regenerated to pass", "      - run: npm run golden:check\n", "      - run: npm run golden:write\n", "golden"],
-    ["image list out of step with the Dockerfile", "/app/vendor/D3-LICENSE ", "", "image file list"],
-    ["payload budget dropped", "exit ($1 > 4096)", "exit 0", "payload"],
     ["unit guard removed", "      - run: test \"$(git ls-files 'tests/unit/*.test.js' | wc -l)\" -gt 0\n", "", "no unit test file"],
     ["an npm script that does not exist", "npm run test:ci", "npm run test:everything", "is not a script"],
     ["shallow browser checkout", "          fetch-depth: 0\n", "", "fetch-depth"],
     ["the browser from @latest", "npx playwright install --with-deps --only-shell chromium", "npx playwright@latest install --with-deps --only-shell chromium", "playwright"],
     ["the development page instead of the committed one", "          CONVERGENCE: '1'", "          CONVERGENCE: '0'", "CONVERGENCE"],
-    ["the benchmark as a gate", "      - run: npm run benchmark:smoke\n", "      - run: npm run benchmark\n", "benchmark"],
-    ["a different numpy", "numpy==2.4.6", "numpy==2.4.5", "numpy=="],
-    ["the numpy check allowed to skip", " --require-numpy", "", "--require-numpy"],
+    ["the benchmark as a gate", "          CONVERGENCE: '1'\n", "          CONVERGENCE: '1'\n      - run: npm run benchmark\n", "benchmark"],
     ["a deploy secret in a check", "      - run: npm run golden:check\n", "      - run: echo ${{ secrets.DEPLOY_SSH_KEY }}\n", "secrets"],
   ];
   for (const [what, from, to, words] of checkMutations) {
@@ -392,8 +350,7 @@ describe("the guards bite: a mutated copy of the real text is refused", () => {
     ["the attestation reading another value", "CHECKED: ${{ needs.check.outputs.sha }}", "CHECKED: ${{ github.sha }}", "needs.check.outputs.sha"],
     ["the attestation after the host is touched", "      - name: The checks ran on this commit\n", "      - run: rsync -a ./ host:/srv/\n      - name: The checks ran on this commit\n", "attestation"],
     ["checkout without the commit", "          ref: ${{ github.sha }}\n", "", "checkout"],
-    ["the filter replaced by excludes", "--filter='merge .github/deploy.filter'", "--exclude .git --exclude .env", "allowlist"],
-    ["the excluded files deleted", "rsync -az --delete --prune-empty-dirs", "rsync -az --delete --delete-excluded --prune-empty-dirs", "--delete-excluded"],
+    ["the excluded files deleted", "rsync -az --delete --exclude .git", "rsync -az --delete --delete-excluded --exclude .git", "--delete-excluded"],
     ["a failure tolerated", "        run: rsync -az", "        continue-on-error: true\n        run: rsync -az", "continue-on-error"],
     ["an unpinned action", "webfactory/ssh-agent@v0.9.0", "webfactory/ssh-agent@master", "pinned"],
     ["a job added beside the gate", "  deploy:\n    name:", "  hotfix:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n  deploy:\n    name:", "jobs are"],

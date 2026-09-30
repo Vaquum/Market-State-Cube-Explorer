@@ -3875,17 +3875,14 @@
       axes: new Map(),
       pane: null,
       axisKey: "",
-      axisAt: "",
       lensKey: "",
       lensId: "",
       axisRecords: [],
       noticeVersion: -1,
       noticeOpen: "",
       menuKey: "",
-      // The last write key of each popover's changing part, so an open popover is rebuilt only when it is stale
-      popKey: { cells: "", rows: "", axis: "" },
     },
-    // The markers to a Readout key: the cell key is column * 2^21 + row (cellKey)
+    // A Readout's numeric key is column * 2^21 + row (cellKey above): the marker names the column and row
     UI_CELL_STRIDE = 2097152;
   function uiEl(tag, className, text) {
     const node = document.createElement(tag);
@@ -4085,7 +4082,7 @@
       themeEpoch: colourEpoch,
       policy: legendPolicy(channel),
       state: frame.mappingState,
-      uiWarnStamp: uiWarnStamp(channel),
+      warnStamp: uiWarnStamp(channel),
       marker: null,
       level: frame.level,
     });
@@ -4164,7 +4161,7 @@
         themeEpoch: colourEpoch,
         policy: S.scale.local ? "local" : "shared",
         state: frame.mappingState,
-        uiWarnStamp: uiWarnStamp("lens"),
+        warnStamp: uiWarnStamp("lens"),
         marker: null,
         level: frame.level,
       });
@@ -4443,8 +4440,8 @@
   }
   // The manual-domain form of a popover, rebuilt only when its kind changed (so a value being typed stays).
   function uiPopForm(form, channel, subject, eff, offers) {
-    const window = subject === "flow" || subject === "flowtrades" || subject === "dwell",
-      kind = window ? "window" : offers.fit ? (eff.curve === "linear" && eff.transform === "value" ? "value-linear" : "value-log1p") : "";
+    const share = subject === "flow" || subject === "flowtrades" || subject === "dwell",
+      kind = share ? "window" : offers.fit ? (eff.curve === "linear" && eff.transform === "value" ? "value-linear" : "value-log1p") : "";
     form.hidden = kind === "" || eff.transform === "rank";
     if (form.dataset.kind === kind && form.childElementCount) return;
     form.dataset.kind = kind;
@@ -4462,18 +4459,18 @@
       return wrap;
     };
     // TEXT(S1): the names of the numbers of a manual domain and of a share window
-    const legend = uiEl("span", "ol-legend-form-title", window ? "Share window" : E.text.ui.manual);
-    const fields = window
+    const legend = uiEl("span", "ol-legend-form-title", share ? "Share window" : E.text.ui.manual);
+    const fields = share
       ? [field("lo", "Low", { min: 0, max: 1 }), field("hi", "High", { min: 0, max: 1 })]
       : kind === "value-linear"
         ? [field("U", "U", { min: 0 })]
         : [field("U", "U", { min: 0 }), field("k", "k", { min: 0 })];
     const apply = uiEl("button", "ol-action ol-s cursor-interaction", E.text.ui.apply),
-      clear = uiEl("button", "ol-action ol-s cursor-interaction", window ? "Clear window" : E.text.ui.clearManual),
+      clear = uiEl("button", "ol-action ol-s cursor-interaction", share ? "Clear window" : E.text.ui.clearManual),
       error = uiEl("p", "ol-legend-error");
     apply.type = "submit";
     clear.type = "button";
-    clear.dataset.action = window ? "clear-window" : "clear-manual";
+    clear.dataset.action = share ? "clear-window" : "clear-manual";
     clear.dataset.channel = channel;
     error.dataset.part = "error";
     error.id = `ol-${channel}-form-error`;
@@ -4634,7 +4631,7 @@
       updating: String(Boolean(rec.hold) && rec.hold !== "play"),
       axisId: rec.id,
       domain: Array.isArray(rec.domain) ? rec.domain.join(",") : "",
-      uiAxisState: uiAxisState(rec),
+      axisState: uiAxisState(rec),
     };
     for (const [name, value] of Object.entries(attrs)) if (chip.dataset[name] !== value) chip.dataset[name] = value;
     axisPop();
@@ -4720,7 +4717,6 @@
       offers = E.policy.offers(channel, subject, S.scale, Boolean(PACK.live), name);
     if (!offers.available) return [];
     const t = E.text,
-      rank = (cells ? S.scale.transform : S.scale.rowsTransform) === "rank",
       parts = [],
       rule = uiEl("div", "ol-menu-rule"),
       group = (label, items) => {

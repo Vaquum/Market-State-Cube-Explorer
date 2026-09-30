@@ -661,6 +661,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | U52 | `tests/unit/event-spans.test.js` | the merge of one event kind's intervals for the event strip, against brute-force connectivity | #47 |
 | U53 | `tests/unit/occlusion-budget.test.js` | the 20% union-area occlusion budget: overlaps once, priority, the focused mark, against a set-based replay | #47 |
 | U54 | `tests/unit/plane-glyphs.test.js` | the plane's glyphs reach 3:1 on their tiles in both themes and use no market hue | #47 |
+| U55 | `tests/unit/events-table.test.js` | the event and known-at table and each annotation's record replayed edge by edge: not before its bar began, a candidate while it forms, known at its end, unchanged after | #47 |
 | B01 | `tests/browser/boot.spec.js` | boot in recorded and live mode, the 29 module keys, production globals | H7b |
 | B02 | `tests/browser/recorded-snapshot.spec.js` | real recorded blocks through the page | K |
 | B03 | `tests/browser/readout-agreement.spec.js` | tooltip, table row, legend marker and pixel agree for every measure | T |
@@ -693,6 +694,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B30 | `tests/browser/state-table.spec.js` | the measure-by-state table: each row named with its test, and the rows that had none (waiting parent, open cap, provisional, coarser, replay-hidden) | S2 |
 | B31 | `tests/browser/cvd-plane.spec.js` | the plane and the toolbar's coarse mark in composed fixtures under the published colour-vision simulations and grayscale (`tests/fixtures/cvd/simulations.json`) | S2 |
 | B32 | `tests/browser/failure-relevance.spec.js` | issue #29: the loading line keeps a failed read's alert while its tile is needed, through startup, view changes, the lens, a replaced pack and retries; the original build is the control | S2 |
+| B33 | `tests/browser/events-known-at.spec.js` | a 4-hour swing, an RSI divergence with its equal pair and a CME gap replayed on the page before, while forming, at and after the bar that completes them, against the reference bars and zigzag | S2 |
 
 ## 10. Migration status per slice
 

@@ -8513,7 +8513,7 @@
         family: "average",
         group: "1w",
         name: "Bull market support band",
-        desc: "The 20-week SMA and 21-week EMA, the space between them filled",
+        desc: "The 20-week SMA and 21-week EMA, as two lines",
         tier: "long",
         live: true,
       },
@@ -8541,7 +8541,7 @@
         family: "average",
         group: "bb",
         name: "Bollinger · 4 h",
-        desc: "The same on 4-hour bars; squeezes filled, bandwidth below its 10th percentile of the last 500 bars",
+        desc: "The same on 4-hour bars; squeezes are intervals in the event strip, bandwidth below its 10th percentile of the last 500 bars",
         tier: "short",
         live: true,
       },
@@ -8549,7 +8549,7 @@
         family: "average",
         group: "bb",
         name: "Bollinger · 1D",
-        desc: "The same on daily bars; squeezes filled, bandwidth at its lowest of the last 182 days",
+        desc: "The same on daily bars; squeezes are intervals in the event strip, bandwidth at its lowest of the last 182 days",
         tier: "medium",
         live: true,
       },
@@ -8564,7 +8564,7 @@
       cme: {
         family: "clock",
         name: "CME close and reopen",
-        desc: "Friday 16:00 and Sunday 17:00 Chicago; live, the spot gap between them is shaded until a trade reaches the Friday close",
+        desc: "Friday 16:00 and Sunday 17:00 Chicago; live, the spot gap between them is outlined until the hourly bar in which a trade reaches the Friday close ends",
       },
       deribit: { family: "clock", name: "Deribit expiry", desc: "Fridays 08:00 UTC; heavier on the month's last and at a quarter's end" },
     },
@@ -10116,7 +10116,9 @@
     const usd = (v) => `${price(Math.round(100 * v) / 100)} USDT`;
     if (l.kind === "cross") {
       const c = l.c,
-        slow = indicator(c.frame, "sma", 200)[c.x.i];
+        slow = indicator(c.frame, "sma", 200)[c.x.i],
+        crossRec = crossRecord(c.frame, c.x.i);
+      tip.dataset.event = `${crossRec.kind}|${crossRec.label}`;
       tipRows(
         tip,
         `${c.golden ? "Golden" : "Death"} cross · ${usd(c.v)}`,
@@ -10125,7 +10127,7 @@
           ["50 SMA", usd(c.v)],
           ["200 SMA", usd(slow)],
           ["Timeframe", "1 day"],
-          ...knownRows(crossRecord(c.frame, c.x.i)),
+          ...knownRows(crossRec),
         ],
         c.golden ? "The 50-day SMA crossed above the 200-day SMA" : "The 50-day SMA crossed below the 200-day SMA",
       );
@@ -10142,7 +10144,9 @@
     if (l.what === "bb") {
       const bb = l.bb,
         run = AVERAGE_SPECS[l.key].squeeze ? frameSqueezes(f).find(([a, z]) => at >= a && at <= z) : undefined,
-        squeezed = run !== undefined;
+        squeezed = run !== undefined,
+        runRec = squeezed ? squeezeRecord(f, run) : null;
+      if (runRec) tip.dataset.event = `${runRec.kind}|${runRec.label}`;
       tipRows(
         tip,
         `${l.name} · ${usd(bb.mid[at])}`,
@@ -10153,7 +10157,7 @@
           ["Lower", usd(bb.lower[at])],
           ["Bandwidth", `${(100 * bb.width[at]).toFixed(2)}%`],
           ...(AVERAGE_SPECS[l.key].squeeze ? [["Squeeze", squeezed ? "yes" : "no"]] : []),
-          ...(squeezed ? knownRows(squeezeRecord(f, run)) : []),
+          ...(runRec ? knownRows(runRec) : []),
         ],
         AVERAGE_SPECS[l.key].squeeze
           ? f.tf === "1d"
@@ -10441,7 +10445,11 @@
           for (const d of o.divergences) {
             if (d.b.confirmed > cut || f.ends[d.b.i] < S.tA || f.ends[d.a.i] > S.tB) continue;
             const colour = d.bearish ? colors.legacySell : colors.legacyBuy;
+            // A divergence whose later swing is only a candidate (the bar that reversed is still forming) is dashed: not confirmed yet
+            // (E.readout.events.rsiDivergence)
+            if (d.b.ce > f.end) ctx.setLineDash([3, 3]);
             line(G.X(f.ends[d.a.i]), y(d.r0), G.X(f.ends[d.b.i]), y(d.r1), colour, 2, 0.95);
+            ctx.setLineDash([]);
             for (const [s, r] of [
               [d.a, d.r0],
               [d.b, d.r1],
@@ -10519,7 +10527,9 @@
     if (paneShown.key === "macd1d") {
       const x = o.crosses.find((c) => c.i === i),
         axis = paneAxisTipRows(rec, o.macd[i]),
-        known = x ? knownRows(crossRecord(f, i)) : [];
+        crossRec = x ? crossRecord(f, i) : null,
+        known = crossRec ? knownRows(crossRec) : [];
+      if (crossRec) tip.dataset.event = `${crossRec.kind}|${crossRec.label}`;
       tipRows(
         tip,
         head,
@@ -10550,7 +10560,9 @@
     const d = o.divergences.find((x) => x.b.i === i && x.b.confirmed <= last.cut),
       axis = paneAxisTipRows(rec, o.rsi[i]),
       daily = paneShown.key === "rsi1d",
-      known = d ? knownRows(E.readout.events.rsiDivergence(swingRecord(d.a, daily), swingRecord(d.b, daily))) : [];
+      divRec = d ? E.readout.events.rsiDivergence(swingRecord(d.a, daily), swingRecord(d.b, daily)) : null,
+      known = divRec ? knownRows(divRec) : [];
+    if (divRec) tip.dataset.event = `${divRec.kind}|${divRec.label}`;
     tipRows(
       tip,
       head,
@@ -11958,7 +11970,7 @@
           ],
           ...knownRows(rec),
         ],
-        "The spot price at each: the last trade before it. Shaded until a trade reaches the Friday close",
+        "The spot price at each: the last trade before it. Outlined until the hourly bar in which a trade reaches the Friday close ends",
       );
       return;
     }

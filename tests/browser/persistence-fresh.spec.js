@@ -209,6 +209,31 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect(await S.canvasHash(pasted)).toBe(canvas);
   });
 
+  test("a Rows mapping and a Local-contrast mapping carried by a link are used by the page and written back with the fitted Cells mapping", async ({ page, fakeFor }) => {
+    const fake = await fakeFor("standard");
+    // the Rows context the page shows for a rolling 7 day period at row level 0: measure, period identity, row size, quality, workspace
+    const rowsCtx = S.E.context.rowsKey({ measure: "volume", transform: "value", curve: "log", quality: "exact", period: "roll:7", rowSize: 0, workspace: "live", instrument: "BTC/USDT" });
+    const rows = S.valueRecord("volume", 4, 0, 9051.25, 130.5, { channel: "r", ctx: rowsCtx, cohort: { n: 50, excluded: 0 } });
+    const lens = S.valueRecord("volume", 4, 0, 5551.25, 330.5, { channel: "l", policy: "l", origin: "fit" });
+    const made = S.address({ rows: "volume", period: "7d", scale: { local: true } }, [rows, lens]);
+    expect(made.dropped).toEqual([]);
+    await page.goto(fake.url + "/" + made.hash);
+    await fake.idle({ quietMs: 600, timeoutMs: 20000 });
+    // the Rows chip shows the carried mapping (not a fit of its own), for the context the link names
+    const chip = observe(page);
+    await expect.poll(async () => (await chip.chip("rows")).data.state, { timeout: 15000 }).toBe("ready");
+    const shown = (await chip.chip("rows")).data;
+    expect(shown.mappingId).toBe(rows.desc.id);
+    expect(shown.context).toBe("rows|BTC/USDT|volume|period-amount-per-row|usdt|value-log|rows.volume.amount@1|exact|live|roll:7|m0");
+    // the address the page writes keeps both carried records, and adds the Cells mapping it fitted itself
+    await expect.poll(async () => S.scOf((await S.where(page)).hash) ?? "", { timeout: 15000 }).toMatch(/^c:e:.*;r:e:.*;l:l:/);
+    const written = S.scOf((await S.where(page)).hash);
+    expect(written).toContain(S.scOf(made.hash).split(";")[0]);
+    expect(written).toContain(S.scOf(made.hash).split(";")[1]);
+    expect(S.param((await S.where(page)).hash, "lc")).toBe("1");
+    expect(await S.noticeCodes(page)).not.toContain("scale-dropped");
+  });
+
   test("a rank mapping with repeated values in its cohort comes back bit for bit: the same id in the address of a fresh context", async ({ page, fakeFor }) => {
     const fake = await fakeFor("mini");
     const rank = S.rankRecord("volume", 4, 0, S.DUPLICATE_VALUES);

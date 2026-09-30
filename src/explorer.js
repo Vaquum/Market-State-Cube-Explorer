@@ -14865,8 +14865,9 @@
         if (ctx) add(channel, scaleRt.store.latest(ws, E.context.keyString(ctx)));
       };
     from("c", cellsContext());
-    // The Rows context is the Rows package's: present once it is merged, absent before.
-    if (S.rows !== "off" && typeof rowsContext === "function") from("r", rowsContext());
+    // The Rows context is the Rows block's own function (rowsContext), asked for here because the address
+    // must carry the mapping the Rows channel is showing; it is a lookup of the state, never a fit.
+    if (S.rows !== "off") from("r", rowsContext());
     for (const [key, rec] of Object.entries(S.scale.held ?? {})) add(key.charAt(0) === "r" ? "r" : "c", rec);
     if (scaleRt.local) add("l", scaleRt.local);
     return out;

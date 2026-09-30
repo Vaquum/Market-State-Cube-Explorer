@@ -168,6 +168,55 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     expect(S.param((await S.where(page)).hash, "lk")).toBe("1");
   });
 
+  test("an import is one at a time and checked again after its wait: Apply is disabled while it runs, a second click starts nothing, a changed text is not applied", async ({ page, context, fakeFor }) => {
+    await context.addInitScript(() => {
+      // a slow decompression: every read of a stream waits, and every stream made is counted
+      window.__streams = 0;
+      const Original = window.DecompressionStream;
+      window.DecompressionStream = class extends Original {
+        constructor(format) {
+          super(format);
+          window.__streams++;
+        }
+      };
+      const read = ReadableStreamDefaultReader.prototype.read;
+      ReadableStreamDefaultReader.prototype.read = async function (...args) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        return read.apply(this, args);
+      };
+    });
+    const fake = await fakeFor("mini");
+    await open(page, fake);
+    const pack = await packOf(page);
+    const code = await codeOf(payloadOf(pack, [S.rankRecord("volume", 4, 0, S.DUPLICATE_VALUES)]));
+    await S.openQuery(page);
+    if (await page.locator("#ol-import").isHidden()) await page.locator("#ol-import-toggle").click();
+    await page.locator("#ol-import-text").fill(code);
+    await fake.idle({ quietMs: 300 });
+    // (the page's own data decoding uses streams too: count from here)
+    await page.evaluate(() => {
+      window.__streams = 0;
+    });
+    await page.locator("#ol-import-apply").click();
+    // while it runs: Apply is off, and pressing it again starts no second import
+    await expect(page.locator("#ol-import-apply")).toBeDisabled();
+    await page.locator("#ol-import-apply").evaluate((button) => button.click());
+    await expect(page.locator("#ol-copy-status")).toHaveText("View restored");
+    await expect(page.locator("#ol-import-apply")).toBeEnabled();
+    expect(await page.evaluate(() => window.__streams), "one stream for one import").toBe(1);
+    // a text that changes during the wait is not applied, and the page is as it was
+    await S.openQuery(page);
+    await page.locator("#ol-import-toggle").click();
+    const before = (await S.where(page)).hash;
+    const other = await codeOf(payloadOf(pack, [S.rankRecord("volume", 4, 0, S.DUPLICATE_VALUES)], { transform: "value", lock: false }));
+    await page.locator("#ol-import-text").fill(other);
+    await page.locator("#ol-import-apply").click();
+    await page.locator("#ol-import-text").fill("changed while it was read");
+    await expect(page.locator("#ol-copy-status")).toContainText("changed while it was being read");
+    expect(S.withoutSc((await S.where(page)).hash)).toBe(S.withoutSc(before));
+    await expect(page.locator("#ol-import-apply")).toBeEnabled();
+  });
+
   test("a browser that cannot compress writes the uncompressed code (origo-cube:2j.), and any browser reads it back", async ({ page, context, fakeFor, freshContext }) => {
     await context.addInitScript(() => {
       delete window.CompressionStream;

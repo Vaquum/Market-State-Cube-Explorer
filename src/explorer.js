@@ -3604,6 +3604,8 @@
       el("table-caption").textContent = "Measuring the rectangle in the cube…";
       el("table-page").textContent = "";
       el("table-back").disabled = el("table-next").disabled = true;
+      // The rows are gone: a row the pointer was on no longer has a value to show on the legend.
+      if (tableHover) rowMarker();
       return;
     }
     // The cells at the level the chart draws. A very wide rectangle is measured by the cube coarser in time
@@ -4425,7 +4427,10 @@
   }
   // The table row's readout, stored and shown on the legend; the row is the one under the table pointer.
   function rowMarker() {
-    scaleRt.rowReadout = tableHover ? (cellRows.get(cellKey(tableHover.c, tableHover.r))?.readout ?? null) : null;
+    // A row stays the row under the pointer only at the level it was hovered at: a table rebuilt at another
+    // level puts another cell under the same numeric key, and its readout would not be the outlined cell's.
+    const atLevel = tableHover && cellRowsLevel && tableHover.n === cellRowsLevel.n && tableHover.m === cellRowsLevel.m;
+    scaleRt.rowReadout = atLevel ? (cellRows.get(cellKey(tableHover.c, tableHover.r))?.readout ?? null) : null;
     try {
       markerNow();
     } catch (error) {
@@ -4470,6 +4475,10 @@
     const onLine = last && lineHits.length && inPlot(p) ? lineAt(p) : null,
       onClock = !onLine && last && clockHits.length && inPlot(p) ? clockAt(p) : null;
     hover.line = onLine?.id || null;
+    // Cleared first, so a branch that names no readout (a line, a clock event, a profile row, an unavailable
+    // cell) leaves none behind; a branch that does (the pane sections name theirs through paneTipFields,
+    // which runs inside the branch) is not overwritten below.
+    if (tip.dataset.readout) tip.dataset.readout = "";
     if (onLine) {
       lineTip(tip, onLine);
       syncRowHover(null);
@@ -4485,6 +4494,8 @@
         marks = underlayMarks(r);
       // A profile row is no one cell: the Cells drawer shows none as hovered.
       syncRowHover(null);
+      // It names the row it reads out (D.18: "row:<r>"), at the level drawn, unless it has nothing to read.
+      if (!waiting) tip.dataset.readout = `row:${r}`;
       if (waiting)
         tipRows(
           tip,
@@ -4618,7 +4629,7 @@
     // The readout the tip was built from (a cell's here; a pane's or a row's set by their own sections):
     // named on the tip so the same record can be found in the table, and located on the legend.
     if (readout) scaleRt.tipReadout = readout;
-    tip.dataset.readout = readoutId(scaleRt.tipReadout);
+    if (scaleRt.tipReadout) tip.dataset.readout = readoutId(scaleRt.tipReadout);
     tipMarker(scaleRt.tipReadout);
     // A derivation inside a draw (refreshTip) asks for no frame: it is in one.
     if (redraw) requestDraw();

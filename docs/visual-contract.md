@@ -150,9 +150,9 @@ The recorded runtime census (light and dark, 1500x950, popovers open) found exac
 | D-04 | Toolbar Lines dots | view.html 249 (`#ol-lines-dots`), 250 (`#ol-lines-count`); CSS 559-580, hidden below container 1150 px (444-451); JS `renderLinesButton` 8531-8555 | one 8 px dot per family on, `style.background = lineStyle(f.colour,"long").colour`; rewritten only when `fams\|colourEpoch` changes; stale after a theme flip until `update()` (verified) | `REF:<family>` dots; grouping counts must not imply two same-coloured dots are different quantities [slices: S3 (unchanged in S1; S1 must fix nothing here but the contract lists the stale-on-flip behaviour)] | - | #48 | B04 (S1 covers new writers) | todo-S3 |
 | D-05 | Family heads' dots | view.html 281, 340, 366, 392, 449, 492 (`i.ol-family-dot`); CSS 642-647; JS `renderLines` 8470-8475; `familyStatus` 8557-8601 writes the muted status line under each family (`.ol-family-status` CSS 663-670, no hue) | 8 px dot, inline background from `lineStyle(f.colour,"long")`, `dataset.colour` guard; written only while the popover is open | `REF:<family>`; Session and Structure share one family colour but are two menu subgroups | - | #48 | S3 | todo-S3 |
 | D-06 | Line row swatches | view.html none (built by JS); CSS `.ol-line-swatch` 617-623 (14 px x `--weight`, background `--line`), `.ol-clock-swatch` 625-629, `.ol-level-swatch` 672-677 (dashed ink); JS `swatch` 8352, `lineRow` 8361, `renderLines` 8436-8445 (guard `dataset.look = colour\|width`), level row 8492-8513 | swatch shows the tier's colour and weight | `REF:<family>`, stable 1.5 px, D8 patterns, Level swatch = long dash-dot | - | #48 | S3 | todo-S3 |
-| D-07 | Toolbar resolution indicator | view.html 78-104 (lock icons, `#ol-res-text`, `i.ol-res-coarse`); CSS 422-438; JS `update` 2993-3007 (`data-coarse`) | 7 px `--ol-poc` gold dot when the displayed level is coarser than requested | `STATE` neutral glyph, not gold [slices: S2 (unchanged in S1)] | - | #47 | B16, B23 (S2) | todo-S2 |
-| D-08 | Resolution plane (210 buttons) | view.html 189-195; CSS `.ol-plane` 840-913; JS `buildPlane` 10495, `planeButton` 10529, `focusPlaneCell` 10532, `planeKeys` 10537, `cellPixels` 10555, `refreshPlane` 10574-10627, `resolutionReadiness` 9740, `setPlaneStatus` 10491 | kind by first match: loading -> `--ol-evidence` a0.5; else not-ready -> hatch `line/surface` a0.8; else `px<6 \|\| py<6` small -> `--ol-volume` a0.3; `px>32 \|\| py>32` large -> `--ol-poc` a0.6; else ready -> `--ol-volume` a0.85; diagonal = ink border; current = ink fill scale 1.35 (overrides kind); hover/focus outline accent 2 px; runs only while the popover is open | orthogonal neutral state grid: availability x size x diagonal x current x focus (S2) [slices: S2 (unchanged in S1)] | - | #47 | B16, B23 (S2) | todo-S2 |
-| D-09 | Plane key | view.html 196-203 (6 hand-written `<i>`); CSS 914-936 | swatches duplicate the button rules (`.ol-plane-key i.ol-plane-*`), no current/focus swatch | generated from the same table as the buttons | - | #47 | B16, B23 (S2) | todo-S2 |
+| D-07 | Toolbar resolution indicator | view.html 78-104 (lock icons, `#ol-res-text`, `i.ol-res-coarse`); CSS 422-438; JS `update` 2993-3007 (`data-coarse`) | 7 px `--ol-poc` gold dot when the displayed level is coarser than requested | `STATE` neutral glyph, not gold [slices: S2 (unchanged in S1)] | - | #47 | B29 | done |
+| D-08 | Resolution plane (210 buttons) | view.html 189-195; CSS `.ol-plane` 840-913; JS `buildPlane` 10495, `planeButton` 10529, `focusPlaneCell` 10532, `planeKeys` 10537, `cellPixels` 10555, `refreshPlane` 10574-10627, `resolutionReadiness` 9740, `setPlaneStatus` 10491 | kind by first match: loading -> `--ol-evidence` a0.5; else not-ready -> hatch `line/surface` a0.8; else `px<6 \|\| py<6` small -> `--ol-volume` a0.3; `px>32 \|\| py>32` large -> `--ol-poc` a0.6; else ready -> `--ol-volume` a0.85; diagonal = ink border; current = ink fill scale 1.35 (overrides kind); hover/focus outline accent 2 px; runs only while the popover is open | orthogonal neutral state grid: availability x size x diagonal x current x focus (S2) [slices: S2 (unchanged in S1)] | - | #47 | B29, U54 | done |
+| D-09 | Plane key | view.html 196-203 (6 hand-written `<i>`); CSS 914-936 | swatches duplicate the button rules (`.ol-plane-key i.ol-plane-*`), no current/focus swatch | generated from the same table as the buttons | - | #47 | B29 | done |
 | D-10 | Evidence outcome tracks | view.html 1461-1513 (`.ol-track`, `#ol-bar-up\|flat\|down`, `#ol-base-*`); CSS 1648-1671; JS `evidenceUI` 9246-9351 (width % at 9303-9304) | matching = `--ol-evidence` 5 px bar; all-states = `--ol-muted` 3 px bar alpha 0.6; scale 0-100 % | `REF:Historical comparison neutral` with Matching/All labels, square/circle median markers [slices: S3 (unchanged in S1)] | FIXED | #48 | S3 | todo-S3 |
 | D-11 | Evidence legend | view.html 1514-1518 (`i.ol-match-key`, `i.ol-all-key`); CSS 1672-1694 (`.ol-match-key` has no rule of its own: it inherits `.ol-evidence-legend i` -> `--ol-evidence`) | violet "Matching states", grey "All states", text about 80/50 % boxes | as D-10 | - | #48 | S3 | todo-S3 |
 | D-12 | Menus: Cells, Columns, Rows, Period, Window, Price axis | view.html 37-43 (window), 224-230 (price axis), 731-797 (Cells, Columns, Rows), 820-851 (period); CSS `.ol-menu` 476-557; JS `buildModeMenu` 3530, `buildPaneMenu` 3565, `buildRowsMenu` 3600, `menuItem` 3422, `itemText` 3482, tables `MODE_INFO` 1721, `PANE_INFO` 1743, `ROWS_INFO` 6970 | text + check icon; chosen item background `--ol-on`; descriptions carry no hue; `data-hint` view.html 720 says "What the cells' colour shows" | `CHR`; copy must follow Amount/Intensity/policy naming [slices: S1 (copy for renamed measures and policy controls), S3 (help)] | - | #46, #48 | B16, B23 | todo-S3 |
@@ -659,6 +659,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | U51 | `tests/unit/profile-tracks.test.js` | the shared partition, windows and shares of the profile tracks against exact rational sums | #47 |
 | U52 | `tests/unit/event-spans.test.js` | the merge of one event kind's intervals for the event strip, against brute-force connectivity | #47 |
 | U53 | `tests/unit/occlusion-budget.test.js` | the 20% union-area occlusion budget: overlaps once, priority, the focused mark, against a set-based replay | #47 |
+| U54 | `tests/unit/plane-glyphs.test.js` | the plane's glyphs reach 3:1 on their tiles in both themes and use no market hue | #47 |
 | B01 | `tests/browser/boot.spec.js` | boot in recorded and live mode, the 29 module keys, production globals | H7b |
 | B02 | `tests/browser/recorded-snapshot.spec.js` | real recorded blocks through the page | K |
 | B03 | `tests/browser/readout-agreement.spec.js` | tooltip, table row, legend marker and pixel agree for every measure | T |
@@ -687,6 +688,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B26 | `tests/browser/stroke-roles.spec.js` | the stroke-role table: marks on the plot, their footer keys, counts, geometry and colours | S2 |
 | B27 | `tests/browser/composition.spec.js` | the event strip lanes, reference stroke widths, the occlusion notice and the transient lens region | S2 |
 | B28 | `tests/browser/rows-strip.spec.js` | the Rows strip, its blocks and legend bar, the 16% projection behind the cells, and Relative volume inside W | S2 |
+| B29 | `tests/browser/resolution-plane.spec.js` | the resolution plane as an orthogonal state grid: size classes, availability, separate neutral glyphs, key, steppers | S2 |
 
 ## 10. Migration status per slice
 
@@ -696,11 +698,11 @@ Rendered from the Status column at S1's convergence: `done` is S1's own work shi
 |---|---|---|---|---|---|---|
 | T | 34 | 17 | 0 | 6 | 4 | 7 |
 | C | 48 | 2 | 0 | 13 | 12 | 21 |
-| D | 21 | 7 | 0 | 4 | 8 | 2 |
+| D | 21 | 7 | 0 | 1 | 8 | 5 |
 | F | 14 | 0 | 0 | 0 | 2 | 12 |
 | R | 15 | 0 | 0 | 2 | 5 | 8 |
 | N | 30 | 0 | 0 | 4 | 0 | 26 |
-| all | 162 | 26 | 0 | 29 | 31 | 76 |
+| all | 162 | 26 | 0 | 26 | 31 | 79 |
 
 ## 11. Contributor checklist
 

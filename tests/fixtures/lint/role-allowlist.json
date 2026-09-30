@@ -45,7 +45,7 @@
     {
       "file": "src/explorer.css",
       "pattern": "--ol-evidence",
-      "count": 4,
+      "count": 3,
       "rows": [
         "T-11",
         "D-08",
@@ -58,27 +58,13 @@
     {
       "file": "src/explorer.css",
       "pattern": "--ol-line@state",
-      "count": 3,
+      "count": 1,
       "rows": [
         "D-08",
         "D-09",
         "F-01",
         "F-03",
         "F-06"
-      ],
-      "owner": "#47"
-    },
-    {
-      "file": "src/explorer.css",
-      "pattern": "--ol-poc@state",
-      "count": 2,
-      "rows": [
-        "D-07",
-        "D-08",
-        "D-09",
-        "F-02",
-        "F-04",
-        "T-10"
       ],
       "owner": "#47"
     },
@@ -94,7 +80,7 @@
     {
       "file": "src/explorer.css",
       "pattern": "--ol-volume",
-      "count": 4,
+      "count": 2,
       "rows": [
         "T-07",
         "D-01",

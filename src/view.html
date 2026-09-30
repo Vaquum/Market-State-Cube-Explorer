@@ -97,7 +97,7 @@
               <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
             </svg>
             <span id="ol-res-text" class="ol-num">15 min × 125</span
-            ><i class="ol-res-coarse" aria-hidden="true"></i>
+            ><i class="ol-res-coarse ol-data-key ol-glyph" data-stroke-role="partial" aria-hidden="true"></i>
             <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
               <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
             </svg>
@@ -122,6 +122,7 @@
                 Auto level
               </button>
             </div>
+            <div class="ol-steppers" role="group" aria-label="Resolution steppers, large targets: finer or coarser time and price cells">
             <div class="ol-step">
               <div class="ol-step-label">
                 <span>Time · <span id="ol-n">n 4</span></span
@@ -186,21 +187,15 @@
                 </svg>
               </button>
             </div>
+            </div>
             <div class="ol-plane-cap">Resolution plane · m price ↑ · n time →</div>
             <div
               class="ol-plane"
               id="ol-plane"
               role="group"
-              aria-label="Time and price resolution lattice; arrow keys move, Enter chooses; the outlined cells are the diagonal"
+              aria-label="Time and price resolution lattice, a dense chooser; arrow keys move, Enter chooses; the steppers above are the large-target alternative; a corner badge marks the diagonal and a frame the current level"
             ></div>
-            <div class="ol-plane-key">
-              <span><i class="ol-plane-ready"></i>Ready · usable</span
-              ><span><i class="ol-plane-small"></i>Too small</span
-              ><span><i class="ol-plane-large"></i>Too large</span
-              ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
-              ><span><i class="ol-plane-loading"></i>Loading</span
-              ><span><i class="ol-plane-path"></i>Diagonal</span>
-            </div>
+            <div class="ol-plane-key" aria-label="Key to the resolution plane"></div>
             <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
           </div>
         </div>

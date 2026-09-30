@@ -159,7 +159,8 @@ const textsOf = (frame) => frame.texts.map((t) => t.text);
 // The glyphs of the role table as the recorded paths show them (E.role.paint draws each as one path): hollow diamonds are stroked
 // closed four-vertex paths, triangles filled three-vertex paths (the apex up for "above range", down for "below range"), zero ticks
 // stroked horizontal segments, all in the ink given. Returns the centre of each, in drawing order.
-function glyphsOf(frame, ink, { size = 6 } = {}) {
+// `area` (the pane's rectangle) keeps a tick to the pane: the open column's cap on the plot is the same 1.5 px stroke in the state ink.
+function glyphsOf(frame, ink, { size = 6, area = null } = {}) {
   const close = (a, b) => Math.abs(a - b) < 1e-6;
   const out = { diamond: [], triUp: [], triDown: [], tick: [] };
   for (const s of frame.strokes) {
@@ -169,7 +170,7 @@ function glyphsOf(frame, ink, { size = 6 } = {}) {
       const xs = p.map((v) => v[0]);
       const ys = p.map((v) => v[1]);
       if (close(Math.max(...xs) - Math.min(...xs), size) && close(Math.max(...ys) - Math.min(...ys), size)) out.diamond.push([(Math.max(...xs) + Math.min(...xs)) / 2, (Math.max(...ys) + Math.min(...ys)) / 2]);
-    } else if (s.width === 1.5 && p.length === 2 && close(p[0][1], p[1][1])) out.tick.push([(p[0][0] + p[1][0]) / 2, p[0][1], p[1][0] - p[0][0]]);
+    } else if (s.width === 1.5 && p.length === 2 && close(p[0][1], p[1][1]) && (area === null || (p[0][1] >= area.y && p[0][1] <= area.y + area.h))) out.tick.push([(p[0][0] + p[1][0]) / 2, p[0][1], p[1][0] - p[0][0]]);
   }
   for (const f of frame.fills) {
     if (f.fill !== ink || f.path.length !== 3) continue;

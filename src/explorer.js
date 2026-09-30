@@ -14900,6 +14900,7 @@
     for (let n = 0; n <= N_MAX; n++)
       frag.append(label(n % 4 === 0 ? String(n) : ""));
     el("plane").replaceChildren(frag);
+    buildPlaneKey();
   }
   // The plane is one tab stop: arrow keys move through it, Enter chooses.
   function planeButton(n, m) {
@@ -14928,6 +14929,34 @@
   }
   // Cell size for the plane's hover text: whole pixels, or words at the extremes,
   // per axis when the two disagree (a sliver can be taller than the view).
+  // The size class of one side of a cell: under 6 css px is small, over 32 large, else usable.
+  function planeSize(px) {
+    return px < 6 ? "small" : px > 32 ? "large" : "usable";
+  }
+  // The plane's key, from the same facts the buttons carry and painted by the same CSS (the sample is a button-sized tile with the same
+  // attributes), so a key cannot say what the plane does not.
+  const PLANE_KEY = [
+    ["avail", "pending", "Pending: the read is under way"],
+    ["avail", "unavailable", "Unavailable: coarser cells are shown"],
+    ["avail", "ready", "Ready"],
+    ["size", "small", "Small: a side under 6 px"],
+    ["size", "usable", "Usable: 6 to 32 px each way"],
+    ["size", "large", "Large: a side over 32 px"],
+    ["path", "true", "On the diagonal"],
+    ["current", "true", "Current level"],
+  ];
+  function buildPlaneKey() {
+    const nodes = PLANE_KEY.map(([fact, value, label]) => {
+      const span = document.createElement("span"),
+        tile = document.createElement("i");
+      tile.dataset[fact] = value;
+      tile.setAttribute("aria-hidden", "true");
+      span.append(tile, document.createTextNode(label));
+      span.dataset.planeKey = `${fact}:${value}`;
+      return span;
+    });
+    root.querySelector(".ol-plane-key").replaceChildren(...nodes);
+  }
   function cellPixels(px, py, g) {
     const wide =
         px >= g.w
@@ -14973,6 +15002,9 @@
         py = (2 ** m * g.h) / (S.pB - S.pA),
         r = resolutionReadiness(n, m),
         onPath = m === diagonalM(n),
+        avail = r.status === "loading" ? "pending" : r.status === "ready" ? "ready" : "unavailable",
+        widthClass = planeSize(px),
+        heightClass = planeSize(py),
         kind =
           r.status === "loading"
             ? "loading"
@@ -14983,10 +15015,14 @@
                 : px > 32 || py > 32
                   ? "large"
                   : "ready",
-        text = `n ${n} · m ${m} · ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT · ${cellPixels(px, py, g)} · ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}${onPath ? " · on the diagonal" : ""}`,
+        text = `n ${n} · m ${m} · ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT · ${cellPixels(px, py, g)} · ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}${onPath ? " · on the diagonal" : ""} · width ${widthClass}, height ${heightClass}`,
         className =
           "cursor-interaction ol-plane-" + kind + (onPath ? " ol-plane-path" : "");
       if (b.className !== className) b.className = className;
+      // The state as two separate facts, drawn as two separate glyphs (availability, size) with the diagonal and the current level beside them:
+      // none of them replaces another. The five-kind class above is only the summary (small before large) for what reads the class.
+      const facts = { avail, w: widthClass, h: heightClass, size: heightClass === "small" || widthClass === "small" ? "small" : heightClass === "large" || widthClass === "large" ? "large" : "usable", path: String(onPath) };
+      for (const [key, value] of Object.entries(facts)) if (b.dataset[key] !== value) b.dataset[key] = value;
       const pressed = String(S.n === n && S.m === m);
       if (b.getAttribute("aria-pressed") !== pressed)
         b.setAttribute("aria-pressed", pressed);

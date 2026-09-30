@@ -450,15 +450,12 @@
 #origo-lens .ol-res[data-auto="false"] .ol-lock-open {
   display: none;
 }
+/* The coarser-than-asked mark of the toolbar's resolution: the stroke-role table's short tick, painted as the footer key is. */
 #origo-lens .ol-res-coarse {
   display: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ol-poc);
 }
 #origo-lens .ol-res[data-coarse="true"] .ol-res-coarse {
-  display: inline-block;
+  display: inline-flex;
 }
 /* Narrower bars keep one row: the POC lines' dots give way to their count
    first, then the venue goes, then the snapshot's day (the title and the
@@ -839,8 +836,11 @@
   gap: var(--sp-1);
   margin-bottom: var(--sp-2);
 }
+/* The steppers are the plane's named large-target alternative: 44 px each way. */
 #origo-lens .ol-step button {
-  width: var(--h-m);
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
 }
 #origo-lens .ol-step-label {
@@ -868,66 +868,117 @@
   align-items: center;
   justify-items: center;
 }
-#origo-lens .ol-plane button {
+/* The resolution plane (PRD-0002 S2): an orthogonal grid of state. Availability (pending, unavailable, ready) and size (small, usable, large) are
+   two separate neutral glyphs on the same tile, and the diagonal and the current level are their own marks beside them: none replaces another. No
+   market hue: the ink and the state ink only, each passing 3:1 on the tile it is drawn on. The key below is tiles of the same attributes. */
+#origo-lens .ol-plane button,
+#origo-lens .ol-plane-key i {
+  position: relative;
+  display: block;
   width: 100%;
   height: auto;
   aspect-ratio: 1;
   min-height: 0;
   padding: 0;
-  border: 1px solid transparent;
+  border: 1px solid var(--ol-border);
   border-radius: var(--r-s);
-  background: var(--ol-line);
-  opacity: 0.55;
+  background-color: var(--ol-surface);
+  background-repeat: no-repeat;
   font-size: 0;
   line-height: 0;
 }
-#origo-lens .ol-plane button.ol-plane-ready,
-#origo-lens .ol-plane-key i.ol-plane-ready {
-  background: var(--ol-volume);
-  opacity: 0.85;
+#origo-lens .ol-plane-key i {
+  display: inline-block;
+  flex: none;
+  width: 13px;
+  height: 13px;
 }
-#origo-lens .ol-plane button.ol-plane-small,
-#origo-lens .ol-plane-key i.ol-plane-small {
-  background: var(--ol-volume);
-  opacity: 0.3;
+/* availability: a filled neutral tile when ready, dots while the read is under way, a slash where the level cannot be drawn */
+#origo-lens .ol-plane [data-avail="ready"],
+#origo-lens .ol-plane-key [data-avail="ready"] {
+  background-color: var(--ol-line);
 }
-#origo-lens .ol-plane button.ol-plane-large,
-#origo-lens .ol-plane-key i.ol-plane-large {
-  background: var(--ol-poc);
-  opacity: 0.6;
+#origo-lens .ol-plane [data-avail="pending"],
+#origo-lens .ol-plane-key [data-avail="pending"] {
+  background-image:
+    radial-gradient(circle at 25% 25%, var(--ol-state) 0 0.8px, transparent 1.1px),
+    radial-gradient(circle at 75% 25%, var(--ol-state) 0 0.8px, transparent 1.1px),
+    radial-gradient(circle at 25% 75%, var(--ol-state) 0 0.8px, transparent 1.1px),
+    radial-gradient(circle at 75% 75%, var(--ol-state) 0 0.8px, transparent 1.1px);
 }
-#origo-lens .ol-plane button.ol-plane-unavailable,
-#origo-lens .ol-plane-key i.ol-plane-unavailable {
-  background: repeating-linear-gradient(
-    135deg,
-    var(--ol-line),
-    var(--ol-line) 2px,
-    var(--ol-surface) 2px,
-    var(--ol-surface) var(--sp-1)
-  );
-  opacity: 0.8;
+#origo-lens .ol-plane [data-avail="unavailable"],
+#origo-lens .ol-plane-key [data-avail="unavailable"] {
+  background-image: linear-gradient(to top right, transparent calc(50% - 0.6px), var(--ol-state) calc(50% - 0.6px), var(--ol-state) calc(50% + 0.6px), transparent calc(50% + 0.6px));
 }
-#origo-lens .ol-plane button.ol-plane-loading,
-#origo-lens .ol-plane-key i.ol-plane-loading {
-  background: var(--ol-evidence);
-  opacity: 0.5;
+/* size: a dot, a hollow square, corner brackets, at the tile's centre */
+#origo-lens .ol-plane button::after,
+#origo-lens .ol-plane-key i::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
 }
-#origo-lens .ol-plane button.ol-plane-path {
-  border-color: var(--ol-ink);
-  opacity: 1;
-}
-#origo-lens .ol-plane button[aria-pressed="true"] {
+#origo-lens .ol-plane [data-size="small"]::after,
+#origo-lens .ol-plane-key [data-size="small"]::after {
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 50%;
   background: var(--ol-ink);
-  border-color: var(--ol-ink);
-  opacity: 1;
-  transform: scale(1.35);
+}
+#origo-lens .ol-plane [data-size="usable"]::after,
+#origo-lens .ol-plane-key [data-size="usable"]::after {
+  inset: 3px;
+  border: 1px solid var(--ol-ink);
+}
+#origo-lens .ol-plane [data-size="large"]::after,
+#origo-lens .ol-plane-key [data-size="large"]::after {
+  inset: 2px;
+  background:
+    linear-gradient(var(--ol-ink), var(--ol-ink)) 0 0 / 3px 1px,
+    linear-gradient(var(--ol-ink), var(--ol-ink)) 0 0 / 1px 3px,
+    linear-gradient(var(--ol-ink), var(--ol-ink)) 100% 0 / 3px 1px,
+    linear-gradient(var(--ol-ink), var(--ol-ink)) 100% 0 / 1px 3px,
+    linear-gradient(var(--ol-ink), var(--ol-ink)) 0 100% / 3px 1px,
+    linear-gradient(var(--ol-ink), var(--ol-ink)) 0 100% / 1px 3px,
+    linear-gradient(var(--ol-ink), var(--ol-ink)) 100% 100% / 3px 1px,
+    linear-gradient(var(--ol-ink), var(--ol-ink)) 100% 100% / 1px 3px;
+  background-repeat: no-repeat;
+}
+/* the diagonal: a corner badge */
+#origo-lens .ol-plane [data-path="true"]::before,
+#origo-lens .ol-plane-key [data-path="true"]::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 5px;
+  height: 5px;
+  background: linear-gradient(225deg, var(--ol-ink) 50%, transparent 50%);
+  pointer-events: none;
+}
+/* the current level: an outer frame, never a fill over the glyphs */
+#origo-lens .ol-plane button[aria-pressed="true"],
+#origo-lens .ol-plane-key [data-current="true"] {
+  box-shadow: 0 0 0 2px var(--ol-ink);
   z-index: 1;
 }
-#origo-lens .ol-plane button:hover,
+#origo-lens .ol-plane button:hover {
+  box-shadow: 0 0 0 1px var(--ol-ink);
+  z-index: 2;
+}
+#origo-lens .ol-plane button[aria-pressed="true"]:hover {
+  box-shadow: 0 0 0 2px var(--ol-ink);
+}
+/* focus: a two-tone ring outside the tile (surface, ink, surface), and outside the current level's frame */
 #origo-lens .ol-plane button:focus-visible {
-  outline: 2px solid var(--ol-accent);
-  outline-offset: 1px;
-  opacity: 1;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ol-surface), 0 0 0 4px var(--ol-ink), 0 0 0 6px var(--ol-surface);
+  z-index: 3;
+}
+#origo-lens .ol-plane button[aria-pressed="true"]:focus-visible {
+  box-shadow: 0 0 0 2px var(--ol-ink), 0 0 0 4px var(--ol-surface), 0 0 0 6px var(--ol-ink), 0 0 0 8px var(--ol-surface);
 }
 #origo-lens .ol-plane span {
   font-size: var(--fs-s);
@@ -946,17 +997,6 @@
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-}
-#origo-lens .ol-plane-key i {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  border-radius: var(--r-s);
-  background: var(--ol-panel);
-}
-#origo-lens .ol-plane-key .ol-plane-path {
-  background: transparent;
-  border: 1px solid var(--ol-ink);
 }
 #origo-lens .ol-plane-status {
   min-height: 2.6em;
@@ -2349,7 +2389,7 @@
               <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
             </svg>
             <span id="ol-res-text" class="ol-num">15 min × 125</span
-            ><i class="ol-res-coarse" aria-hidden="true"></i>
+            ><i class="ol-res-coarse ol-data-key ol-glyph" data-stroke-role="partial" aria-hidden="true"></i>
             <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
               <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
             </svg>
@@ -2374,6 +2414,7 @@
                 Auto level
               </button>
             </div>
+            <div class="ol-steppers" role="group" aria-label="Resolution steppers, large targets: finer or coarser time and price cells">
             <div class="ol-step">
               <div class="ol-step-label">
                 <span>Time · <span id="ol-n">n 4</span></span
@@ -2438,21 +2479,15 @@
                 </svg>
               </button>
             </div>
+            </div>
             <div class="ol-plane-cap">Resolution plane · m price ↑ · n time →</div>
             <div
               class="ol-plane"
               id="ol-plane"
               role="group"
-              aria-label="Time and price resolution lattice; arrow keys move, Enter chooses; the outlined cells are the diagonal"
+              aria-label="Time and price resolution lattice, a dense chooser; arrow keys move, Enter chooses; the steppers above are the large-target alternative; a corner badge marks the diagonal and a frame the current level"
             ></div>
-            <div class="ol-plane-key">
-              <span><i class="ol-plane-ready"></i>Ready · usable</span
-              ><span><i class="ol-plane-small"></i>Too small</span
-              ><span><i class="ol-plane-large"></i>Too large</span
-              ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
-              ><span><i class="ol-plane-loading"></i>Loading</span
-              ><span><i class="ol-plane-path"></i>Diagonal</span>
-            </div>
+            <div class="ol-plane-key" aria-label="Key to the resolution plane"></div>
             <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
           </div>
         </div>
@@ -30186,6 +30221,7 @@
     for (let n = 0; n <= N_MAX; n++)
       frag.append(label(n % 4 === 0 ? String(n) : ""));
     el("plane").replaceChildren(frag);
+    buildPlaneKey();
   }
   // The plane is one tab stop: arrow keys move through it, Enter chooses.
   function planeButton(n, m) {
@@ -30214,6 +30250,34 @@
   }
   // Cell size for the plane's hover text: whole pixels, or words at the extremes,
   // per axis when the two disagree (a sliver can be taller than the view).
+  // The size class of one side of a cell: under 6 css px is small, over 32 large, else usable.
+  function planeSize(px) {
+    return px < 6 ? "small" : px > 32 ? "large" : "usable";
+  }
+  // The plane's key, from the same facts the buttons carry and painted by the same CSS (the sample is a button-sized tile with the same
+  // attributes), so a key cannot say what the plane does not.
+  const PLANE_KEY = [
+    ["avail", "pending", "Pending: the read is under way"],
+    ["avail", "unavailable", "Unavailable: coarser cells are shown"],
+    ["avail", "ready", "Ready"],
+    ["size", "small", "Small: a side under 6 px"],
+    ["size", "usable", "Usable: 6 to 32 px each way"],
+    ["size", "large", "Large: a side over 32 px"],
+    ["path", "true", "On the diagonal"],
+    ["current", "true", "Current level"],
+  ];
+  function buildPlaneKey() {
+    const nodes = PLANE_KEY.map(([fact, value, label]) => {
+      const span = document.createElement("span"),
+        tile = document.createElement("i");
+      tile.dataset[fact] = value;
+      tile.setAttribute("aria-hidden", "true");
+      span.append(tile, document.createTextNode(label));
+      span.dataset.planeKey = `${fact}:${value}`;
+      return span;
+    });
+    root.querySelector(".ol-plane-key").replaceChildren(...nodes);
+  }
   function cellPixels(px, py, g) {
     const wide =
         px >= g.w
@@ -30259,6 +30323,9 @@
         py = (2 ** m * g.h) / (S.pB - S.pA),
         r = resolutionReadiness(n, m),
         onPath = m === diagonalM(n),
+        avail = r.status === "loading" ? "pending" : r.status === "ready" ? "ready" : "unavailable",
+        widthClass = planeSize(px),
+        heightClass = planeSize(py),
         kind =
           r.status === "loading"
             ? "loading"
@@ -30269,10 +30336,14 @@
                 : px > 32 || py > 32
                   ? "large"
                   : "ready",
-        text = `n ${n} · m ${m} · ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT · ${cellPixels(px, py, g)} · ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}${onPath ? " · on the diagonal" : ""}`,
+        text = `n ${n} · m ${m} · ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT · ${cellPixels(px, py, g)} · ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}${onPath ? " · on the diagonal" : ""} · width ${widthClass}, height ${heightClass}`,
         className =
           "cursor-interaction ol-plane-" + kind + (onPath ? " ol-plane-path" : "");
       if (b.className !== className) b.className = className;
+      // The state as two separate facts, drawn as two separate glyphs (availability, size) with the diagonal and the current level beside them:
+      // none of them replaces another. The five-kind class above is only the summary (small before large) for what reads the class.
+      const facts = { avail, w: widthClass, h: heightClass, size: heightClass === "small" || widthClass === "small" ? "small" : heightClass === "large" || widthClass === "large" ? "large" : "usable", path: String(onPath) };
+      for (const [key, value] of Object.entries(facts)) if (b.dataset[key] !== value) b.dataset[key] = value;
       const pressed = String(S.n === n && S.m === m);
       if (b.getAttribute("aria-pressed") !== pressed)
         b.setAttribute("aria-pressed", pressed);

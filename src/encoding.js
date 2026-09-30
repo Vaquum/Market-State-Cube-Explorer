@@ -7589,8 +7589,10 @@
         out.clip = sc.clip;
         t = axisSigned ? 2 * sc.t - 1 : sc.t;
       } else if (zeroOnly) {
-        out.clip = 2;
-        t = axisSigned && x < 0 ? -1 : 1;
+        // Out of domain on the side the value lies, exactly as E.axis.coordinate places it (a negative one is
+        // LOW at the low end of a signed axis; an unsigned axis has no low side to draw, so it sits at 0).
+        out.clip = x < 0 ? 1 : 2;
+        t = x < 0 ? (axisSigned ? -1 : 0) : 1;
       } else return out;
       out.t = t;
       if (!axisSigned) {
@@ -7681,8 +7683,11 @@
         axis,
         apply: (value, out) => {
           if (plan === null) {
-            out.t = 0;
-            out.clip = value === 0 || !zeroOnly ? 0 : 2;
+            // A zero-only axis: the same place and clip as the frame's encoder gives a value (see encode);
+            // no data at all places nothing.
+            const away = zeroOnly && value !== 0;
+            out.t = away ? (value < 0 ? (axisSigned ? -1 : 0) : 1) : 0;
+            out.clip = away ? (value < 0 ? 1 : 2) : 0;
             return out;
           }
           plan.apply(value, sc);

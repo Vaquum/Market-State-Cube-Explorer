@@ -1,0 +1,9 @@
+{
+  "kind": "recorded",
+  "expectationSource": "python-stdlib",
+  "generator": "tests/reference/golden.py",
+  "seed": null,
+  "source": "Facts and 12 pinned cells of data/snapshot.json (the archived real-data export of the recorded page: cutoff 2026-09-24T12:02:48.75Z, layout MSC1, volume / taker-buy volume / trade count / taker-buy count only), decoded by golden.py with struct, zlib and base64. The data itself is recorded market data; this file only pins what it contains.",
+  "extractedOn": "2026-09-30",
+  "notes": "Independent of the JavaScript decoder in tests/reference/snapshot.js, which tests/unit/snapshot.test.js checks against these pins; the sha256 of data/snapshot.json is pinned, so a refreshed snapshot fails golden.py --check until the pins are rewritten on purpose (python3 tests/reference/golden.py --write). The snapshot has NO path, dwell, high, low, bars or per-trade data: nothing derived from it may stand in for them."
+}

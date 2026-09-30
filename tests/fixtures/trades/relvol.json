@@ -1,0 +1,89 @@
+{
+  "trades": [
+    {"t_ms": 1000, "price": 2500000, "qty": 400000, "takerBuy": true},
+    {"t_ms": 2000, "price": 2500000, "qty": 400000, "takerBuy": false},
+    {"t_ms": 60000, "price": 2512500, "qty": 800000, "takerBuy": true},
+    {"t_ms": 120000, "price": 2525000, "qty": 400000, "takerBuy": false},
+    {"t_ms": 180000, "price": 2537500, "qty": 400000, "takerBuy": true},
+    {"t_ms": 230000, "price": 2500000, "qty": 1200000, "takerBuy": true},
+    {"t_ms": 240000, "price": 2512500, "qty": 400000, "takerBuy": false},
+    {"t_ms": 300000, "price": 2550000, "qty": 400000, "takerBuy": true}
+  ],
+  "gaps": [],
+  "cutoffIso": "2021-01-01T00:06:00Z",
+  "expected": {
+    "notes": "A 'period' (cols 0..3, t < 225,000 ms) and a 'current' rectangle (cols 4..5) that trade different rows, for Relative volume v2. Notional at the row's floor price: row 200 = 100 x (qty/400,000), row 201 = 100.5 x, row 202 = 101 x, row 203 = 101.5 x; row 204 is 2,550,000 cents = 25,500 USDT, 102 x. Period: r200 100 buy + 100 sell = 200 (bv 100, ct 2, bt 1); r201 201 (qty 800,000, buy); r202 101 sell; r203 101.5 buy (traded only in the period). Current: r200 300 (qty 1,200,000, buy); r201 100.5 sell; r204 102 buy (traded only in the current rectangle). At m=1 rows pair up (200,201 -> 100; 202,203 -> 101; 204 -> 102). Whole [0, 6) = period + current.",
+    "rect": {"b0": 0, "cellsB1": 7, "motionB1": 6, "cutMs": 360000},
+    "cells": {
+      "0:0": [
+        {"c": 0, "r": 200, "v": 200, "bv": 100, "ct": 2, "bt": 1, "d": 0},
+        {"c": 1, "r": 201, "v": 201, "bv": 201, "ct": 1, "bt": 1, "d": 201},
+        {"c": 2, "r": 202, "v": 101, "bv": 0, "ct": 1, "bt": 0, "d": -101},
+        {"c": 3, "r": 203, "v": 101.5, "bv": 101.5, "ct": 1, "bt": 1, "d": 101.5},
+        {"c": 4, "r": 200, "v": 300, "bv": 300, "ct": 1, "bt": 1, "d": 300},
+        {"c": 4, "r": 201, "v": 100.5, "bv": 0, "ct": 1, "bt": 0, "d": -100.5},
+        {"c": 5, "r": 204, "v": 102, "bv": 102, "ct": 1, "bt": 1, "d": 102}
+      ]
+    },
+    "periodRows": [
+      {
+        "b0": 0,
+        "b1": 4,
+        "m": 0,
+        "rows": [
+          {"r": 200, "v": 200, "bv": 100, "ct": 2, "bt": 1},
+          {"r": 201, "v": 201, "bv": 201, "ct": 1, "bt": 1},
+          {"r": 202, "v": 101, "bv": 0, "ct": 1, "bt": 0},
+          {"r": 203, "v": 101.5, "bv": 101.5, "ct": 1, "bt": 1}
+        ]
+      },
+      {
+        "b0": 4,
+        "b1": 6,
+        "m": 0,
+        "rows": [
+          {"r": 200, "v": 300, "bv": 300, "ct": 1, "bt": 1},
+          {"r": 201, "v": 100.5, "bv": 0, "ct": 1, "bt": 0},
+          {"r": 204, "v": 102, "bv": 102, "ct": 1, "bt": 1}
+        ]
+      },
+      {
+        "b0": 0,
+        "b1": 4,
+        "m": 1,
+        "rows": [{"r": 100, "v": 401, "bv": 301, "ct": 3, "bt": 2}, {"r": 101, "v": 202.5, "bv": 101.5, "ct": 2, "bt": 1}]
+      },
+      {
+        "b0": 4,
+        "b1": 6,
+        "m": 1,
+        "rows": [{"r": 100, "v": 400.5, "bv": 300, "ct": 2, "bt": 1}, {"r": 102, "v": 102, "bv": 102, "ct": 1, "bt": 1}]
+      },
+      {
+        "b0": 0,
+        "b1": 6,
+        "m": 0,
+        "rows": [
+          {"r": 200, "v": 500, "bv": 400, "ct": 3, "bt": 2},
+          {"r": 201, "v": 301.5, "bv": 201, "ct": 2, "bt": 1},
+          {"r": 202, "v": 101, "bv": 0, "ct": 1, "bt": 0},
+          {"r": 203, "v": 101.5, "bv": 101.5, "ct": 1, "bt": 1},
+          {"r": 204, "v": 102, "bv": 102, "ct": 1, "bt": 1}
+        ]
+      }
+    ],
+    "summary": [
+      {
+        "rect": {"b0": 0, "b1": 7, "m": 0},
+        "volume": 1106,
+        "takerBuyVolume": 804.5,
+        "trades": 8,
+        "takerBuyTrades": 5,
+        "pocRow": 200,
+        "poc": 25062.5,
+        "takerBuyPocRow": 200,
+        "takerBuyPoc": 25062.5
+      }
+    ]
+  }
+}

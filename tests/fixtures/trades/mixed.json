@@ -1,0 +1,92 @@
+{
+  "trades": [
+    {"t_ms": 5000, "price": 2500000, "qty": 400000, "takerBuy": true},
+    {"t_ms": 20000, "price": 2512500, "qty": 200000, "takerBuy": false, "count": 3},
+    {"t_ms": 30000, "price": 2500000, "qty": 800000, "takerBuy": false},
+    {"t_ms": 60000, "price": 2512500, "qty": 400000, "takerBuy": true, "count": 2},
+    {"t_ms": 100000, "price": 2525000, "qty": 400000, "takerBuy": true},
+    {"t_ms": 112499, "price": 2525000, "qty": 200000, "takerBuy": false},
+    {"t_ms": 112500, "price": 2537500, "qty": 400000, "takerBuy": true},
+    {"t_ms": 170000, "price": 2487500, "qty": 400000, "takerBuy": false, "count": 5},
+    {"t_ms": 225000, "price": 2500000, "qty": 400000, "takerBuy": true},
+    {"t_ms": 281250, "price": 2500000, "qty": 100000, "takerBuy": false},
+    {"t_ms": 299999, "price": 2512500, "qty": 100000, "takerBuy": true}
+  ],
+  "gaps": [],
+  "cutoffIso": "2021-01-01T00:05:00Z",
+  "expected": {
+    "notes": "Eleven trades over columns 0..5, rows 199..203, mixed sides and sizes, bursts (count 3, 2, 5). Notional = price_cents * qty / 1e10, so at qty 400,000 it is price/250 USDT per cent-price unit: rows 200..203 at their floor price give 100, 100.5, 101, 101.5 and row 199 gives 99.5; qty 200,000 halves, 800,000 doubles, 100,000 quarters. Column edges are multiples of 56,250 ms: t = 112,499 is col 1, 112,500 col 2, 225,000 col 4, 281,250 col 5 (the open column: cutoff 300 s = base 5.333, closed 5, top 6). Base cells (col,row: v/bv/ct/bt): 0,200 300/100/2/1; 0,201 50.25/0/3/0; 1,201 100.5/100.5/2/2; 1,202 151.5/101/2/1; 2,203 101.5/101.5/1/1; 3,199 99.5/0/5/0; 4,200 100/100/1/1; 5,200 25/0/1/0; 5,201 25.125/25.125/1/1; total 953.375/528.125/18/7. Level (2,1) merges cols 0..3 and 4..5 and row pairs (199 alone -> 99; 200,201 -> 100; 202,203 -> 101). Level (12,3): one column, rows 199 -> 24 and 200..203 -> 25. Motion reads [0, 5). Path: a move belongs to the later trade's column and is split over the base rows it crosses; 25,000 -> 25,125 lies wholly in row 200 (it ends on the row 201 boundary), so the moves of trades 2 and 3 are 125 each in row 200; trade 8 (25,375 -> 24,875, 500 USDT) gives 125 in each of rows 199..202 and none in 203; trade 9 gives 125 in row 199. Dwell: each trade's price holds until the next one, split at column edges (trade 3: 26.25 s in col 0, 3.75 s in col 1; trade 7: 56.25 s in col 2 and 1.25 s in col 3; trade 6 holds 1 ms = 0.001 s). Trades 10 and 11 sit in col 5, outside the motion read. Bars n=2 (4 columns = 225 s) over [0, 5): bar 0 = trades 1..8, bar 1 = trade 9. Summary rows: r199 99.5, r200 425, r201 175.875, r202 151.5, r203 101.5 -> POC 200; taker-buy rows r200 200, r201 125.625, r202 101, r203 101.5 -> POC 200; at m=1 the row pairs give POC row 100 (600.875) and taker-buy POC row 100 (325.625).",
+    "rect": {"b0": 0, "cellsB1": 6, "motionB1": 5, "cutMs": 300000},
+    "cells": {
+      "0:0": [
+        {"c": 0, "r": 200, "v": 300, "bv": 100, "ct": 2, "bt": 1, "d": -100},
+        {"c": 0, "r": 201, "v": 50.25, "bv": 0, "ct": 3, "bt": 0, "d": -50.25},
+        {"c": 1, "r": 201, "v": 100.5, "bv": 100.5, "ct": 2, "bt": 2, "d": 100.5},
+        {"c": 1, "r": 202, "v": 151.5, "bv": 101, "ct": 2, "bt": 1, "d": 50.5},
+        {"c": 2, "r": 203, "v": 101.5, "bv": 101.5, "ct": 1, "bt": 1, "d": 101.5},
+        {"c": 3, "r": 199, "v": 99.5, "bv": 0, "ct": 5, "bt": 0, "d": -99.5},
+        {"c": 4, "r": 200, "v": 100, "bv": 100, "ct": 1, "bt": 1, "d": 100},
+        {"c": 5, "r": 200, "v": 25, "bv": 0, "ct": 1, "bt": 0, "d": -25},
+        {"c": 5, "r": 201, "v": 25.125, "bv": 25.125, "ct": 1, "bt": 1, "d": 25.125}
+      ],
+      "2:1": [
+        {"c": 0, "r": 99, "v": 99.5, "bv": 0, "ct": 5, "bt": 0, "d": -99.5},
+        {"c": 0, "r": 100, "v": 450.75, "bv": 200.5, "ct": 7, "bt": 3, "d": -49.75},
+        {"c": 0, "r": 101, "v": 253, "bv": 202.5, "ct": 3, "bt": 2, "d": 152},
+        {"c": 1, "r": 100, "v": 150.125, "bv": 125.125, "ct": 3, "bt": 2, "d": 100.125}
+      ],
+      "12:3": [
+        {"c": 0, "r": 24, "v": 99.5, "bv": 0, "ct": 5, "bt": 0, "d": -99.5},
+        {"c": 0, "r": 25, "v": 853.875, "bv": 528.125, "ct": 13, "bt": 7, "d": 202.375}
+      ]
+    },
+    "motion": {
+      "0:0": [
+        {"c": 0, "r": 200, "p": 250, "w": 41.25, "hi": 25000, "lo": 25000, "v": 300, "bv": 100, "ct": 2, "bt": 1},
+        {"c": 0, "r": 201, "p": 0, "w": 10, "hi": 25125, "lo": 25125, "v": 50.25, "bv": 0, "ct": 3, "bt": 0},
+        {"c": 1, "r": 200, "p": 125, "w": 3.75, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 1, "r": 201, "p": 125, "w": 40, "hi": 25125, "lo": 25125, "v": 100.5, "bv": 100.5, "ct": 2, "bt": 2},
+        {"c": 1, "r": 202, "p": 0, "w": 12.5, "hi": 25250, "lo": 25250, "v": 151.5, "bv": 101, "ct": 2, "bt": 1},
+        {"c": 2, "r": 202, "p": 125, "w": 0, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 2, "r": 203, "p": 0, "w": 56.25, "hi": 25375, "lo": 25375, "v": 101.5, "bv": 101.5, "ct": 1, "bt": 1},
+        {"c": 3, "r": 199, "p": 125, "w": 55, "hi": 24875, "lo": 24875, "v": 99.5, "bv": 0, "ct": 5, "bt": 0},
+        {"c": 3, "r": 200, "p": 125, "w": 0, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 3, "r": 201, "p": 125, "w": 0, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 3, "r": 202, "p": 125, "w": 0, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 3, "r": 203, "p": 0, "w": 1.25, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 4, "r": 199, "p": 125, "w": 0, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 4, "r": 200, "p": 0, "w": 56.25, "hi": 25000, "lo": 25000, "v": 100, "bv": 100, "ct": 1, "bt": 1}
+      ]
+    },
+    "bars": {
+      "2": [
+        {"col": 0, "open": 25000, "high": 25375, "low": 24875, "close": 24875, "volume": 803.25, "takerBuyVolume": 403, "baseVolume": 0.032, "trades": 15},
+        {"col": 1, "open": 25000, "high": 25000, "low": 25000, "close": 25000, "volume": 100, "takerBuyVolume": 100, "baseVolume": 0.004, "trades": 1}
+      ]
+    },
+    "summary": [
+      {
+        "rect": {"b0": 0, "b1": 6, "m": 0},
+        "volume": 953.375,
+        "takerBuyVolume": 528.125,
+        "trades": 18,
+        "takerBuyTrades": 7,
+        "pocRow": 200,
+        "poc": 25062.5,
+        "takerBuyPocRow": 200,
+        "takerBuyPoc": 25062.5
+      },
+      {
+        "rect": {"b0": 0, "b1": 6, "m": 1},
+        "volume": 953.375,
+        "takerBuyVolume": 528.125,
+        "trades": 18,
+        "takerBuyTrades": 7,
+        "pocRow": 100,
+        "poc": 25125,
+        "takerBuyPocRow": 100,
+        "takerBuyPoc": 25125
+      }
+    ]
+  }
+}

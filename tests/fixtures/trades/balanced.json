@@ -1,0 +1,36 @@
+{
+  "trades": [{"t_ms": 0, "price": 2500000, "qty": 400000, "takerBuy": true}, {"t_ms": 1000, "price": 2500000, "qty": 400000, "takerBuy": false}],
+  "gaps": [],
+  "cutoffIso": "2021-01-01T00:02:00Z",
+  "expected": {
+    "notes": "Two 100 USDT trades in one base cell (col 0, row 200; 25,000 USDT x 0.004 BTC = 100 USDT), one taker buy, one sell, 1 s apart. Cell: v 200, bv 100, ct 2, bt 1, Delta = 2*bv - v = 0 while count > 0 (balanced traded Delta: zero is not 'no trades'). Cutoff 00:02:00 = 120 s = base 2.1333: closed 2, top 3, the open column 2 holds no trade. Motion reads [0, 2): trade 1 holds 1 s, trade 2 holds from 1 s to the read's edge 112.5 s: 55.25 s in col 0 (so the column's dwell is 56.25) and the whole of col 1, which is a movement-only cell (no trades, NaN high/low). Path is 0 (same price). POC row 200 = (200 + 0.5) * 125 = 25,062.5 USDT.",
+    "rect": {"b0": 0, "cellsB1": 3, "motionB1": 2, "cutMs": 120000},
+    "cells": {
+      "0:0": [{"c": 0, "r": 200, "v": 200, "bv": 100, "ct": 2, "bt": 1, "d": 0}],
+      "2:1": [{"c": 0, "r": 100, "v": 200, "bv": 100, "ct": 2, "bt": 1, "d": 0}],
+      "12:3": [{"c": 0, "r": 25, "v": 200, "bv": 100, "ct": 2, "bt": 1, "d": 0}]
+    },
+    "motion": {
+      "0:0": [
+        {"c": 0, "r": 200, "p": 0, "w": 56.25, "hi": 25000, "lo": 25000, "v": 200, "bv": 100, "ct": 2, "bt": 1},
+        {"c": 1, "r": 200, "p": 0, "w": 56.25, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0}
+      ]
+    },
+    "bars": {
+      "2": [{"col": 0, "open": 25000, "high": 25000, "low": 25000, "close": 25000, "volume": 200, "takerBuyVolume": 100, "baseVolume": 0.008, "trades": 2}]
+    },
+    "summary": [
+      {
+        "rect": {"b0": 0, "b1": 3, "m": 0},
+        "volume": 200,
+        "takerBuyVolume": 100,
+        "trades": 2,
+        "takerBuyTrades": 1,
+        "pocRow": 200,
+        "poc": 25062.5,
+        "takerBuyPocRow": 200,
+        "takerBuyPoc": 25062.5
+      }
+    ]
+  }
+}

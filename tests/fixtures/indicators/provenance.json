@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "expectationSource": "python-stdlib",
+  "generator": "tests/reference/golden.py",
+  "seed": null,
+  "source": "Textbook SMA, EMA, Wilder RSI, Bollinger bands and MACD series over invented close series: quarter-tick random walks from the linear congruential generator written out in golden.py (seeds 20260930 and 7), a flat, a rising, a falling, a ramp and a sawtooth series. Not market data.",
+  "extractedOn": "2026-09-30",
+  "notes": "Computed by tests/reference/golden.py on exact rationals (fractions) and, for Bollinger's square root, at 60 digits (decimal); every value is rounded once to a double, NaN before an indicator's first value. Closes are multiples of 0.25, so each input is an exact double. The unmodified baseline's own outputs are NOT here: they are tests/fixtures/indicators-baseline/ (package W1-A). Regenerate with python3 tests/reference/golden.py --write; CI compares bytes (--check)."
+}

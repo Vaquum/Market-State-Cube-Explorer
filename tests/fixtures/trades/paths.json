@@ -1,0 +1,85 @@
+{
+  "trades": [
+    {"t_ms": 1000, "price": 2506250, "qty": 400000, "takerBuy": true},
+    {"t_ms": 70000, "price": 2531250, "qty": 400000, "takerBuy": false},
+    {"t_ms": 80000, "price": 2531250, "qty": 200000, "takerBuy": true},
+    {"t_ms": 120000, "price": 2481250, "qty": 400000, "takerBuy": false},
+    {"t_ms": 200000, "price": 2481250, "qty": 400000, "takerBuy": true},
+    {"t_ms": 230000, "price": 2493750, "qty": 400000, "takerBuy": false}
+  ],
+  "gaps": [],
+  "cutoffIso": "2021-01-01T00:06:00Z",
+  "expected": {
+    "notes": "Prices that sit inside their rows so each move is split by length. Row r spans cents [12,500 r, 12,500 (r + 1)). Trade 1: 25,062.50 USDT (row 200, 6,250 cents in). Trade 2 (col 1): 25,312.50 (row 202): the move of 250 USDT is 62.5 in row 200 (to its top at 25,125), 125 in row 201, 62.5 in row 202, all booked to col 1. Trade 3 repeats the price: no path. Trade 4 (col 2): 24,812.50 (row 198): a move of 500 USDT = 62.5 (row 198) + 125 + 125 + 125 (rows 199..201) + 62.5 (row 202), booked to col 2. Trade 5 repeats it. Trade 6 (col 4): 24,937.50 (row 199): 62.5 in row 198 and 62.5 in row 199, col 4. The first trade has no path. Dwell: trade 1 holds 1 s -> 70 s: 55.25 s col 0 + 13.75 s col 1 (row 200); trade 2 holds 10 s (row 202, col 1) and trade 3 holds 80 s -> 120 s: 32.5 s col 1 (to the col edge at 112.5 s) + 7.5 s col 2 (row 202); trade 4 holds 120 s -> 200 s: 48.75 s col 2 + 31.25 s col 3 (row 198); trade 5 holds 200 s -> 230 s: 25 s col 3 (to the col edge at 225 s) + 5 s col 4 (row 198); trade 6 holds 230 s -> 337.5 s (motion read [0, 6)): 51.25 s col 4 + 56.25 s col 5 (row 199). Column 3 row 198 is covered for the whole 56.25 s. Total path 250 + 500 + 125 = 875 USDT; at level (12,3) rows 198 and 199 -> row 24 (path 312.5) and rows 200..202 -> row 25 (path 562.5). Row sums for the POC: r198 198.5 (two trades), r199 99.75, r200 100.25, r202 151.875 -> POC row 198; taker-buy rows r198 99.25, r200 100.25, r202 50.625 -> POC row 200.",
+    "rect": {"b0": 0, "cellsB1": 7, "motionB1": 6, "cutMs": 360000},
+    "cells": {
+      "0:0": [
+        {"c": 0, "r": 200, "v": 100.25, "bv": 100.25, "ct": 1, "bt": 1, "d": 100.25},
+        {"c": 1, "r": 202, "v": 151.875, "bv": 50.625, "ct": 2, "bt": 1, "d": -50.625},
+        {"c": 2, "r": 198, "v": 99.25, "bv": 0, "ct": 1, "bt": 0, "d": -99.25},
+        {"c": 3, "r": 198, "v": 99.25, "bv": 99.25, "ct": 1, "bt": 1, "d": 99.25},
+        {"c": 4, "r": 199, "v": 99.75, "bv": 0, "ct": 1, "bt": 0, "d": -99.75}
+      ]
+    },
+    "motion": {
+      "0:0": [
+        {"c": 0, "r": 200, "p": 0, "w": 55.25, "hi": 25062.5, "lo": 25062.5, "v": 100.25, "bv": 100.25, "ct": 1, "bt": 1},
+        {"c": 1, "r": 200, "p": 62.5, "w": 13.75, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 1, "r": 201, "p": 125, "w": 0, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 1, "r": 202, "p": 62.5, "w": 42.5, "hi": 25312.5, "lo": 25312.5, "v": 151.875, "bv": 50.625, "ct": 2, "bt": 1},
+        {"c": 2, "r": 198, "p": 62.5, "w": 48.75, "hi": 24812.5, "lo": 24812.5, "v": 99.25, "bv": 0, "ct": 1, "bt": 0},
+        {"c": 2, "r": 199, "p": 125, "w": 0, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 2, "r": 200, "p": 125, "w": 0, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 2, "r": 201, "p": 125, "w": 0, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 2, "r": 202, "p": 62.5, "w": 7.5, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 3, "r": 198, "p": 0, "w": 56.25, "hi": 24812.5, "lo": 24812.5, "v": 99.25, "bv": 99.25, "ct": 1, "bt": 1},
+        {"c": 4, "r": 198, "p": 62.5, "w": 5, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 4, "r": 199, "p": 62.5, "w": 51.25, "hi": 24937.5, "lo": 24937.5, "v": 99.75, "bv": 0, "ct": 1, "bt": 0},
+        {"c": 5, "r": 199, "p": 0, "w": 56.25, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0}
+      ],
+      "12:3": [
+        {"c": 0, "r": 24, "p": 312.5, "w": 217.5, "hi": 24937.5, "lo": 24812.5, "v": 298.25, "bv": 99.25, "ct": 3, "bt": 1},
+        {"c": 0, "r": 25, "p": 562.5, "w": 119, "hi": 25312.5, "lo": 25062.5, "v": 252.125, "bv": 150.875, "ct": 3, "bt": 2}
+      ]
+    },
+    "bars": {
+      "2": [
+        {
+          "col": 0,
+          "open": 25062.5,
+          "high": 25312.5,
+          "low": 24812.5,
+          "close": 24812.5,
+          "volume": 450.625,
+          "takerBuyVolume": 250.125,
+          "baseVolume": 0.018,
+          "trades": 5
+        },
+        {
+          "col": 1,
+          "open": 24937.5,
+          "high": 24937.5,
+          "low": 24937.5,
+          "close": 24937.5,
+          "volume": 99.75,
+          "takerBuyVolume": 0,
+          "baseVolume": 0.004,
+          "trades": 1
+        }
+      ]
+    },
+    "summary": [
+      {
+        "rect": {"b0": 0, "b1": 7, "m": 0},
+        "volume": 550.375,
+        "takerBuyVolume": 250.125,
+        "trades": 6,
+        "takerBuyTrades": 3,
+        "pocRow": 198,
+        "poc": 24812.5,
+        "takerBuyPocRow": 200,
+        "takerBuyPoc": 25062.5
+      }
+    ]
+  }
+}

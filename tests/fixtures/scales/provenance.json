@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "expectationSource": "python-stdlib",
+  "generator": "tests/reference/golden.py",
+  "seed": null,
+  "source": "Value and rank transform vectors over invented cohorts: hand-picked ones (API.md A.3 and TESTPLAN U15/U16 vectors, all-equal, zero-only, empty, two-group, jump, plateau) and seeded ones from the linear congruential generator written out in golden.py (seeds 11-15 for Value, 21-25 for rank; the seed of each case is in its name). Not market data.",
+  "extractedOn": "2026-09-30",
+  "notes": "Expected values are computed by tests/reference/golden.py with the standard library only: Value at 80 significant digits (decimal, ln(1 + x)), rank knots and mappings in exact rationals (fractions); every number is rounded once to a double. The format of both files is stated in their `note` field. Regenerate with python3 tests/reference/golden.py --write; CI compares bytes (golden.py --check) and never rewrites. The Type-7 rule and the rank rule are those of issue #46 section 3 and API.md C.3/C.4; a last-digit difference from the float prototypes quoted in TESTPLAN U15 (t(1) = 0.08135536717084396 there, 0.08135536717084398 here) is the prototype's rounding, the exact value rounds to the latter."
+}

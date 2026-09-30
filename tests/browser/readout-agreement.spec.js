@@ -68,6 +68,13 @@ async function readoutAt(page, canvas, x, y) {
   });
 }
 
+// The same, for the scans that look for a CELL: a tip over the profile or a pane names a readout too ("row:<r>", "pane:..."), which
+// is not a cell's "<n>:<m>:<c>:<r>".
+async function cellAt(page, canvas, x, y) {
+  const key = await readoutAt(page, canvas, x, y);
+  return key && /^\d+:\d+:\d+:\d+$/.test(key) ? key : null;
+}
+
 // The box of the cell `key` on the canvas, found by looking: a coarse scan for a point that reads the key, then a bisection to each
 // of its four edges (the readout changes exactly at the cell's edge). The page does not say where a cell is (D.18), so a spec
 // measures it; the expected NUMBERS never come from here.
@@ -250,6 +257,8 @@ test.describe("B03 readout agreement", () => {
     await page.mouse.move(2, 2);
     const row = await surface.readout(KEY);
     expect(same(canon(row, "value"), canon(tip, "value"))).toBe(true);
+    // Let every read the basis change asked for finish before the fake goes: a request cut off by the teardown is a console error.
+    await atRest(page, fake, probe);
   });
 
   test("a balanced traded Delta cell reads Buy 100, Sell 100, Volume 200, Delta 0, Trades 2 and is the midpoint colour", async ({ page, fakeFor, surface, probe }, testInfo) => {
@@ -314,7 +323,7 @@ test.describe("B03 readout agreement", () => {
     const canvas = await page.locator("#ol-canvas").boundingBox();
     let drawn = null;
     for (let y = 60; y < canvas.height - 60 && !drawn; y += 40)
-      for (let x = 60; x < canvas.width - 60 && !drawn; x += 40) drawn = await readoutAt(page, canvas, x, y);
+      for (let x = 60; x < canvas.width - 60 && !drawn; x += 40) drawn = await cellAt(page, canvas, x, y);
     expect(drawn, "some cell of the chart has a readout").not.toBeNull();
     const [n, m] = drawn.split(":").map(Number);
     expect(n, "the chart draws coarser in time than the requested level 0").toBeGreaterThan(0);
@@ -328,6 +337,8 @@ test.describe("B03 readout agreement", () => {
     const frames = await probe.frames();
     const outlined = frames.some((frame) => frame.styles.some((s) => s.op === "strokeRect" && s.lineWidth === 2));
     expect(outlined, "a 2 px outline was drawn for the hovered row").toBe(true);
+    // Let every read finish before the fake goes: a request cut off by the teardown is a console error.
+    await fake.idle({ quietMs: 600, timeoutMs: 30000 });
   });
 
   test("the pointer resting on the price axis draws no frame after the first two, and a theme flip re-derives the tip without a loop", async ({ page, fakeFor, surface, probe }) => {
@@ -373,7 +384,7 @@ test.describe("B03 readout agreement", () => {
     // Find a cell with a readout and read it while the answer is held.
     let key = null;
     for (let y = 60; y < canvas.height - 60 && !key; y += 30)
-      for (let x = 60; x < canvas.width - 60 && !key; x += 30) key = await readoutAt(page, canvas, x, y);
+      for (let x = 60; x < canvas.width - 60 && !key; x += 30) key = await cellAt(page, canvas, x, y);
     expect(key, "a loaded cell has a readout while the rectangle is being measured").not.toBeNull();
     const tip = await surface.tip();
     expect(Number.isFinite(Number(canon(tip, "value"))), `the value of ${key} is a number while measuring (is "${canon(tip, "value")}")`).toBe(true);

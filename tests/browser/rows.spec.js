@@ -42,11 +42,18 @@ async function rowsChip(page, surface, testInfo) {
 
 const fieldOf = (details, name) => details.fields[name]?.value;
 
+// The newest edge (base column) any period read of the page has asked the cube for: the cube's request log is an observation of
+// the period's endpoint that does not depend on what a popover last rendered. The page re-reads a rolling period that the pack does
+// not hold when the data moves on, so a larger edge here is the period's endpoint moving. A period inside the recorded pack (the
+// week) is not read at all: for it the page's own pill says how far the data goes ("Data through ...").
+const dataThrough = (page) => page.locator("#ol-state-pill").getAttribute("title").then((t) => /Data through ([^;.]*) UTC/.exec(t ?? "")?.[1] ?? "");
+const periodEdge = (fake) => Math.max(0, ...fake.log().filter((e) => e.path === "/cube/query").map((e) => Number(e.query.b1) || 0));
+
 // One reading of the Rows channel: the chip's dataset and the details that matter.
 async function reading(surface) {
   const chip = await surface.chip("rows");
   const details = await surface.details("rows");
-  return { ...chip.data, U: Number(fieldOf(details, "U")), k: Number(fieldOf(details, "k")), cohortCount: Number(fieldOf(details, "cohortCount")), obsCutoff: fieldOf(details, "obsCutoff"), cause: fieldOf(details, "scaleChangeCause") ?? "", from: fieldOf(details, "scaleChangeFrom") ?? "", to: fieldOf(details, "scaleChangeTo") ?? "" };
+  return { ...chip.data, U: Number(fieldOf(details, "U")), k: Number(fieldOf(details, "k")), cohortCount: Number(fieldOf(details, "cohortCount")), cause: fieldOf(details, "scaleChangeCause") ?? "", from: fieldOf(details, "scaleChangeFrom") ?? "", to: fieldOf(details, "scaleChangeTo") ?? "" };
 }
 
 // The price range of the address the page wrote, in USDT.
@@ -138,9 +145,10 @@ test.describe("Rows period identity", () => {
     await expect.poll(async () => (await surface.chip("rows")).data.state).toBe("ready");
     const before = await reading(surface);
     expect(before.context).toMatch(/\|roll:90\|m[0-9]+$/);
+    const edge0 = periodEdge(fake);
 
     fake.advance({ minutes: 60 });
-    await expect.poll(async () => (await reading(surface)).obsCutoff, { timeout: 40000, message: "the period's endpoint moved with the new data" }).not.toBe(before.obsCutoff);
+    await expect.poll(() => periodEdge(fake), { timeout: 40000, message: "the period was read again to its new endpoint" }).toBeGreaterThan(edge0);
     await S.atRest(page, fake, probe);
     const after = await reading(surface);
     expect(after.context, "the same identity").toBe(before.context);
@@ -158,8 +166,10 @@ test.describe("Rows period identity", () => {
     expect(sunday.context, "the week that began Monday 21 September").toMatch(/\|cal:wk:2026-09-21\|m[0-9]+$/);
 
     // Five minutes later the week has grown and is still the same week.
+    const through0 = await dataThrough(page);
     fake.advance({ minutes: 5 });
-    await expect.poll(async () => (await reading(surface)).obsCutoff, { timeout: 40000 }).not.toBe(sunday.obsCutoff);
+    await expect.poll(() => dataThrough(page), { timeout: 40000, message: "the page took the new data" }).not.toBe(through0);
+    await S.atRest(page, fake, probe);
     const grown = await reading(surface);
     expect(grown.context).toBe(sunday.context);
     expect(grown.mappingId).toBe(sunday.mappingId);

@@ -10218,6 +10218,7 @@
       instrument: INSTRUMENT,
     });
   }
+  scaleHooks.rowsContext = rowsContext;
   // What the cohort of Rows needs, from the state at the moment it is asked (the spine calls it when a fit
   // is due, never with a frame kept from an earlier draw). Every row of the period at the effective row size
   // is in it, in view or not; each measure reads only the result that carries it (Time at price the dwell's
@@ -10332,9 +10333,10 @@
   // The surface colour as RGB for the legend's composites, parsed once for each theme epoch.
   const rowsSurface = { epoch: -1, rgb: null };
   let relvolDescriptor = null;
-  // The mapping the Rows channel draws with, by lookup only (a fit is the spine's, at a settled moment): the
-  // fixed log2 scale for Relative volume; else what E.policy.resolve finds in the store for the context,
-  // marked updating while a fit for the channel is waiting. Null when there is nothing to calibrate yet.
+  // The mapping the Rows channel finds for a context, by lookup only and without a side effect: the fixed
+  // log2 scale for Relative volume, else what E.policy.resolve finds in the store, marked updating while a fit
+  // for the channel is waiting. The marks pass counts through it (it has no chip to write and asks for
+  // nothing); the draw resolves through the spine's `scaleResolve` instead (rowsResolve below).
   function rowsMapping(under, ctx, cutMs) {
     if (under.kind === "relvol") return relvolDescriptor ?? (relvolDescriptor = E.scale.fixed("log2-ratio"));
     if (!ctx) return null;
@@ -10351,13 +10353,39 @@
       ? { ...resolved, state: "updating" }
       : resolved;
   }
+  // What a refit of the Rows mapping would read, as a key: the context, the period's rows (by identity: a
+  // new read is a new array) and where they end. The spine compares it with the key of the last fit under
+  // Auto, so Auto refits when the period was read again and Explore (which never asks) does not.
+  function rowsDataKey(under, key) {
+    return [key, objId(under.res.rows ?? under.res), under.bands?.m, under.through].join("|");
+  }
+  // The mapping of the draw, through the spine's `scaleResolve` (DR-53): it looks the context up, asks for
+  // the fit that is missing (the first calibration of a context; under Auto a refit when the rows changed),
+  // leaves what the chip and the tick need in `scaleRt.cur.rows`, and discloses a change of mapping. Relative
+  // volume has a fixed domain: nothing is asked and nothing is fitted, and it has no range warning (A-14).
+  function rowsResolve(under, ctx, cutMs) {
+    if (!ctx) return null;
+    const relvol = under.kind === "relvol",
+      key = E.context.keyString(ctx);
+    if (relvol && !relvolDescriptor) relvolDescriptor = E.scale.fixed("log2-ratio");
+    return scaleResolve("rows", {
+      ctx,
+      kind: relvol ? "fixed" : "unbounded",
+      fixed: relvol ? relvolDescriptor : null,
+      cutMs,
+      memo: () => rowsDataKey(under, key),
+      meaningful: !relvol,
+      failed: under.res.state === "failed",
+    });
+  }
   // The frame of the Rows channel for what the underlay shows, from the same inputs wherever it is asked
   // (the draw, and the marks pass at a settled moment): the mapping, the Relative-volume result, the
-  // read state, the Lut and the description of the rows. Pure: it asks for nothing. `surface` (RGB) is for
-  // the legend's samples only, so the marks pass, which has no legend, leaves it out.
-  function rowsFrameOf(under, cutMs, lut, surface = null) {
+  // read state, the Lut and the description of the rows. `resolve` is the draw's resolution (it asks for what
+  // is missing); without it the mapping is the pure lookup. `surface` (RGB) is for the legend's samples
+  // only, so the marks pass, which has no legend, leaves it out.
+  function rowsFrameOf(under, cutMs, lut, surface = null, resolve = false) {
     const ctx = rowsContext(under),
-      mapping = rowsMapping(under, ctx, cutMs),
+      mapping = resolve ? rowsResolve(under, ctx, cutMs) : rowsMapping(under, ctx, cutMs),
       relvol = under.kind === "relvol" ? relvolFor(under.bands, under.vol, under.rect) : null;
     const frame = E.readout.rowsFrame({
       kind: under.kind,
@@ -10373,32 +10401,19 @@
     });
     return { frame, ctx, mapping, relvol };
   }
-  // A fit the Rows channel waits for, asked for from the draw (only a request: the spine runs it at a
-  // settled moment, when the reads are coherent): the first calibration of a context, and under Auto a
-  // refit when the period's rows have been read further than the calibration saw.
-  function rowsWant(under, built, cutMs) {
-    const { ctx, mapping } = built;
-    if (!ctx || under.kind === "relvol" || !mapping) return;
-    const key = E.context.keyString(ctx);
-    let asked = false;
-    if (mapping.state === "no-calibration") asked = scaleRt.ctl.request("rows", "init", key);
-    else if (S.scale.rows === "auto" && !S.scale.lock && under.through !== null && typeof mapping.record?.obsEndMs === "number") {
-      const edge = Math.min(E.time.baseToMs(under.through, T0, BASE), cutMs);
-      if (mapping.record.obsEndMs < edge) asked = scaleRt.ctl.request("rows", "auto", key + "|" + edge);
-    }
-    if (asked) scaleArm();
-  }
   // The Rows frame of a draw, registered as the rowsFrame hook: `sc.rows`, which paintBands, the profile and
-  // the readouts encode through. `under.relvol` carries Relative volume's result to them.
+  // the readouts encode through. `under.relvol` carries Relative volume's result to them. A fit that is
+  // wanted but whose data had not come (the period's rows are still being read) is woken again here: the
+  // read that lands redraws, and the wake is one timer at most.
   function rowsScaleFrame(under, sc) {
     if (!under) return null;
     if (rowsSurface.epoch !== colourEpoch) {
       rowsSurface.epoch = colourEpoch;
       rowsSurface.rgb = E.lut.parseColor(colors.surface);
     }
-    const built = rowsFrameOf(under, sc.cutMs, sc.lut, rowsSurface.rgb);
+    const built = rowsFrameOf(under, sc.cutMs, sc.lut, rowsSurface.rgb, true);
     under.relvol = built.relvol;
-    rowsWant(under, built, sc.cutMs);
+    if (scaleRt.ask.rows) scaleArm();
     return built.frame;
   }
   scaleHooks.rowsFrame = rowsScaleFrame;

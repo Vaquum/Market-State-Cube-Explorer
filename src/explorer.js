@@ -4001,6 +4001,9 @@
             ? // A ratio that rounds to 0 at the digits shown is 0, not a signed zero (equal distributions differ in the last bit).
               approx + ratioText(Math.abs(typed.value) < (exact ? 5e-4 : 5e-3) ? 0 : typed.value, exact)
             : E.result.describe(typed).short,
+        // the number (or the tag of the typed result) the words were made from, as a test reads it back
+        "relvol",
+        typed.tag === "finite" ? typed.value : typed.tag,
       ]);
     }
     return out;

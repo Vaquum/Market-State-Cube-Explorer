@@ -2355,6 +2355,63 @@
               <p class="ol-family-status" data-family-status="structure" role="status"></p>
             </div>
           </section>
+          <section class="ol-family" data-family="average">
+            <button
+              type="button"
+              class="ol-family-head cursor-interaction"
+              id="ol-family-average-head"
+              aria-expanded="false"
+              aria-controls="ol-family-average"
+            >
+              <i class="ol-family-dot" aria-hidden="true"></i
+              ><span class="ol-family-name">Moving averages</span
+              ><span class="ol-family-count ol-num"></span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
+            </button>
+            <div
+              class="ol-family-body"
+              id="ol-family-average"
+              role="group"
+              aria-labelledby="ol-family-average-head"
+              hidden
+            >
+              <div class="ol-list-head" id="ol-lines-avg-1d-head">Daily</div>
+              <div
+                class="ol-lines-list"
+                data-toggles="average"
+                data-group="1d"
+                role="group"
+                aria-labelledby="ol-lines-avg-1d-head"
+              ></div>
+              <div class="ol-list-head" id="ol-lines-avg-1w-head">Weekly</div>
+              <div
+                class="ol-lines-list"
+                data-toggles="average"
+                data-group="1w"
+                role="group"
+                aria-labelledby="ol-lines-avg-1w-head"
+              ></div>
+              <div class="ol-list-head" id="ol-lines-avg-intraday-head">Intraday, on grid columns</div>
+              <div
+                class="ol-lines-list"
+                data-toggles="average"
+                data-group="intraday"
+                role="group"
+                aria-labelledby="ol-lines-avg-intraday-head"
+              ></div>
+              <div class="ol-list-head" id="ol-lines-avg-bb-head">Bollinger bands (20, 2σ)</div>
+              <div
+                class="ol-lines-list"
+                data-toggles="average"
+                data-group="bb"
+                role="group"
+                aria-labelledby="ol-lines-avg-bb-head"
+              ></div>
+              <p class="ol-family-status" data-family-status="average" role="status"></p>
+            </div>
+          </section>
           <section class="ol-family" data-family="vwap">
             <button
               type="button"
@@ -5457,7 +5514,7 @@
     MODE_NAMES = Object.fromEntries(MODES.map((k) => [k, MODE_INFO[k].name])),
     // The pane under the prices (the Columns menu, B): one value per column, in
     // the order B steps through them. Same as cells follows the encoding.
-    PANES = ["cells", "volume", "delta", "trades", "size", "efficiency", "choppiness", "perpath"],
+    PANES = ["cells", "volume", "delta", "trades", "size", "efficiency", "choppiness", "perpath", "rsi1d", "rsi4h", "macd1d"],
     PANE_INFO = {
       cells: { name: "Same as cells", desc: "Each column's amount of what the cells show" },
       volume: { name: "Volume", desc: "USDT traded in each column" },
@@ -5470,12 +5527,16 @@
       },
       choppiness: { name: "Choppiness", desc: "How far the price travelled in each column, over its range" },
       perpath: { name: "Volume per path", desc: "USDT traded in each column per USDT the price moved" },
+      rsi1d: { name: "RSI 14 · 1D", desc: "Wilder's RSI of the daily closes, with 70 and 30 guides and divergences between daily swings" },
+      rsi4h: { name: "RSI 14 · 4h", desc: "The same on 4-hour bars, with divergences between 4-hour swings" },
+      macd1d: { name: "MACD · 1D", desc: "EMA(12) − EMA(26) of the daily closes, its signal EMA(9) and histogram, with crosses" },
     },
     PANE_GROUPS = [
       ["Follow", ["cells"]],
       ["USDT", ["volume", "delta"]],
       ["Trades", ["trades", "size"]],
       ["Movement", ["efficiency", "choppiness", "perpath"]],
+      ["Oscillators", ["rsi1d", "rsi4h", "macd1d"]],
     ];
   function svgIcon(name, className = "ol-icon") {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -6310,6 +6371,7 @@
   // The pane's column under the pointer: its value and what it is made of,
   // or why it has none.
   function paneTip(tip, p, money, count, share, exact, note) {
+    if (paneShown.measure.osc) return oscillatorTip(tip, p);
     const ts = stepT(),
       c = Math.floor(p.t / ts),
       head = `${range(c * ts, (c + 1) * ts)} UTC · ${dur(ts * BASE)}`,
@@ -8509,6 +8571,7 @@
       { id: "profile", name: "Volume profile", colour: "poc" },
       { id: "session", name: "Session levels", colour: "level" },
       { id: "structure", name: "Structure", colour: "level" },
+      { id: "average", name: "Moving averages", colour: "average" },
       { id: "vwap", name: "VWAP", colour: "vwap" },
       { id: "clock", name: "Clock", colour: "clock" },
     ],
@@ -8561,6 +8624,63 @@
         family: "structure",
         name: "Retracements · last daily swing",
         desc: "The same for the move between the last two daily swings",
+        tier: "medium",
+        live: true,
+      },
+      ema21: { family: "average", group: "1d", name: "21 EMA", desc: "The exponential average of the last 21 daily closes", tier: "medium", live: true },
+      sma50: { family: "average", group: "1d", name: "50 SMA", desc: "The mean of the last 50 daily closes", tier: "medium", live: true },
+      sma100: { family: "average", group: "1d", name: "100 SMA", desc: "The mean of the last 100 daily closes", tier: "medium", live: true },
+      sma200: { family: "average", group: "1d", name: "200 SMA", desc: "The mean of the last 200 daily closes", tier: "medium", live: true },
+      gdcross: {
+        family: "average",
+        group: "1d",
+        name: "Golden and death crosses",
+        desc: "Where the 50-day SMA crosses above the 200-day SMA, or below it",
+        tier: "medium",
+        live: true,
+      },
+      sma200w: { family: "average", group: "1w", name: "200-week SMA", desc: "The mean of the last 200 weekly closes", tier: "long", live: true },
+      bmsb: {
+        family: "average",
+        group: "1w",
+        name: "Bull market support band",
+        desc: "The 20-week SMA and 21-week EMA, the space between them filled",
+        tier: "long",
+        live: true,
+      },
+      ema3m: {
+        family: "average",
+        group: "intraday",
+        name: "12 and 28 EMA · 3.75 min",
+        desc: "On 3.75-minute bars, standing in for the 5-minute 9 and 21",
+        tier: "short",
+        live: true,
+      },
+      ema15m: { family: "average", group: "intraday", name: "9 and 21 EMA · 15 min", desc: "On 15-minute bars", tier: "short", live: true },
+      ema1h: { family: "average", group: "intraday", name: "50 and 200 EMA · 1 h", desc: "On hourly bars", tier: "short", live: true },
+      ema4h: { family: "average", group: "intraday", name: "50 and 200 EMA · 4 h", desc: "On 4-hour bars", tier: "short", live: true },
+      bb15m: {
+        family: "average",
+        group: "bb",
+        name: "Bollinger · 15 min",
+        desc: "The 20-bar SMA ± 2 population standard deviations, on 15-minute bars",
+        tier: "short",
+        live: true,
+      },
+      bb1h: { family: "average", group: "bb", name: "Bollinger · 1 h", desc: "The same on hourly bars", tier: "short", live: true },
+      bb4h: {
+        family: "average",
+        group: "bb",
+        name: "Bollinger · 4 h",
+        desc: "The same on 4-hour bars; squeezes filled, bandwidth below its 10th percentile of the last 500 bars",
+        tier: "short",
+        live: true,
+      },
+      bb1d: {
+        family: "average",
+        group: "bb",
+        name: "Bollinger · 1D",
+        desc: "The same on daily bars; squeezes filled, bandwidth at its lowest of the last 182 days",
         tier: "medium",
         live: true,
       },
@@ -8855,11 +8975,18 @@
   function barLevels() {
     if (!PACK.live) return [];
     const out = [];
-    // Structure's days come from the 8-hour bars, the 4-hour swings' too.
-    if ([...EIGHT_HOUR_LINES, ...STRUCTURE_LINES, ...FOUR_HOUR_LINES].some((k) => S.lines.includes(k)) || S.lines.some(isVwapDay))
+    const on = (keys) => keys.some((k) => S.lines.includes(k));
+    // Structure's days come from the 8-hour bars, the 4-hour swings' too; the
+    // daily and weekly averages and the daily oscillators' as well.
+    if (
+      on([...EIGHT_HOUR_LINES, ...STRUCTURE_LINES, ...FOUR_HOUR_LINES, ...averageTf("1d"), ...averageTf("1w")]) ||
+      S.lines.some(isVwapDay) ||
+      S.pane === "rsi1d" ||
+      S.pane === "macd1d"
+    )
       out.push(9);
-    if (FOUR_HOUR_LINES.some((k) => S.lines.includes(k))) out.push(8);
-    if (S.lines.includes("cme")) out.push(6);
+    if (on([...FOUR_HOUR_LINES, ...averageTf("4h")]) || S.pane === "rsi4h") out.push(8);
+    if (on(["cme", ...averageTf("1h")])) out.push(6);
     return out;
   }
   function barChunkWant(n, j) {
@@ -8960,7 +9087,8 @@
       span = BAR_CHUNK * step,
       partial = S.replay && edge % step !== 0,
       tail = partial ? barEdges.get([live.generation, n, edge].join("|")) : null,
-      key = [live.generation, edge, S.replay, barsVersion].join("|"),
+      // A failed read changes the answer too, from waiting to failed.
+      key = [live.generation, edge, S.replay, barsVersion, barsIssue(n)].join("|"),
       hit = seriesMemo.get(n);
     if (hit?.key === key) return hit.out;
     const chunks = [];
@@ -9588,6 +9716,19 @@
     }
     return out;
   }
+  // The 4-hour swings, kept with the 4-hour bars: structure's and the 4-hour
+  // RSI's divergences' alike.
+  const fourHourMemo = new WeakMap();
+  function fourHourSwings(series8) {
+    let hit = fourHourMemo.get(series8);
+    if (!hit) {
+      const step = series8.step,
+        bars = series8.bars;
+      hit = swingsOf(bars, atrSeries(bars), (x) => (x.c + 1) * step, (x) => x.c * step, series8.end);
+      fourHourMemo.set(series8, hit);
+    }
+    return hit;
+  }
   const structureMemo = new WeakMap();
   function structure(series9, series8) {
     let hit = structureMemo.get(series9);
@@ -9617,11 +9758,7 @@
     }
     // Daily swings on the days, with the daily ATR, and 4-hour swings on the 4-hour bars.
     out.daily = swingsOf(days, atrSeries(days), (d) => d.z, partAt, end);
-    if (series8?.state === "ready") {
-      const step = series8.step,
-        bars = series8.bars;
-      out.fourHour = swingsOf(bars, atrSeries(bars), (x) => (x.c + 1) * step, (x) => x.c * step, series8.end);
-    }
+    if (series8?.state === "ready") out.fourHour = fourHourSwings(series8);
     // Retracements: the moves over the last 30 and 90 sessions, and the last daily swing.
     const dNow = Math.floor(Math.max(0, end - 1e-6) / DAYS),
       lookback = (count) => {
@@ -9706,7 +9843,7 @@
       span = BAR_CHUNK * step,
       partial = S.replay && edge % step !== 0 && stop === edge,
       tailKey = [live.generation, n, edge].join("|"),
-      key = [n, a, stop, live.generation, edge, S.replay, barsVersion].join("|"),
+      key = [n, a, stop, live.generation, edge, S.replay, barsVersion, barsIssue(n)].join("|"),
       hit = rangeMemo.get(key);
     if (hit) return hit;
     let out = { state: "ready", bars: [], end: stop };
@@ -9792,15 +9929,811 @@
   // The bars the lines on read beyond the whole timeframes: the VWAPs', at the
   // timeframe they are drawn at, over the view's days and, for an anchored one,
   // the span it is drawn over, the bar at the edge included.
-  function viewBarNeeds() {
+  function vwapBarNeed() {
     const anchored = PACK.live && vwapAnchors().length > 0;
-    if (!PACK.live || !(S.lines.includes("svwap") || anchored)) return [];
+    if (!PACK.live || !(S.lines.includes("svwap") || anchored)) return null;
     const n = vwapLevel();
-    if (n === 9) return [];
+    if (n === 9) return null;
     const edge = cutEdge(),
       days = Math.min(Math.ceil(S.tB / DAYS) * DAYS, edge),
       b = anchored ? Math.max(days, Math.min(edge, Math.ceil(anchoredSpan(n).to))) : days;
-    return [[n, Math.floor(Math.max(0, S.tA) / DAYS) * DAYS, b]];
+    return [n, Math.floor(Math.max(0, S.tA) / DAYS) * DAYS, b];
+  }
+  function viewBarNeeds() {
+    if (!PACK.live) return [];
+    const out = [vwapBarNeed()].filter(Boolean),
+      edge = cutEdge();
+    for (const tf of ["15m", "3m"])
+      if (averageTf(tf).some((k) => S.lines.includes(k))) {
+        const n = AVERAGE_STEPS[tf],
+          span = averageSpan(n);
+        if (span) out.push([n, span.from, Math.min(edge, Math.ceil(span.to))]);
+      }
+    return out;
+  }
+  // Moving averages, Bollinger bands and the oscillators (live), each on the
+  // closes of its own timeframe, by the standard definitions. SMA(n) is the
+  // mean of the last n closes. EMA(n) has α = 2 ÷ (n + 1) and is seeded with
+  // the SMA of its first n closes. RSI(14) smooths gains and losses as the
+  // ATR does, by Wilder's rule. Bollinger (20, 2σ) is the SMA(20) ± 2
+  // population standard deviations of the last 20 closes, and its bandwidth
+  // their spread over the middle. MACD is EMA(12) − EMA(26), its signal the
+  // EMA(9) of it and its histogram their difference. Each has a value from
+  // its first full window on (NaN before), drawn at the end of its bar, whose
+  // close it takes in.
+  function smaOf(values, n) {
+    const out = new Float64Array(values.length).fill(NaN);
+    for (let i = n - 1; i < values.length; i++) {
+      let s = 0;
+      for (let k = i - n + 1; k <= i; k++) s += values[k];
+      out[i] = s / n;
+    }
+    return out;
+  }
+  function emaOf(values, n, from = 0) {
+    const out = new Float64Array(values.length).fill(NaN),
+      a = 2 / (n + 1);
+    if (values.length - from < n) return out;
+    let e = 0;
+    for (let k = from; k < from + n; k++) e += values[k];
+    e /= n;
+    out[from + n - 1] = e;
+    for (let i = from + n; i < values.length; i++) out[i] = e = a * values[i] + (1 - a) * e;
+    return out;
+  }
+  function rsiOf(closes, n = 14) {
+    const out = new Float64Array(closes.length).fill(NaN);
+    if (closes.length <= n) return out;
+    let up = 0,
+      down = 0;
+    for (let i = 1; i <= n; i++) {
+      const d = closes[i] - closes[i - 1];
+      if (d > 0) up += d;
+      else down -= d;
+    }
+    up /= n;
+    down /= n;
+    const value = () => (down === 0 ? 100 : up === 0 ? 0 : 100 - 100 / (1 + up / down));
+    out[n] = value();
+    for (let i = n + 1; i < closes.length; i++) {
+      const d = closes[i] - closes[i - 1];
+      up = ((n - 1) * up + (d > 0 ? d : 0)) / n;
+      down = ((n - 1) * down + (d < 0 ? -d : 0)) / n;
+      out[i] = value();
+    }
+    return out;
+  }
+  function bollingerOf(closes, n = 20, k = 2) {
+    const len = closes.length,
+      nan = () => new Float64Array(len).fill(NaN),
+      mid = nan(),
+      upper = nan(),
+      lower = nan(),
+      width = nan();
+    for (let i = n - 1; i < len; i++) {
+      let s = 0;
+      for (let j = i - n + 1; j <= i; j++) s += closes[j];
+      const m = s / n;
+      let q = 0;
+      for (let j = i - n + 1; j <= i; j++) q += (closes[j] - m) * (closes[j] - m);
+      const sd = Math.sqrt(q / n);
+      mid[i] = m;
+      upper[i] = m + k * sd;
+      lower[i] = m - k * sd;
+      width[i] = (upper[i] - lower[i]) / m;
+    }
+    return { mid, upper, lower, width };
+  }
+  function macdOf(closes) {
+    const fast = emaOf(closes, 12),
+      slow = emaOf(closes, 26),
+      macd = new Float64Array(closes.length).fill(NaN),
+      hist = new Float64Array(closes.length).fill(NaN);
+    for (let i = 25; i < closes.length; i++) macd[i] = fast[i] - slow[i];
+    const signal = emaOf(macd, 9, 25);
+    for (let i = 0; i < closes.length; i++) hist[i] = macd[i] - signal[i];
+    return { macd, signal, hist };
+  }
+  // Where one series crosses another: where their difference changes sign
+  // between bars where both have a value. A touch that turns back is none.
+  function crossesOf(a, b) {
+    const out = [];
+    let was = 0;
+    for (let i = 0; i < a.length; i++) {
+      const d = a[i] - b[i];
+      if (!(d > 0 || d < 0)) continue;
+      const s = d > 0 ? 1 : -1;
+      if (was && s !== was) out.push({ i, up: s > 0 });
+      was = s;
+    }
+    return out;
+  }
+  // A 4-hour squeeze: bandwidth below its 10th percentile over the last 500
+  // bars, this one included, the percentile 0.9 of the way from the 50th
+  // lowest to the 51st (the order statistics' linear rule, at 0.1 × 499). A
+  // daily squeeze: bandwidth at its lowest of the trailing 182 days, this one
+  // included.
+  const SQUEEZE_BARS = 500,
+    SQUEEZE_RANK = 0.1,
+    SQUEEZE_DAYS = 182;
+  function squeezeBelow(width, size = SQUEEZE_BARS, p = SQUEEZE_RANK) {
+    const out = new Uint8Array(width.length),
+      win = [],
+      at = (v) => {
+        let lo = 0,
+          hi = win.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (win[mid] < v) lo = mid + 1;
+          else hi = mid;
+        }
+        return lo;
+      },
+      pos = p * (size - 1),
+      k = Math.floor(pos),
+      f = pos - k;
+    for (let i = 0; i < width.length; i++) {
+      const v = width[i];
+      if (!Number.isFinite(v)) continue;
+      win.splice(at(v), 0, v);
+      if (win.length > size) win.splice(at(width[i - size]), 1);
+      if (win.length === size && v < win[k] + f * (win[k + 1] - win[k])) out[i] = 1;
+    }
+    return out;
+  }
+  function squeezeLowest(width, size = SQUEEZE_DAYS) {
+    const out = new Uint8Array(width.length);
+    for (let i = size - 1; i < width.length; i++) {
+      if (!Number.isFinite(width[i - size + 1])) continue;
+      let low = Infinity;
+      for (let k = i - size + 1; k <= i; k++) if (width[k] < low) low = width[k];
+      if (width[i] <= low) out[i] = 1;
+    }
+    return out;
+  }
+  // RSI divergences between consecutive swings of a kind on the RSI's own
+  // timeframe: bearish where price made a higher high and the RSI a lower
+  // one, bullish where price made a lower low and the RSI a higher one, each
+  // at the swings' bars and known once the later swing is confirmed.
+  function divergencesOf(swings, rsi) {
+    const out = [],
+      last = {};
+    for (const s of swings) {
+      const was = last[s.kind];
+      last[s.kind] = s;
+      if (!was) continue;
+      const r0 = rsi[was.i],
+        r1 = rsi[s.i];
+      if (!Number.isFinite(r0) || !Number.isFinite(r1)) continue;
+      if (s.kind === "high" ? s.price > was.price && r1 < r0 : s.price < was.price && r1 > r0)
+        out.push({ bearish: s.kind === "high", a: was, b: s, r0, r1 });
+    }
+    return out;
+  }
+  // The bars an average is computed on, each with its close and the time its
+  // value is drawn at: its bar's end, or where the bars end. The days and
+  // weeks come from the 8-hour bars, and the 4-hour and hourly bars are read
+  // over the whole history. The history's first week, from a Friday, is left
+  // out. At 15 and 3.75 minutes they are the view's chunks of bars and the
+  // chunk before, from its start: after its 4,096 bars an EMA is as it would
+  // be from the history's start, to within 10⁻¹⁸ of itself. Those draw only
+  // while their bars are at least a quarter pixel wide. Kept per read, each
+  // indicator computed once on it.
+  const AVERAGE_STEPS = { "3m": 2, "15m": 4, "1h": 6, "4h": 8 },
+    AVERAGE_MIN_PX = 0.25,
+    TF_NAMES = { "3m": "3.75 minutes", "15m": "15 minutes", "1h": "1 hour", "4h": "4 hours", "1d": "1 day", "1w": "1 week" },
+    frameMemo = new WeakMap();
+  function makeFrame(bars, endOf, end, tf) {
+    return {
+      state: "ready",
+      tf,
+      bars,
+      closes: Float64Array.from(bars, (x) => x.close),
+      starts: Float64Array.from(bars, (x) => x.t),
+      ends: Float64Array.from(bars, (x) => Math.min(endOf(x), end)),
+      end,
+      memo: new Map(),
+    };
+  }
+  // The span of bars a 15- or 3.75-minute average is computed over, or none
+  // while its bars would be under a quarter pixel wide.
+  function averageSpan(n) {
+    const step = 2 ** n,
+      span = BAR_CHUNK * step;
+    if ((G.w * step) / Math.max(1e-9, S.tB - S.tA) < AVERAGE_MIN_PX) return null;
+    return {
+      from: Math.max(0, (Math.floor(Math.max(0, S.tA) / span) - 1) * span),
+      to: Math.min(activeCutoff(), Math.ceil(S.tB / span) * span),
+    };
+  }
+  function averageFrame(tf) {
+    if (tf === "1d" || tf === "1w") {
+      const s9 = barSeries(9);
+      if (s9.state !== "ready") return s9;
+      const cal = barCalendar(s9);
+      let entry = frameMemo.get(cal);
+      if (!entry) frameMemo.set(cal, (entry = {}));
+      if (!entry[tf])
+        entry[tf] =
+          tf === "1d"
+            ? makeFrame(cal.days.list, (d) => d.z, s9.end, tf)
+            : makeFrame(
+                cal.weeks.list.filter((w) => w.t >= 0),
+                (w) => w.z,
+                s9.end,
+                tf,
+              );
+      return entry[tf];
+    }
+    const n = AVERAGE_STEPS[tf],
+      step = 2 ** n;
+    if (tf === "1h" || tf === "4h") {
+      const s = barSeries(n);
+      if (s.state !== "ready") return s;
+      let hit = frameMemo.get(s);
+      if (!hit) frameMemo.set(s, (hit = makeFrame(s.bars.map(withStart(step)), (x) => (x.c + 1) * step, s.end, tf)));
+      return hit;
+    }
+    const span = averageSpan(n);
+    if (!span) return { state: "wide" };
+    const r = barsBetween(n, span.from, span.to);
+    if (r.state !== "ready") return r;
+    let hit = frameMemo.get(r);
+    if (!hit) frameMemo.set(r, (hit = makeFrame(r.bars.map(withStart(step)), (x) => (x.c + 1) * step, r.end, tf)));
+    return hit;
+  }
+  // A grid bar with its start, as the days and weeks have theirs.
+  const withStart = (step) => (x) => ({ ...x, t: x.c * step });
+  // An indicator on a frame's closes, computed once.
+  function indicator(frame, name, n) {
+    const key = name + n;
+    let v = frame.memo.get(key);
+    if (!v) {
+      const c = frame.closes;
+      v =
+        name === "sma"
+          ? smaOf(c, n)
+          : name === "ema"
+            ? emaOf(c, n)
+            : name === "rsi"
+              ? rsiOf(c, n)
+              : name === "bb"
+                ? bollingerOf(c, n)
+                : macdOf(c);
+      frame.memo.set(key, v);
+    }
+    return v;
+  }
+  // A series' points to draw, [time, value], from its first value on.
+  function framePoints(frame, values) {
+    let pts = frame.memo.get(values);
+    if (!pts) {
+      pts = [];
+      for (let i = 0; i < values.length; i++) if (Number.isFinite(values[i])) pts.push([frame.ends[i], values[i], i]);
+      frame.memo.set(values, pts);
+    }
+    return pts;
+  }
+  // A frame's squeezes, runs of bars each [first, last], and its golden and
+  // death crosses; on the daily and 4-hour bars.
+  function frameSqueezes(frame) {
+    let runs = frame.memo.get("squeezes");
+    if (!runs) {
+      const width = indicator(frame, "bb", 20).width,
+        flags = frame.tf === "1d" ? squeezeLowest(width) : squeezeBelow(width);
+      runs = [];
+      for (let i = 0; i < flags.length; i++)
+        if (flags[i]) {
+          if (runs.length && runs[runs.length - 1][1] === i - 1) runs[runs.length - 1][1] = i;
+          else runs.push([i, i]);
+        }
+      frame.memo.set("squeezes", runs);
+    }
+    return runs;
+  }
+  function frameCrosses(frame) {
+    let out = frame.memo.get("crosses");
+    if (!out) frame.memo.set("crosses", (out = crossesOf(indicator(frame, "sma", 50), indicator(frame, "sma", 200))));
+    return out;
+  }
+  // The moving averages' rows: each one's timeframe, and the averages it
+  // draws as [kind, length, tag], or its Bollinger bands; the support band's
+  // two are filled between, the 4-hour and daily bands' squeezes filled.
+  const AVERAGE_SPECS = {
+      ema21: { tf: "1d", lines: [["ema", 21, "21 EMA"]] },
+      sma50: { tf: "1d", lines: [["sma", 50, "50 SMA"]] },
+      sma100: { tf: "1d", lines: [["sma", 100, "100 SMA"]] },
+      sma200: { tf: "1d", lines: [["sma", 200, "200 SMA"]] },
+      gdcross: { tf: "1d", lines: [] },
+      sma200w: { tf: "1w", lines: [["sma", 200, "200W SMA"]] },
+      bmsb: {
+        tf: "1w",
+        lines: [
+          ["sma", 20, "20W SMA"],
+          ["ema", 21, "21W EMA"],
+        ],
+        fill: true,
+      },
+      ema3m: {
+        tf: "3m",
+        lines: [
+          ["ema", 12, "12 EMA 3.75m"],
+          ["ema", 28, "28 EMA 3.75m"],
+        ],
+      },
+      ema15m: {
+        tf: "15m",
+        lines: [
+          ["ema", 9, "9 EMA 15m"],
+          ["ema", 21, "21 EMA 15m"],
+        ],
+      },
+      ema1h: {
+        tf: "1h",
+        lines: [
+          ["ema", 50, "50 EMA 1h"],
+          ["ema", 200, "200 EMA 1h"],
+        ],
+      },
+      ema4h: {
+        tf: "4h",
+        lines: [
+          ["ema", 50, "50 EMA 4h"],
+          ["ema", 200, "200 EMA 4h"],
+        ],
+      },
+      bb15m: { tf: "15m", bands: "BB 15m" },
+      bb1h: { tf: "1h", bands: "BB 1h" },
+      bb4h: { tf: "4h", bands: "BB 4h", squeeze: true },
+      bb1d: { tf: "1d", bands: "BB 1D", squeeze: true },
+    },
+    AVERAGE_LINES = Object.keys(AVERAGE_SPECS),
+    averageTf = (tf) => AVERAGE_LINES.filter((k) => AVERAGE_SPECS[k].tf === tf);
+  // The first bar whose end is at or after t.
+  function endAt(ends, t) {
+    let lo = 0,
+      hi = ends.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (ends[mid] < t) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+  // The averages on, as curves over the view, each from its first full
+  // window to where its bars end, and on at its latest value to the right
+  // edge while that is the data's; the fills between two of them, and the
+  // golden and death crosses.
+  function averageItems(cut) {
+    const curves = [],
+      fills = [],
+      crosses = [],
+      on = Math.min(S.tB, cut) >= cut;
+    for (const key of S.lines) {
+      const spec = AVERAGE_SPECS[key],
+        frame = spec ? averageFrame(spec.tf) : null;
+      if (!frame || frame.state !== "ready") continue;
+      const tier = TOGGLES[key].tier,
+        tf = TF_NAMES[spec.tf];
+      for (const [what, n, tag] of spec.lines || []) {
+        const values = indicator(frame, what, n);
+        curves.push({
+          key,
+          id: `${key}|${what}${n}`,
+          kind: "average",
+          family: "average",
+          tier,
+          frame,
+          what,
+          n,
+          values,
+          name: `${n} ${what.toUpperCase()} · ${tf}`,
+          tag,
+          r: { points: framePoints(frame, values) },
+          on,
+        });
+      }
+      if (spec.fill) {
+        const [a, b] = curves.slice(-2),
+          first = Math.max(a.r.points[0]?.[2] ?? Infinity, b.r.points[0]?.[2] ?? Infinity);
+        if (Number.isFinite(first)) fills.push({ key, frame, a: a.values, b: b.values, i0: first, i1: frame.closes.length - 1, tier, alpha: 0.16 });
+      }
+      if (spec.bands) {
+        const bb = indicator(frame, "bb", 20);
+        for (const [part, values, weight] of [
+          ["upper", bb.upper, 0.75],
+          ["mid", bb.mid, 0.6],
+          ["lower", bb.lower, 0.75],
+        ])
+          curves.push({
+            key,
+            id: `${key}|${part}`,
+            kind: "average",
+            family: "average",
+            tier,
+            frame,
+            what: "bb",
+            part,
+            bb,
+            values,
+            name: `Bollinger (20, 2σ) · ${tf}`,
+            tag: part === "mid" ? spec.bands : null,
+            weight,
+            dash: part === "mid" ? [4, 3] : null,
+            r: { points: framePoints(frame, values) },
+            on,
+          });
+        if (spec.squeeze)
+          for (const [i0, i1] of frameSqueezes(frame))
+            fills.push({ key, frame, a: bb.upper, b: bb.lower, i0: Math.max(19, i0 - 1), i1, tier, alpha: 0.24, squeeze: [i0, i1] });
+      }
+      if (key === "gdcross") {
+        const fast = indicator(frame, "sma", 50);
+        for (const x of frameCrosses(frame)) crosses.push({ key, frame, x, t: frame.ends[x.i], v: fast[x.i], golden: x.up, tier });
+      }
+    }
+    return { curves, fills, crosses };
+  }
+  // A fill between two of a frame's series from bar i0 to i1, over the view,
+  // one point to a pixel column.
+  function drawFill(f, right) {
+    const ends = f.frame.ends,
+      i0 = Math.max(f.i0, endAt(ends, S.tA) - 1),
+      i1 = Math.min(f.i1, endAt(ends, S.tB) + 1);
+    if (i1 <= i0) return;
+    const xs = [],
+      top = [],
+      bottom = [];
+    let lastX = -Infinity;
+    for (let i = i0; i <= i1; i++) {
+      if (!Number.isFinite(f.a[i]) || !Number.isFinite(f.b[i])) continue;
+      const x = G.X(ends[i]);
+      if (x - lastX < 1 && xs.length && i < i1) continue;
+      xs.push(x);
+      top.push(G.Y(f.a[i] / PR));
+      bottom.push(G.Y(f.b[i] / PR));
+      lastX = x;
+      if (x > right + 2) break;
+    }
+    if (xs.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(xs[0], top[0]);
+    for (let i = 1; i < xs.length; i++) ctx.lineTo(xs[i], top[i]);
+    for (let i = xs.length - 1; i >= 0; i--) ctx.lineTo(xs[i], bottom[i]);
+    ctx.closePath();
+    ctx.fillStyle = lineStyle("average", f.tier).colour;
+    ctx.globalAlpha = f.alpha;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  // A frame's bar nearest time t: the one whose end, where its value is
+  // drawn, is closest, the later one on a tie; -1 without bars.
+  function barNear(frame, t) {
+    const ends = frame.ends,
+      j = endAt(ends, t);
+    if (j >= ends.length) return ends.length - 1;
+    return j > 0 && t - ends[j - 1] < ends[j] - t ? j - 1 : j;
+  }
+  // A bar's span as the tooltip names it: a day or a week by its dates.
+  function frameBar(frame, i) {
+    const x = frame.bars[i];
+    return frame.tf === "1d"
+      ? day(x.t)
+      : frame.tf === "1w"
+        ? `the week from ${day(x.t)}`
+        : `${range(x.t, Math.min(frame.ends[i], x.t + 2 ** AVERAGE_STEPS[frame.tf]))} UTC`;
+  }
+  // An average's, a band's or a cross's tooltip.
+  function averageTip(tip, h, l) {
+    const usd = (v) => `${price(Math.round(100 * v) / 100)} USDT`;
+    if (l.kind === "cross") {
+      const c = l.c,
+        slow = indicator(c.frame, "sma", 200)[c.x.i];
+      tipRows(
+        tip,
+        `${c.golden ? "Golden" : "Death"} cross · ${usd(c.v)}`,
+        `At the close of ${frameBar(c.frame, c.x.i)}`,
+        [
+          ["50 SMA", usd(c.v)],
+          ["200 SMA", usd(slow)],
+          ["Timeframe", "1 day"],
+        ],
+        c.golden ? "The 50-day SMA crossed above the 200-day SMA" : "The 50-day SMA crossed below the 200-day SMA",
+      );
+      return true;
+    }
+    if (l.kind !== "average") return false;
+    const f = l.frame,
+      i = barNear(f, hover?.t ?? f.end),
+      first = l.r.points[0]?.[2];
+    if (i < 0 || first === undefined) return false;
+    const at = Math.max(i, first),
+      when0 = `At the close of ${frameBar(f, at)}`,
+      tf = TF_NAMES[f.tf];
+    if (l.what === "bb") {
+      const bb = l.bb,
+        squeezed = AVERAGE_SPECS[l.key].squeeze && frameSqueezes(f).some(([a, z]) => at >= a && at <= z);
+      tipRows(
+        tip,
+        `${l.name} · ${usd(bb.mid[at])}`,
+        when0,
+        [
+          ["Upper", usd(bb.upper[at])],
+          ["Middle", usd(bb.mid[at])],
+          ["Lower", usd(bb.lower[at])],
+          ["Bandwidth", `${(100 * bb.width[at]).toFixed(2)}%`],
+          ...(AVERAGE_SPECS[l.key].squeeze ? [["Squeeze", squeezed ? "yes" : "no"]] : []),
+        ],
+        AVERAGE_SPECS[l.key].squeeze
+          ? f.tf === "1d"
+            ? "A squeeze: bandwidth at its lowest of the last 182 days"
+            : "A squeeze: bandwidth below its 10th percentile of the last 500 bars"
+          : "The 20-bar SMA ± 2 population standard deviations",
+      );
+      return true;
+    }
+    tipRows(
+      tip,
+      `${l.name} · ${usd(l.values[at])}`,
+      when0,
+      [
+        ["Timeframe", tf],
+        ["Close", usd(f.closes[at])],
+        ["From", `its first full window, ${frameBar(f, first)}`],
+      ],
+      l.what === "sma"
+        ? `The mean of the last ${l.n} closes`
+        : `The exponential average of the last ${l.n} closes, α = 2 ÷ ${l.n + 1}, seeded with their mean`,
+    );
+    return true;
+  }
+  // A moving average row's value while on: the latest, both of a pair, a
+  // band's middle ± its spread, the last cross.
+  function averageValue(key) {
+    const spec = AVERAGE_SPECS[key],
+      frame = averageFrame(spec.tf);
+    if (frame.state === "wide") return { text: "zoom in" };
+    if (frame.state !== "ready")
+      return frame.state === "failed" ? { text: "unavailable", title: `The cube didn't answer: ${frame.error}` } : { text: "…" };
+    // The 15- and 3.75-minute bars are read over the view: while it is before
+    // the latest data, the value at its right edge instead.
+    const span = spec.tf === "15m" || spec.tf === "3m" ? averageSpan(AVERAGE_STEPS[spec.tf]) : null,
+      past = span !== null && span.to < activeCutoff(),
+      last = past ? Math.min(frame.closes.length - 1, endAt(frame.ends, S.tB)) : frame.closes.length - 1,
+      fmt = (v) => (Number.isFinite(v) ? price(Math.round(v)) : "—"),
+      shown = (text) =>
+        past ? { text, title: `At the close of ${frameBar(frame, last)}, at the view's right edge: these bars are read over the view` } : { text };
+    if (key === "gdcross") {
+      const x = frameCrosses(frame).at(-1);
+      return { text: x ? `${x.up ? "Golden" : "Death"} ${dayOf(date(frame.bars[x.i].t))}` : "none" };
+    }
+    if (spec.bands) {
+      const bb = indicator(frame, "bb", 20);
+      return shown(Number.isFinite(bb.mid[last]) ? `${fmt(bb.mid[last])} ± ${fmt((bb.upper[last] - bb.lower[last]) / 2)}` : "—");
+    }
+    return shown(spec.lines.map(([what, n]) => fmt(indicator(frame, what, n)[last])).join(" · "));
+  }
+  // What the moving averages on are waiting on, or where their bars end.
+  function averageStatus() {
+    const tfs = [...new Set(S.lines.filter((k) => AVERAGE_SPECS[k]).map((k) => AVERAGE_SPECS[k].tf))],
+      notes = [],
+      past = [],
+      edge = S.replay ? cutEdge() : Math.floor(CUT);
+    for (const tf of tfs) {
+      const frame = averageFrame(tf),
+        name = { "1d": "8-hour", "1w": "8-hour", "4h": "4-hour", "1h": "hourly", "15m": "15-minute", "3m": "3.75-minute" }[tf],
+        // The 15- and 3.75-minute bars are read to the end of the view's span.
+        span = tf === "15m" || tf === "3m" ? averageSpan(AVERAGE_STEPS[tf]) : null;
+      if (frame.state === "wide") notes.push(`The ${TF_NAMES[tf]} lines draw once their bars are a quarter pixel wide: zoom in.`);
+      else if (frame.state === "failed") notes.push(`The ${name} bars couldn't be read: ${frame.error}.`);
+      else if (frame.state === "pending") notes.push(`Reading ${name} bars…`);
+      else {
+        if (frame.end < (span ? Math.min(edge, span.to) : edge)) notes.push(`Measured to ${when(frame.end)} UTC: the cube's measures end there.`);
+        if (span && span.to < activeCutoff()) past.push(name);
+      }
+    }
+    // Before the latest data, their rows give the value at the view's right edge.
+    if (past.length)
+      notes.push(
+        `The ${past.length > 1 ? "15- and 3.75-minute" : past[0]} rows give their values at the view's right edge, as their bars are read over the view.`,
+      );
+    return [...new Set(notes)].join(" ");
+  }
+  // The oscillators in the pane: RSI 14 on the days or the 4-hour bars, with
+  // its divergences between the timeframe's swings; MACD on the days, with its
+  // crosses. Computed once per frame.
+  const OSCILLATORS = ["rsi1d", "rsi4h", "macd1d"];
+  function oscillatorOf(key) {
+    const frame = averageFrame(key === "rsi4h" ? "4h" : "1d");
+    if (frame.state !== "ready") return frame;
+    let hit = frame.memo.get(key);
+    if (!hit) {
+      if (key === "macd1d") {
+        const m = indicator(frame, "macd", 0);
+        hit = { state: "ready", frame, ...m, crosses: crossesOf(m.macd, m.signal) };
+      } else {
+        const rsi = indicator(frame, "rsi", 14),
+          swings = key === "rsi4h" ? fourHourSwings(barSeries(8)) : structureNow(barSeries(9)).daily;
+        hit = { state: "ready", frame, rsi, divergences: divergencesOf(swings, rsi) };
+      }
+      frame.memo.set(key, hit);
+    }
+    return hit;
+  }
+  // The pane under an oscillator: RSI with its 70 and 30 guides and its
+  // divergences, bearish in the sell colour and bullish in the buy colour, or
+  // MACD's histogram, line and signal with its crosses; each on its own bars,
+  // one point to a pixel column, sharing the chart's time axis.
+  function drawOscillator(key, measure, cut) {
+    const top = G.ay,
+      h = G.ah,
+      right = G.x + G.w,
+      o = oscillatorOf(key);
+    ctx.fillStyle = colors.surface;
+    ctx.fillRect(G.x, top, G.w, h);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(G.x, top, G.w, h);
+    ctx.clip();
+    const xc = clamp(G.X(cut), G.x, right);
+    if (S.replay) hatchRect(xc, top, right - xc, h, colors.line, 11, 0.45);
+    else {
+      ctx.fillStyle = colors.bg;
+      ctx.fillRect(xc, top, right - xc, h);
+    }
+    timeGrid(top, top + h);
+    let note = "",
+      scale = null,
+      guides = [];
+    if (o.state !== "ready")
+      note =
+        o.state === "failed"
+          ? `the bars couldn't be read: ${o.error}`
+          : `reading ${key === "rsi4h" ? "4-hour" : "8-hour"} bars from the cube…`;
+    else {
+      const f = o.frame,
+        i0 = Math.max(0, endAt(f.ends, S.tA) - 1),
+        i1 = Math.min(f.ends.length - 1, endAt(f.ends, S.tB)),
+        pts = (values, y) => {
+          const xs = [],
+            ys = [];
+          let lastX = -Infinity;
+          for (let i = i0; i <= i1; i++) {
+            if (!Number.isFinite(values[i])) continue;
+            const x = G.X(f.ends[i]);
+            if (x - lastX < 1 && xs.length) {
+              // The column's latest bar with a value, by bisection.
+              const j = Math.min(i1, endAt(f.ends, G.X.invert(lastX + 1)) - 1);
+              if (j > i && Number.isFinite(values[j])) i = j;
+              xs[xs.length - 1] = G.X(f.ends[i]);
+              ys[ys.length - 1] = y(values[i]);
+              continue;
+            }
+            xs.push(x);
+            ys.push(y(values[i]));
+            lastX = x;
+          }
+          return { xs, ys };
+        },
+        stroke = ({ xs, ys }, colour, width) => {
+          if (xs.length < 2) return;
+          ctx.beginPath();
+          ctx.moveTo(xs[0], ys[0]);
+          for (let i = 1; i < xs.length; i++) ctx.lineTo(xs[i], ys[i]);
+          ctx.strokeStyle = colour;
+          ctx.lineWidth = width;
+          ctx.stroke();
+        };
+      if (key === "macd1d") {
+        let max = 0;
+        for (let i = i0; i <= i1; i++)
+          for (const v of [o.macd[i], o.signal[i], o.hist[i]]) if (Number.isFinite(v)) max = Math.max(max, Math.abs(v));
+        max = max || 1;
+        const zero = top + h / 2,
+          room = h / 2 - 6,
+          y = (v) => zero - (v / max) * room;
+        markLine(G.x, zero, right, zero, colors.line, 1, 0.9);
+        // The histogram, a bar to a day, thinned to one a pixel column.
+        let lastX = -Infinity;
+        for (let i = i0; i <= i1; i++) {
+          const v = o.hist[i];
+          if (!Number.isFinite(v)) continue;
+          const xa = G.X(f.starts[i]),
+            xb = G.X(f.ends[i]);
+          if (xb - lastX < 1 && xb - xa < 1) continue;
+          lastX = xb;
+          ctx.fillStyle = v >= 0 ? colors.buy : colors.sell;
+          ctx.globalAlpha = 0.45;
+          ctx.fillRect(xa, Math.min(zero, y(v)), Math.max(0.6, xb - xa - (xb - xa > 3 ? 1 : 0)), Math.abs(y(v) - zero));
+        }
+        ctx.globalAlpha = 1;
+        stroke(pts(o.signal, y), lineStyle("average", "long").colour, 1.25);
+        stroke(pts(o.macd, y), colors.ink, 1.5);
+        for (const x of o.crosses) {
+          if (x.i < i0 || x.i > i1) continue;
+          const cx = G.X(f.ends[x.i]),
+            cy = y(o.macd[x.i]);
+          ctx.beginPath();
+          ctx.arc(cx, cy, 3, 0, 2 * Math.PI);
+          ctx.fillStyle = x.up ? colors.buy : colors.sell;
+          ctx.fill();
+          ctx.strokeStyle = colors.surface;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+        scale = `±${compact(max)}`;
+      } else {
+        const y = (v) => top + 4 + (1 - v / 100) * (h - 8);
+        for (const g of [70, 30]) {
+          ctx.setLineDash([3, 3]);
+          markLine(G.x, y(g), right, y(g), colors.line, 1, 1);
+          ctx.setLineDash([]);
+        }
+        stroke(pts(o.rsi, y), colors.ink, 1.5);
+        for (const d of o.divergences) {
+          if (d.b.confirmed > cut || f.ends[d.b.i] < S.tA || f.ends[d.a.i] > S.tB) continue;
+          const colour = d.bearish ? colors.sell : colors.buy;
+          line(G.X(f.ends[d.a.i]), y(d.r0), G.X(f.ends[d.b.i]), y(d.r1), colour, 2, 0.95);
+          for (const [s, r] of [
+            [d.a, d.r0],
+            [d.b, d.r1],
+          ]) {
+            ctx.beginPath();
+            ctx.arc(G.X(f.ends[s.i]), y(r), 2.5, 0, 2 * Math.PI);
+            ctx.fillStyle = colour;
+            ctx.fill();
+          }
+        }
+        guides = [70, 30].map((g) => [String(g), y(g)]);
+      }
+    }
+    ctx.restore();
+    paneShown = { key, measure, osc: o, cols: [] };
+    // The scale in the price labels' column: the RSI's guides, MACD's largest value.
+    if (scale) text(scale, G.x - 8, top + 7, colors.muted, "right");
+    for (const [label, gy] of guides) text(label, G.x - 8, gy, colors.muted, "right");
+    paneLegend(measure, [], null, top, note);
+  }
+  // The pane's tooltip under an oscillator: the value at the bar whose close,
+  // where it is drawn, is nearest the pointer, and a divergence or a cross there.
+  function oscillatorTip(tip, p) {
+    const o = paneShown.osc,
+      measure = paneShown.measure;
+    if (!o || o.state !== "ready")
+      return tipRows(tip, measure.label, "", [], o?.state === "failed" ? `Its bars couldn't be read: ${o.error}` : "Reading its bars from the cube…");
+    const f = o.frame,
+      i = barNear(f, p.t);
+    if (p.t >= last.cut) return tipRows(tip, measure.label, "", [], S.replay ? "Hidden in replay" : "After the data cutoff");
+    if (i < 0 || p.t < f.starts[0]) return tipRows(tip, measure.label, "", [], "Before the history's first bar");
+    const head = `${measure.label} · at the close of ${frameBar(f, i)}`,
+      two = (v) => (Number.isFinite(v) ? v.toFixed(2) : "—");
+    if (paneShown.key === "macd1d") {
+      const x = o.crosses.find((c) => c.i === i);
+      return tipRows(
+        tip,
+        head,
+        x ? (x.up ? "MACD crossed above its signal" : "MACD crossed below its signal") : "",
+        [
+          ["MACD", two(o.macd[i])],
+          ["Signal", two(o.signal[i])],
+          ["Histogram", two(o.hist[i])],
+          ["Close", `${price(Math.round(100 * f.closes[i]) / 100)} USDT`],
+        ],
+        Number.isFinite(o.signal[i]) ? "EMA(12) − EMA(26) of the daily closes; its signal the EMA(9) of it" : "From its first full window: the 34th day",
+      );
+    }
+    const d = o.divergences.find((x) => x.b.i === i && x.b.confirmed <= last.cut);
+    return tipRows(
+      tip,
+      head,
+      d ? `${d.bearish ? "Bearish" : "Bullish"} divergence from ${frameBar(f, d.a.i)}` : "",
+      [
+        ["RSI 14", two(o.rsi[i])],
+        ["Close", `${price(Math.round(100 * f.closes[i]) / 100)} USDT`],
+        ...(d ? [["RSI at the swing before", two(d.r0)]] : []),
+      ],
+      Number.isFinite(o.rsi[i]) ? "Wilder's smoothing of gains and losses over 14 bars" : "From its first full window: the 15th bar",
+    );
   }
   // The row underlay (Rows, U): each price row's value over a period of its
   // own, drawn as bands across the chart behind the cells and as a second
@@ -10050,12 +10983,18 @@
       items.push(...st);
       items.marks = st.marks;
     }
-    if (on.has("svwap") || S.lines.some((k) => k === "avwaph" || k === "avwapl" || isVwapDay(k))) items.curves = vwapCurves(cut);
+    items.curves = on.has("svwap") || S.lines.some((k) => k === "avwaph" || k === "avwapl" || isVwapDay(k)) ? vwapCurves(cut) : [];
+    if (S.lines.some((k) => AVERAGE_SPECS[k])) {
+      const av = averageItems(cut);
+      items.curves.push(...av.curves);
+      items.fills = av.fills;
+      items.crosses = av.crosses;
+    }
     return items;
   }
   // The lines drawn from the days of the bars, and structure's rows.
   const STRUCTURE_ROWS = ["ath", "pch", "swing1d", "swing4h", "fib30", "fib90", "fibswing"],
-    DATED_LINES = new Set(["dpoc", "udpoc", "uwpoc", ...EIGHT_HOUR_LINES, ...STRUCTURE_LINES, ...FOUR_HOUR_LINES]);
+    DATED_LINES = new Set(["dpoc", "udpoc", "uwpoc", ...EIGHT_HOUR_LINES, ...STRUCTURE_LINES, ...FOUR_HOUR_LINES, ...AVERAGE_LINES]);
   // A period's 70% value area, kept with its rows.
   const areaMemo = new WeakMap();
   function periodArea(r) {
@@ -10382,7 +11321,8 @@
   // A curve's points as drawn: from the one before the view's left edge to the
   // one past its right, one vertex to a pixel column, at the latest point in
   // the column. A column starts at the vertex that opens it, so points closer
-  // together than a pixel share a column rather than chaining into one.
+  // together than a pixel share a column rather than chaining into one; its
+  // latest point is found by bisection, so a dense curve costs a step a column.
   function curveVertices(pts, right) {
     const xs = [],
       ys = [],
@@ -10401,9 +11341,18 @@
         y = G.Y(v / PR),
         past = x > right + 2;
       if (x - column < 1 && xs.length && !past) {
-        xs[xs.length - 1] = x;
-        ys[ys.length - 1] = y;
-        vals[vals.length - 1] = v;
+        const end = G.X.invert(column + 1);
+        let lo = i,
+          hi = pts.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (pts[mid][0] < end) lo = mid + 1;
+          else hi = mid;
+        }
+        i = lo - 1;
+        xs[xs.length - 1] = G.X(pts[i][0]);
+        ys[ys.length - 1] = G.Y(pts[i][1] / PR);
+        vals[vals.length - 1] = pts[i][1];
         continue;
       }
       xs.push(x);
@@ -10427,8 +11376,10 @@
     if (!S.lines.length && S.level === null) return;
     const items = lineItems(cut),
       marks = items.marks || [],
-      curves = items.curves || [];
-    if (!items.length && !curves.length && S.level === null) return;
+      curves = items.curves || [],
+      fills = items.fills || [],
+      crosses = items.crosses || [];
+    if (!items.length && !curves.length && !crosses.length && S.level === null) return;
     const right = G.x + G.w,
       halo = new Map(),
       ticks = [],
@@ -10470,16 +11421,18 @@
     ctx.beginPath();
     ctx.rect(G.x, G.y, G.w, G.h);
     ctx.clip();
-    // The VWAPs under the lines: haloed, one point to a pixel column, and on
-    // at their latest value to the right edge.
+    // Under the lines, the support band's fill and the squeezes'; then the
+    // VWAPs and the averages: haloed, one point to a pixel column, and on at
+    // their latest value to the right edge.
+    for (const f of fills) drawFill(f, right);
     for (const c of curves) {
-      const style = lineStyle("vwap", c.tier),
+      const style = lineStyle(c.family || "vwap", c.tier),
         hot = hover?.line === c.id,
         { xs, ys, vals } = curveVertices(c.r.points, right);
       if (!xs.length) continue;
       c.colour = style.colour;
       c.at = vals[vals.length - 1] / PR;
-      const width = style.width + (hot ? 1 : 0),
+      const width = style.width * (c.weight || 1) + (hot ? 1 : 0),
         path = () => {
           ctx.beginPath();
           ctx.moveTo(xs[0], ys[0]);
@@ -10493,8 +11446,10 @@
       ctx.globalAlpha = 1;
       ctx.strokeStyle = style.colour;
       ctx.lineWidth = width;
+      if (c.dash) ctx.setLineDash(c.dash);
       path();
       ctx.stroke();
+      if (c.dash) ctx.setLineDash([]);
       if (c.on && xs[xs.length - 1] < right) {
         ctx.setLineDash([5, 4]);
         line(xs[xs.length - 1], ys[ys.length - 1], right, ys[ys.length - 1], style.colour, Math.max(1, width * 0.7), 0.85);
@@ -10582,6 +11537,23 @@
           colour,
         });
       }
+    }
+    // Golden and death crosses: a dot where the 50-day SMA crossed the 200-day,
+    // filled for a golden one and ringed for a death one, and named beside it.
+    for (const c of crosses) {
+      const x = G.X(c.t),
+        y = G.Y(c.v / PR),
+        colour = lineStyle("average", c.tier).colour;
+      if (x < G.x - 6 || x > right + 6 || y < G.y - 6 || y > G.y + G.h + 6) continue;
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, 2 * Math.PI);
+      ctx.fillStyle = c.golden ? colour : colors.surface;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = colour;
+      ctx.stroke();
+      chartLabel(c.golden ? "Golden cross" : "Death cross", x + 8, y - 10, colour);
+      lineHits.push({ key: c.key, id: `gdcross|${c.x.i}`, mark: [x - 7, y - 7, x + 7, y + 7], item: { kind: "cross", c }, colour });
     }
     // The level line: dashed across the prices in the neutral text colour, on
     // a halo, unlike the family lines, which are coloured and solid over their span.
@@ -10865,7 +11837,7 @@
     }
     const l = h.item,
       usdtAt = (x) => `${price(x * PR)} USDT`;
-    if (structureTip(tip, h, l)) return;
+    if (averageTip(tip, h, l) || structureTip(tip, h, l)) return;
     if (l.kind === "poc" || l.kind === "va") {
       const r = l.r,
         approx = r.exact ? "" : "≈ ",
@@ -11091,6 +12063,7 @@
   function toggleValue(key) {
     if (!lineAvailable(key)) return { text: "Live cube only" };
     if (!S.lines.includes(key) || CLOCK[key]) return { text: "" };
+    if (AVERAGE_SPECS[key]) return averageValue(key);
     const why = (s) =>
       s.state === "failed"
         ? { text: "unavailable", title: `The cube didn't answer: ${s.error}` }
@@ -11207,7 +12180,11 @@
       el("lines-list").replaceChildren(...LINE_KEYS.map((key) => lineRow(key, false)));
     for (const list of qsa("[data-toggles]"))
       if (!list.childElementCount)
-        list.replaceChildren(...TOGGLE_KEYS.filter((k) => TOGGLES[k].family === list.dataset.toggles).map((key) => lineRow(key, false)));
+        list.replaceChildren(
+          ...TOGGLE_KEYS.filter(
+            (k) => TOGGLES[k].family === list.dataset.toggles && (!list.dataset.group || TOGGLES[k].group === list.dataset.group),
+          ).map((key) => lineRow(key, false)),
+        );
     const vdays = S.lines.filter(isVwapDay);
     if (el("lines-vdays").dataset.keys !== vdays.join(",")) {
       el("lines-vdays").dataset.keys = vdays.join(",");
@@ -11354,7 +12331,14 @@
   // What a family's lines are waiting on, or where their measures end.
   function familyStatus(id) {
     if (!PACK.live)
-      return { session: "Session levels need the live cube.", structure: "Structure needs the live cube.", vwap: "VWAPs need the live cube." }[id] || "";
+      return (
+        {
+          session: "Session levels need the live cube.",
+          structure: "Structure needs the live cube.",
+          average: "Moving averages need the live cube.",
+          vwap: "VWAPs need the live cube.",
+        }[id] || ""
+      );
     const keys = S.lines.filter((k) => familyOf(k) === id);
     if (id === "clock") {
       if (!keys.includes("cme")) return "";
@@ -11372,8 +12356,9 @@
       if (four.state === "failed") return `The 4-hour bars couldn't be read: ${four.error}`;
       if (four.state === "pending") return "Reading 4-hour bars for the 4-hour swings…";
     }
+    if (id === "average") return keys.length ? averageStatus() : "";
     if (id === "vwap" && keys.length) {
-      const need = viewBarNeeds()[0],
+      const need = vwapBarNeed(),
         r = need ? barsBetween(...need) : null;
       if (r?.state === "failed") return `The view's bars couldn't be read: ${r.error}`;
       if (r?.state === "pending") return "Reading the view's bars for the VWAPs…";
@@ -11523,6 +12508,9 @@
     perpath: { label: "Volume per path", unit: "USDT per USDT moved", motion: true, value: (c) => (c.p > 0 ? c.v / c.p : 0) },
     cascade: { label: "Share of parent column", unit: "log₂ vs even", ratio: true },
     efficiency: { label: "Efficiency", unit: "log₂ vs expected", ratio: true },
+    rsi1d: { label: "RSI 14 · 1D", unit: "", osc: true },
+    rsi4h: { label: "RSI 14 · 4h", unit: "", osc: true },
+    macd1d: { label: "MACD · 1D", unit: "12, 26, 9", osc: true },
   };
   // The pane's measure and columns as last drawn, which its tooltip reads.
   let paneShown = null;
@@ -11545,6 +12533,7 @@
     return out;
   }
   function activity(shown, cut, mv, full) {
+    if (PANE_MEASURES[paneMeasure()]?.osc) return drawOscillator(paneMeasure(), PANE_MEASURES[paneMeasure()], cut);
     const ts = stepT(),
       b = bounds(),
       key = paneMeasure(),
@@ -11638,9 +12627,11 @@
   // The pane's name and unit at its top left, and what it is still reading or
   // couldn't read. Measured only when its words or the pane's width change.
   let paneLabel = { s: "", width: 0, text: "", w: 0 };
-  function paneLegend(measure, cols, mv, top) {
+  function paneLegend(measure, cols, mv, top, extra = "") {
     const has = (state) => measure.ratio && cols.some((x) => x.state === state),
-      note = measure.motion
+      note = measure.osc
+        ? extra
+        : measure.motion
         ? !mv?.src
           ? motionIssue()
             ? `path and dwell couldn't be read: ${motionIssue()}`
@@ -12792,7 +13783,7 @@
     // The encodings this page can show: path and dwell need the live cube.
     modes = () => (PACK.live ? MODES : MODES.filter((k) => !MOVEMENT.includes(k))),
     // The pane's choices this page can show: choppiness and volume per path too.
-    panes = () => (PACK.live ? PANES : PANES.filter((k) => !PANE_MOTION.includes(k)));
+    panes = () => (PACK.live ? PANES : PANES.filter((k) => !PANE_MOTION.includes(k) && !PANE_MEASURES[k]?.osc));
   const motion = {
     sources: {}, // tier or tile id -> its cells with path and dwell
     view: null, // the reference tier with the recent tier's later columns
@@ -13061,7 +14052,7 @@
   // to be read.
   function motionWant() {
     const viewing = movementOn();
-    if (!(viewing || (PACK.live && S.rows === "time") || barLevels().length) || cube.stale) return null;
+    if (!(viewing || (PACK.live && S.rows === "time") || barLevels().length || viewBarNeeds().length) || cube.stale) return null;
     if (["measure", "tile", "lens"].includes(cube.busy?.kind)) return null;
     for (const want of [measureWant(), tileWant(), lensWant()])
       if (want && !cube.failed.has(want.key)) return null;

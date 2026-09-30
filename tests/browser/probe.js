@@ -33,7 +33,9 @@
 // GLYPH CLASSIFICATION IS A HEURISTIC, documented as one (3.3): it looks only at the path (vertex count, closed or open,
 // the bounding box and where the vertices sit on it), never at pixels, and it is invariant to translation and uniform
 // scale, not to rotation. The shapes are those of E.role.paint (tools/encoding-parts/12-role.js):
-//   tick          one open, horizontal segment
+//   tick          one open, horizontal segment. This is the weakest rule: on the baseline page the horizontal grid and axis
+//                 segments (14 in the boot frame) classify as ticks too, so a tick assertion must select on the style entry as
+//                 well (the zero tick is stroked at lineWidth 1.5) and is always paired with the key's data-count
 //   diamond       four vertices, closed, each on the midpoint of a side of the bounding box, box aspect within 10% of 1
 //   triangleDown  three vertices, closed, two on the top edge of the box, one at the bottom (canvas y grows downward)
 //   triangleUp    three vertices, closed, two on the bottom edge, one at the top

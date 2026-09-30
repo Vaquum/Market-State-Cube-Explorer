@@ -362,7 +362,9 @@ test.describe("B24 baseline 8c82ca1", () => {
     expect(sum("fillText")).toBeGreaterThan(0);
     expect(sum("fillRect")).toBeGreaterThan(0);
     expect(sum("clearRect")).toBe(0);
-    expect(frames.every((f) => f.ops.fillRectFull >= 1)).toBe(true);   // the secondary cross-check: each draw fills the whole surface
+    // the secondary cross-check of DD-T28: each of these draws starts with a fillRect over the whole surface (the boot frames
+    // before the first geometry do not, which is why the log was reset after them)
+    expect(frames.every((f) => f.ops.fillRectFull >= 1)).toBe(true);
     // the log is well formed: frames in order, each with a duration and the (chip-less) attribute snapshot of this page
     expect(frames.map((f) => f.seq)).toEqual(frames.map((_, i) => i + 1));
     expect(frames.every((f) => f.dur >= 0 && f.t > 0)).toBe(true);

@@ -3067,7 +3067,7 @@
     const readout = frame.readout(x, { ctx: x.ctx, index: x.c }),
       typed = readout.typed,
       at = `pane:${rec.id}:${c}`,
-      modelNote = model ? modelWords(model) : "";
+      modelNote = model ? modelNoteWords(model) : "";
     scaleRt.tipReadout = readout;
     if (typed.tag !== "finite") {
       // Why there is no bar: the typed reason in the module's words, with what a person would add about
@@ -3083,7 +3083,7 @@
               ? "Only part of its parent column is loaded"
               : "";
       tipRows(tip, head, sub, [], [E.result.describe(typed).long, more, modelNote]);
-      return tipFields(tip, [], at);
+      return paneTipFields(tip, [], at);
     }
     const value = typed.value,
       // [label, text, field, canonical]: what the row says, and the number a test reads back.
@@ -3141,7 +3141,7 @@
                             ["Volume", money(x.v), "value", value],
                             ["Trades", count(x.ct), "trades", x.ct],
                           ],
-      axis = axisTipRows(rec, value),
+      axis = paneAxisTipRows(rec, value),
       notes =
         key === "cascade" && x.alone
           ? "The other column in its parent had no trades"
@@ -3149,7 +3149,7 @@
             ? `Its USDT per 125 USDT row its trades touched, over its parent column's, against the ${EFFICIENCY_EXPECTED.toFixed(2)} the recorded model expects`
             : "";
     tipRows(tip, head, sub, [...list.map(([label, text]) => [label, text]), ...axis.rows], [notes, modelNote, note]);
-    tipFields(tip, [...list.map(([, , field, canonical]) => ({ field, canonical })), ...axis.meta], at);
+    paneTipFields(tip, [...list.map(([, , field, canonical]) => ({ field, canonical })), ...axis.meta], at);
   }
   // The tooltip's row section: the row's USDT in the rectangle and its share
   // of it (left out over the profile, which gives them already), the
@@ -7241,7 +7241,7 @@
   }
   // The bars an oscillator's pane reads are all read: no chunk of its timeframe is still to come (one that
   // failed is not waited for). The axis is fitted only on bars that are.
-  function barsCoherent(n) {
+  function oscBarsCoherent(n) {
     const span = BAR_CHUNK * 2 ** n;
     for (let j = Math.floor((cutEdge() - 1) / span); j >= 0; j--) {
       const want = barChunkWant(n, j);
@@ -7251,7 +7251,7 @@
     return !(tail && !motion.failed.has(tail.key));
   }
   // MACD, its signal and its histogram over the bars i0..i1 as one summary, for the one axis they share.
-  function macdSummary(o, i0, i1) {
+  function oscMacdSummary(o, i0, i1) {
     let count = 0,
       max = -Infinity,
       min = Infinity;
@@ -7350,9 +7350,9 @@
         // are read; it holds through a gesture and Play (the chip says so) and is never 1 by default.
         rec = axisOf({
           sign: "signed-symmetric",
-          eligible: barsCoherent(9),
+          eligible: oscBarsCoherent(9),
           sig: [scaleWorkspace(), id, live.generation, barsVersion, cutEdge(), S.replay, key, i0, i1, o.state].join("|"),
-          summary: () => macdSummary(o, i0, i1),
+          summary: () => oscMacdSummary(o, i0, i1),
         });
         if (rec?.clipped) {
           // Bars beyond a held or frozen domain are drawn at its edge and counted.
@@ -7454,12 +7454,12 @@
   }
   // The tooltip's pane rows that say where a value sits on the pane's axis: the axis in words, its domain
   // as numbers, the value's place on it and whether the axis leaves it out. `meta` is parallel to the rows
-  // (what a test reads as [data-field][data-canonical], see tipFields).
-  function axisTipRows(rec, value) {
+  // (what a test reads as [data-field][data-canonical], see paneTipFields).
+  function paneAxisTipRows(rec, value) {
     const rows = [],
       meta = [];
     if (!rec) return { rows, meta };
-    rows.push(["Axis", axisNote(rec)]);
+    rows.push(["Axis", paneAxisNote(rec)]);
     meta.push(null);
     if (rec.typed === "finite" && Number.isFinite(value)) {
       const at = E.axis.coordinate(rec, value, { t: 0, clip: 0 }),
@@ -7477,7 +7477,7 @@
   // The numeric rows of a pane's tooltip carry [data-field] and [data-canonical] (INTEGRATION D.18) and the
   // tooltip names the readout it was built from, "pane:<axis id>:<column or bar>". `meta` is parallel to
   // the rows tipRows just wrote; a null entry is a row with nothing to read back.
-  function tipFields(tip, meta, readout) {
+  function paneTipFields(tip, meta, readout) {
     const values = tip.querySelectorAll(".ol-tip-rows dd");
     meta.forEach((m, i) => {
       if (!m || !values[i]) return;
@@ -7506,7 +7506,7 @@
     scaleRt.tipReadout = null;
     if (paneShown.key === "macd1d") {
       const x = o.crosses.find((c) => c.i === i),
-        axis = axisTipRows(rec, o.macd[i]);
+        axis = paneAxisTipRows(rec, o.macd[i]);
       tipRows(
         tip,
         head,
@@ -7520,7 +7520,7 @@
         ],
         Number.isFinite(o.signal[i]) ? "EMA(12) − EMA(26) of the daily closes in USDT; its signal the EMA(9) of it" : "From its first full window: the 34th day",
       );
-      return tipFields(
+      return paneTipFields(
         tip,
         [
           Number.isFinite(o.macd[i]) ? { field: "macd", canonical: o.macd[i] } : null,
@@ -7533,7 +7533,7 @@
       );
     }
     const d = o.divergences.find((x) => x.b.i === i && x.b.confirmed <= last.cut),
-      axis = axisTipRows(rec, o.rsi[i]);
+      axis = paneAxisTipRows(rec, o.rsi[i]);
     tipRows(
       tip,
       head,
@@ -7546,7 +7546,7 @@
       ],
       Number.isFinite(o.rsi[i]) ? "Wilder's smoothing of gains and losses over 14 bars" : "From its first full window: the 15th bar",
     );
-    tipFields(
+    paneTipFields(
       tip,
       [
         Number.isFinite(o.rsi[i]) ? { field: "rsi", canonical: o.rsi[i] } : null,
@@ -9348,7 +9348,7 @@
   let paneShown = null;
   // A Cascade column entry as the ratio kernel takes it: the column and its parent column, whole, at
   // factor 2 (two child columns to a parent), or why there is no pair.
-  function cascadeRatio(e) {
+  function paneCascadeRatio(e) {
     return { structure: e.state === "ok" || e.state === "none" ? "complete" : e.state, childV: e.w?.v, parentV: e.p?.v, factor: 2 };
   }
   // A ratio's columns in view between `from` and `to`, each with its typed result (`typed`, from the
@@ -9362,7 +9362,7 @@
       for (let i = bisectColumn(cols, Math.floor(from / ts)); i < cols.length && cols[i].c * ts < to; i++) {
         // A copy: the level's entries are kept with the level and this adds what the pane needs.
         const e = cascadeColumn(cx, cols[i].c),
-          input = cascadeRatio(e);
+          input = paneCascadeRatio(e);
         out.push({ ...e, typed: E.ratio.cascade(input), ctx: { ratio: input } });
       }
     } else if (to > from) {
@@ -9391,7 +9391,7 @@
   // The count, largest and smallest of the values a measure has on these columns: what an Auto axis fits.
   // A column without a value is not counted (an axis is never fitted to nothing, and never to a zero that
   // is not there).
-  function columnSummary(key, cols) {
+  function paneColumnSummary(key, cols) {
     let count = 0,
       max = -Infinity,
       min = Infinity;
@@ -9437,13 +9437,13 @@
         meas.updating ? 1 : 0,
         mv?.src ? mv.end : "-",
       ].join("|"),
-      summary: () => columnSummary(key, cols),
+      summary: () => paneColumnSummary(key, cols),
     });
   }
   // What the pane says about its axis, in words from E.text: "Auto axis ±1.92 B", "Fixed scale ±2",
   // "Frozen ±1.92 B", "0", "No data", and why it is not current ("Updating", "Auto paused", how many bars
   // the held domain leaves out). The chip carries the full detail; this is the canvas's short form.
-  function axisNote(rec) {
+  function paneAxisNote(rec) {
     if (!rec) return "";
     const T = E.text,
       parts = [],
@@ -9464,9 +9464,9 @@
   // How the recorded model stands for one use ("efficiency" or "diagonal") at level n and the effective
   // cutoff, as one line: its timing status and, where the level lies outside the levels it was fitted on,
   // that it is extrapolated (the equality with it is still drawn). Empty when there is nothing to disclose.
-  function modelLine(use, n) {
+  function modelStatusLine(use, n) {
     try {
-      return modelWords(E.model.describe(use, E.time.baseToMs(activeCutoff(), T0, BASE), n));
+      return modelNoteWords(E.model.describe(use, E.time.baseToMs(activeCutoff(), T0, BASE), n));
     } catch (error) {
       scaleFault(error);
       return "";
@@ -9474,7 +9474,7 @@
   }
   // The words of a model note: its disclosure labels, and for a model that can only have been fitted
   // before the cutoff by the conservative bound, the status line E.model.describe leaves to its consumers.
-  const modelWords = (note) =>
+  const modelNoteWords = (note) =>
     (note.status === "eligible-by-bound" ? [E.text.model.eligibleByBound, ...note.labels] : note.labels).join(" · ");
   function activity(shown, cut, mv, full, sc) {
     const first = paneMeasure();
@@ -9612,7 +9612,7 @@
       else if (measure.ratio) for (const t of E.axis.ticks(rec, 2 * room)) at(t.label, zero - t.t * room);
       else at((signed ? "±" : "") + compact(rec.domain[1]), top + 7);
     }
-    paneLegend(measure, cols, mv, top, "", rec, model ? modelWords(model) : "");
+    paneLegend(measure, cols, mv, top, "", rec, model ? modelNoteWords(model) : "");
     // The triangles that say a value lies beyond the axis, over the pane and its label.
     if (marks.some((mark) => mark.id === "tri-up" || mark.id === "tri-down")) {
       ctx.save();
@@ -9651,7 +9651,7 @@
                   : "",
       // The axis words and the model's follow the name: the memo below is keyed on the whole string, so a
       // change of domain, "Updating" or "No data" is a new label.
-      s = [measure.label, measure.unit, axisNote(axis), note, model].filter(Boolean).join(" · ");
+      s = [measure.label, measure.unit, paneAxisNote(axis), note, model].filter(Boolean).join(" · ");
     ctx.font = `${TYPE.s}px ${FONT}`;
     if (paneLabel.s !== s || paneLabel.width !== G.w) {
       const fitted = fitText(s, G.w - 12);
@@ -9732,7 +9732,7 @@
   // "coarsest" (no coarser level: no-coarser-parent), "open" (its parent runs past the data:
   // waiting-for-complete-parent), "unavailable" (the recorded snapshot has no 125 USDT rows: unsupported),
   // "pending" and "failed" (the read of its rows). `ctx` is what the pane frame evaluates it from.
-  function efficiencyEntry(c, state, error) {
+  function efficiencyColumnEntry(c, state, error) {
     const input = { baseline: EFFICIENCY_EXPECTED };
     if (state === "pending") input.read = { state: "pending", reason: "reading rows" };
     else if (state === "failed") input.read = { state: "failed", reason: String(error) };
@@ -9741,13 +9741,13 @@
   }
   function efficiencyOf(ex, c) {
     const n = ex.n;
-    if (n >= N_MAX) return efficiencyEntry(c, "coarsest");
+    if (n >= N_MAX) return efficiencyColumnEntry(c, "coarsest");
     const span = 2 ** (n + 1),
       pc = Math.floor(c / 2),
       a = pc * span,
       z = a + span;
     // A parent that runs past the data is unfinished, as the open column is.
-    if (z > ex.cut) return efficiencyEntry(c, "open");
+    if (z > ex.cut) return efficiencyColumnEntry(c, "open");
     for (const h of ex.blocks)
       if (a >= h.start && z <= h.end) {
         if (!h.cols) {
@@ -9756,7 +9756,7 @@
         }
         return efficiencyFrom(h.cols, h.parents, c, pc);
       }
-    if (!PACK.live) return efficiencyEntry(c, "unavailable");
+    if (!PACK.live) return efficiencyColumnEntry(c, "unavailable");
     // Columns in view share a chunk or two: each is looked up once a frame.
     const k = Math.floor(a / (TOUCHED_CHUNK * 2 ** n));
     if (ex.chunk?.k !== k) {
@@ -9766,7 +9766,7 @@
     }
     const { key, hit } = ex.chunk;
     if (hit) return efficiencyFrom(hit.cols, hit.parents, c, pc);
-    return key && cube.failed.has(key) ? efficiencyEntry(c, "failed", cube.failed.get(key)) : efficiencyEntry(c, "pending");
+    return key && cube.failed.has(key) ? efficiencyColumnEntry(c, "failed", cube.failed.get(key)) : efficiencyColumnEntry(c, "pending");
   }
   // A column's Efficiency from its counts and its parent's: the ratio kernel's typed result, which is
   // empty-population naming the count that is 0 where a column has no trades or touched no row ("none"),
@@ -11930,7 +11930,7 @@
     if (el("pixel-state").textContent !== pixels) el("pixel-state").textContent = pixels;
     // The diagonal is the recorded model's: the one string says how it stands at the cutoff (timing, and
     // whether the requested level lies outside the levels it was fitted on).
-    const model = modelLine("diagonal", S.n);
+    const model = modelStatusLine("diagonal", S.n);
     nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)${model ? ` · ${model}` : ""}`;
     if (!nav.planeHover) setPlaneStatus(nav.planeStatus);
     const gesture = S.lens

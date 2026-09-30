@@ -17,8 +17,9 @@
 // edge of a phase is arithmetic on the address), and the comparison of ids across the live and the replay workspaces. No value is
 // taken from the module.
 //
-// What needs another package: the popover (U) for the lock test and the provenance text, the model status (X/F2), the address and
-// the portable code (P); Rows (R) for the calendar identity. Each fails by naming the missing element until it has merged.
+// What needs another package: the popover (U) for the lock test and the provenance text, the Efficiency pane's model label (X), the
+// address and the portable code (P); Rows (R) for the calendar identity. Each fails by naming the missing element until it has merged.
+// The model label is read off the pane's canvas text (as B19 does), because the axis chip's popover does not list the model fields yet.
 //
 // Not covered: the portable code's carrying of an override (B14), a rollover at the month or year (B10).
 const { test, expect } = require("./fixtures.js");

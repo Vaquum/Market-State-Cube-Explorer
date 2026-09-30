@@ -79,6 +79,29 @@ test("a new context calibrates once, a visited one is restored, every change is 
   expect(known.size, "five windows open several contexts").toBeGreaterThan(2);
 });
 
+// DR-54: the recorded page (a snapshot, no cube: nothing is ever read) calibrates exactly like the live one. It once waited for a
+// view read that could never come, so it stayed at "No calibration" for good. The fake serves the committed page unmodified and
+// fails any /cube request it gets, so a page that asked the cube for anything fails the test at teardown as well.
+test("the recorded page calibrates like the live one: once per context, restored on a revisit", async ({ page, fakeFor, probe, surface }) => {
+  const fake = await fakeFor("recorded");
+  const ctx = { page, fake, probe, surface };
+  await page.goto(`${fake.url}/#w=24h`);
+  const first = await calm(ctx);
+  expect(first.state, "the snapshot is calibrated").toBe("ready");
+  expect(first.mappingId).not.toBe("");
+  expect(first.fitSeq, "by one fit").toBe("1");
+  expect(first.workspace).toBe("live");
+  const wide = await gotoWindow(ctx, "30d");
+  expect(wide.context, "another window is another context").not.toBe(first.context);
+  expect(wide.mappingId, "with a calibration of its own").not.toBe("");
+  expect(wide.fitSeq).toBe("2");
+  const back = await gotoWindow(ctx, "24h");
+  expect(back.context).toBe(first.context);
+  expect(back.mappingId, "a revisit restores the mapping").toBe(first.mappingId);
+  expect(back.fitSeq, "and fits nothing").toBe("2");
+  expect(fake.log().filter((entry) => entry.path.startsWith("/cube/")), "the page asked the cube for nothing").toEqual([]);
+});
+
 // The identity of the displayed descriptor is the mapping id of its numbers (a consistency check, TESTPLAN 3.1).
 test("the mapping id is the id of the displayed numbers", async ({ page, fakeFor, probe, surface }) => {
   const fake = await fakeFor("standard");

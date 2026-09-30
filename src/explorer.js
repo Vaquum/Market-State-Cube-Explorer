@@ -1409,15 +1409,18 @@
     }
   }
   // The chips as the legend package reads them by dataset name (camel-cased): what the spine knows that a
-  // frame cannot say, the calibration counters above all, written in the same draw that paints.
+  // frame cannot say, the calibration counters above all, written in the same draw that paints. What describes
+  // the measure (transform, basis, the level) is left to the frame's own words when the spine has none for it
+  // (a fixed Rows scale has no context to read them from).
   function scaleChips(sc) {
-    const out = {};
+    const out = {},
+      ofFrame = new Set(["data-transform", "data-basis", "data-context", "data-effective-n", "data-effective-m", "data-row-size", "data-quality"]);
     for (const channel of ["cells", "rows"]) {
       const chip = sc.chip[channel];
       if (!chip) continue;
       const row = (out[channel] = {});
       for (const [name, value] of Object.entries(chip.attrs))
-        row[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
+        if (value !== "" || !ofFrame.has(name)) row[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
     }
     return out;
   }
@@ -1513,6 +1516,12 @@
         chips: {},
         map: { cells: resolved, rows: null, lens: null },
       };
+    // A frame built for the warnings count (see `scaleRt.counting`) only encodes: what the chips say is the
+    // draw's, and a repeat call changes nothing the page keeps.
+    if (scaleRt.counting) {
+      sc.stamp = scaleStamp(sc);
+      return sc;
+    }
     // Geometry has no mapping to resolve; its chip is the occupancy outline.
     if (!context)
       scaleRt.cur.cells = {

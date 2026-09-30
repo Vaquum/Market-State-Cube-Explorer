@@ -13,5 +13,10 @@ if (dir) {
   const only = process.env.ENCODING_ONLY ? process.env.ENCODING_ONLY.split(",").map((s) => s.trim()).filter(Boolean) : null;
   module.exports = loadParts({ dir: path.resolve(dir), only });
 } else {
-  module.exports = require("../../src/encoding.js");
+  // Until gate A0 assembles it the file does not exist. Say so once, with the way to test a part anyway,
+  // instead of a MODULE_NOT_FOUND stack in every (*) test file (TESTPLAN.md 2, DD-T23).
+  const file = path.resolve(__dirname, "../../src/encoding.js");
+  if (!require("node:fs").existsSync(file))
+    throw new Error("src/encoding.js does not exist yet (it is assembled at gate A0); test the parts with ENCODING_PARTS_DIR=tools/encoding-parts");
+  module.exports = require(file);
 }

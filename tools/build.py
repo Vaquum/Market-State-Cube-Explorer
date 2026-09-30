@@ -9,50 +9,87 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def check_names(app: str) -> None:
+def check_names(label: str, script: str) -> None:
     """Fail when two functions share a name in the script's own scope, where the
     later one silently replaces the other for every caller."""
-    names = re.findall(r'^  (?:async )?function (\w+)\(', app, re.M)
+    names = re.findall(r'^  (?:async )?function (\w+)\(', script, re.M)
     repeated = sorted({name for name in names if names.count(name) > 1})
     if repeated:
-        raise SystemExit(f"src/explorer.js declares {', '.join(repeated)} more than once; the last replaces the others.")
+        raise SystemExit(f"{label} declares {', '.join(repeated)} more than once; the last replaces the others.")
+
+
+def check_inline(label: str, script: str) -> None:
+    """Fail on text that would end or corrupt an inline <script> element: a closing
+    tag ends it wherever it sits (comments and strings included), and an HTML comment
+    opener changes how the parser reads the rest of the block."""
+    if re.search(r'</script|<!--', script, re.I):
+        raise SystemExit(f"{label} contains </script or <!--, which cannot be inlined in the page.")
+
+
+def read_source(relative: str) -> str:
+    path = ROOT / relative
+    if not path.is_file():
+        raise SystemExit(f"{relative} is missing; the page cannot be built without it.")
+    return path.read_text(encoding='utf-8')
 
 
 def build() -> str:
-    view = (ROOT / 'src/view.html').read_text(encoding='utf-8')
-    style = (ROOT / 'src/explorer.css').read_text(encoding='utf-8')
-    runtime = (ROOT / 'src/state.js').read_text(encoding='utf-8')
-    app = (ROOT / 'src/explorer.js').read_text(encoding='utf-8')
-    check_names(app)
-    snapshot = json.loads((ROOT / 'data/snapshot.json').read_text(encoding='utf-8'))
+    view = read_source('src/view.html')
+    style = read_source('src/explorer.css')
+    runtime = read_source('src/state.js')
+    encoding = read_source('src/encoding.js')
+    app = read_source('src/explorer.js')
+    # The three scripts are inlined verbatim, so each is checked for what would break the
+    # page before it is checked for what would break the script.
+    for label, script in (('src/state.js', runtime), ('src/encoding.js', encoding), ('src/explorer.js', app)):
+        check_inline(label, script)
+        check_names(label, script)
+    snapshot = json.loads(read_source('data/snapshot.json'))
     data = json.dumps(snapshot, separators=(',', ':'), ensure_ascii=True).replace('<', '\\u003c')
-    template = (ROOT / 'src/document.html').read_text(encoding='utf-8')
-    for marker, value in {
+    template = read_source('src/document.html')
+    # State, encoding and app stay in this order: the app reads window.explorerEncoding and
+    # window.explorerState when it starts.
+    values = {
         '__EXPLORER_STYLE__': style,
         '__EXPLORER_VIEW__': view,
         '__EXPLORER_DATA__': data,
         '__EXPLORER_STATE__': runtime,
+        '__EXPLORER_ENCODING__': encoding,
         '__EXPLORER_SCRIPT__': app,
-    }.items():
+    }
+    for marker in values:
         if template.count(marker) != 1:
             raise ValueError(f'Expected exactly one {marker} placeholder')
-        template = template.replace(marker, value)
-    return template
+    unknown = sorted(set(re.findall(r'__EXPLORER_[A-Z]+__', template)) - set(values))
+    if unknown:
+        raise ValueError(f'src/document.html names {", ".join(unknown)}, which the build does not fill')
+    # One pass, so a substituted source is never scanned for markers: a marker that appears
+    # inside one of them (a comment naming __EXPLORER_SCRIPT__, say) would otherwise be
+    # replaced by whatever comes after it, or be left in the page. Refuse it instead.
+    for source, value in (('src/explorer.css', style), ('src/view.html', view), ('data/snapshot.json', data),
+                          ('src/state.js', runtime), ('src/encoding.js', encoding), ('src/explorer.js', app)):
+        found = sorted({marker for marker in values if marker in value})
+        if found:
+            raise SystemExit(f"{source} contains {', '.join(found)}, which the build reserves for src/document.html.")
+    return re.sub(r'__EXPLORER_[A-Z]+__', lambda match: values[match.group(0)], template)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--check', action='store_true', help='Fail if index.html needs rebuilding')
+    parser.add_argument('--check', action='store_true', help='Fail if the built page (index.html, or --out) needs rebuilding')
+    parser.add_argument('--out', metavar='PATH',
+                        help='Write the page here instead of index.html; missing parent directories are created')
     args = parser.parse_args()
-    output = ROOT / 'index.html'
+    output = Path(args.out) if args.out else ROOT / 'index.html'
     rendered = build()
     if args.check:
         if not output.exists() or output.read_text(encoding='utf-8') != rendered:
-            raise SystemExit('index.html is stale; run python3 tools/build.py')
-        print('index.html matches the source and snapshot.')
+            raise SystemExit(f'{output.name} is stale; run python3 tools/build.py' + (f' --out {args.out}' if args.out else ''))
+        print(f'{output.name} matches the source and snapshot.')
     else:
+        output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(rendered, encoding='utf-8')
-        print(f'Built index.html ({len(rendered.encode("utf-8")):,} bytes).')
+        print(f'Built {output.name} ({len(rendered.encode("utf-8")):,} bytes).')
 
 
 if __name__ == '__main__':

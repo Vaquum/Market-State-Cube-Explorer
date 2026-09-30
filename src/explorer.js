@@ -3425,14 +3425,20 @@
         : b[0] >= Math.floor(CUT)
           ? "Not measured yet: the open column is measured once it completes"
           : "Not measured by the cube yet",
-        span = Math.max(0, Math.min(b[1], rect.end) - b[0]) * BASE;
+        // The rectangle's covered time: the seconds of its columns the motion reached. The dwell share is
+        // stated over it, and a dwell longer than it (or a negative one) is a failed validation, never a
+        // share to show (E.measure.dwellCheck).
+        span = Math.max(0, Math.min(b[1], rect.end) - b[0]) * BASE,
+        invalid = reached ? E.measure.dwellCheck(rect.query.w, span) : null;
       for (const [id, text, exact] of [
         ["path", reached ? compact(rect.query.p) : "—", reached ? usdt(rect.query.p) + " USDT" : why],
         [
           "dwell",
           reached ? dur(rect.query.w) : "—",
           reached
-            ? `${secondsExact(rect.query.w)} · ${(span > 0 ? (100 * rect.query.w) / span : 0).toFixed(1)}% of the time`
+            ? invalid
+              ? `${secondsExact(rect.query.w)} · ${E.result.describe(invalid).short}`
+              : `${secondsExact(rect.query.w)} · ${(span > 0 ? (100 * rect.query.w) / span : 0).toFixed(1)}% of the rectangle's ${secondsExact(span)} of covered time`
             : why,
         ],
       ]) {
@@ -3457,24 +3463,26 @@
     el("buypoc-value").textContent = wait(
       query.bpoc === null ? "—" : price((query.bpoc + 0.5) * ps * PR),
     );
+    // The taker share and the signed taker volume of the rectangle, from the same measures the cells use,
+    // asked with the rectangle's totals (summed before the ratio, never a mean of cell ratios).
+    const flow = totalMeasure("flow", query),
+      delta = totalMeasure("delta", query);
     el("share").textContent = wait(
-      query.v ? ((100 * query.bv) / query.v).toFixed(1) + "%" : "—",
+      flow?.result.tag === "finite" ? (100 * flow.result.value).toFixed(1) + "%" : "—",
     );
     el("delta-value").textContent = wait(
-      signed(2 * query.bv - query.v, compact) + " USDT",
+      delta?.result.tag === "finite" ? signed(delta.result.value, compact) + " USDT" : "—",
     );
     el("cells").textContent = wait(integer(query.cells.length));
+    // The counts of cells that stick out of the rectangle and that are still open, from the one predicate
+    // the readout and the table use.
     let partials = 0,
       unfinished = 0;
+    const cut = activeCutoff();
     for (const c of query.cells) {
-      if (
-        c.c * ts < b[0] ||
-        (c.c + 1) * ts > b[1] ||
-        c.r * ps < b[2] ||
-        (c.r + 1) * ps > b[3]
-      )
-        partials++;
-      if (!S.replay && c.c * ts < CUT && (c.c + 1) * ts > CUT) unfinished++;
+      const state = E.measure.cellState(c, b, cut, CUT, S.replay, ts, ps);
+      if (state.portion) partials++;
+      if (state.open) unfinished++;
     }
     el("partials").textContent = wait(integer(partials));
     // The open column's cells without a trade yet are open, not zero-trade.
@@ -3503,17 +3511,18 @@
   // the chart both ways through the cell under the pointer. It is rebuilt a
   // moment after the view settles, so panning never waits on it.
   const CELLS_PAGE = 100;
+  // The rows of the table by their numeric cell key, each with its element and the readout it was built
+  // from, and the level the whole table is listed at: a row and a cell of the chart are the same cell only
+  // when that level is the level drawn.
   let cellRows = new Map(),
+    cellRowsLevel = null,
     hoverRow = null,
     cellsTimer = 0;
+  // The words of a cell's finality, from the one predicate (E.measure.cellState) the readout and the
+  // inspector's counts use, so the table, the tooltip and the counts cannot say different things.
   function cellState(c, b, ts = stepT(), ps = stepP()) {
-    const open = !S.replay && (c.c + 1) * ts > CUT,
-      portion =
-        c.c * ts < b[0] ||
-        (c.c + 1) * ts > b[1] ||
-        c.r * ps < b[2] ||
-        (c.r + 1) * ps > b[3];
-    return [open ? "unfinished" : "complete", portion ? "portion" : ""]
+    const state = E.measure.cellState(c, b, activeCutoff(), CUT, S.replay, ts, ps);
+    return [state.open ? "unfinished" : "complete", state.portion ? "portion" : ""]
       .filter(Boolean)
       .join(" · ");
   }
@@ -3525,24 +3534,35 @@
   function buildCells(query, b, mv) {
     for (const th of qsa(".ol-motion-col")) th.hidden = !mv;
     if (!query) {
+      cellRows = new Map();
+      cellRowsLevel = null;
+      hoverRow = null;
       el("table-body").replaceChildren();
       el("table-caption").textContent = "Measuring the rectangle in the cube…";
       el("table-page").textContent = "";
       el("table-back").disabled = el("table-next").disabled = true;
       return;
     }
-    // The cells at the measure's own level, which a very wide rectangle reads
-    // coarser in time than the view shows.
-    const ts = 2 ** query.n,
-      ps = 2 ** query.m,
-      key = [query.n, query.m, b.join(","), S.cellSort, S.cellDir, Boolean(mv)].join("|"),
+    // The cells at the level the chart draws. A very wide rectangle is measured by the cube coarser in time
+    // than the view shows, and listing those cells put a row of one level beside a cell of another (the
+    // link, the outline and the numbers all described different cells); the drawn cells are listed
+    // instead, and each row names its level.
+    const drawn = { n: renderN(), m: renderM() },
+      listed =
+        query.n === drawn.n && query.m === drawn.m
+          ? query
+          : last?.query === query && last.shown
+            ? last.shown
+            : query,
+      ts = 2 ** listed.n,
+      ps = 2 ** listed.m,
+      same = listed.n === drawn.n && listed.m === drawn.m,
+      key = [listed.n, listed.m, b.join(","), S.cellSort, S.cellDir, Boolean(mv)].join("|"),
       // With a movement view on, each cell's path and dwell, and the cells the
       // price moved through or held in without a trade, at the table's level.
-      mq =
-        mv?.rect.query && mv.rect.query.n === query.n && mv.rect.query.m === query.m
-          ? mv.rect.query
-          : null,
-      end = mq ? mv.rect.end : -Infinity,
+      mq = mv?.shown && mv.shown.n === listed.n && mv.shown.m === listed.m ? mv.shown : null,
+      // The same motion end the chart and the tooltip read.
+      end = mq ? mv.end : -Infinity,
       moves = (c) => (c.p !== undefined ? c : mq?.map.get(cellKey(c.c, c.r)));
     if (key !== tableKey) {
       tablePage = 0;
@@ -3561,8 +3581,8 @@
       }[S.cellSort],
       // Cells the price moved through or held in without a trade: without one
       // here either, where a cell's trades can come after path and dwell end.
-      movedThrough = mq ? mq.moved.filter((z) => !query.map.has(z.c + "," + z.r)) : [],
-      cells = query.cells
+      movedThrough = mq ? mq.moved.filter((z) => !listed.map.has(z.c + "," + z.r)) : [],
+      cells = listed.cells
         .concat(movedThrough)
         .sort(
           (x, y) =>
@@ -3575,47 +3595,86 @@
     tablePage = clamp(tablePage, 0, pages - 1);
     const frag = document.createDocumentFragment();
     cellRows = new Map();
+    cellRowsLevel = { n: listed.n, m: listed.m };
     for (const c of cells.slice(
       tablePage * CELLS_PAGE,
       (tablePage + 1) * CELLS_PAGE,
     )) {
-      const tr = document.createElement("tr");
+      const tr = document.createElement("tr"),
+        state = cellState(c, b, ts, ps),
+        mz = mv ? moves(c) : null,
+        reached = Boolean(mq) && c.c * ts < end,
+        // What the chosen measure reads in this row: under Path and Dwell the motion cell (none where the
+        // motion has not reached the column), else the row's own cell.
+        read = movementMode() ? (reached ? (mz ?? c) : null) : c,
+        readout = same && read ? cellReadout(read, null) : null;
       tr.dataset.c = c.c;
       tr.dataset.r = c.r;
+      tr.dataset.cellKey = `${listed.n}:${listed.m}:${c.c}:${c.r}`;
+      tr.dataset.level = `${listed.n}:${listed.m}`;
+      // The text of each column and, for a number, the canonical value it was made from (the same field
+      // names as the tooltip's rows, so the two can be compared for one cell).
       const values = [
-        range(Math.max(c.c * ts, b[0]), Math.min((c.c + 1) * ts, b[1])),
-        price(Math.max(c.r * ps, b[2]) * PR) +
-          "–" +
-          price(Math.min((c.r + 1) * ps, b[3]) * PR),
-        usdt(c.v),
-        integer(c.ct),
-        usdt(c.bv ?? 0),
-        integer(c.bt ?? 0),
+        [range(Math.max(c.c * ts, b[0]), Math.min((c.c + 1) * ts, b[1]))],
+        [
+          price(Math.max(c.r * ps, b[2]) * PR) +
+            "–" +
+            price(Math.min((c.r + 1) * ps, b[3]) * PR),
+        ],
+        [usdt(c.v), "volume", c.v],
+        [integer(c.ct), "trades", c.ct],
+        [usdt(c.bv ?? 0), "buyVolume", c.bv ?? 0],
+        [integer(c.bt ?? 0), "buyTrades", c.bt ?? 0],
         ...(mv
           ? !mq
-            ? ["…", "…"]
+            ? [
+                ["…", "path", "pending"],
+                ["…", "dwell", "pending"],
+              ]
             : c.c * ts >= end
-              ? ["—", "—"]
+              ? [
+                  ["—", "path", "pending"],
+                  ["—", "dwell", "pending"],
+                ]
               : [
-                  usdt(moves(c)?.p ?? 0),
-                  secondsMilli(moves(c)?.w ?? 0),
+                  [usdt(mz?.p ?? 0), "path", mz?.p ?? 0],
+                  [secondsMilli(mz?.w ?? 0), "dwell", mz?.w ?? 0],
                 ]
           : []),
-        cellState(c, b, ts, ps) + (c.ct === 0 ? " · no trades" : ""),
+        [state + (c.ct === 0 ? " · no trades" : ""), "state", state],
       ];
-      for (const v of values) {
+      for (const [text, field, canonical] of values) {
         const td = document.createElement("td");
-        td.textContent = v;
+        td.textContent = text;
+        if (field) {
+          td.dataset.field = field;
+          td.dataset.canonical = String(canonical);
+        }
         tr.append(td);
       }
-      cellRows.set(c.c + "," + c.r, tr);
+      // What the chart encodes for the cell, from the readout of the draw: the value of the chosen measure,
+      // its place on the scale and the colour step. There is no column for them (the table lists amounts);
+      // they are carried, hidden, where the state is, and they say why when there is nothing to carry: the
+      // table was listed at another level than the chart draws, or the measure has not read the cell yet.
+      const why = !same ? "level-differs" : readout ? null : "pending";
+      for (const [field, canonical] of readoutFields(readout, why)) {
+        const node = document.createElement("data");
+        node.hidden = true;
+        node.dataset.field = field;
+        node.dataset.canonical = String(canonical);
+        tr.lastElementChild.append(node);
+      }
+      cellRows.set(cellKey(c.c, c.r), { tr, z: c, readout });
       frag.append(tr);
     }
     el("table-body").replaceChildren(frag);
     hoverRow = null;
-    el("table-caption").textContent = mq
-      ? `${integer(query.cells.length)} occupied and ${integer(movedThrough.length)} moved-through cells in view · other zero cells omitted`
-      : `${integer(cells.length)} occupied cells in view · zero cells omitted`;
+    // The rows are new: a row the pointer is on keeps its marker on the legend.
+    if (tableHover) rowMarker();
+    el("table-caption").textContent =
+      (mq
+        ? `${integer(listed.cells.length)} occupied and ${integer(movedThrough.length)} moved-through cells in view · other zero cells omitted`
+        : `${integer(cells.length)} occupied cells in view · zero cells omitted`) + scaleCaption();
     el("table-page").textContent = `${tablePage + 1} / ${pages}`;
     el("table-back").disabled = tablePage === 0;
     el("table-next").disabled = tablePage === pages - 1;
@@ -3626,9 +3685,14 @@
       else th.removeAttribute("aria-sort");
     }
   }
-  // Outline the table row of the cell under the chart pointer.
+  // Outline the table row of the cell under the chart pointer, when the row and the cell are at the same
+  // level (a row listed at another level is another cell, whatever its numbers are).
   function syncRowHover(key) {
-    const tr = key ? cellRows.get(key) || null : null;
+    const row =
+      key !== null && cellRowsLevel && cellRowsLevel.n === renderN() && cellRowsLevel.m === renderM()
+        ? cellRows.get(key)
+        : null,
+      tr = row?.tr || null;
     if (tr === hoverRow) return;
     hoverRow?.classList.remove("is-hover");
     tr?.classList.add("is-hover");
@@ -3645,7 +3709,17 @@
       return node;
     };
     const list = part("dl", "ol-tip-rows", "");
-    for (const [label, value] of rows) list.append(part("dt", "", label), part("dd", "", value));
+    // A row may carry a third and a fourth element, the name of its field and the canonical value the text
+    // was made from (a number, or the tag of a typed result), so a reader of the page can compare a number
+    // here with the same number in the Cells table without parsing the words.
+    for (const [label, value, field, canonical] of rows) {
+      const dd = part("dd", "", value);
+      if (field) {
+        dd.dataset.field = field;
+        dd.dataset.canonical = String(canonical);
+      }
+      list.append(part("dt", "", label), dd);
+    }
     tip.replaceChildren(
       part("div", "ol-tip-head", head),
       ...(sub ? [part("div", "ol-tip-sub", sub)] : []),
@@ -3654,11 +3728,15 @@
       ...[note || []].flat().filter(Boolean).map((text) => part("div", "ol-tip-note", text)),
     );
   }
-  // A drawn cell's path and dwell for the tooltip, or why it has none yet.
-  function motionRows(c, r, z, money, exact) {
+  // A drawn cell's path and dwell for the tooltip, or why it has none yet. Path is shown in the three ways
+  // the measure has (path over the measured price span in row spans, the USDT moved, and row spans per
+  // minute) with the raw path, the measured width and the covered seconds they are made of; Dwell shows its
+  // numerator and the covered time it is a share of, from the exposure record the encoder used. Every
+  // number is asked of E.measure.cellMeasurement at the level, rectangle, cutoff and motion end of the
+  // frame, so the row the chart colours by is one of these, not a neighbour computed here.
+  function motionRows(c, r, z, money, exact, readout) {
     const mv = last.mv,
-      ts = stepT(),
-      ps = stepP();
+      ts = stepT();
     if (!mv.src)
       return [["Path, dwell", motionIssue() ? `couldn't be read: ${motionIssue()}` : "reading from the cube…"]];
     if (c * ts >= mv.end)
@@ -3672,11 +3750,27 @@
               : "not measured by the cube yet",
         ],
       ];
-    const b = last.b,
-      secs = Math.max(0, Math.min((c + 1) * ts, b[1], mv.end) - Math.max(c * ts, b[0])) * BASE,
-      width = Math.max(0, Math.min((r + 1) * ps, b[3]) - Math.max(r * ps, b[2])) * PR,
-      path = z ? z.p : 0,
-      dwell = z ? z.w : 0,
+    // A cell the price never touched has a path and a dwell of zero, measured.
+    const cell = z ?? { c, r, v: 0, bv: 0, ct: 0, bt: 0, p: 0, w: 0 },
+      // A quantity the record could not hold (a non-finite number becomes null there) reads as a dash.
+      seconds = (x) => (x === null ? "—" : exact ? secondsExact(x) : dur(x)),
+      share = (x) => (x * 100).toFixed(exact ? 2 : 1) + "%",
+      spans = cellMeasure("path", cell, "amount", "spans"),
+      moved = cellMeasure("path", cell, "amount", "usdt"),
+      perMinute = cellMeasure("path", cell, "amount", "perMinute"),
+      // Under Dwell the numerator, denominator and result are the readout's own record (the exposure the
+      // encoder used); beside another measure they are asked for, with the same inputs.
+      dwell =
+        readout?.measure.measure === "dwell" && readout.exposure
+          ? { numerator: readout.observed ? readout.observed.value : null, denominator: readout.exposure.seconds, result: readout.typed, exposure: readout.exposure }
+          : cellMeasure("dwell", cell),
+      // The width and the seconds the ratios divide by: one exposure record (the per-minute basis uses both).
+      ex = perMinute.exposure,
+      spanText = (m, unit) =>
+        m.result.tag === "finite"
+          ? `${exact ? m.result.value.toFixed(3) : compact(m.result.value)} ${unit}`
+          : E.result.describe(m.result).short,
+      canonical = (m) => (m.result.tag === "finite" ? m.result.value : m.result.tag),
       // The column's value in the pane under the prices, while it follows the cells.
       col = movementMode() && S.pane === "cells" ? mv.shown?.cols.find((x) => x.c === c) : null,
       pane =
@@ -3684,33 +3778,66 @@
           ? []
           : S.mode === "path"
             ? [["Column path ÷ range", col.ct > 0 && col.hi > col.lo ? compact(col.p / (col.hi - col.lo)) : "—"]]
-            : [["Column USDT ÷ path", col.p > 0 ? compact(col.v / col.p) : "—"]];
+            : [["Column USDT ÷ path", col.p > 0 ? compact(col.v / col.p) : "—"]],
+      // The covered seconds of the cell's whole column, which a dwell residual is measured against.
+      column = Math.max(0, Math.min((c + 1) * ts, last.cut, mv.end) - c * ts) * BASE,
+      residual = E.measure.dwellResidual(column, null),
+      short = spans.exposure?.short || dwell.exposure?.short;
     return [
-      ["Path", `${money(path)} · ${compact(width > 0 ? path / width : 0)} row heights`],
+      ["Path / price span", spanText(spans, E.text.unit.rowSpans), "pathSpans", canonical(spans)],
+      ["USDT moved", money(moved.numerator), "path", moved.numerator],
+      [
+        "Row spans per minute",
+        spanText(perMinute, E.text.unit.rowSpansPerMinute),
+        "pathPerMinute",
+        canonical(perMinute),
+      ],
+      ["Measured width", `${price(ex.width)} USDT`, "width", ex.width],
+      ["Covered time", seconds(ex.seconds), "seconds", ex.seconds],
       [
         "Dwell",
-        `${exact ? secondsExact(dwell) : dur(dwell)} · ${(secs > 0 ? (100 * dwell) / secs : 0).toFixed(exact ? 2 : 1)}% of the column`,
+        dwell.result.tag === "finite"
+          ? `${seconds(dwell.numerator)} of ${seconds(dwell.denominator)} covered column time · ${share(dwell.result.value)}`
+          : `${seconds(dwell.numerator)} · ${E.result.describe(dwell.result).short}`,
+        "dwell",
+        dwell.numerator,
       ],
+      // Dwell is never renormalised to fill the column: what the rows do not account for is stated, or
+      // said to be unmeasurable when only the rectangle's rows are known (always, for one cell).
+      [E.text.label.coverage, E.text.dwell.coverage],
+      [
+        E.text.label.unattributed,
+        residual.measurable
+          ? E.text.fill(E.text.dwell.residual, { seconds: seconds(residual.seconds) })
+          : residual.tag
+            ? E.result.describe(residual).short
+            : E.text.dwell.notMeasurable,
+      ],
+      ...(short && !readout?.exposure?.short ? [exposureRow(ex)] : []),
       ...pane,
       ...((c + 1) * ts > mv.end ? [["Measured to", `${when(mv.end)} UTC`]] : []),
     ];
   }
-  // A cell's share of its parent and its Cascade value for the tooltip, or why
-  // it has none; at +2, that no other cell in its parent traded. The share is
-  // the whole cell's: where the rectangle holds only part of the cell (shown),
-  // both whole amounts are given too.
+  // A cell's share of its parent and its Cascade value for the tooltip, or why it has none; at +2, that no
+  // other cell in its parent traded. The share is the whole cell's: where the rectangle holds only part of
+  // the cell (shown), both whole amounts are given too. The value, and the reason there is none, are the
+  // readout's (typed, with the words of E.text), where the readout exists; the parent's amounts are the
+  // Cascade entry's.
   const ratioText = (v, exact) => signed(v, (x) => x.toFixed(exact ? 3 : 2));
-  function cascadeRows(e, share, exact, money, shown) {
+  function cascadeRows(e, share, exact, money, shown, readout) {
+    const typed = readout?.typed ?? null;
     if (e.state === "ok") {
       const part = shown && Math.abs(shown.v - e.w.v) > 1e-9 * e.w.v;
       return {
         rows: [
-          ["Of its parent", share(e.share)],
-          ["Cascade", ratioText(e.value, exact)],
+          ["Of its parent", share(e.share), "cascadeShare", e.share],
+          // With a readout the value (or the reason there is none) is its first row; this one stands in
+          // where there is no readout to read.
+          ...(typed ? [] : [["Cascade", ratioText(e.value, exact), "cascade", e.value]]),
           ...(part
             ? [
-                ["Whole cell", money(e.w.v)],
-                ["Parent", money(e.p.v)],
+                ["Whole cell", money(e.w.v), "cascadeCell", e.w.v],
+                ["Parent", money(e.p.v), "cascadeParent", e.p.v],
               ]
             : []),
         ],
@@ -3727,7 +3854,7 @@
       outside: "only part of its parent is loaded",
       none: "no value here",
     };
-    return { rows: [["Cascade", why[e.state]]], note: "" };
+    return { rows: typed ? [] : [["Cascade", why[e.state]]], note: "" };
   }
   // The pane's column under the pointer: its value and what it is made of,
   // or why it has none, and where the value sits on the pane's axis. The
@@ -3968,16 +4095,310 @@
     const px = G.x + G.w + 9;
     return p.x >= px && p.x <= px + G.profile - 8 && p.y >= G.y && p.y <= G.y + G.h;
   }
-  function tooltip(p) {
+  // ---- The readout consumers (PRD-0002 S1) ----
+  // The tooltip, the Cells table and the inspector say what a cell measures by reading the ONE readout of
+  // the frame of the draw (`last.sc.cells.readout`), and the readings beside it (the Path bases next to the
+  // chosen one, the trade size next to Volume) by asking the same module with the same level, rectangle,
+  // cutoff and motion end. A number printed here is therefore the number the encoder mapped to a colour
+  // and the legend marker locates on the key; nothing below computes a measure, it chooses words and digits.
+
+  // The key of a readout as the page names it in the DOM: "<n>:<m>:<c>:<r>" for a cell, "row:<r>" for a
+  // profile row, "pane:<axis id>:<column>" for a column pane.
+  function readoutId(readout) {
+    if (!readout) return "";
+    if (readout.consumer === "cells") {
+      const r = readout.key % 2097152;
+      return `${readout.level.n}:${readout.level.m}:${(readout.key - r) / 2097152}:${r}`;
+    }
+    if (readout.consumer === "pane") return `pane:${readout.axis?.id ?? ""}:${String(readout.key).replace(/^col:/, "")}`;
+    return String(readout.key);
+  }
+  // One measure of one cell at the level drawn: the kernel spec the frame of the draw was built from, asked
+  // for a measure and basis of its own. `E.measure.cellMeasurement` is the code the encoder runs, so the
+  // typed result here is the encoder's for that measure; its numerator, denominator and exposure are the
+  // quantities the ratio was made of.
+  function cellMeasure(mode, z, basis = "amount", pathBasis = "spans") {
+    return E.measure.cellMeasurement({
+      mode,
+      basis,
+      pathBasis,
+      z,
+      geom: { BASE, PR },
+      level: { n: renderN(), m: renderM() },
+      bounds: last.b,
+      cut: last.cut,
+      end: last.mv ? last.mv.end : Infinity,
+      CUT,
+      replay: S.replay,
+      read: null,
+      measured: null,
+      cascade: null,
+    });
+  }
+  // A measure of the rectangle's totals (summed before the ratio): a pseudo cell of the level the totals
+  // were summed at. Fail-soft, because the inspector is written inside the draw: a fault turns the scale
+  // display off and leaves the field empty (the caller shows a dash).
+  function totalMeasure(mode, q) {
+    try {
+      return E.measure.cellMeasurement({
+        mode,
+        basis: "amount",
+        z: { c: 0, r: 0, v: q.v, bv: q.bv, ct: q.ct, bt: q.bt, p: 0, w: 0 },
+        geom: { BASE, PR },
+        level: { n: q.n, m: q.m },
+        bounds: null,
+        cut: Infinity,
+        end: Infinity,
+        CUT,
+        replay: false,
+        read: null,
+        measured: null,
+        cascade: null,
+      });
+    } catch (error) {
+      scaleFault(error);
+      return null;
+    }
+  }
+  // The cell the chosen measure reads at (c, r) of the level drawn: the cell itself, or under Path and
+  // Dwell the motion cell (a price that never touched the cell has a path and a dwell of zero, measured),
+  // or null where the measure has nothing to read yet (no motion block, or a column the motion has not
+  // reached: that is pending, never zero).
+  function measuredCell(c, r) {
+    if (movementMode()) {
+      const mv = last.mv;
+      if (!mv?.src || c * stepT() >= mv.end) return null;
+      return mv.shown?.map.get(cellKey(c, r)) ?? { c, r, v: 0, bv: 0, ct: 0, bt: 0, p: 0, w: 0 };
+    }
+    return last.shown.map.get(c + "," + r) ?? null;
+  }
+  // The Readout of one cell from the frame of the draw, or null when there is none to give: no cell, no
+  // frame, or a fault (which also turns the scale display off, and then the words fall back to the plain
+  // facts). `interaction` names who is asking ("hover", or null for a table row).
+  function cellReadout(z, interaction) {
+    const frame = last?.sc?.cells;
+    if (!z || !frame) return null;
+    try {
+      return frame.readout(z, { interaction });
+    } catch (error) {
+      scaleFault(error);
+      return null;
+    }
+  }
+  // The canonical values of a readout that the tooltip's rows and the table's hidden fields share: the
+  // value of the chosen measure (or the tag of its typed result), its coordinate on the scale and its colour
+  // step. `why` names the reason there is no readout: "level-differs" (a table listed at another level than
+  // the chart draws) or "pending" (the measure has not read the cell).
+  function readoutFields(readout, why) {
+    if (!readout) return [["value", why ?? "pending"], ["coordinate", why ?? "pending"], ["index", why ?? "pending"]];
+    const { typed, coordinate } = readout;
+    return [
+      ["value", typed === null ? "none" : typed.tag === "finite" ? typed.value : typed.tag],
+      ["coordinate", coordinate ? coordinate.t : "none"],
+      ["index", coordinate ? coordinate.idx : "none"],
+    ];
+  }
+  // The Short exposure cue with both fractions it is made of (DR-10: a usability cue, never "confidence").
+  function exposureRow(ex) {
+    const pct = (x) => (x * 100).toFixed(1) + "%";
+    return [
+      E.text.exposure.short,
+      E.text.fill(E.text.exposure.detail, { t: pct(ex.timeFraction), w: pct(ex.priceFraction) }),
+      "shortExposure",
+      Math.min(ex.timeFraction, ex.priceFraction),
+    ];
+  }
+  // A measured value in the unit its formula names. `f` = {money, count, share, exact}, the tooltip's own
+  // formatters, so Shift still shows exact digits.
+  function unitText(unit, x, isSigned, f) {
+    const sg = (format) => (isSigned ? signed(x, format) : format(x)),
+      digits = (v) => (f.exact ? v.toFixed(3) : compact(v));
+    switch (unit) {
+      case "usdt":
+        return sg(f.money);
+      case "trades":
+        return sg(f.count);
+      case "usdt-per-min-per-125usdt":
+        return `${sg(f.money)} ${E.text.unit.intensity}`;
+      case "trades-per-min-per-125usdt":
+        return `${sg(f.count)} ${E.text.unit.trades} ${E.text.unit.intensity}`;
+      case "usdt-per-trade":
+        return f.money(x);
+      case "row-spans":
+        return `${digits(x)} ${E.text.unit.rowSpans}`;
+      case "row-spans-per-min":
+        return `${digits(x)} ${E.text.unit.rowSpansPerMinute}`;
+      case "share":
+        return f.share(x);
+      case "log2-ratio":
+        return ratioText(x, f.exact);
+      default:
+        return String(x);
+    }
+  }
+  // The scale a readout was encoded with, in words: its policy and id, or the state that says there is no
+  // mapping to name (No calibration, Updating, Reading), and the external override where there is one.
+  function scaleText(scale) {
+    const t = E.text,
+      state =
+        scale.state === "no-calibration"
+          ? t.state.noCalibration
+          : scale.state === "updating"
+            ? t.state.updating
+            : scale.state === "pending"
+              ? t.state.pending
+              : null;
+    if (state && !scale.id) return state;
+    const parts = [t.policy[scale.policy] ?? scale.policy, scale.id];
+    if (state) parts.push(state);
+    if (scale.external) parts.push(t.state.external);
+    return parts.filter(Boolean).join(" · ");
+  }
+  // The rows a readout adds to a tooltip: the measure and basis with its value (or the typed reason there
+  // is none), the scale, the place on the scale and the colour step, and the exposure the ratio divides by
+  // with the Short exposure cue. Nothing for geometry, which measures nothing.
+  function readoutRows(readout, f) {
+    if (!readout || readout.typed === null) return [];
+    const { measure, typed, scale, coordinate, exposure } = readout,
+      formula = E.measure.FORMULAS[measure.formula],
+      basis = E.text.basis[measure.basis],
+      finite = typed.tag === "finite",
+      rows = [
+        [
+          // The Path bases already name Path ("Path / price span", "USDT moved"); the others name the measure
+          // first ("Volume · Intensity").
+          measure.measure === "path" && basis
+            ? basis
+            : `${MODE_NAMES[measure.measure] ?? measure.measure}${basis ? " · " + basis : ""}`,
+          finite ? unitText(measure.unit, typed.value, Boolean(formula?.signed), f) : E.result.describe(typed).short,
+          "value",
+          finite ? typed.value : typed.tag,
+        ],
+        ["Scale", scaleText(scale), "scale", scale.id ?? scale.state],
+      ];
+    if (coordinate) {
+      const isSigned = ["positive", "negative", "midpoint"].includes(coordinate.role),
+        percent = (coordinate.t * 100).toFixed(f.exact ? 2 : 1) + "%",
+        clip = coordinate.clip === "low" ? E.text.key.below : coordinate.clip === "high" ? E.text.key.above : "";
+      rows.push(
+        [
+          "Position on scale",
+          [isSigned && coordinate.t > 0 ? "+" + percent : percent, clip].filter(Boolean).join(" · "),
+          "coordinate",
+          coordinate.t,
+        ],
+        [
+          "Color step",
+          coordinate.idx < 0
+            ? E.text.key.zero
+            : coordinate.role === "midpoint"
+              ? E.text.role.midpoint
+              : `${coordinate.idx} of 255`,
+          "index",
+          coordinate.idx,
+        ],
+      );
+    }
+    if (exposure && measure.basis === "intensity")
+      rows.push([
+        "Observed",
+        `${f.exact ? secondsExact(exposure.seconds) : dur(exposure.seconds)} × ${price(exposure.width)} USDT`,
+        "exposureSeconds",
+        exposure.seconds,
+      ]);
+    if (exposure?.short) rows.push(exposureRow(exposure));
+    return rows;
+  }
+  // The scale the table's cells were encoded with, as one caption phrase: the policy and id of the mapping,
+  // or the state that says there is none. Empty where nothing is measured (Geometry) or the frame cannot say.
+  function scaleCaption() {
+    const frame = last?.sc?.cells;
+    if (!frame || S.mode === "geometry") return "";
+    try {
+      const input = frame.legendInput();
+      if (!input) return "";
+      return ` · Scale: ${scaleText({ state: input.state, id: input.mappingId || null, policy: input.policy, external: input.external })}`;
+    } catch (error) {
+      scaleFault(error);
+      return "";
+    }
+  }
+  // The plain facts of a drawn cell, each with its canonical value: the amounts, and the ratios between
+  // them as typed results (a cell without trades has no trade size: undefined, naming the denominator).
+  function cellFacts(z, f) {
+    const size = cellMeasure("size", z, "mean"),
+      flow = cellMeasure("flow", z),
+      flowTrades = cellMeasure("flowtrades", z),
+      delta = cellMeasure("delta", z),
+      canonical = (m) => (m.result.tag === "finite" ? m.result.value : m.result.tag),
+      text = (m, format) => (m.result.tag === "finite" ? format(m.result.value) : E.result.describe(m.result).short);
+    return [
+      ["Volume", f.money(z.v), "volume", z.v],
+      ["Trades", f.count(z.ct), "trades", z.ct],
+      ["Trade size", text(size, f.money), "size", canonical(size)],
+      ["Taker buys", `${f.money(z.bv)} · ${text(flow, f.share)}`, "buyVolume", z.bv],
+      ["Taker sells", f.money(z.v - z.bv), "sellVolume", z.v - z.bv],
+      ["Taker-buy trades", `${f.count(z.bt)} · ${text(flowTrades, f.share)}`, "buyTrades", z.bt],
+      ["Buy − sell", text(delta, (x) => signed(x, f.money)), "delta", canonical(delta)],
+    ];
+  }
+  // The legend marker for what the pointer is on, whatever it is on: the tooltip's readout while the tip
+  // shows, else the table row's. It follows the tip and the row, so it is cleared whenever either goes,
+  // whatever hid it; the hook writes only on change.
+  function markerNow() {
+    scaleHooks.legendMarker?.(hover && !el("tip").hidden ? scaleRt.tipReadout : tableHover ? scaleRt.rowReadout : null);
+  }
+  // The tooltip's readout, stored and shown on the legend (null clears both).
+  function tipMarker(readout) {
+    scaleRt.tipReadout = readout;
+    try {
+      markerNow();
+    } catch (error) {
+      scaleFault(error);
+    }
+  }
+  // The table row's readout, stored and shown on the legend; the row is the one under the table pointer.
+  function rowMarker() {
+    scaleRt.rowReadout = tableHover ? (cellRows.get(cellKey(tableHover.c, tableHover.r))?.readout ?? null) : null;
+    try {
+      markerNow();
+    } catch (error) {
+      scaleFault(error);
+    }
+  }
+  // Runs at the end of every draw: a mapping, theme or pack that changed under the tip makes its numbers
+  // stale, so the tip is derived again (without scheduling a frame: it is inside one), and the marker on the
+  // legend follows the tip and the table row whatever hid them. Not for a null hover (tooltip(null) throws),
+  // and not for a hidden tip (tooltip always ends by showing it).
+  function refreshTip() {
+    const tip = el("tip");
+    if (hover && !tip.hidden && last?.sc && scaleRt.tipStamp !== last.sc.stamp) tooltip(hover, { redraw: false });
+    // The readout key is named on the tip only while the tip shows (the pointer leaving, a pan or a tool hides
+    // it without going through tooltip()); the attribute stays, empty, so a reader can always find it.
+    if (tip.hidden && tip.dataset.readout) tip.dataset.readout = "";
+    markerNow();
+  }
+  scaleHooks.refreshTip = refreshTip;
+  // The tip names its readout from the start (empty until a cell's tip shows), so a reader finds the attribute.
+  el("tip").dataset.readout = "";
+  function tooltip(p, { redraw = true } = {}) {
+    // The first statements, on EVERY path out of the function (the early return too): the pointer the tip
+    // belongs to and the stamp it was derived under. A draw that finds the stamp changed derives the tip
+    // again (refreshTip); a stamp stored only at the end would leave a pointer resting on the price axis,
+    // where the tip is hidden at once, looking changed at every frame and drawing forever.
     hover = p;
+    scaleRt.tipStamp = last?.sc?.stamp ?? "";
+    scaleRt.tipReadout = null;
     const tip = el("tip"),
       exact = nav.shift,
       money = (x) => (exact ? usdt(x) : compact(x)) + " USDT",
       count = (x) => (exact ? integer(x) : compact(x)),
       share = (x) => (x * 100).toFixed(exact ? 2 : 1) + "%",
+      fmt = { money, count, share, exact },
       note = exact ? "" : "Hold Shift for exact values",
       ps = stepP(),
       priceRow = (r) => `${price(r * ps * PR)}–${price((r + 1) * ps * PR)} USDT`;
+    let readout = null;
     // A line or its tag under the pointer names the line; a clock line or a
     // CME gap, its event.
     const onLine = last && lineHits.length && inPlot(p) ? lineAt(p) : null,
@@ -4031,8 +4452,10 @@
       syncRowHover(null);
     } else if (!last || !inPlot(p)) {
       tip.hidden = true;
+      tip.dataset.readout = "";
       syncRowHover(null);
-      requestDraw();
+      tipMarker(null);
+      if (redraw) requestDraw();
       return;
     } else {
       const ts = stepT(),
@@ -4052,12 +4475,19 @@
         PACK.live && CANON !== null && (c + 1) * ts > CANON
           ? ["Source", "provisional minutes"]
           : null;
+      // What the chosen measure reads in the cell and its readout, the record the encoder, the table and the
+      // legend marker share. A Cascade cell with no trades of its own still has a typed result (its parent
+      // traded and it did not, or its parent is open), which only the Cascade entry can say.
+      const read =
+        measuredCell(c, r) ??
+        (S.mode === "cascade" && !z && !unavailable && scaleHooks.cascadeEntry ? { c, r, v: 0, bv: 0, ct: 0, bt: 0 } : null);
+      if (!unavailable) readout = cellReadout(read, "hover");
       // Path and dwell, while a movement view shows them; Cascade's share.
       const mz = last.mv?.shown?.map.get(cellKey(c, r)),
-        moves = last.mv ? motionRows(c, r, mz, money, exact) : [],
+        moves = last.mv ? motionRows(c, r, mz, money, exact, readout) : [],
         cas =
           S.mode === "cascade" && last.full?.cascade
-            ? cascadeRows(cascadeOf(last.full.cascade, c, r), share, exact, money, z)
+            ? cascadeRows(cascadeOf(last.full.cascade, c, r), share, exact, money, z, readout)
             : null;
       if (unavailable)
         tipRows(tip, head, priceRow(r), [], S.replay && p.t >= last.cut
@@ -4074,7 +4504,13 @@
           tip,
           head,
           priceRow(r),
-          [...moves, ...(coarse ? [coarse] : []), ...(provisional ? [provisional] : []), ...rowSection(r, money, share, exact)],
+          [
+            ...readoutRows(readout, fmt),
+            ...moves,
+            ...(coarse ? [coarse] : []),
+            ...(provisional ? [provisional] : []),
+            ...rowSection(r, money, share, exact),
+          ],
           mz
             ? mz.p > 0
               ? "The price moved through without a trade here"
@@ -4089,22 +4525,18 @@
           head,
           priceRow(r),
           [
-            ["Volume", money(z.v)],
-            ["Trades", count(z.ct)],
-            ["Trade size", z.ct ? money(z.v / z.ct) : "—"],
-            ["Taker buys", `${money(z.bv)} · ${share(z.bv / z.v)}`],
-            ["Taker-buy trades", `${count(z.bt)} · ${share(z.ct ? z.bt / z.ct : 0)}`],
-            ["Buy − sell", signed(2 * z.bv - z.v, money)],
+            ...readoutRows(readout, fmt),
+            ...cellFacts(z, fmt),
             ...(cas ? cas.rows : []),
             ...moves,
-            ["Column", open ? "Still open" : "Complete"],
+            ["Column", (open ? "Still open" : "Complete") + (readout?.support.portion ? " · portion" : "")],
             ...(provisional ? [provisional] : []),
             ...(coarse ? [coarse] : []),
             ...rowSection(r, money, share, exact),
           ],
           [cas?.note, note],
         );
-      syncRowHover(z ? c + "," + r : null);
+      syncRowHover(z ? cellKey(c, r) : null);
     }
     // After a tap, the row section's control for the level line.
     if (nav.touchTip && !onLine && (inPlot(p) || onProfile(p))) tip.append(levelButton(Math.floor(p.p / ps)));
@@ -4117,7 +4549,13 @@
       left = right + tw <= G.x + G.w - 4 || onProfile(p) ? right : p.x - 16 - tw;
     tip.style.left = clamp(onProfile(p) ? p.x - 16 - tw : left, 4, G.width - tw - 4) + "px";
     tip.style.top = clamp(p.y - th / 2, G.y + 4, G.y + G.h - th - 4) + "px";
-    requestDraw();
+    // The readout the tip was built from (a cell's here; a pane's or a row's set by their own sections):
+    // named on the tip so the same record can be found in the table, and located on the legend.
+    if (readout) scaleRt.tipReadout = readout;
+    tip.dataset.readout = readoutId(scaleRt.tipReadout);
+    tipMarker(scaleRt.tipReadout);
+    // A derivation inside a draw (refreshTip) asks for no frame: it is in one.
+    if (redraw) requestDraw();
   }
   function update() {
     if (!ready) return;
@@ -4289,15 +4727,20 @@
         if (last) buildCells(measuredCells(last), last.b, last.mv);
         save();
       });
-    // A table row and its cell on the chart light up together.
+    // A table row and its cell on the chart light up together, and the row's value is located on the
+    // legend. The row carries its own level: the outline is drawn at it, and the legend marker is shown
+    // only when it is the level the legend describes.
     el("table-body").addEventListener("pointerover", (e) => {
       const tr = e.target.closest("tr");
       if (!tr) return;
-      tableHover = { c: Number(tr.dataset.c), r: Number(tr.dataset.r) };
+      const [n, m] = tr.dataset.level.split(":").map(Number);
+      tableHover = { c: Number(tr.dataset.c), r: Number(tr.dataset.r), n, m };
+      rowMarker();
       requestDraw();
     });
     el("table-body").addEventListener("pointerleave", () => {
       tableHover = null;
+      rowMarker();
       requestDraw();
     });
     bindPanels();

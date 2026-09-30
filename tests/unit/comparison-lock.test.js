@@ -71,6 +71,8 @@ test("lock: one action holds each enabled colour mapping under channel|class, fr
   assert.deepEqual(s.frozen, { "pane.volume": { lo: 0, hi: 1920000000 }, "pane.delta": { lo: -5, hi: 5 } });
   assert.deepEqual(plain(out.effects), [
     { type: "invalidate", channel: "all" },
+    { type: "hold", channel: "cells", classKey: "amount.usdt|log1p|u|-", from: "active" },
+    { type: "hold", channel: "rows", classKey: "amount.usdt|log1p|u|-", from: "active" },
     { type: "freeze-axis", id: "pane.volume", domain: [0, 1920000000], through: 1000 },
     { type: "freeze-axis", id: "pane.delta", domain: [-5, 5], through: null },
   ]);
@@ -85,7 +87,7 @@ test("lock holds only what is enabled and unbounded: fixed and unavailable chann
   assert.equal(none.scale.lock, true);
   assert.deepEqual(plain(none.scale.held), {});
   assert.deepEqual(plain(none.scale.frozen), {});
-  assert.deepEqual(plain(none.effects), [{ type: "invalidate", channel: "all" }]);
+  assert.deepEqual(plain(none.effects), [{ type: "invalidate", channel: "all" }], "nothing held, nothing to announce");
   // a record with no descriptor or a "No calibration" one is skipped, not an error
   const skip = red(fresh(), { type: "lock" }, { active: { cells: { desc: { kind: "none" } }, rows: null } });
   assert.deepEqual(plain(skip.scale.held), {});

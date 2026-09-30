@@ -408,7 +408,7 @@
       return fit(entry, ws, key, input, now, cutMs, fresh, s.count, false, slot.heldAt, slot.gestureAt);
     }
 
-    // freeze(id, {workspace?, domain?, through?, cutMs?, generation?, token?}) -> record | null: make an Auto axis
+    // freeze(id, {workspace?, domain?, through?, generation?, token?}) -> record | null: make an Auto axis
     // FROZEN (Comparison lock, or a restored address). With no `domain` the DISPLAYED domain of the current
     // record is frozen; with none recorded there is nothing to freeze and the answer is null (DD-22: a lock never
     // silently creates frozen state). An explicit `domain` [lo, hi] is validated (finite, lo <= hi, unsigned

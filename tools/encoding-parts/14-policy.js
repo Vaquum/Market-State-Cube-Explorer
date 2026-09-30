@@ -392,6 +392,8 @@
   // rows}, cutMs}; only what an action names is required. `effects` are data the page executes:
   //   {type:"invalidate", channel:"cells"|"rows"|"lens"|"all"}   redraw and re-resolve
   //   {type:"request-fit", channel, kind:"fit"|"auto", locked?}  ask the lifecycle for a fit
+  //   {type:"hold", channel, classKey, from:"active"}   the lock took the channel's active mapping into `held`
+  //                                                      (already in the returned scale: informational)
   //   {type:"freeze-axis", id, domain, through} / {type:"unfreeze-axis", id}   the lock and its release
   // `notices` are {code, params} for E.notice.post (the held-mapping limit is the only one).
   function polReduce(scale, action, env) {
@@ -448,6 +450,7 @@
           // A manual domain the person set stays as it is; the lock holds what was ACTIVE.
           if (polIsObject(held[name]) && held[name].origin === "manual") continue;
           held[name] = polHold(rec);
+          effects.push({ type: "hold", channel: channels[i], classKey: polClassOf(rec), from: "active" });
         }
         if (Object.keys(held).length > LIMITS.HELD_MAX) return { scale: cur, effects: [], notices: [polLimitNotice()], rejected: { item: "lock", reason: API.text.fill(API.text.notice.limit, { max: LIMITS.HELD_MAX }) } };
         const axes = Array.isArray(e.axes) ? e.axes : [];

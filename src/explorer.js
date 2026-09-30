@@ -940,9 +940,15 @@
   // as its last argument and encodes through it; the measurement module (E) owns the arithmetic and this
   // block owns the page: when a mapping is resolved, what is held, when the timers wake. The consumer
   // packages join through `scaleHooks` (an unregistered hook is a no-op, so every merge order runs), and the
-  // functions below are the ones a consumer may call without a hook. The first version is a skeleton: the
-  // frames exist and say "No calibration", nothing resolves, fits or wakes yet, and the page draws exactly
-  // what it drew before.
+  // functions below are the ones a consumer may call without a hook.
+  //
+  // Three clocks, kept apart. A DRAW resolves every channel's mapping by lookup only (one store read) and
+  // asks for what is missing; it never fits. The SETTLED TICK (`scaleTick`, one timer) is where everything
+  // that sorts or scans runs: coherence, the cohorts, the fits, the warnings pass, the axis wake; it runs
+  // only once a gesture has been quiet for the settle time, and it commits with `requestDraw()`, never
+  // `update()` (which restarts the read debounce). A PERSON'S ACTION (`scaleSet`) reduces into the raw
+  // preferences and asks for a fit; it never writes a value a measure cannot use (E.policy.effective reads
+  // what a measure means by the raw preference).
   const scaleRt = {
       // live and replay workspaces; replay is tab memory only
       store: E.store.create(),
@@ -954,16 +960,22 @@
       lut: new Map(),
       // "kind|colourEpoch|dpr" -> CanvasPattern
       patterns: new Map(),
-      // the previous Resolved of each channel, for the "Scale changed" diff
-      prev: { cells: null, rows: null },
-      // memoKey -> Calibration; cleared on a whole pack, never on a delta
+      // the last SETTLED mapping of each channel ({id, key, ctx}), for the "Scale changed" disclosure
+      prev: { cells: null, rows: null, lens: null },
+      // "channel|workspace|cut|memoKey" -> what a fit found, so a view that was fitted before is not sorted
+      // again; cleared on a whole pack, never on a delta; at most FIT_MEMO_MAX entries
       fitMemo: new Map(),
-      // {key, tally, report} per channel, computed by the settled tick only
-      warn: { cells: null, rows: null, lens: null },
+      // {key, tally, keys, report} per channel (the Columns pane is the channel "pane"), computed by the settled tick
+      // only; `keys` counts the marks of each generated key (a zero outline, a pattern) the hook reported
+      warn: { cells: null, rows: null, lens: null, pane: null },
+      // the last domain, policy and typed state of each axis a draw framed ("id" -> string): a change owes the
+      // Columns pane a count
+      axisSig: new Map(),
       // the last DOM write key of each legend, so an unchanged legend writes nothing
       legendKey: { cells: "", rows: "", lens: "" },
-      // {text, cause, oldIds, newIds, atMs}: what the last settle changed
-      note: null,
+      // {causes, from, to}: what the last settle that changed a mapping changed, per channel, for the legend details;
+      // it stays until another change replaces it (a resize or a click is no reason to forget what changed)
+      note: { cells: null, rows: null, lens: null },
       timer: 0,
       lastGestureAt: -Infinity,
       playing: false,
@@ -975,6 +987,32 @@
       theme: "light",
       // set by scaleFault: the scale display is off for the rest of the session
       fault: false,
+      // The fixed descriptors (Taker share, Dwell, the log2 ratio), by kind and window: building one hashes
+      // it, so a draw takes it from here.
+      fixed: new Map(),
+      // The pending want of each channel {kind, key, ctx, ctxKey, memo, locked}: what the controller holds,
+      // with the context it was asked for, so a fit never lands on a context that has moved on.
+      ask: { cells: null, rows: null, lens: null },
+      // What the last resolution of each channel said {resolved, ctx, key, updating, ...}: the lock, the
+      // chips and the tick read it; it is rewritten by every draw.
+      cur: { cells: null, rows: null, lens: null },
+      // Calibration commits per channel: the page's data-fit-seq, which moves only when a fit lands.
+      seq: { cells: 0, rows: 0, lens: 0 },
+      // The memo key of the last fit of each channel, so Auto asks again only when the settled data changed.
+      fitKey: { cells: "", rows: "", lens: "" },
+      // "contextKey|memoKey" of a fit that found nothing to calibrate from, so an unchanged view is not asked twice.
+      noFit: { cells: "", rows: "", lens: "" },
+      // The context that was re-initialised after the store had let it go (the details say so).
+      evicted: { cells: "", rows: "", lens: "" },
+      // The axis ids the last draw displayed: what the Comparison lock freezes.
+      shown: new Set(),
+      // Why the next disclosure changed ("fit", "policy", "lock"), and the cause Pin sets.
+      hint: null,
+      pinCause: null,
+      // A settled pass is owed (a disclosure, a warnings count): it arms the timer like a want does.
+      chase: false,
+      // The Local-contrast calibration of the lens (outside the store, which is the 64-context cache).
+      local: null,
     },
     // The ONE scratch object frame.encode fills for a mark (no allocation per mark). It has the shape the
     // frames write, so every call sees the same object layout.
@@ -996,7 +1034,9 @@
     // `scaleHooks.name = fn;` statement directly after the function it names.
     scaleHooks = {},
     // What a fault leaves behind (scaleFault fills it): an occupancy-only chart and the legacy legend.
-    INERT_SC = { cells: null, cellsFull: null, rows: null, lens: null, stamp: "inert", cutMs: 0, lut: null };
+    INERT_SC = { cells: null, cellsFull: null, rows: null, lens: null, stamp: "inert", cutMs: 0, lut: null },
+    SCALE_CHANNELS = ["cells", "rows", "lens"],
+    FIT_MEMO_MAX = 8;
   // The read-only state a fit is authorised against: a fit reads it when it is requested and checks it again
   // just before it commits, so no fit lands on a pack, cutoff or token that has moved on.
   function acceptedState() {
@@ -1045,15 +1085,313 @@
       live.generation,
     ].join("|");
   }
-  // The per-draw resolution: one frame per colour channel, from what the page shows. Here every mapping is
-  // "No calibration" (a geometry view needs none), so a frame encodes occupancy only; the real resolution
-  // replaces the mapping and nothing else in this function.
+  // The fixed descriptor of a measure with a natural domain, built once per kind and window.
+  function scaleFixed(kind, win) {
+    const key = kind + "|" + (win ? win[0] + "~" + win[1] : "");
+    let desc = scaleRt.fixed.get(key);
+    if (!desc) scaleRt.fixed.set(key, (desc = E.scale.fixed(kind, win)));
+    return desc;
+  }
+  // Has the last gesture been quiet for the settle time? The same definition as `calibrationSettled`, without
+  // the allocation of `heldNow`: a draw runs on every pointer move of a pan.
+  function scaleQuiet() {
+    return heldCount() === 0 && performance.now() - scaleRt.lastGestureAt >= E.TIMING.SETTLE_MS;
+  }
+  // The cohort extractor's hook for a channel (none registered: nothing to fit from, so nothing is asked).
+  function scaleCohortHook(channel) {
+    return channel === "cells"
+      ? movementMode()
+        ? scaleHooks.motionCohort
+        : scaleHooks.cellsCohort
+      : channel === "rows"
+        ? scaleHooks.rowsCohort
+        : channel === "lens"
+          ? scaleHooks.lensCohort
+          : undefined;
+  }
+  // The memo key of the Cells data a fit would read: generation, measured rectangle, effective level,
+  // configuration and the measurement's state (and the cutoff when the rectangle reaches the open column).
+  // The pack token, the block id, the theme and the selection are not in it on purpose.
+  function scaleMemo(parts, eff) {
+    return E.lifecycle.memoKey({
+      generation: live.generation,
+      CUT,
+      bounds: parts.meas.b,
+      n: renderN(),
+      m: renderM(),
+      config: {
+        mode: S.mode,
+        basis: eff.basis,
+        pathBasis: eff.pathBasis,
+        // the curve is part of the transform: a linear fit must never answer for a log one
+        transform: eff.transform === "rank" ? "rank" : "value-" + eff.curve,
+        policy: S.scale.cells,
+        lock: S.scale.lock,
+        window: eff.window,
+      },
+      cohortId: parts.meas.state,
+    });
+  }
+  // Ask the controller for a calibration of a channel and remember what it was asked for. True when this call
+  // created or changed the want (then the timer is armed); false when the same want was already pending or a
+  // pending explicit Fit was kept.
+  function scaleWant(channel, kind, key, info) {
+    if (!scaleRt.ctl.request(channel, kind, key)) return false;
+    scaleRt.ask[channel] = { kind, key, ...info };
+    scaleArm();
+    return true;
+  }
+  // One colour channel's mapping for this frame, by LOOKUP ONLY: a cached context applies at once, an
+  // uncached one is "No calibration" (never another context's mapping, DR-06), and what is missing is asked
+  // for, not fitted here. spec = {ctx, kind ("unbounded" | "fixed" | "occupancy"), fixed, cutMs, memo (a
+  // function giving the memo key of the data a refit would read), meaningful, failed}. The consumer of a
+  // Rows channel calls it the way `scaleFrame` does for Cells. Returns the Resolved of E.policy.resolve,
+  // marked "updating" while a refit of the same context is pending; the rest of what the chip and the tick
+  // need goes to `scaleRt.cur[channel]`.
+  function scaleResolve(channel, spec) {
+    const { ctx: context, kind, cutMs } = spec,
+      key = context ? E.context.keyString(context) : "";
+    let resolved = E.policy.resolve({
+        channel: channel === "cells" ? "c" : "r",
+        kind,
+        ctx: context,
+        scale: S.scale,
+        store: scaleRt.store,
+        workspace: scaleWorkspace(),
+        cutMs,
+        fixed: spec.fixed ?? null,
+      }),
+      updating = false;
+    const ask = scaleRt.ask[channel],
+      hooked = kind === "unbounded" && Boolean(scaleCohortHook(channel));
+    if (kind === "unbounded" && resolved.state === "no-calibration") {
+      // A fit for this very context is on its way; until it lands the chart draws occupancy only.
+      updating = Boolean(ask) && ask.ctxKey === key;
+      if (hooked && scaleRt.noFit[channel] !== key + "|" + (spec.memo?.() ?? ""))
+        scaleWant(channel, "init", key, { ctx: context, ctxKey: key, memo: spec.memo?.() ?? "" });
+    } else if (kind === "unbounded" && resolved.policy === "auto") {
+      // Auto colour refits the settled data when its memo key changed since the last fit.
+      const memo = spec.memo?.() ?? "";
+      if (hooked && memo !== scaleRt.fitKey[channel])
+        scaleWant(channel, "auto", key + "|" + memo, { ctx: context, ctxKey: key, memo });
+    }
+    // Explore initialises a context once: a first calibration that is still wanted after the context
+    // found a mapping (a replay edge that came back to an eligible record) is not wanted any more.
+    if (resolved.state === "ok" && ask?.kind === "init" && ask.ctxKey === key) {
+      scaleRt.ctl.cancel(channel);
+      scaleRt.ask[channel] = null;
+    }
+    // The retained mapping keeps drawing while a refit or an explicit Fit of the same context is pending
+    // (Auto waits while Play runs: then it is paused, not updating).
+    const again = scaleRt.ask[channel];
+    if (
+      resolved.state === "ok" &&
+      again &&
+      again.ctxKey === key &&
+      (again.kind === "fit" || (again.kind === "auto" && !scaleRt.playing))
+    ) {
+      resolved = Object.freeze({ ...resolved, state: "updating" });
+      updating = true;
+    }
+    const cur = {
+      resolved,
+      ctx: context,
+      key,
+      updating,
+      failed: Boolean(spec.failed),
+      meaningful: spec.meaningful ?? kind === "unbounded",
+      memo: spec.memo ?? null,
+      warnKey: "",
+    };
+    if (resolved.desc !== null && resolved.state !== "no-calibration" && kind !== "occupancy") {
+      const hook = channel === "cells" ? scaleHooks.cellsMarks : scaleHooks.rowsMarks;
+      // The warnings pass counts the drawn marks again when its key changed: a count is owed after a settle.
+      if (hook) {
+        cur.warnKey = [spec.memo?.() ?? "", S.tA, S.tB, S.pA, S.pB, G.w, G.h, resolved.id, resolved.state].join("|");
+        if (scaleRt.warn[channel]?.key !== cur.warnKey) scaleOwe();
+      }
+    }
+    scaleRt.cur[channel] = cur;
+    scaleDisclose(channel, cur);
+    return resolved;
+  }
+  // What a settle changed, for the legend details: when the settled mapping of a channel is another one than
+  // the last settled one, name the old and new ids and the cause (resolution, period, lock, pin, fit ...),
+  // once per settle. While a gesture runs nothing is written; a draw that sees the change owes a settled one.
+  function scaleDisclose(channel, cur) {
+    const { resolved } = cur,
+      id = resolved.id ?? "",
+      prev = scaleRt.prev[channel];
+    // Only a calibrated mapping can change; a fixed scale has nothing to disclose.
+    if (resolved.state === "no-calibration" || id === "" || resolved.policy === "fixed") return;
+    const changed = prev !== null && prev.id !== id;
+    if (!scaleQuiet()) {
+      if (changed) scaleOwe();
+      return;
+    }
+    if (changed) {
+      const causes = [],
+        diff = E.context.diff(prev.ctx, cur.ctx);
+      if (diff.cause) causes.push(...diff.cause.split("/"));
+      if (scaleRt.pinCause || nav.scaleCause) causes.push(scaleRt.pinCause ?? nav.scaleCause);
+      if (scaleRt.hint) causes.push(scaleRt.hint);
+      if (!causes.length) causes.push("fit");
+      scaleRt.note[channel] = { causes: [...new Set(causes)], from: prev.id, to: id };
+    }
+    scaleRt.prev[channel] = { id, key: cur.key, ctx: cur.ctx };
+  }
+  // A settled pass is owed (a disclosure, a warnings count): the timer is armed the way a want arms it.
+  function scaleOwe() {
+    if (scaleRt.chase) return;
+    scaleRt.chase = true;
+    scaleArm();
+  }
+  // The causes a disclosure reads are spent once a settled draw has seen them: not while a fit is still on
+  // its way, because the mapping it lands is what the cause explains.
+  function scaleSpendCauses() {
+    if (!scaleQuiet() || scaleRt.ctl.hasWants()) return;
+    scaleRt.hint = scaleRt.pinCause = nav.scaleCause = null;
+  }
+  // The chip of a channel as the legend package renders it: the D.18 attributes (every value a string, "" for
+  // empty), the options E.legend.build takes, and the pieces they were made from. Written by the same draw
+  // that paints, so the attributes and the colours come from one `sc`.
+  function scaleChip(channel, lut) {
+    const cur = scaleRt.cur[channel];
+    if (!cur) return null;
+    const { resolved, ctx: context, updating } = cur,
+      geometry = channel === "cells" && S.mode === "geometry",
+      warn = scaleRt.warn[channel],
+      note = scaleRt.note[channel],
+      base = context?.consumer === "lens" ? context.base : context,
+      // Play pauses Auto; the lock suspends it (only a preference that was Auto has anything suspended)
+      paused = S.scale.lock
+        ? S.scale.resume?.[channel] === "auto"
+          ? "lock"
+          : false
+        : resolved.policy === "auto" && scaleRt.playing
+          ? "play"
+          : false,
+      state = cur.failed
+        ? "failed"
+        : resolved.state === "no-calibration"
+          ? "no-calibration"
+          : resolved.state === "pending"
+            ? "pending"
+            : updating
+              ? "updating"
+              : geometry || resolved.desc === null
+                ? "outline"
+                : resolved.desc.kind === "zero-only"
+                  ? "zero-only"
+                  : paused
+                    ? "paused"
+                    : resolved.policy === "fixed"
+                      ? "fixed"
+                      : "ready",
+      counts = warn?.report?.counts,
+      keyCounts = warn?.keys ?? {},
+      attrs = {
+        "data-state": state,
+        "data-policy": resolved.policy ?? "",
+        "data-mapping-id": resolved.id ?? "",
+        "data-appearance": lut.id,
+        "data-workspace": resolved.workspace,
+        "data-transform": base?.transform ?? "",
+        "data-basis": base?.basis ?? "",
+        "data-context": cur.key,
+        "data-effective-n": channel === "rows" ? "" : String(base?.n ?? ""),
+        "data-effective-m": channel === "rows" ? "" : String(base?.m ?? ""),
+        "data-row-size": channel === "rows" ? String(base?.rowSize ?? "") : "",
+        "data-quality": channel === "rows" ? (base?.quality ?? "") : "",
+        "data-fit-through": resolved.record ? String(resolved.record.obsEndMs) : "",
+        "data-fit-seq": String(scaleRt.seq[channel]),
+        "data-override": resolved.external ? "external" : "",
+        "data-updating": String(updating),
+      };
+    return {
+      attrs,
+      opts: {
+        channel,
+        updating,
+        failed: cur.failed,
+        paused,
+        // a held mapping that reaches past the replay edge
+        afterEdge: resolved.external && S.replay,
+        note: note ? { causes: note.causes, from: note.from, to: note.to } : undefined,
+        evicted: scaleRt.evicted[channel] !== "" && scaleRt.evicted[channel] === cur.key,
+        revisionStatus: nav.revision.kind,
+        // what the settled pass counted, by the key ids the legend uses
+        counts: counts
+          ? {
+              ...keyCounts,
+              "clip-low": counts.low,
+              "clip-high": counts.high,
+              "negative-infinite": counts.negInf,
+              "no-reference": counts.noRef,
+            }
+          : undefined,
+      },
+      resolved,
+      ctx: context,
+      fallback: resolved.detail,
+      warn: warn?.report ?? null,
+    };
+  }
+  // What observed data a readout was made from (B.2): the pack, the cutoffs, the token and what changed under it.
+  function scaleObservation(meas, cutMs) {
+    return {
+      source: PACK.source ?? null,
+      instrument: INSTRUMENT,
+      read: meas.state,
+      updating: Boolean(meas.updating),
+      cutoffMs: cutMs,
+      liveCutoffMs: E.time.baseToMs(CUT, T0, BASE),
+      canonicalThroughMs: CANON === null ? null : E.time.baseToMs(CANON, T0, BASE),
+      token: PACK.state_token ?? null,
+      generation: live.generation,
+      replay: S.replay,
+      coverage: "range",
+      revision: nav.revision.kind === "none" ? null : nav.revision,
+      provenance: [],
+    };
+  }
+  // The read state a motion measure's frame carries: the block it is drawn from cannot answer until its motion
+  // block is in (pending) or when that read failed. Everything else is null, because the state of the
+  // RECTANGLE's measurement feeds only the legend and the readouts: passing it would turn every loaded cell
+  // into a pattern on each pan of a live view.
+  function scaleMotionRead(mv) {
+    if (mv?.src) return null;
+    const why = motionIssue();
+    return { state: why ? "failed" : "pending", reason: why || "reading" };
+  }
+  // The per-draw resolution: one frame per colour channel, from what the page shows. `cut` was read before the
+  // measurement was built; the eligibility of a replay mapping is decided against the cutoff as it is HERE,
+  // once the level and the measurement are final (DR-16's second check), so no mapping fitted on later
+  // observations than the edge is ever painted.
   function scaleFrame(cut, parts) {
     const { meas, mv, moving } = parts,
+      edge = activeCutoff(),
       eff = E.policy.effective(S.scale, S.mode),
+      info = E.measure.MODES[S.mode],
       lut = lutFor(scaleRt.appearance, scaleRt.theme),
       context = cellsContext(),
-      cutMs = E.time.baseToMs(cut, T0, BASE),
+      fixed = info.kind === "fixed";
+    if (edge !== cut) cut = edge;
+    const cutMs = E.time.baseToMs(cut, T0, BASE),
+      failed = meas.state === "failed" || (moving && !mv?.src && Boolean(motionIssue())),
+      resolved = context
+        ? scaleResolve("cells", {
+            ctx: context,
+            kind: fixed ? "fixed" : "unbounded",
+            fixed: fixed ? scaleFixed(info.fixed.kind, eff.window) : null,
+            cutMs,
+            memo: () => scaleMemo(parts, eff),
+            meaningful: !fixed || eff.window !== null,
+            failed,
+          })
+        : null,
+      read = moving ? scaleMotionRead(mv) : null,
+      observation = scaleObservation(meas, cutMs),
       frameOf = (bounds) =>
         E.readout.cellsFrame({
           mode: S.mode,
@@ -1067,12 +1405,13 @@
           geom: { BASE, PR },
           CUT,
           replay: S.replay,
-          mapping: context ? { state: "no-calibration", reason: "uninitialized" } : null,
+          mapping: resolved,
           lut,
-          read: null,
+          read,
           measured: scaleMeasured,
           cascade: scaleCascade,
           contextKey: context ? E.context.keyString(context) : null,
+          observation,
           t0: T0,
         }),
       cells = frameOf(meas.b),
@@ -1085,7 +1424,23 @@
         cutMs,
         lut,
         stamp: "",
+        // the chips and the mappings behind them, for the legend and the lens
+        chip: { cells: null, rows: null, lens: null },
+        map: { cells: resolved, rows: null, lens: null },
       };
+    // Geometry has no mapping to resolve; its chip is the occupancy outline.
+    if (!context)
+      scaleRt.cur.cells = {
+        resolved: E.policy.resolve({ channel: "c", kind: "occupancy", workspace: scaleWorkspace() }),
+        ctx: null,
+        key: "",
+        updating: false,
+        failed: false,
+        meaningful: false,
+        memo: null,
+        warnKey: "",
+      };
+    sc.chip.cells = scaleChip("cells", lut);
     sc.stamp = scaleStamp(sc);
     return sc;
   }
@@ -1143,6 +1498,11 @@
   function scaleFault(error) {
     if (!scaleRt.fault) {
       scaleRt.fault = true;
+      // Nothing is asked of a scale that is off: no want, no timer.
+      scaleRt.ctl.cancel();
+      scaleRt.ask.cells = scaleRt.ask.rows = scaleRt.ask.lens = null;
+      clearTimeout(scaleRt.timer);
+      scaleRt.timer = 0;
       const inert = {
         kind: "cells",
         get mode() {
@@ -1213,11 +1573,14 @@
   }
   // Is a read the view needs still outstanding? A read that failed is not: the wants keep returning after a
   // failure (only `cube.failed` remembers it), and waiting for one would hold calibration back for good.
+  // The recorded page has no cube to ask (`scheduleCube` never starts a read there), so nothing is pending
+  // on it, whatever the wants say.
   function viewReadPending() {
     return (
-      cube.stale ||
-      ["measure", "tile", "lens"].includes(cube.busy?.kind) ||
-      [measureWant(), tileWant(), lensWant()].some((want) => want && !cube.failed.has(want.key))
+      Boolean(PACK.live) &&
+      (cube.stale ||
+        ["measure", "tile", "lens"].includes(cube.busy?.kind) ||
+        [measureWant(), tileWant(), lensWant()].some((want) => want && !cube.failed.has(want.key)))
     );
   }
   // What the page derives from its state to draw one frame: the block shown, the cutoff, the aggregates and
@@ -1247,22 +1610,42 @@
       ps = stepP();
     return { src, cut, moving, sum, full, meas, b, query, shown, mv, ts, ps };
   }
-  // The axis of a column pane, an oscillator or a profile, through the one registry. Inert here: it answers
-  // "No data" for every axis.
+  // The axis of a column pane, an oscillator or a profile, through the one registry: the ONE wrapper every
+  // consumer calls. spec = {sign, eligible, sig, summary: () => ({count, max, min}), fixed?, domain?}; the
+  // signature is the caller's (it knows its displayed range). An axis is Auto, or frozen by the Comparison
+  // lock, or fixed (RSI, the log2 ratio); a displayed axis the lock has no domain for is fitted once and
+  // then paused, so the lock never silently freezes a fresh fit of the moment.
   function axisFrame(id, spec) {
-    return {
-      id,
-      policy: "auto",
-      sign: spec?.sign ?? "unsigned",
-      typed: "none",
-      domain: null,
-      natural: null,
-      mappingId: null,
-      hold: null,
-      external: false,
-      initial: false,
-      clipped: { low: 0, high: 0, count: 0, total: 0 },
-    };
+    const workspace = scaleWorkspace(),
+      held = S.scale.lock ? S.scale.frozen[id] : undefined;
+    scaleRt.shown.add(id);
+    // A frozen domain the lock (or a restored address) carries reaches the workspace it is shown in.
+    if (held && !scaleRt.axes.get(id, workspace))
+      scaleRt.axes.freeze(id, { workspace, domain: [held.lo, held.hi] });
+    const record = scaleRt.axes.frame(id, {
+      sign: spec?.sign,
+      workspace,
+      cutMs: E.time.baseToMs(activeCutoff(), T0, BASE),
+      now: performance.now(),
+      eligible: spec?.eligible ?? true,
+      held: { gesture: heldCount() > 0, play: scaleRt.playing || S.scale.lock },
+      lastGestureAt: scaleRt.lastGestureAt,
+      sig: spec?.sig,
+      summary: spec?.summary,
+      fixed: spec?.fixed,
+      domain: spec?.domain,
+      generation: live.generation,
+      token: PACK.state_token ?? null,
+    });
+    // The bars are counted again when the axis they are drawn against changed (its domain, policy or state).
+    if (scaleHooks.paneMarks) {
+      const sig = (record.domain ? record.domain.join(",") : "") + "|" + record.policy + "|" + record.typed;
+      if (scaleRt.axisSig.get(id) !== sig) {
+        scaleRt.axisSig.set(id, sig);
+        scaleOwe();
+      }
+    }
+    return record;
   }
   // The id of the tile that would show the view, and whether a tile is the lens's alone: a lens tile is
   // never the display source before Pin. Pure predicates, no state change.
@@ -1276,50 +1659,349 @@
   }
   // The plain inputs of a channel's cohort, from the state at the moment it is asked (never from a frame
   // kept from an earlier draw), through the consumer's hook. None registered: nothing to fit from.
-  function cohortInputs(channel) {
-    const vp = viewParts(),
-      // The cells cohort of a motion measure is its own (Path and Dwell), not the volume cells a motion
-      // pane may show beside it.
-      hook =
-        channel === "cells"
-          ? movementMode()
-            ? scaleHooks.motionCohort
-            : scaleHooks.cellsCohort
-          : channel === "rows"
-            ? scaleHooks.rowsCohort
-            : channel === "lens"
-              ? scaleHooks.lensCohort
-              : undefined;
+  function cohortInputs(channel, vp = viewParts()) {
+    const hook = scaleCohortHook(channel);
     return hook ? hook(vp) : null;
   }
   // Wake the calibration clock, cheaply: it runs on every pointer move of a pan, so it only makes sure ONE
   // timer exists, and only when something waits and nothing is held (a gesture's end calls noteGesture,
   // which arms again). The expensive work (coherence, cohorts, fits) is scaleTick's.
   function scaleArm() {
-    if (scaleRt.timer || (!scaleRt.ctl.hasWants() && !scaleRt.axes.hasPending()) || heldCount() > 0) return;
+    if (
+      scaleRt.timer ||
+      (!scaleRt.ctl.hasWants() && !scaleRt.axes.hasPending() && !scaleRt.chase) ||
+      heldCount() > 0
+    )
+      return;
     scaleRt.timer = setTimeout(scaleTick, Math.max(0, E.TIMING.SETTLE_MS - (performance.now() - scaleRt.lastGestureAt)));
   }
-  // The settled tick. Nothing asks for a calibration yet, so there is nothing to do but let the clock re-arm.
+  // Re-arm after the tick with an exact wait (the smallest any piece still has); never two timers.
+  function scaleAfter(ms) {
+    if (!scaleRt.timer) scaleRt.timer = setTimeout(scaleTick, ms);
+  }
+  // Is the data a channel would be fitted from coherent and complete? Every read the view needs has answered
+  // (a failed one is not outstanding), the displayed block covers the declared view, and the measurement is
+  // exact, recorded or from the cube and not being replaced. A fit from less would calibrate on a fragment.
+  function scaleCoherent(channel, vp) {
+    const [a, e] = S.selection ? [vp.meas.r[0], vp.meas.r[1]] : viewRange(),
+      [s0, s1] = sourceRange(vp.src);
+    return E.lifecycle.coherent({
+      ready,
+      viewReadPending: viewReadPending(),
+      readiness: resolutionReadiness(renderN(), renderM()).status,
+      coverage: channel === "cells" ? { ok: s0 <= a && s1 >= e } : undefined,
+      meas: channel === "cells" ? { state: vp.meas.state, updating: Boolean(vp.meas.updating) } : undefined,
+      motion:
+        channel === "cells" && vp.moving
+          ? { src: vp.mv?.src, state: vp.mv?.rect?.state, updating: Boolean(vp.mv?.rect?.updating) }
+          : undefined,
+    });
+  }
+  // The pieces that keep the stores and the active contexts of the frames: never evicted by a commit.
+  function scaleProtected() {
+    const keys = [scaleRt.cur.cells?.key, scaleRt.cur.rows?.key];
+    for (const held of Object.values(S.scale.held ?? {})) keys.push(held.key);
+    return keys.filter(Boolean);
+  }
+  // Run one due calibration: extract the cohort from the state as it is now, fit, and commit. "committed" (a
+  // record landed), "wait" (the data is not complete yet: the want stays) or "dropped" (nothing to fit from,
+  // or the context moved on: the want is gone, and a view that found nothing is not asked again).
+  function scaleFit(channel, ask, vp, now) {
+    const workspace = scaleWorkspace(),
+      lens = channel === "lens",
+      context = lens ? ask.ctx : channel === "cells" ? cellsContext() : (scaleRt.cur.rows?.ctx ?? null),
+      key = context ? E.context.keyString(context) : "",
+      cutMs = E.time.baseToMs(activeCutoff(), T0, BASE),
+      memo = channel === "cells" ? scaleMemo(vp, E.policy.effective(S.scale, S.mode)) : (ask.memo ?? ""),
+      nothing = key + "|" + memo,
+      drop = (said) => {
+        scaleRt.ctl.cancel(channel);
+        scaleRt.ask[channel] = null;
+        if (said) scaleRt.noFit[channel] = nothing;
+        return "dropped";
+      };
+    // The context the want was made for must still be the one on screen, and an initialisation only happens
+    // for a context that has no mapping for this cutoff.
+    if (!context || key !== ask.ctxKey) return drop(false);
+    if (ask.kind === "init" && !lens && scaleRt.store.lookup(workspace, key, cutMs)) return drop(false);
+    // The context is in the key besides the data: what was fitted for one context answers for no other.
+    const memoKey = [channel, workspace, S.replay ? cutMs : "", key, memo].join("|"),
+      hit = ask.kind === "fit" ? null : scaleRt.fitMemo.get(memoKey);
+    let found = hit ?? null;
+    if (!found) {
+      const inputs = cohortInputs(channel, vp);
+      if (!inputs) return drop(true);
+      const cohort =
+        channel === "rows"
+          ? E.cohort.rows(inputs)
+          : lens
+            ? E.cohort.cells({ ...inputs, kind: "lens" })
+            : movementMode()
+              ? E.cohort.motionCells(inputs)
+              : E.cohort.cells(inputs);
+      if (cohort.ok === false) return cohort.reason === "failed" || cohort.reason === "unsupported" ? drop(true) : "wait";
+      const base = context.consumer === "lens" ? context.base : context,
+        signed = base.consumer === "rows" ? E.measure.ROWS[base.measure].signed : E.measure.MODES[base.measure].signed,
+        fit =
+          base.transform === "rank"
+            ? E.scale.fitRank(cohort)
+            : E.scale.fitValue(cohort, { signed, linear: base.transform === "value-linear" });
+      if (fit.state !== "ok") return drop(true);
+      found = {
+        desc: fit.descriptor,
+        cohort: {
+          kind: cohort.kind,
+          n: cohort.n,
+          zeros: cohort.zeros,
+          nonzero: cohort.nonzero,
+          excluded: cohort.excluded,
+          calibratedOn: cohort.calibratedOn,
+          bounds: cohort.bounds,
+          level: cohort.level,
+          quality: cohort.quality,
+          support: cohort.support,
+        },
+        obsEndMs: E.time.baseToMs(cohort.obsEndBase, T0, BASE),
+      };
+      scaleRt.fitMemo.delete(memoKey);
+      scaleRt.fitMemo.set(memoKey, found);
+      while (scaleRt.fitMemo.size > FIT_MEMO_MAX) scaleRt.fitMemo.delete(scaleRt.fitMemo.keys().next().value);
+    }
+    // Everything above ran in this one task, so nothing can have moved; the check keeps a later await honest.
+    const accepted = acceptedState();
+    if (accepted.generation !== live.generation || scaleWorkspace() !== workspace) return drop(false);
+    // A refit that differs only by last-bit jitter keeps the active mapping (and so its id).
+    const active = lens ? scaleRt.local : (scaleRt.store.lookup(workspace, key, cutMs)?.record ?? null),
+      desc = ask.kind === "auto" && active && E.scale.sameWithin(active.desc, found.desc) ? active.desc : found.desc,
+      record = {
+        v: 1,
+        key,
+        ctx: context,
+        desc,
+        policy: lens ? "local" : S.scale.lock || ask.kind !== "auto" ? (S.scale[channel] ?? "explore") : "auto",
+        origin: "fit",
+        workspace,
+        cohort: found.cohort,
+        obsEndMs: found.obsEndMs,
+        cutMs,
+        fittedAtMs: Date.now(),
+        canonicalThroughMs: CANON === null ? null : E.time.baseToMs(CANON, T0, BASE),
+        token: PACK.state_token ?? null,
+        algorithm: desc.algorithm,
+        seq: ++scaleRt.seq[channel],
+      };
+    if (lens) scaleRt.local = Object.freeze(record);
+    else {
+      // A context the store had let go is re-initialised: the details say so.
+      if (ask.kind === "init" && scaleRt.store.wasEvicted(workspace, key)) scaleRt.evicted[channel] = key;
+      scaleRt.store.commit(workspace, record, scaleProtected);
+      // An explicit Fit under the lock replaces the held mapping and the lock stays on.
+      if (ask.kind === "fit" && S.scale.lock)
+        S.scale = E.policy.reduce(S.scale, { type: "hold", channel, record }, {}).scale;
+    }
+    scaleRt.ctl.ran(channel, ask.kind, now);
+    scaleRt.ask[channel] = null;
+    scaleRt.fitKey[channel] = memo;
+    scaleRt.noFit[channel] = "";
+    scaleHooks.persist?.();
+    return "committed";
+  }
+  // The warnings pass (DR-11): count the marks the viewer sees through the consumers' hooks, once the
+  // gesture has settled and the morph is over, and only when what they count changed. A count never
+  // recolours, refits or changes a mapping. Returns {changed, wait}: a morph in flight asks for a later pass.
+  function scaleWarnPass(vp) {
+    let changed = false,
+      wait = null;
+    for (const channel of ["cells", "rows"]) {
+      const cur = scaleRt.cur[channel],
+        hook = channel === "cells" ? scaleHooks.cellsMarks : scaleHooks.rowsMarks,
+        held = scaleRt.warn[channel];
+      if (!hook || !cur || cur.warnKey === "") {
+        if (held) {
+          scaleRt.warn[channel] = null;
+          changed = true;
+        }
+        continue;
+      }
+      if (held?.key === cur.warnKey) continue;
+      if (transition && performance.now() - transition.start < 170) {
+        wait = 60;
+        continue;
+      }
+      const tally = held?.tally ?? E.warn.tally(),
+        b = vp.b,
+        keys = {};
+      tally.reset();
+      // The hook may also count the marks of each generated key (zero outline, patterns) into `keys`: an addition
+      // after the last parameter, so a hook that does not know it is unchanged.
+      hook(
+        tally,
+        {
+          plot: { x0: G.x, y0: G.y, x1: G.x + G.w, y1: G.y + G.h },
+          meas: { x0: G.X(b[0]), y0: G.Y(b[3]), x1: G.X(b[1]), y1: G.Y(b[2]) },
+        },
+        vp,
+        keys,
+      );
+      scaleRt.warn[channel] = {
+        key: cur.warnKey,
+        tally,
+        keys,
+        report: E.warn.evaluate(tally, { meaningful: cur.meaningful }),
+      };
+      changed = true;
+    }
+    // The bars of the Columns pane, against the axes the last draw framed: counts only, an axis has no
+    // "range exceeded" of its own (its overflow is the triangle and the count of the axis record).
+    if (scaleHooks.paneMarks) {
+      const ids = [...scaleRt.shown].sort(),
+        key = [S.pane, S.tA, S.tB, live.generation, ...ids.map((id) => id + ":" + scaleRt.axisSig.get(id))].join("|");
+      if (scaleRt.warn.pane?.key !== key) {
+        const tally = scaleRt.warn.pane?.tally ?? E.warn.tally(),
+          keys = {};
+        tally.reset();
+        scaleHooks.paneMarks(tally, keys);
+        scaleRt.warn.pane = { key, tally, keys, report: E.warn.evaluate(tally, { meaningful: false }) };
+        changed = true;
+      }
+    }
+    return { changed, wait };
+  }
+  // The axes the last draw did not show cannot be refitted by a draw, so a hold on one is let go.
+  function scaleDropHidden() {
+    const workspace = scaleWorkspace();
+    for (const rec of scaleRt.axes.list(workspace))
+      if (rec.policy === "auto" && rec.hold !== null && !scaleRt.shown.has(rec.id)) scaleRt.axes.drop(rec.id, workspace);
+  }
+  // The settled tick. Nothing here runs inside a draw, a read pump or applyLive: it is the one timer that
+  // sorts and scans. It fits what is due, counts the warnings, wakes the axes, commits with `requestDraw()`
+  // (never `update()`, which would restart the read debounce) and re-arms for the soonest thing still waiting.
   function scaleTick() {
     scaleRt.timer = 0;
+    try {
+      scaleRun();
+    } catch (error) {
+      scaleFault(error);
+    }
+  }
+  function scaleRun() {
+    if (!ready || scaleRt.fault) return;
+    // A draw is already owed: it resolves every channel again and asks for what the state now needs, so a fit
+    // made first could calibrate a context that is no longer the one on screen.
+    if (raf) return scaleAfter(16);
+    const now = performance.now(),
+      settled = calibrationSettled(),
+      vp = viewParts(),
+      held = heldNow(),
+      poll = !document.hidden && viewReadPending();
+    let wait = null,
+      redraw = false;
+    const soon = (ms) => {
+      if (ms !== null && (wait === null || ms < wait)) wait = ms;
+    };
+    for (const channel of SCALE_CHANNELS) {
+      const ask = scaleRt.ask[channel];
+      if (!ask) continue;
+      const due = scaleRt.ctl.due(channel, {
+        now,
+        lastGestureAt: scaleRt.lastGestureAt,
+        held,
+        playing: scaleRt.playing,
+        coherent: scaleCoherent(channel, vp),
+        poll,
+      });
+      if (!due.run) {
+        soon(due.waitMs);
+        continue;
+      }
+      const outcome = scaleFit(channel, ask, vp, now);
+      if (outcome === "committed") redraw = true;
+      else if (outcome === "wait") soon(poll ? E.TIMING.RETRY_MS : null);
+      // A view that found nothing to calibrate from changes what the chip says ("Updating" ends).
+      else if (scaleRt.noFit[channel] !== "") redraw = true;
+    }
+    if (settled) {
+      const pass = scaleWarnPass(vp);
+      if (pass.changed) redraw = true;
+      soon(pass.wait);
+      // A settled draw is owed its disclosure.
+      if (scaleRt.chase) {
+        scaleRt.chase = false;
+        redraw = true;
+      }
+    } else if (scaleRt.chase) {
+      soon(E.lifecycle.settled({ now, lastGestureAt: scaleRt.lastGestureAt, held, settleMs: E.TIMING.SETTLE_MS }).waitMs);
+    }
+    // The axes refit at draw time; what a draw cannot do is wake itself after a gesture or the cap.
+    if (scaleRt.axes.hasPending()) {
+      scaleDropHidden();
+      const ms = scaleRt.axes.nextWake({ now, playing: scaleRt.playing });
+      if (ms === 0) redraw = true;
+      else soon(ms);
+    }
+    if (redraw) requestDraw();
+    if (wait !== null) scaleAfter(wait);
   }
   // A person's choice in a Scale control: reduced into the raw preferences, then the same redraw and save
-  // as any other control. The effects the reducer returns (invalidate, request a fit, hold, freeze an axis)
-  // are executed by the real tick; raw preferences are never rewritten by a measure change.
+  // as any other control. Returns what the reducer said, so the control can show a refusal beside itself.
+  // The effects the reducer returns are executed here: a fit is asked for (and runs at the next settle), the
+  // lock freezes each displayed Auto axis, and releasing it lets them go. Raw preferences are never
+  // rewritten by a measure change.
   function scaleSet(action) {
     const out = E.policy.reduce(S.scale, action, {
       mode: S.mode,
       rows: S.rows === "off" ? "volume" : S.rows,
       live: Boolean(PACK.live),
+      active: { cells: scaleRt.cur.cells?.resolved?.record ?? null, rows: scaleRt.cur.rows?.resolved?.record ?? null },
+      axes: scaleShownAxes(),
+      contexts: { cells: scaleRt.cur.cells?.ctx ?? null, rows: scaleRt.cur.rows?.ctx ?? null },
+      cutMs: E.time.baseToMs(activeCutoff(), T0, BASE),
     });
+    if (out.rejected) return out;
     S.scale = out.scale;
     for (const notice of out.notices) postNotice(notice);
+    const workspace = scaleWorkspace();
+    for (const effect of out.effects) {
+      if (effect.type === "invalidate") {
+        for (const channel of effect.channel === "all" ? SCALE_CHANNELS : [effect.channel]) scaleRt.noFit[channel] = "";
+      } else if (effect.type === "request-fit") {
+        const asked = scaleRt.cur[effect.channel];
+        if (asked?.ctx) {
+          // Auto asks again from scratch: what was fitted last is not "the last fit of this data" any more.
+          if (effect.kind === "auto") scaleRt.fitKey[effect.channel] = "";
+          scaleWant(effect.channel, effect.kind, asked.key + "|" + effect.kind, {
+            ctx: asked.ctx,
+            ctxKey: asked.key,
+            memo: asked.memo?.() ?? "",
+            locked: Boolean(effect.locked),
+          });
+        }
+      } else if (effect.type === "freeze-axis") {
+        scaleRt.axes.freeze(effect.id, {
+          workspace,
+          domain: effect.domain,
+          through: effect.through,
+          generation: live.generation,
+          token: PACK.state_token ?? null,
+        });
+      } else if (effect.type === "unfreeze-axis") {
+        scaleRt.axes.unfreeze(effect.id, { workspace });
+      }
+    }
+    scaleRt.hint = action.type === "lock" || action.type === "unlock" ? "lock" : action.type === "policy" ? "policy" : null;
     update();
     save();
     scaleHooks.persist?.();
+    return out;
   }
-  // What a settle changed (resolution, period, lock, pin), for the disclosure in the legend details.
-  function scaleDisclose() {}
+  // The Auto axes the last draw displayed, with their domains: what the Comparison lock freezes.
+  function scaleShownAxes() {
+    const out = [];
+    for (const rec of scaleRt.axes.list(scaleWorkspace()))
+      if (rec.policy === "auto" && rec.domain && scaleRt.shown.has(rec.id))
+        out.push({ id: rec.id, domain: rec.domain, through: rec.provenance.through });
+    return out;
+  }
 
   function draw() {
     if (!ready) return;
@@ -1331,6 +2013,8 @@
     // The scale frame: one resolved mapping per colour channel. A fault in it is not the chart's: it leaves
     // an occupancy-only chart and the legacy legend, and says so once (see scaleFault).
     let sc;
+    // The lock freezes the axes this draw shows, so the set starts empty.
+    scaleRt.shown.clear();
     try {
       sc = scaleRt.fault ? INERT_SC : scaleFrame(cut, { src, full, meas, shown, mv, moving, u });
     } catch (error) {
@@ -1342,11 +2026,19 @@
     // The row underlay, while it shows, scaled to its rows in view.
     const under = underlayFrame(meas);
     if (under?.bands) under.peak = underlayPeak(under);
-    // Rows' frame, from the package that owns it (none yet: no Rows frame). The stamp then names its mapping too.
+    // Rows' frame, from the package that owns it (none: no Rows frame). It resolves its mapping through
+    // `scaleResolve`, which leaves what it found in `scaleRt.cur.rows`; the stamp then names that mapping too.
     if (sc !== INERT_SC) {
       try {
+        scaleRt.cur.rows = null;
         sc.rows = scaleHooks.rowsFrame?.(under, sc) ?? null;
-        if (sc.rows) sc.stamp = scaleStamp(sc);
+        if (sc.rows) {
+          sc.map.rows = scaleRt.cur.rows?.resolved ?? null;
+          sc.chip.rows = scaleChip("rows", sc.lut);
+          sc.stamp = scaleStamp(sc);
+        }
+        // What this settled draw disclosed is told once.
+        scaleSpendCauses();
       } catch (error) {
         sc = scaleFault(error);
       }

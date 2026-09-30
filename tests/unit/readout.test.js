@@ -338,11 +338,11 @@ test("T-readout: a cells readout has every field of B.10 and the D1 groups, JSON
   // Support: time [max(c*16, 3200), min(204*16 = 3264, 3264, cut 3250)] = [3248, 3250], rows 204*2 = 408..410.
   assert.deepEqual(plain(r.support), { time: [3248, 3250], price: [408, 410], portion: false, open: true, partial: true });
   assert.equal(r.exposure, null, "Amount has no exposure denominator");
-  // when: the cell's start and its end clipped to the cutoff; knownAt stays null with its reason (A-41).
+  // when: the cell's start and its end clipped to the cutoff; the cell is open, so it has no known-at yet and says why (A-41, PRD-0002 #47 section 6).
   assert.equal(r.when.eventStartMs, Math.round((1609459200 + 3248 * 56.25) * 1000));
   assert.equal(r.when.eventEndMs, Math.round((1609459200 + 3250 * 56.25) * 1000));
   assert.equal(r.when.knownAtMs, null);
-  assert.equal(r.when.knownAtReason, "defined by #47");
+  assert.equal(r.when.knownAtReason, "the interval is still open: known at its end");
   assert.equal(r.model, null);
   assert.equal(r.level2, null);
   E.result.assertJsonSafe(r);

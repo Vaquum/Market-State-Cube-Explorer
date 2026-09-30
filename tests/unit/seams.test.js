@@ -59,7 +59,7 @@ const SPEC = {
   axis: { CATALOGUE: "object", domain: F(2), registry: F(0, 1), coordinate: F(2, 3), ticks: F(2), profile: F(1) },
   warn: { tally: F(0), evaluate: F(1, 2), bandOf: F(1) },
   model: { PROVENANCE: "object", status: F(1), fit: F(2), describe: F(3) },
-  readout: { ROLE: "object", cellsFrame: F(1), rowsFrame: F(1), paneFrame: F(1) },
+  readout: { ROLE: "object", cellsFrame: F(1), rowsFrame: F(1), paneFrame: F(1), events: "object" },
   legend: { build: F(4), chip: F(1), details: F(1), marker: F(2), barPixels: F(2), keyOf: F(1) },
   notice: { create: F(1) },
   codec: {

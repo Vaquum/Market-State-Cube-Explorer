@@ -7352,7 +7352,7 @@
       const startMs = API.time.baseToMs(z.c * ts, T0, geom.BASE);
       const endMs = Math.max(startMs, API.time.baseToMs(Math.min((z.c + 1) * ts, cutBase), T0, geom.BASE));
       const finality = cs.open ? "open" : cs.partial ? "partial" : "complete";
-      const when = { eventStartMs: startMs, eventEndMs: endMs, knownAtMs: null, knownAtReason: "defined by #47" };
+      const when = rdoEvInterval(startMs, endMs, finality);
       const base = { v: VERSION.readout, key, consumer: "cells", level: { n: level.n, m: level.m }, observation };
       if (geometry) {
         return Object.assign(base, {
@@ -7619,7 +7619,7 @@
         support: { time: null, price: [band.r * stepRows, (band.r + 1) * stepRows], portion: false, open: false, partial: false },
         exposure: null,
         state: rdoStateBlock(typed, observation, "complete", map.state, ex),
-        when: { eventStartMs: null, eventEndMs: null, knownAtMs: null, knownAtReason: "defined by #47" },
+        when: rdoEvSummary(spec.info, observation),
         model: spec.model !== undefined ? spec.model : null,
         rows: spec.info !== undefined && spec.info !== null ? spec.info : null,
         level2: null,
@@ -7855,7 +7855,7 @@
         support: null,
         exposure: null,
         state: rdoStateBlock(typed, observation, "complete", axisState, ex),
-        when: { eventStartMs: null, eventEndMs: null, knownAtMs: null, knownAtReason: "defined by #47" },
+        when: ex !== null && Array.isArray(ex.interval) ? rdoEvInterval(ex.interval[0], ex.interval[1], ex.interval[2]) : rdoEvInterval(null, null, "unknown"),
         model: spec.model !== undefined ? spec.model : null,
         level2: null,
       };
@@ -7918,11 +7918,291 @@
     });
   }
 
+  // == the event and known-at table (PRD-0002 #47 section 6) ==
+  // One row for each annotation the chart draws from source bars or from the calendar: where the event sits on the time axis, from when it is known,
+  // and how to read it. Known-at is STRUCTURAL: the end of the source bar that completes the condition (or the calendar, reopen, anchor or cutoff
+  // instant the row names), never the moment a read arrived. A bar still forming at the data edge (live: the latest one so far; replay: the bar at
+  // the edge, up to it) can satisfy a condition only as a CANDIDATE: the record says so, has no known-at and reads "so far" until the bar completes.
+  // The formulas are the page's and are not touched here: these functions only place the instants its calculations found. Times are numbers in one
+  // unit of the caller's choosing (the page: base columns; a readout: milliseconds); they are ordered and compared, never converted.
+  const rdoEvRows = [
+    ["swing", "Confirmed swing", "The extreme's supported bar or time", "The end of the bar that confirmed the reversal; the lead-in to it is retrospective"],
+    ["equalSwings", "Equal swing pair", "The two extremes", "The later swing's confirmation"],
+    ["rsiDivergence", "RSI divergence", "The compared swings' locations", "The later swing's confirmation; the RSI extrema were known earlier and do not date it"],
+    ["cross", "Moving-average or MACD crossing", "The crossing bar's end", "That complete bar's end; a crossing seen on a bar still forming is a candidate, labelled so far, not confirmed"],
+    ["squeeze", "Bollinger squeeze", "The interval of the qualifying bars", "Each bar's available close, final at the bar's completion; a fill drawn from the preceding point is keyed as retrospective interpolation"],
+    ["cmeGap", "CME spot gap", "The reopen and the spot prices at the boundaries", "The gap at the reopen, given the available closes; its fill no earlier than the end of the source bar that establishes the crossing"],
+    ["period", "Period POC and value area", "The stated period's span", "A retrospective summary as of its measurement cutoff, not known when the period started"],
+    ["untested", "Untested level", "The original POC's period", "A status as of the current or replay edge; a later test cannot rewrite an earlier replay status"],
+    ["continuation", "Historical continuation range", "The anchor and the horizon", "An empirical sample summary available at the anchor under the existing sample rules, not a forecast later observed"],
+    ["clock", "Clock", "The scheduled calendar time", "A calendar definition, not a measured trade event"],
+  ];
+  const rdoEvTable = Object.freeze(rdoEvRows.map(([kind, name, location, knownAt]) => Object.freeze({ kind, name, location, knownAt })));
+  const rdoEvByKind = Object.freeze(Object.fromEntries(rdoEvTable.map((r) => [r.kind, r])));
+  // The source a record was computed from: its granularity in words, the bar that completes the condition and whether it had completed at the edge.
+  function rdoEvSource(granularity, bar, edge) {
+    return Object.freeze({
+      granularity: granularity === undefined ? null : granularity,
+      barStart: bar === null ? null : bar[0],
+      barEnd: bar === null ? null : bar[1],
+      through: edge,
+      complete: bar === null ? true : bar[1] <= edge,
+    });
+  }
+  // A record: the row's name, the instants, the known-at (null while a candidate or for a calendar definition) and the flags a readout shows.
+  // `final`: nothing later can change it; `candidate`: it exists only on a bar still forming; `retrospective`: what is drawn reaches back before it
+  // was known; `measured`: false for the clock, which is a definition and not an event of the trades.
+  function rdoEvRecord(kind, fields) {
+    const base = { v: 1, kind, name: rdoEvByKind[kind].name, retrospective: false, measured: true };
+    return Object.freeze(Object.assign(base, fields));
+  }
+  // A swing: {extreme: [start, end] of its supported bar, confirm: [start, end] of the bar that reversed from it, edge, granularity}. The bar that
+  // reversed is the one that confirms it; while that bar is still forming at the edge the swing is a candidate. null before that bar began.
+  function rdoEvSwing(o) {
+    const c = o.confirm;
+    if (!(o.edge > c[0])) return null;
+    const complete = c[1] <= o.edge;
+    return rdoEvRecord("swing", {
+      eventStart: o.extreme[0],
+      eventEnd: o.extreme[1],
+      knownAt: complete ? c[1] : null,
+      final: complete,
+      candidate: !complete,
+      retrospective: true,
+      leadIn: Object.freeze([o.extreme[0], complete ? c[1] : o.edge]),
+      label: complete ? "confirmed" : "so far",
+      reason: complete
+        ? "Confirmed at the end of the bar that reversed from it; the line from the extreme to there is retrospective"
+        : "The reversal is seen on a bar still forming: a candidate, not confirmed until that bar ends",
+      source: rdoEvSource(o.granularity, c, o.edge),
+    });
+  }
+  // Two swings (their records) and what compares them: known at the LATER swing's confirmation, a candidate while either is one.
+  function rdoEvLater(kind, a, b, words) {
+    const later = b.eventStart >= a.eventStart ? b : a;
+    const known = a.knownAt !== null && b.knownAt !== null;
+    return rdoEvRecord(kind, {
+      eventStart: Math.min(a.eventStart, b.eventStart),
+      eventEnd: Math.max(a.eventEnd, b.eventEnd),
+      knownAt: known ? later.knownAt : null,
+      final: known,
+      candidate: !known,
+      label: known ? "confirmed" : "so far",
+      reason: known ? words.known : words.candidate,
+      source: later.source,
+    });
+  }
+  // Two equal swings of one kind (records of rdoEvSwing).
+  function rdoEvEqual(a, b) {
+    return rdoEvLater("equalSwings", a, b, {
+      known: "Known at the later swing's confirmation",
+      candidate: "The later swing is a candidate on a bar still forming: the pair is not confirmed",
+    });
+  }
+  // An RSI divergence between two swings (records of rdoEvSwing).
+  function rdoEvDivergence(a, b) {
+    return rdoEvLater("rsiDivergence", a, b, {
+      known: "Known at the later swing's confirmation, not when the RSI's extrema occurred",
+      candidate: "The later swing is a candidate on a bar still forming: the divergence is not confirmed",
+    });
+  }
+  // A crossing of two averages: {bar: [start, end], edge, granularity}. Drawn at the bar's end (at the edge while the bar is forming).
+  function rdoEvCross(o) {
+    const b = o.bar;
+    if (!(o.edge > b[0])) return null;
+    const complete = b[1] <= o.edge;
+    const at = complete ? b[1] : o.edge;
+    return rdoEvRecord("cross", {
+      eventStart: at,
+      eventEnd: at,
+      knownAt: complete ? b[1] : null,
+      final: complete,
+      candidate: !complete,
+      label: complete ? "confirmed" : "so far",
+      reason: complete ? "Known at the end of the bar on which the averages crossed" : "Seen on a bar still forming: so far, not confirmed until that bar ends",
+      source: rdoEvSource(o.granularity, b, o.edge),
+    });
+  }
+  // A squeeze: {bars: [[start, end], ...] the qualifying bars in order, after: the first bar after the run or null, edge, granularity, fillFrom:
+  // where a fill drawn from the preceding point would begin, or undefined}. Each bar qualifies at its own close; the run is final once a complete
+  // bar after it does not qualify. A fill that began before the first qualifying bar is retrospective interpolation and is keyed as such.
+  function rdoEvSqueeze(o) {
+    const bars = o.bars;
+    if (bars.length === 0 || !(o.edge > bars[0][0])) return null;
+    const last = bars[bars.length - 1];
+    let knownAt = null;
+    for (const b of bars) if (b[1] <= o.edge && (knownAt === null || b[1] > knownAt)) knownAt = b[1];
+    const complete = last[1] <= o.edge;
+    const closed = complete && o.after !== undefined && o.after !== null && o.after[1] <= o.edge;
+    const interpolated = o.fillFrom !== undefined && o.fillFrom !== null && o.fillFrom < bars[0][0];
+    return rdoEvRecord("squeeze", {
+      eventStart: bars[0][0],
+      eventEnd: Math.min(last[1], o.edge),
+      knownAt,
+      final: closed,
+      candidate: !complete,
+      retrospective: interpolated,
+      geometry: interpolated ? "retrospective interpolation" : "qualifying bars",
+      label: closed ? "final" : "so far",
+      reason: closed
+        ? "Each bar qualified at its own close; a later complete bar did not, so the run is final"
+        : complete
+          ? "Each bar qualified at its own close; the run may still continue"
+          : "The last bar is still forming: its qualification is so far, not final",
+      source: rdoEvSource(o.granularity, last, o.edge),
+    });
+  }
+  // A CME spot gap: {close, reopen, reopenBar: [start, end] of the bar whose close is the spot at the reopen, fill: [start, end] of the bar that first
+  // traded back through the Friday close or null, edge, granularity}. -> null before the reopen's close is in; else the gap, known at the reopen,
+  // with its `fill`: null while not traded back, else known no earlier than the end of the crossing bar (a candidate while that bar is forming).
+  function rdoEvGap(o) {
+    const known = Math.max(o.reopen, o.reopenBar[1]);
+    if (!(o.edge >= known)) return null;
+    let fill = null;
+    if (o.fill !== undefined && o.fill !== null && o.edge > o.fill[0]) {
+      const complete = o.fill[1] <= o.edge;
+      fill = Object.freeze({
+        knownAt: complete ? o.fill[1] : null,
+        final: complete,
+        candidate: !complete,
+        label: complete ? "filled" : "so far",
+        reason: complete
+          ? "Traded back through the Friday close: known at the end of the bar that did"
+          : "The crossing is seen on a bar still forming: so far, not a fill until that bar ends",
+        source: rdoEvSource(o.granularity, o.fill, o.edge),
+      });
+    }
+    return rdoEvRecord("cmeGap", {
+      eventStart: o.close,
+      eventEnd: o.reopen,
+      knownAt: known,
+      final: true,
+      candidate: false,
+      label: fill === null ? "open" : fill.label,
+      reason: "Known at the reopen, from the closes available then",
+      fill,
+      source: rdoEvSource(o.granularity, o.reopenBar, o.edge),
+    });
+  }
+  // A period's POC or value area: {span: [start, end], cutoff}. A retrospective summary as of the cutoff it was measured at: final once the period
+  // has ended by then, so far while it is still open. null before the period began.
+  function rdoEvPeriod(o) {
+    if (!(o.cutoff > o.span[0])) return null;
+    const final = o.span[1] <= o.cutoff;
+    return rdoEvRecord("period", {
+      eventStart: o.span[0],
+      eventEnd: o.span[1],
+      knownAt: o.cutoff,
+      final,
+      candidate: false,
+      retrospective: true,
+      label: final ? "retrospective" : "so far",
+      reason: final ? "A summary of the whole period, as of the cutoff it was measured at" : "The period is still open: a summary so far, as of the cutoff",
+      source: rdoEvSource(o.granularity, null, o.cutoff),
+    });
+  }
+  // An untested level: {origin: [start, end] of the POC's period, asOf}. A status as of the edge it is asked at, never rewritten by a later test
+  // when the edge is earlier. null while the origin period has not ended by then.
+  function rdoEvUntested(o) {
+    if (!(o.asOf >= o.origin[1])) return null;
+    return rdoEvRecord("untested", {
+      eventStart: o.origin[0],
+      eventEnd: o.origin[1],
+      knownAt: o.asOf,
+      final: false,
+      candidate: false,
+      label: "as of",
+      reason: "Untested as of this edge; a later test changes the status from then on, not at this edge",
+      source: rdoEvSource(o.granularity, null, o.asOf),
+    });
+  }
+  // A historical continuation range: {anchor, horizon, samples, minSample (30), edge}. Known at the anchor, from the sample as it stood there; below
+  // the sample floor its percentages and boxes are withheld (`withheld`). null before the anchor.
+  function rdoEvContinuation(o) {
+    if (!(o.edge >= o.anchor)) return null;
+    const floor = o.minSample === undefined ? 30 : o.minSample;
+    return rdoEvRecord("continuation", {
+      eventStart: o.anchor,
+      eventEnd: o.anchor + o.horizon,
+      knownAt: o.anchor,
+      final: true,
+      candidate: false,
+      label: "at anchor",
+      samples: o.samples,
+      withheld: o.samples < floor,
+      reason: o.samples < floor ? `Fewer than ${floor} cases: its percentages and boxes are withheld` : "An empirical sample summary as it stood at the anchor, not a forecast",
+      source: rdoEvSource(o.granularity, null, o.edge),
+    });
+  }
+  // The clock: {scheduled}. A calendar definition: no known-at, not a measured event.
+  function rdoEvClock(o) {
+    return rdoEvRecord("clock", {
+      eventStart: o.scheduled,
+      eventEnd: o.scheduled,
+      knownAt: null,
+      final: true,
+      candidate: false,
+      measured: false,
+      label: "calendar",
+      reason: "A calendar definition, not a measured trade event",
+      source: rdoEvSource("calendar", null, o.scheduled),
+    });
+  }
+  // The `when` block of a readout for an interval of the measured grid (a cell, a column): the interval's instants and, when it is complete, the end of
+  // it as its structural known-at; an open or cut interval has none yet.
+  function rdoEvInterval(startMs, endMs, finality) {
+    const done = finality === "complete";
+    return {
+      eventStartMs: startMs,
+      eventEndMs: endMs,
+      knownAtMs: done ? endMs : null,
+      knownAtReason: done
+        ? "the end of the interval it measures"
+        : finality === "open"
+          ? "the interval is still open: known at its end"
+          : finality === "partial"
+            ? "the interval is cut by the data's edge: known at its end once complete"
+            : "the interval is not stated",
+    };
+  }
+  // The `when` block of a Rows band: the period it summarises (from its start to what it was read to, as `info` says in base columns) and, as its
+  // known-at, the measurement cutoff the summary is as of: a retrospective summary, not known when the period started. Without `info` it has none.
+  function rdoEvSummary(info, observation) {
+    const none = { eventStartMs: null, eventEndMs: null, knownAtMs: null, knownAtReason: "the period the rows summarise is not stated" };
+    if (info === undefined || info === null || !Number.isFinite(info.fromBase) || !Number.isFinite(info.throughBase)) return none;
+    const startMs = API.time.baseToMs(info.fromBase, LATTICE.T0, LATTICE.BASE);
+    const endMs = API.time.baseToMs(info.throughBase, LATTICE.T0, LATTICE.BASE);
+    const cutoff = observation !== undefined && observation !== null && Number.isFinite(observation.cutoffMs) ? observation.cutoffMs : null;
+    return {
+      eventStartMs: startMs,
+      eventEndMs: endMs,
+      knownAtMs: cutoff !== null && cutoff > startMs ? cutoff : null,
+      knownAtReason: "a summary of the period as of the cutoff it was measured at, not known when the period started",
+    };
+  }
+  // E.readout.events: the table, the records of each annotation and the readout's `when` for a measured interval.
+  const rdoEvents = Object.freeze({
+    TABLE: rdoEvTable,
+    swing: rdoEvSwing,
+    equalSwings: rdoEvEqual,
+    rsiDivergence: rdoEvDivergence,
+    cross: rdoEvCross,
+    squeeze: rdoEvSqueeze,
+    cmeGap: rdoEvGap,
+    period: rdoEvPeriod,
+    untested: rdoEvUntested,
+    continuation: rdoEvContinuation,
+    clock: rdoEvClock,
+    interval: rdoEvInterval,
+    summary: rdoEvSummary,
+  });
+
   API.readout = Object.freeze({
     ROLE: rdoRole,
     cellsFrame: rdoCellsFrame,
     rowsFrame: rdoRowsFrame,
     paneFrame: rdoPaneFrame,
+    events: rdoEvents,
   });
 
   // == §20-legend ==

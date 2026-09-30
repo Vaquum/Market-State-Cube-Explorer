@@ -4041,7 +4041,16 @@
     }
     if (!frame) return tipRows(tip, head, sub, [], E.text.notice.scaleFault);
     // The column's readout: its typed result, its place on the axis and whether the axis leaves it out.
-    const readout = frame.readout(x, { ctx: x.ctx, index: x.c }),
+    const readout = frame.readout(x, {
+        ctx: x.ctx,
+        index: x.c,
+        // the column's interval and whether it is complete: the readout's known-at is its end (E.readout.events.interval)
+        interval: [
+          E.time.baseToMs(c * ts, T0, BASE),
+          E.time.baseToMs(Math.min((c + 1) * ts, last.cut), T0, BASE),
+          (c + 1) * ts <= last.cut ? "complete" : S.replay ? "partial" : "open",
+        ],
+      }),
       typed = readout.typed,
       at = `pane:${rec.id}:${c}`,
       modelNote = model ? modelNoteWords(model) : "";
@@ -4566,6 +4575,8 @@
     // cell) leaves none behind; a branch that does (the pane sections name theirs through paneTipFields,
     // which runs inside the branch) is not overwritten below.
     if (tip.dataset.readout) tip.dataset.readout = "";
+    // The annotation record a line, gap or strip tip is made from (E.readout.events), named the same way and cleared the same way.
+    if (tip.dataset.event) tip.dataset.event = "";
     if (onLine) {
       lineTip(tip, onLine);
       syncRowHover(null);
@@ -9416,7 +9427,10 @@
         sun = after.close;
       if (fri === sun) continue;
       const up = sun > fri,
-        j = firstReach(index(open.t), fri, up);
+        j = firstReach(index(open.t), fri, up),
+        fillEnd = j >= 0 ? (bars[j].c + 1) * step : null;
+      // `openBar`: the hourly bar whose close is the spot at the reopen; `fillBar`: the one that first traded back through the Friday close. The gap
+      // is FILLED only once that bar is complete; while it forms the gap reads open and the bar is the record's candidate (E.readout.events.cmeGap).
       out.push({
         close: close.t,
         open: open.t,
@@ -9424,7 +9438,9 @@
         sun,
         lo: Math.min(fri, sun),
         hi: Math.max(fri, sun),
-        filled: j >= 0 ? Math.min((bars[j].c + 1) * step, series.end) : null,
+        openBar: [after.c * step, (after.c + 1) * step],
+        fillBar: j >= 0 ? [bars[j].c * step, fillEnd] : null,
+        filled: fillEnd !== null && fillEnd <= series.end ? fillEnd : null,
       });
     }
     hit = out;
@@ -9556,13 +9572,19 @@
   }
   // A list's bars with where each starts and ends: days from the calendar
   // (the 8-hour bar holding each one's high and low), or bars of a timeframe.
-  function swingsOf(list, atr, endOf, extremeAt, end) {
+  // Each swing also keeps the bar that confirmed it as that bar is (`cs`..`ce`, its own end even while it is still forming) and where its extreme's
+  // supported bar ends (`xe`): `bar` = {start(x), len}. `confirmed` stays the clamped time the lines are drawn from.
+  function swingsOf(list, atr, endOf, extremeAt, end, bar) {
     const beyond = blockExtremes(list),
       out = zigzag(list, atr).map((s) => {
-        const j = beyond(s.ci + 1, s.price, s.kind === "high");
+        const j = beyond(s.ci + 1, s.price, s.kind === "high"),
+          at = extremeAt(list[s.i], s.kind);
         return {
           ...s,
-          t: extremeAt(list[s.i], s.kind),
+          t: at,
+          xe: at + bar.len,
+          cs: bar.start(list[s.ci]),
+          ce: endOf(list[s.ci]),
           confirmed: Math.min(endOf(list[s.ci]), end),
           broken: j < 0 ? null : Math.min(endOf(list[j]), end),
         };
@@ -9584,7 +9606,7 @@
     if (!hit) {
       const step = series8.step,
         bars = series8.bars;
-      hit = swingsOf(bars, atrSeries(bars), (x) => (x.c + 1) * step, (x) => x.c * step, series8.end);
+      hit = swingsOf(bars, atrSeries(bars), (x) => (x.c + 1) * step, (x) => x.c * step, series8.end, { start: (x) => x.c * step, len: step });
       fourHourMemo.set(series8, hit);
     }
     return hit;
@@ -9617,7 +9639,7 @@
       if (deep) out.pch = { price: deep.peak.high, t: partAt(deep.peak, "high"), day: deep.peak, low: deep.day };
     }
     // Daily swings on the days, with the daily ATR, and 4-hour swings on the 4-hour bars.
-    out.daily = swingsOf(days, atrSeries(days), (d) => d.z, partAt, end);
+    out.daily = swingsOf(days, atrSeries(days), (d) => d.z, partAt, end, { start: (d) => d.t, len: series9.step });
     if (series8?.state === "ready") out.fourHour = fourHourSwings(series8);
     // Retracements: the moves over the last 30 and 90 sessions, and the last daily swing.
     const dNow = Math.floor(Math.max(0, end - 1e-6) / DAYS),
@@ -9832,6 +9854,8 @@
       closes: Float64Array.from(bars, (x) => x.close),
       starts: Float64Array.from(bars, (x) => x.t),
       ends: Float64Array.from(bars, (x) => Math.min(endOf(x), end)),
+      // each bar's own end, before the data's edge cuts it: a bar still forming is the one whose own end is past the edge
+      raws: Float64Array.from(bars, endOf),
       end,
       memo: new Map(),
     };
@@ -10101,6 +10125,7 @@
           ["50 SMA", usd(c.v)],
           ["200 SMA", usd(slow)],
           ["Timeframe", "1 day"],
+          ...knownRows(crossRecord(c.frame, c.x.i)),
         ],
         c.golden ? "The 50-day SMA crossed above the 200-day SMA" : "The 50-day SMA crossed below the 200-day SMA",
       );
@@ -10116,7 +10141,8 @@
       tf = TF_NAMES[f.tf];
     if (l.what === "bb") {
       const bb = l.bb,
-        squeezed = AVERAGE_SPECS[l.key].squeeze && frameSqueezes(f).some(([a, z]) => at >= a && at <= z);
+        run = AVERAGE_SPECS[l.key].squeeze ? frameSqueezes(f).find(([a, z]) => at >= a && at <= z) : undefined,
+        squeezed = run !== undefined;
       tipRows(
         tip,
         `${l.name} · ${usd(bb.mid[at])}`,
@@ -10127,6 +10153,7 @@
           ["Lower", usd(bb.lower[at])],
           ["Bandwidth", `${(100 * bb.width[at]).toFixed(2)}%`],
           ...(AVERAGE_SPECS[l.key].squeeze ? [["Squeeze", squeezed ? "yes" : "no"]] : []),
+          ...(squeezed ? knownRows(squeezeRecord(f, run)) : []),
         ],
         AVERAGE_SPECS[l.key].squeeze
           ? f.tf === "1d"
@@ -10491,7 +10518,8 @@
     scaleRt.tipReadout = null;
     if (paneShown.key === "macd1d") {
       const x = o.crosses.find((c) => c.i === i),
-        axis = paneAxisTipRows(rec, o.macd[i]);
+        axis = paneAxisTipRows(rec, o.macd[i]),
+        known = x ? knownRows(crossRecord(f, i)) : [];
       tipRows(
         tip,
         head,
@@ -10502,6 +10530,7 @@
           ["Histogram", two(o.hist[i])],
           ["Close", `${price(Math.round(100 * f.closes[i]) / 100)} USDT`],
           ...axis.rows,
+          ...known,
         ],
         Number.isFinite(o.signal[i]) ? "EMA(12) − EMA(26) of the daily closes in USDT; its signal the EMA(9) of it" : "From its first full window: the 34th day",
       );
@@ -10513,12 +10542,15 @@
           Number.isFinite(o.hist[i]) ? { field: "histogram", canonical: o.hist[i] } : null,
           { field: "close", canonical: f.closes[i] },
           ...axis.meta,
+          ...known.map(() => null),
         ],
         readout,
       );
     }
     const d = o.divergences.find((x) => x.b.i === i && x.b.confirmed <= last.cut),
-      axis = paneAxisTipRows(rec, o.rsi[i]);
+      axis = paneAxisTipRows(rec, o.rsi[i]),
+      daily = paneShown.key === "rsi1d",
+      known = d ? knownRows(E.readout.events.rsiDivergence(swingRecord(d.a, daily), swingRecord(d.b, daily))) : [];
     tipRows(
       tip,
       head,
@@ -10528,6 +10560,7 @@
         ["Close", `${price(Math.round(100 * f.closes[i]) / 100)} USDT`],
         ...(d ? [["RSI at the swing before", two(d.r0)]] : []),
         ...axis.rows,
+        ...known,
       ],
       Number.isFinite(o.rsi[i]) ? "Wilder's smoothing of gains and losses over 14 bars" : "From its first full window: the 15th bar",
     );
@@ -10538,6 +10571,7 @@
         { field: "close", canonical: f.closes[i] },
         ...(d ? [{ field: "rsiBefore", canonical: d.r0 }] : []),
         ...axis.meta,
+        ...known.map(() => null),
       ],
       readout,
     );
@@ -11906,7 +11940,9 @@
   function clockTip(tip, h) {
     if (h.gap) {
       const g = h.gap,
-        size = g.hi - g.lo;
+        size = g.hi - g.lo,
+        rec = gapRecord(g);
+      tip.dataset.event = `${rec.kind}|${rec.label}`;
       tipRows(
         tip,
         `CME gap · ${price(Math.round(size))} USDT`,
@@ -11914,7 +11950,13 @@
         [
           ["Friday close", `${price(g.fri)} USDT · ${when(g.close)} UTC`],
           ["Sunday reopen", `${price(g.sun)} USDT · ${when(g.open)} UTC`],
-          ["Traded back", g.filled === null ? "not yet" : `by ${when(g.filled)} UTC`],
+          [
+            "Traded back",
+            rec.fill === null ? "not yet" : rec.fill.final ? `by ${when(rec.fill.knownAt)} UTC` : "so far: the hourly bar that crossed is still forming",
+            "fillKnownAt",
+            rec.fill === null ? "null" : rec.fill.knownAt,
+          ],
+          ...knownRows(rec),
         ],
         "The spot price at each: the last trade before it. Shaded until a trade reaches the Friday close",
       );
@@ -11925,7 +11967,7 @@
       tip,
       h.events.map((x) => x.what).join(" · "),
       `${d3.utcFormat("%a")(date(e.t))} ${when(e.t)} UTC`,
-      [],
+      knownRows(E.readout.events.clock({ scheduled: e.t })).slice(0, 2),
       h.events.map(clockNote).filter(Boolean),
     );
   }
@@ -11957,13 +11999,13 @@
       if (!l) continue;
       const ends = f.frame.ends,
         [i0, i1] = f.squeeze;
-      l.events.push({ t0: ends[Math.max(0, i0 - 1)], t1: ends[i1], open: false, what: "Squeeze" });
+      l.events.push({ t0: ends[Math.max(0, i0 - 1)], t1: ends[i1], open: false, what: "Squeeze", rec: squeezeRecord(f.frame, f.squeeze) });
     }
     const gapLane = lane("cmegap");
     if (gapLane) {
       const s = barSeries(6);
       if (s.state === "ready")
-        for (const g of cmeGaps(s)) gapLane.events.push({ t0: g.open, t1: g.filled ?? Math.min(s.end, cut), open: g.filled === null || g.filled === undefined, what: "CME gap", gap: g });
+        for (const g of cmeGaps(s)) gapLane.events.push({ t0: g.open, t1: g.filled ?? Math.min(s.end, cut), open: g.filled === null || g.filled === undefined, what: "CME gap", gap: g, rec: gapRecord(g) });
       else gapLane.pending = true;
     }
     for (const l of lanes) {
@@ -12022,12 +12064,14 @@
       return;
     }
     const span = h.span,
-      fmt = (e) => `${when(e.t0)} → ${e.open ? "open" : when(e.t1)} UTC`;
+      // a run that is not final (it may continue, or its last bar forms) ends "so far", not at a time it has not reached
+      fmt = (e) => `${when(e.t0)} → ${e.open ? "open" : e.rec && !e.rec.final && e.rec.kind === "squeeze" ? "so far" : when(e.t1)} UTC`;
+    tip.dataset.event = span.events.map((e) => `${e.rec.kind}|${e.rec.label}`).join(",");
     tipRows(
       tip,
       EVENT_NAMES[h.lane].long,
       span.events.length > 1 ? `${span.events.length} events merged in this mark` : fmt(span.events[0]),
-      span.events.length > 1 ? span.events.map((e) => [e.what, fmt(e)]) : [],
+      span.events.length > 1 ? span.events.map((e) => [e.what, fmt(e) + (e.rec.final ? "" : " · " + EVENT_LABELS[e.rec.label].toLowerCase())]) : knownRows(span.events[0].rec),
       "An interval of the source bars, known once the bar that ends it has closed",
     );
   }
@@ -12187,7 +12231,8 @@
         approx = r.exact ? "" : "≈ ",
         periodEnd = Math.min(r.span[1], activeCutoff()),
         key = l.kind === "poc" ? l.key : l.period,
-        area = l.kind === "va" ? l.va : null;
+        area = l.kind === "va" ? l.va : null,
+        period = E.readout.events.period({ span: r.span, cutoff: activeCutoff(), granularity: "the period's rows" });
       tipRows(
         tip,
         l.kind === "poc"
@@ -12206,6 +12251,7 @@
               ]
             : [["In the row", `${compact(r.volume)} USDT · ${r.total ? ((100 * r.volume) / r.total).toFixed(1) : "0"}%`]]),
           ["Period volume", `${compact(r.total)} USDT`],
+          ...(period ? knownRows(period) : []),
         ],
         r.stale
           ? "Updating to the latest data…"
@@ -12229,6 +12275,7 @@
           ["POC", `${usdtAt(p.poc + 0.5)} · ${compact(top?.v || 0)} USDT`],
           ...(p.va ? [["Value area", `${price(p.va.r0 * PR)}–${price(p.va.r1 * PR)} USDT · ${(100 * p.va.share).toFixed(1)}%`]] : []),
           ["Day volume", `${compact(p.v)} USDT`],
+          ...knownRowsOf(E.readout.events.period({ span: [l.d * DAYS, (l.d + 1) * DAYS], cutoff: activeCutoff(), granularity: "the day's rows" })),
         ],
         "The day's POC and 70% value area, per 125 USDT row",
       );
@@ -12248,6 +12295,7 @@
           ["Distance", `${signed(u.atrs, (x) => x.toFixed(2))} daily ATRs · ${signed(u.usd, (x) => price(Math.round(x)))} USDT`],
           ["Latest price", `${price(l.list.latest)} USDT`],
           ["Daily ATR", `${price(Math.round(l.list.atr))} USDT, 14 days, Wilder's`],
+          ...knownRowsOf(E.readout.events.untested({ origin: [u.from, u.to], asOf: l.list.end, granularity: "8-hour bars' highs and lows" })),
         ],
         `No trade since has come within 125 USDT of it${S.replay ? " before the replay's edge" : ""}`,
       );
@@ -12283,6 +12331,66 @@
         "Exact, from the cube's own highs, lows and closes",
       );
   }
+  // ---- Known-at in the readouts (PRD-0002 #47 section 6; E.readout.events) ----
+  // The words of an annotation record's label.
+  const EVENT_LABELS = {
+      confirmed: "Confirmed",
+      "so far": "So far, not confirmed",
+      final: "Final",
+      filled: "Filled",
+      open: "Open",
+      "as of": "As of this edge",
+      retrospective: "A retrospective summary",
+      "at anchor": "At its anchor",
+      calendar: "A calendar definition, not a measured trade event",
+    },
+    // The bars an annotation is computed from, in words, by the frame's timeframe.
+    FRAME_BARS = {
+      "1d": "daily bars (built from 8-hour bars)",
+      "1w": "weekly bars (built from 8-hour bars)",
+      "4h": "4-hour bars",
+      "1h": "hourly bars",
+      "15m": "15-minute bars",
+      "3m": "3.75-minute bars",
+    };
+  // The rows a tooltip adds for an annotation's record: from when it is known (a structural time, not a read's arrival), whether it is final (a
+  // candidate says it is still forming and what it waits for) and the source bars. Each carries its field and canonical value for a test to read.
+  function knownRows(rec) {
+    const at = (t) => `${when(t)} UTC`,
+      waiting = rec.source.complete || rec.source.barEnd === null ? "" : `, its last bar still forming until ${at(rec.source.barEnd)}`;
+    return [
+      ["Known at", rec.knownAt !== null ? at(rec.knownAt) : rec.measured === false ? "a calendar definition" : "not yet", "knownAt", rec.knownAt],
+      ["Status", rec.final || rec.label === "as of" ? EVENT_LABELS[rec.label] : `${EVENT_LABELS[rec.label]}: ${rec.reason}`, "finality", rec.label],
+      ...(rec.source.granularity ? [["Source", rec.source.granularity + waiting]] : []),
+    ];
+  }
+  // The same for a record that may not exist (its source has not begun at the edge).
+  const knownRowsOf = (rec) => (rec === null ? [] : knownRows(rec));
+  // A swing's record on its timeframe: the daily swings are of the days built from the 8-hour bars (the extreme placed in its 8-hour bar), the
+  // 4-hour swings of the 4-hour bars; the edge is that series' own.
+  function swingRecord(s, daily) {
+    return E.readout.events.swing({
+      extreme: [s.t, s.xe],
+      confirm: [s.cs, s.ce],
+      edge: barSeries(daily ? 9 : 8).end,
+      granularity: daily ? FRAME_BARS["1d"] + ", the extreme placed in its 8-hour bar" : FRAME_BARS["4h"],
+    });
+  }
+  // A frame's crossing at bar i (an average pair or MACD with its signal).
+  function crossRecord(f, i) {
+    return E.readout.events.cross({ bar: [f.starts[i], f.raws[i]], edge: f.end, granularity: FRAME_BARS[f.tf] });
+  }
+  // A squeeze run's record on its frame: the qualifying bars, the bar after the run if there is one, the frame's edge.
+  function squeezeRecord(f, run) {
+    const bars = [];
+    for (let k = run[0]; k <= run[1]; k++) bars.push([f.starts[k], f.raws[k]]);
+    const n = run[1] + 1;
+    return E.readout.events.squeeze({ bars, after: n < f.starts.length ? [f.starts[n], f.raws[n]] : null, edge: f.end, granularity: FRAME_BARS[f.tf] });
+  }
+  // A CME gap's record: known at the reopen, its fill known at the end of the hourly bar that crossed.
+  function gapRecord(g) {
+    return E.readout.events.cmeGap({ close: g.close, reopen: g.open, reopenBar: g.openBar, fill: g.fillBar, edge: barSeries(6).end, granularity: FRAME_BARS["1h"] });
+  }
   // Structure's and the VWAPs' tooltips: the line's name, timeframe and
   // price, and a swing's confirmation. False for any other line.
   function structureTip(tip, h, l) {
@@ -12308,14 +12416,16 @@
       const s = l.s,
         daily = l.frame === "1D",
         high = s.kind === "high",
-        name = `${daily ? "Daily" : "4-hour"} swing ${high ? "high" : "low"}`;
+        name = `${daily ? "Daily" : "4-hour"} swing ${high ? "high" : "low"}`,
+        rec = l.kind === "equal" ? E.readout.events.equalSwings(swingRecord(s.equal, daily), swingRecord(s, daily)) : swingRecord(s, daily);
+      tip.dataset.event = `${rec.kind}|${rec.label}`;
       tipRows(
         tip,
         l.kind === "equal" ? `Equal ${high ? "highs" : "lows"} · ${price(s.equal.price)} and ${price(s.price)} USDT` : `${name} · ${price(s.price)} USDT`,
         daily ? `On ${day(s.t)}` : `In the 4 hours from ${at(s.t)}`,
         [
           ["Timeframe", daily ? "1 day" : "4 hours"],
-          ["Confirmed", `by ${at(s.confirmed)}`],
+          ...knownRows(rec),
           ["Traded through", s.broken === null ? "not yet" : `by ${at(s.broken)}`],
           ...(s.equal ? [["Equal to", `${price(s.equal.price)} USDT, ${daily ? day(s.equal.t) : at(s.equal.t)}`]] : []),
         ],
@@ -12447,7 +12557,15 @@
     if (key === "swing1d" || key === "swing4h") {
       const list = key === "swing1d" ? st.daily : st.fourHour,
         s = list?.[list.length - 1];
-      return { text: s ? `${s.kind === "high" ? "H" : "L"} ${price(s.price)}` : "none yet" };
+      if (!s) return { text: "none yet" };
+      // The latest swing, and whether a bar still forming is all that has confirmed it (E.readout.events.swing).
+      const rec = swingRecord(s, key === "swing1d");
+      return {
+        text: `${s.kind === "high" ? "H" : "L"} ${price(s.price)}${rec.candidate ? " · so far" : ""}`,
+        title: `${EVENT_LABELS[rec.label]}: ${rec.reason}`,
+        finality: rec.label,
+        knownAt: rec.knownAt,
+      };
     }
     if (key.startsWith("fib")) {
       const m = st[key];
@@ -12576,6 +12694,11 @@
             : { text: "" };
       if (value.textContent !== shown.text) value.textContent = shown.text;
       if (value.title !== (shown.title || "")) value.title = shown.title || "";
+      // What a row says about the record it shows (a swing's finality and known-at), for a reader of the page.
+      for (const [name, text] of [["finality", shown.finality], ["knownAt", shown.knownAt === undefined || shown.knownAt === null ? undefined : String(shown.knownAt)]]) {
+        if (text === undefined) delete value.dataset[name];
+        else if (value.dataset[name] !== text) value.dataset[name] = text;
+      }
     }
     // Each family's head: whether it is open, its dot and how many are on.
     const open = familiesOpen();
@@ -13632,6 +13755,17 @@
     el("anchor-time").textContent = e.error
       ? ""
       : `${when((e.a + 1) * stepT())} UTC · ${dur(BASE * stepT() * S.horizon)} ahead`;
+    // The continuation's record (E.readout.events.continuation): known at its anchor, from the cases that had ended by then; below 30 cases the
+    // percentages and boxes are withheld. Named on the anchor line for a reader of the page.
+    const known = e.error || !sample ? null : E.readout.events.continuation({ anchor: (e.a + 1) * stepT(), horizon: stepT() * S.horizon, samples: sample.n, edge: (e.a + 1) * stepT(), granularity: "the cube's cases at this grid" });
+    el("anchor-time").title = known ? `${EVENT_LABELS[known.label]}: ${known.reason}` : "";
+    if (known) {
+      el("anchor-time").dataset.knownAt = String(known.knownAt);
+      el("anchor-time").dataset.withheld = String(known.withheld);
+    } else {
+      delete el("anchor-time").dataset.knownAt;
+      delete el("anchor-time").dataset.withheld;
+    }
     el("state").textContent =
       e.error ||
       [

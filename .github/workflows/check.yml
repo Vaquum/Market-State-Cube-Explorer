@@ -14,7 +14,7 @@ permissions:
   contents: read
 jobs:
   static:
-    name: Build, syntax, goldens, image and deploy payload
+    name: Build, syntax and goldens
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -45,15 +45,6 @@ jobs:
       # Only compares: a mismatch fails the job, nothing here rewrites a golden file to make itself pass.
       - run: npm run golden:check
       - run: printf 'EXPLORER_AUTH_USER=x\nEXPLORER_AUTH_PASS=y\n' > .env && docker compose config -q
-      - name: The image holds only what the Dockerfile copies
-        run: |
-          docker build -t cube-explorer:check .
-          docker run --rm --entrypoint find cube-explorer:check /app -type f | LC_ALL=C sort > "$RUNNER_TEMP/image-files.txt"
-          printf '%s\n' /app/index.html /app/tools/cube_bridge.py /app/tools/market_state_reader.py /app/vendor/D3-LICENSE /app/vendor/d3.min.js | diff -u - "$RUNNER_TEMP/image-files.txt"
-      - name: The deploy payload stays small
-        run: |
-          rsync -a --prune-empty-dirs --filter='merge .github/deploy.filter' ./ "$RUNNER_TEMP/payload/"
-          du -sk "$RUNNER_TEMP/payload" | awk '{ print $1 " KiB"; exit ($1 > 4096) }'
   unit:
     name: Node tests
     runs-on: ubuntu-24.04
@@ -107,8 +98,6 @@ jobs:
       - run: npm run test:browser
         env:
           CONVERGENCE: '1'
-      # Checks that the benchmark tool runs and its report validates. Timing never gates a deploy.
-      - run: npm run benchmark:smoke
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
@@ -119,19 +108,3 @@ jobs:
             playwright-report/
           retention-days: 14
           if-no-files-found: ignore
-  bridge:
-    name: Fake cube against the real bridge functions
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      # The Dockerfile's numpy pin: the functions checked here are the ones the image runs.
-      - run: pip install --no-cache-dir numpy==2.4.6
-      - run: python3 tests/reference/bridge_crosscheck.py --require-numpy

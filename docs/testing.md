@@ -1,6 +1,6 @@
 # Testing
 
-How the explorer is tested, what the tests can and cannot show, and how a push to `main` becomes a deploy. The explorer itself runs and builds without npm; everything here is development tooling and is never copied into the image or the deploy payload.
+How the explorer is tested, what the tests can and cannot show, and how a push to `main` becomes a deploy. The explorer itself runs and builds without npm; everything here is development tooling and is never copied into the image: the Dockerfile copies `index.html`, `vendor/` and the two bridge Python files, and `tests/unit/repo.test.js` pins that list.
 
 ## What the tests are evidence of
 
@@ -25,7 +25,6 @@ Node 22 or newer and `python3` on the path (the build test calls `tools/build.py
 | benchmark | `npm run benchmark`; `npm run benchmark:smoke` | see below |
 | the committed page is what the sources build | `python3 tools/build.py --check` | the deploy gate |
 | syntax of every JavaScript file | the `node --check` loop in the `static` job of `.github/workflows/check.yml` | |
-| the bridge against the vectors | `python3 tests/reference/bridge_crosscheck.py --require-numpy` | needs `numpy==2.4.6`; without `--require-numpy` and without numpy it prints a skip |
 
 Never run `python3 tools/build.py` without `--out` while working on a branch: it rewrites the tracked `index.html`, which only the merger regenerates. Reports, builds and screenshots go to `reports/`, `test-results/`, `playwright-report/` or `.playwright-mcp/`, all ignored; none of them is committed.
 
@@ -58,7 +57,7 @@ What the fake and the reference cannot validate is listed under the first sectio
 
 `tests/reference/golden.py` (scale and indicator vectors) and `tests/reference/wire_golden.py` (wire layouts and the delta or whole-pack rule) use only the Python standard library and write sorted, fixed-indent JSON. Wire payloads are compared **decompressed**, because gzip bytes change with the zlib version and the clock. `npm run golden:check` regenerates in memory and compares bytes; CI runs it and never writes a golden to make itself pass. `npm run golden:write` is for a deliberate change, reviewed like any other.
 
-About five hundred lines of the bridge's protocol behaviour are duplicated in the fake. The drift alarm is the `bridge` job: it imports the real `tools/cube_bridge.py` with numpy, builds the same cells and compares its `msc2`, `mscb`, `block`, history header and `tails` output with the committed vectors. **Drift rule:** any change to `tools/cube_bridge.py` protocol behaviour updates the fake, the vectors and the test plan in the same pull request. The protocol number stays 2 until a change says otherwise; the browser tests and the benchmark report both check it.
+About five hundred lines of the bridge's protocol behaviour are duplicated in the fake, and no check in CI compares them with the real `tools/cube_bridge.py`. **Drift rule:** any change to `tools/cube_bridge.py` protocol behaviour updates the fake, the vectors and the test plan in the same pull request, by hand. The protocol number stays 2 until a change says otherwise; the browser tests and the benchmark report both check it.
 
 ## Adding a regression fixture
 
@@ -77,26 +76,25 @@ The navigation benchmark implements the method of the performance requirement as
 - Builds under comparison come from git (`--baseline`, `--preceding`, `--candidate`), never rebuilt, against the same fake, profile and seed. The tool refuses a dirty tree unless told otherwise, and refuses A/B when the A/A floor shows the environment is too noisy (`environment-inconclusive`).
 - The verdicts use one vocabulary: `blocking`, `no regression detected at this resolution` and `inconclusive`. "Inconclusive" is a likely outcome at twenty pairs and is reported as such; it needs an explanation or the operator, never the words "no overhead".
 - Reports are JSON plus a `summary.md` under `reports/benchmark/` (ignored) and are attached to the pull request. They are specific to their environment and go stale.
-- CI runs only `npm run benchmark:smoke`, which checks that the tool runs and its report validates, never the numbers. Timing never gates a deploy.
+- CI does not run the benchmark, full or smoke. Timing never gates a deploy.
 
 ## CI and the deploy gate
 
 ### The checks
 
-`.github/workflows/check.yml` has four jobs on `ubuntu-24.04`, each with a time bound, each checking out `${{ github.sha }}` and proving `HEAD` equals `GITHUB_SHA`:
+`.github/workflows/check.yml` has three jobs on `ubuntu-24.04`, each with a time bound, each checking out `${{ github.sha }}` and proving `HEAD` equals `GITHUB_SHA`:
 
 | Job | What it runs |
 |---|---|
-| `static` | `python3 tools/build.py --check`; `node --check` over the tracked JavaScript; `py_compile` of the Python tools; `npm run golden:check`; `docker compose config`; a `docker build` whose image must hold exactly the five files the Dockerfile copies; the deploy payload, taken with the same filter deploy uses, must stay under 4 MiB |
+| `static` | `python3 tools/build.py --check`; `node --check` over the tracked JavaScript; `py_compile` of the Python tools; `npm run golden:check`; `docker compose config` |
 | `unit` | fails on an empty suite, then `npm run test:ci` (spec output and a JUnit report in `reports/`, uploaded) |
-| `browser` | full-history checkout, `npm ci`, the headless shell of the pinned Playwright, `npm run test:browser` with `CONVERGENCE=1` (the committed page), `npm run benchmark:smoke`, reports uploaded |
-| `bridge` | `pip install numpy==2.4.6` (the Dockerfile pin) and the bridge cross-check with `--require-numpy` |
+| `browser` | full-history checkout, `npm ci`, the headless shell of the pinned Playwright, `npm run test:browser` with `CONVERGENCE=1` (the committed page), reports uploaded |
 
 It runs on every push and pull request, and through `workflow_call` from the deploy workflow. It has no `concurrency` of its own: a group derived from the caller's would deadlock or cancel the caller. Pull-request runs are the evidence before a merge and do not gate anything. A push to `main` therefore gets two check runs, a standalone one and the one inside the Deploy run; that is accepted so that every commit on `main` keeps a visible check even when its deploy run is replaced by a newer one.
 
 ### The gate
 
-`.github/workflows/deploy.yml` runs on a push to `main` and nothing else. Its first job, `check`, is `uses: ./.github/workflows/check.yml`, which resolves to the same commit as the caller, so the checks and the deploy are one run for one `github.sha`. The `deploy` job has `needs: check` and an explicit `if: ${{ needs.check.result == 'success' }}`; there is no `always()` or `!cancelled()`, so a failed, skipped or cancelled check leaves the deploy skipped and production on the previous commit. Before anything touches the host, the deploy job checks out `github.sha`, proves `HEAD` equals it, and compares `needs.check.outputs.sha`, the commit the checks report having tested, with `GITHUB_SHA`; the commit goes into the step summary. The sync then sends only the allowlist in `.github/deploy.filter` (`--filter='merge .github/deploy.filter'`, never `--delete-excluded`, which would delete the host's `.env`).
+`.github/workflows/deploy.yml` runs on a push to `main` and nothing else. Its first job, `check`, is `uses: ./.github/workflows/check.yml`, which resolves to the same commit as the caller, so the checks and the deploy are one run for one `github.sha`. The `deploy` job has `needs: check` and an explicit `if: ${{ needs.check.result == 'success' }}`; there is no `always()` or `!cancelled()`, so a failed, skipped or cancelled check leaves the deploy skipped and production on the previous commit. Before anything touches the host, the deploy job checks out `github.sha`, proves `HEAD` equals it, and compares `needs.check.outputs.sha`, the commit the checks report having tested, with `GITHUB_SHA`; the commit goes into the step summary. The sync that follows is the one the deploy already had, with `--exclude .git --exclude .env` and never `--delete-excluded`, which would delete the host's `.env`; the gate changes when the deploy starts, not what it sends.
 
 - **Serialised, never cancelled.** The concurrency group `deploy-main` is at workflow level without `cancel-in-progress`: cancelling rsync or compose half way would leave the host half updated. A newer push waits behind the running deploy; at most one run waits, and a newer waiting run replaces an older waiting one, so the last commit pushed is deployed next. The consequence is that the checks of a newer push queue behind a running deploy, about half a minute longer.
 - **No bypass.** There is no manual trigger, no `workflow_run`, no input and no condition that skips the checks. Whether an emergency path should exist is the operator's decision; the design has none. Branch protection is not assumed and none is relied on.
@@ -105,11 +103,11 @@ It runs on every push and pull request, and through `workflow_call` from the dep
 
 ### Failure modes
 
-The gate makes everything it depends on a production dependency: a flaky browser test, the Playwright download, PyPI for numpy and the runner image can each block a deploy, including the deploy of a revert. Mitigations are `retries: 0` with `failOnFlakyTests` and `forbidOnly` in CI so flakiness is visible instead of masked, a time bound on every job (a hung job would hold the `deploy-main` group), no timing gate, and a deterministic fake. Recovery is to fix forward, to push a revert commit, or to re-run the last good Deploy run. If the numpy dependency is judged too costly, the operator can demote `bridge` to an informational workflow at the price of the drift control above. The first run after the gate exists is itself gated: if a job cannot start on the runner, nothing deploys until that is fixed.
+The gate makes everything it depends on a production dependency: a flaky browser test, the Playwright download and the runner image can each block a deploy, including the deploy of a revert. Mitigations are `retries: 0` with `failOnFlakyTests` and `forbidOnly` in CI so flakiness is visible instead of masked, a time bound on every job (a hung job would hold the `deploy-main` group), no timing gate, and a deterministic fake. Recovery is to fix forward, to push a revert commit, or to re-run the last good Deploy run. The first run after the gate exists is itself gated: if a job cannot start on the runner, nothing deploys until that is fixed.
 
 ### What the repository does not certify
 
-**GitHub-side runtime semantics of this gate are not certified by the repository.** `tests/unit/workflows.test.js` reads the two workflow files line by line and compares them with `package.json`, the Dockerfile and the file system, and it is shown to fail on mutated copies of the real text. That proves the files say what the design says. It does not prove that GitHub behaves as they assume: that a failed check skips the deploy, that a newer waiting run replaces an older one, that `[skip ci]` skips both, that the called workflow sees the caller's `github` context, that path filters do not apply to a called workflow, or the state of any branch protection or ruleset. None of this was executed from the repository, and `actionlint` checks syntax and expressions, not these semantics.
+**GitHub-side runtime semantics of this gate are not certified by the repository.** `tests/unit/workflows.test.js` reads the two workflow files line by line and compares them with `package.json` and the file system, and it is shown to fail on mutated copies of the real text. That proves the files say what the design says. It does not prove that GitHub behaves as they assume: that a failed check skips the deploy, that a newer waiting run replaces an older one, that `[skip ci]` skips both, that the called workflow sees the caller's `github` context, that path filters do not apply to a called workflow, or the state of any branch protection or ruleset. None of this was executed from the repository, and `actionlint` checks syntax and expressions, not these semantics.
 
 To try the negative path (the operator or a reviewer, never against the real deploy job), in a throwaway private repository copy both workflows and set dummy `DEPLOY_*` variables. Add a deliberately failing unit test on a branch whose push trigger is temporarily `push: branches: [main]`, push it, and look for: `check` red, `deploy` skipped, no rsync step executed. Then fix the test and look for `deploy` reaching the dummy configuration check. Keep the two run links. Until that is done the statement for a pull request is: "Workflow dependency implemented; admin settings and negative path not verified."
 

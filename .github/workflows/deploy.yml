@@ -54,10 +54,8 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      # The payload is the allowlist of .github/deploy.filter (what the Compose build reads). Never add
-      # --delete-excluded: it would delete the host's .env.
       - name: Sync the checkout
-        run: rsync -az --delete --prune-empty-dirs --filter='merge .github/deploy.filter' ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/"
+        run: rsync -az --delete --exclude .git --exclude .env ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/"
       - name: Write credentials and start
         env:
           EXPLORER_AUTH_USER: ${{ secrets.EXPLORER_AUTH_USER }}

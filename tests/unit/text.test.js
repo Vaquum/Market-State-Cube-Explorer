@@ -12,6 +12,12 @@
 // `notice.namedViewsLimit` is NOT in the table and the test asserts it does not exist. PLACEHOLDERS is
 // the documentation of every {name} (the same list as the comment block of part 04), written by hand;
 // substitution expectations are computed with split/join, not with the module's pattern.
+// DR-41 adds 26 keys that INTEGRATION.md D.11 does not list (and amends it in spirit): `key.zeroTick`,
+// `key.open` and the 24 `role.*` strings (a label and an accessible name for each of the 12 role ids). They
+// are in D11 below with the English of part 04 (the lead's ruling names the keys, not the words), and
+// ROLE_IDS is the independent list of the twelve role ids of API.md B.9 that the role keys must cover.
+// DR-41 also makes fill STATELESS: the last fill tests assert that it never reports through `console` and
+// that a missing name is simply visible.
 // The module may run in a vm context (ENCODING_PARTS_DIR): its objects and errors are of another realm,
 // so errors are matched by name and structures compared through JSON.
 const test = require("node:test");
@@ -117,6 +123,32 @@ const D11 = {
   "key.noCalibration": "No calibration",
   "key.emptyBoth": "Empty in both",
   "key.outside": "Outside comparison support",
+  "key.zeroTick": "Zero",
+  "key.open": "Open",
+  "role.unsigned": "Magnitude",
+  "role.unsignedName": "Magnitude fill, from the lowest to the highest value of the scale",
+  "role.positive": "Positive",
+  "role.positiveName": "Positive arm, from the midpoint toward the largest positive value",
+  "role.negative": "Negative",
+  "role.negativeName": "Negative arm, from the midpoint toward the largest negative value",
+  "role.midpoint": "Midpoint",
+  "role.midpointName": "Midpoint: zero, or an even split between the two sides",
+  "role.occupancy": "Occupied",
+  "role.occupancyName": "Occupancy outline: the cell has data and no magnitude is shown",
+  "role.zeroOutline": "Zero",
+  "role.zeroOutlineName": "Zero outline: the cell was measured and is exactly zero",
+  "role.unsignedBar": "Bar",
+  "role.unsignedBarName": "Constant bar fill for an unsigned column or profile length",
+  "role.stateInk": "State",
+  "role.stateInkName": "State ink of the patterns and glyphs that mark a value that is not a number",
+  "role.rowsProjection": "Rows band",
+  "role.rowsProjectionName": "Contextual price-row band at a fixed low opacity",
+  "role.familyReference": "Family reference",
+  "role.familyReferenceName": "Reserved for family reference marks",
+  "role.interaction": "Interaction",
+  "role.interactionName": "Reserved for hover and selection marks",
+  "role.regionReplacement": "Region replacement",
+  "role.regionReplacementName": "Reserved for marks of a replaced region",
   "typed.finite": "{value}",
   "typed.negative-infinite": "No current volume in the rectangle; the period traded here (−∞ on the log scale)",
   "typed.no-reference": "No reference volume: the period did not trade here",
@@ -318,7 +350,7 @@ function loadWithConsole(fake) {
 test("every key of D.11 exists in E.text with the exact English, and E.text has no other key", () => {
   for (const [key, text] of Object.entries(D11)) assert.equal(flat[key], text, key);
   assert.deepEqual(Object.keys(flat).sort(), Object.keys(D11).sort(), "the key sets are the same (no flat alias, no stray key)");
-  assert.equal(Object.keys(D11).length, 177, "D.11 lists 178 keys; DR-31 voids one");
+  assert.equal(Object.keys(D11).length, 203, "D.11 lists 178 keys; DR-31 voids one and DR-41 adds 26 (24 role strings, key.zeroTick, key.open)");
 });
 
 test("the keys are the nested names of D.11: groups, no flat aliases, functions beside the groups", () => {
@@ -341,6 +373,39 @@ test("the keys are the nested names of D.11: groups, no flat aliases, functions 
 test("DR-31: there is no named-view limit string", () => {
   assert.equal(E.text.notice.namedViewsLimit, undefined);
   assert.ok(!Object.values(flat).some((text) => /named views/.test(text)), "no string speaks of a named-view cap");
+});
+
+// The twelve role ids of API.md B.9, by hand (the independent list the role strings must cover).
+const ROLE_IDS = ["unsigned", "positive", "negative", "midpoint", "occupancy", "zero-outline", "unsigned-bar", "state-ink", "rows-projection",
+  "family-reference", "interaction", "region-replacement"];
+const camel = (id) => id.split("-").map((w, i) => (i === 0 ? w : w[0].toUpperCase() + w.slice(1))).join("");
+
+test("DR-41: every role id has a label and an accessible name, and the two signed-zero keys exist", () => {
+  assert.equal(ROLE_IDS.length, 12);
+  assert.deepEqual(Object.keys(E.text.role).sort(), ROLE_IDS.flatMap((id) => [camel(id), camel(id) + "Name"]).sort(), "24 keys: role.<camelId> and role.<camelId>Name");
+  for (const id of ROLE_IDS) {
+    const label = E.text.role[camel(id)];
+    const name = E.text.role[camel(id) + "Name"];
+    assert.equal(typeof label, "string", id);
+    assert.equal(typeof name, "string", id);
+    assert.notEqual(label, name, id + ": the accessible name says more than the label");
+    assert.ok(name.length > label.length, id);
+  }
+  // When the role table (part 12) is present its `label` and `accessibleName` are exactly these keys.
+  if (E.role !== undefined) {
+    for (const r of Object.values(E.role.ROLES)) {
+      const at = (key) => key.split(".").reduce((node, part) => (node === undefined ? node : node[part]), E.text);
+      assert.equal(typeof at(r.label), "string", r.label);
+      assert.equal(typeof at(r.accessibleName), "string", r.accessibleName);
+    }
+    // ...and the key row of a parent that runs past the data reads "Open" (DR-41).
+    const [k] = Array.from(E.role.keyEntries(["waiting-for-complete-parent"], { "waiting-for-complete-parent": 1 }));
+    assert.equal(k.key, "key.open");
+    assert.equal(k.label, "Open");
+  }
+  assert.equal(E.text.key.zeroTick, "Zero");
+  assert.equal(E.text.key.open, "Open");
+  assert.notEqual(E.text.key.zeroTick, E.text.key.zero, "the signed-zero tick is not the unsigned zero outline");
 });
 
 test("E.text.typed has one entry per B.1 tag, named exactly as the tag (DR-35)", () => {
@@ -428,19 +493,18 @@ test("fill substitutes each {name} from params: a value used twice, values that 
 
 test("fill: a missing name keeps its {name} visible; an extra name is ignored; nothing inherited counts", () => {
   const { fill } = E.text;
-  const quiet = loadWithConsole({ warn() {} }).text.fill;
-  assert.equal(quiet("{a} and {b}", { a: 1 }), "1 and {b}");
-  assert.equal(quiet("{a}", undefined), "{a}");
-  assert.equal(quiet("{a}", null), "{a}");
-  assert.equal(quiet("{a}", { a: undefined }), "{a}", "an undefined value is missing");
-  assert.equal(quiet("{a}", { a: null }), "{a}", "a null value is missing");
-  assert.equal(quiet("{constructor} {toString}", {}), "{constructor} {toString}", "inherited properties are not parameters");
+  assert.equal(fill("{a} and {b}", { a: 1 }), "1 and {b}");
+  assert.equal(fill("{a}", undefined), "{a}");
+  assert.equal(fill("{a}", null), "{a}");
+  assert.equal(fill("{a}", { a: undefined }), "{a}", "an undefined value is missing");
+  assert.equal(fill("{a}", { a: null }), "{a}", "a null value is missing");
+  assert.equal(fill("{constructor} {toString}", {}), "{constructor} {toString}", "inherited properties are not parameters");
   assert.equal(fill("x", { a: 1, unused: 2 }), "x", "an extra name is ignored");
   assert.equal(fill("{a}", { a: 1, unused: 2 }), "1");
 });
 
 test("fill never throws, whatever it is given", () => {
-  const { fill } = loadWithConsole({ warn() {} }).text;
+  const { fill } = E.text;
   const hostile = new Proxy({}, { has() { throw new Error("has"); }, get() { throw new Error("get"); }, getOwnPropertyDescriptor() { throw new Error("gopd"); } });
   const bomb = { get a() { throw new Error("getter"); } };
   const templates = [undefined, null, 0, 5, true, {}, [], () => "x", Symbol("s"), "", "{a}", "{a", "a}", "{", "}", "{{}}", "−{a}∞"];
@@ -474,32 +538,26 @@ test("fill of every string of D.11 with all its names given leaves no brace and 
   }
 });
 
-test("fill warns once per template and name, through console; the set is bounded; nothing is printed without a console", () => {
+test("DR-41: fill is stateless: it never reports through console, a missing name is only visible, two loads and repeated calls agree", () => {
   const calls = [];
-  const M = loadWithConsole({ warn: (...args) => calls.push(args.join(" ")) });
-  M.text.fill("{a} {b}", { a: 1 });
-  assert.equal(calls.length, 1);
-  assert.match(calls[0], /\{b\}/);
-  M.text.fill("{a} {b}", { a: 1 });
-  assert.equal(calls.length, 1, "the same template and name warn once");
-  M.text.fill("{b} again", {});
-  assert.equal(calls.length, 2, "another template is another warning");
-  M.text.fill("{c} {d}", {});
-  assert.equal(calls.length, 4, "each missing name of a template warns once");
-  M.text.fill("all {given}", { given: 1, extra: 2 });
-  assert.equal(calls.length, 4, "nothing missing, nothing said");
-  for (let i = 0; i < 200; i++) M.text.fill("{k" + i + "}", {});
-  assert.ok(calls.length <= 64, "at most 64 distinct warnings are ever kept: " + calls.length);
-  const before = calls.length;
-  M.text.fill("{never} seen", {});
-  assert.equal(calls.length, before, "once the bound is reached a new bug is silent, not a leak");
-  const other = loadWithConsole({ warn: (...args) => calls.push("other " + args.join(" ")) });
-  const n = calls.length;
-  other.text.fill("{a} {b}", { a: 1 });
-  assert.equal(calls.length, n + 1, "a second load has its own memory: loading shares nothing");
-  const silent = loadWithConsole(undefined);
-  assert.equal(silent.text.fill("{a}", {}), "{a}");
-  assert.equal(loadWithConsole({}).text.fill("{a}", {}), "{a}", "a console without warn is not called");
+  const M = loadWithConsole({ warn: (...args) => calls.push(args.join(" ")), log: (...args) => calls.push(args.join(" ")), error: (...args) => calls.push(args.join(" ")) });
+  assert.equal(M.text.fill("{a} {b}", { a: 1 }), "1 {b}");
+  assert.equal(M.text.fill("{a} {b}", { a: 1 }), "1 {b}", "the second call is the same as the first: no once-only state");
+  assert.equal(M.text.fill("{b} again", {}), "{b} again");
+  for (let i = 0; i < 200; i++) assert.equal(M.text.fill("{k" + i + "}", {}), "{k" + i + "}");
+  assert.deepEqual(calls, [], "fill never reports anything: the literal {name} is the report");
+  // A second load does not differ by what the first one has already been asked.
+  const other = loadWithConsole({ warn: (...args) => calls.push(args.join(" ")) });
+  assert.equal(other.text.fill("{a} {b}", { a: 1 }), "1 {b}");
+  assert.deepEqual(calls, []);
+  // No console at all, or a console without warn, is no different from a console that is listening.
+  assert.equal(loadWithConsole(undefined).text.fill("{a}", {}), "{a}");
+  assert.equal(loadWithConsole({}).text.fill("{a}", {}), "{a}");
+  // The module holds no Set: the part's source has no module-level collection (the old warn-once memory).
+  // Only while the parts exist (they are deleted by the assembly commit; the behaviour above stays).
+  if (!process.env.ENCODING_PARTS_DIR) return;
+  const part = fs.readFileSync(path.join(path.resolve(process.env.ENCODING_PARTS_DIR), "04-text.js"), "utf8");
+  assert.ok(!/\bnew Set\b/.test(part) && !/console/.test(part.replace(/\/\/[^\n]*/g, "")), "part 04 holds no Set and never touches console");
 });
 
 // ---- fillStrict: throws --------------------------------------------------------------------------------

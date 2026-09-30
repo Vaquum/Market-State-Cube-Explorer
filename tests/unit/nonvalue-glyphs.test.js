@@ -115,7 +115,7 @@ const KEY_TABLE = {
   "undefined": ["pattern-slate", "key.undefined"],
   "empty-population": ["pattern-slate", "key.undefined"],
   "no-coarser-parent": ["pattern-slate", "key.undefined"],
-  "waiting-for-complete-parent": ["pattern-slate", "key.undefined"],
+  "waiting-for-complete-parent": ["pattern-slate", "key.open"],
   "no-reference": ["pattern-slate", "key.noRef"],
   "empty-both": ["pattern-slate", "key.emptyBoth"],
   "negative-infinite": ["infinity", "key.negInf"],

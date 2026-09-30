@@ -292,7 +292,7 @@
     "undefined": rolKey("pattern-slate", "key.undefined"),
     "empty-population": rolKey("pattern-slate", "key.undefined"),
     "no-coarser-parent": rolKey("pattern-slate", "key.undefined"),
-    "waiting-for-complete-parent": rolKey("pattern-slate", "key.undefined"),
+    "waiting-for-complete-parent": rolKey("pattern-slate", "key.open"),
     "no-reference": rolKey("pattern-slate", "key.noRef"),
     "empty-both": rolKey("pattern-slate", "key.emptyBoth"),
     "negative-infinite": rolKey("infinity", "key.negInf"),

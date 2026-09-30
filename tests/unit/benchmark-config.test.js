@@ -424,6 +424,65 @@ describe("instrument.js", () => {
     assert.equal(other.width, 50);
   });
 
+  it("a width or height assignment OUTSIDE every page callback is not a draw, is counted apart, and never leaks into the next callback (AM-H7a-3)", async () => {
+    const page = stubPage();
+    const canvas = new page.HTMLCanvasElement("ol-canvas");
+    const { window, state } = page;
+    window.__bench.begin();
+    canvas.width = 11; // before any callback: a resize handler, say
+    state.t = 10;
+    window.requestAnimationFrame(() => { state.t = 12; }); // no assignment of its own
+    page.flush(0);
+    state.t = 13;
+    window.requestAnimationFrame(() => {
+      state.t = 14;
+      // a microtask runs after the callback has returned, so this assignment is outside it
+      queueMicrotask(() => { canvas.height = 7; });
+    });
+    page.flush(16);
+    await Promise.resolve();
+    canvas.width = 12; // between frames
+    state.t = 20;
+    window.requestAnimationFrame(() => { state.t = 21; });
+    page.flush(33);
+    state.t = 30;
+    window.requestAnimationFrame(() => { canvas.width = 13; state.t = 34; }); // the only draw
+    page.flush(50);
+    const r = plain(window.__bench.end());
+    assert.deepEqual(r.draws, [4], "only the assignment inside a callback makes a draw");
+    assert.equal(r.outsideSets, 3, "the three outside assignments are counted apart");
+    assert.equal(canvas.width, 13, "every assignment still reaches the real setter");
+    assert.equal(canvas.height, 7);
+    // and outside begin()..end() nothing is counted at all
+    canvas.width = 99;
+    window.__bench.begin();
+    assert.equal(plain(window.__bench.end()).outsideSets, 0, "begin() starts from zero");
+    canvas.width = 98;
+    assert.equal(plain(window.__bench.end()).outsideSets, 0, "a stopped recorder counts nothing");
+  });
+
+  it("a callback that invokes another recorded callback synchronously stays a callback until the outer one returns", () => {
+    const page = stubPage();
+    const canvas = new page.HTMLCanvasElement("ol-canvas");
+    const { window, state } = page;
+    window.__bench.begin();
+    state.t = 10;
+    let inner;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {});
+      inner = true;
+      state.t = 11;
+      page.flush(1); // runs the callback just queued: a nested wrapped callback, which returns first
+      canvas.width = 5; // still inside the outer callback
+      state.t = 15;
+    });
+    page.flush(0);
+    const r = plain(window.__bench.end());
+    assert.equal(inner, true);
+    assert.deepEqual(r.draws, [5], "the assignment after the inner callback returned is inside the outer one");
+    assert.equal(r.outsideSets, 0);
+  });
+
   it("frame intervals are differences of the heartbeat's timestamps, taken only while recording", () => {
     const page = stubPage();
     const { window } = page;

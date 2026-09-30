@@ -4,7 +4,9 @@
 // What it measures, and how each definition is chosen so the two builds are read the same way:
 //   DRAW       a page requestAnimationFrame callback during which the `width` or `height` setter of HTMLCanvasElement ran on
 //              #ol-canvas (DD-T28). The page draws only from a rAF callback and clears by assigning canvas.width in geometry(); it
-//              never calls clearRect, so a clearRect test would record no draw at all. The setter wrapper only sets a flag.
+//              never calls clearRect, so a clearRect test would record no draw at all. The setter wrapper only sets a flag, and only
+//              INSIDE a callback (the rule of tests/browser/probe.js, AM-H7a-3): an assignment outside any callback (a resize handler,
+//              a microtask after the callback returned) is not a draw; it is counted apart as `outsideSets`, as the probe does.
 //   FRAME      the timestamps of a heartbeat rAF loop that runs only while a gesture is recorded, so main-thread blocking shows up
 //              even in frames where the page drew nothing; intervals are differences of consecutive timestamps.
 //   INPUT TO   for each wheel and pointermove event (the events that move the view; a pointerdown changes nothing until the first
@@ -14,7 +16,7 @@
 // Nothing is selected: every draw callback, every frame and every event inside begin()..end() is kept, in order.
 //
 // window.__bench.begin()  start recording (and the heartbeat)
-// window.__bench.end()    stop and return {draws, frameIntervals, frameCount, inputToPaint, unpainted}, all in milliseconds
+// window.__bench.end()    stop and return {draws, frameIntervals, frameCount, inputToPaint, unpainted, outsideSets}, times in milliseconds
 // window.__bench.timerResolution()  -> number | null
 (function () {
   "use strict";
@@ -24,7 +26,9 @@
   const clock = () => performance.now();
 
   let recording = false;
-  let canvasHit = false; // a width/height assignment on #ol-canvas since the current callback began
+  let depth = 0; // recorded page callbacks being run (more than 1 only when one is invoked from another): inside one, an assignment makes a draw
+  let canvasHit = false; // a width/height assignment on #ol-canvas inside the current callback
+  let outsideSets = 0; // width/height assignments on #ol-canvas while recording but outside every page callback
   let draws = [];
   let frames = [];
   let pending = []; // event timestamps waiting for the next draw
@@ -39,7 +43,10 @@
         return original.get.call(this);
       },
       set(value) {
-        if (this.id === "ol-canvas") canvasHit = true;
+        if (this.id === "ol-canvas") {
+          if (depth > 0) canvasHit = true;
+          else if (recording) outsideSets++;
+        }
         original.set.call(this, value);
       },
     });
@@ -51,10 +58,12 @@
     return nativeRaf(function (timestamp) {
       if (!recording) return callback(timestamp);
       canvasHit = false;
+      depth++;
       const began = clock();
       try {
         return callback(timestamp);
       } finally {
+        depth--;
         const ended = clock();
         if (canvasHit) {
           draws.push(ended - began);
@@ -89,6 +98,7 @@
       pending = [];
       paint = [];
       canvasHit = false;
+      outsideSets = 0;
       recording = true;
       nativeRaf(beat);
     },
@@ -96,7 +106,7 @@
       recording = false;
       const frameIntervals = [];
       for (let i = 1; i < frames.length; i++) frameIntervals.push(frames[i] - frames[i - 1]);
-      return { draws, frameIntervals, frameCount: frames.length, inputToPaint: paint, unpainted: pending.length };
+      return { draws, frameIntervals, frameCount: frames.length, inputToPaint: paint, unpainted: pending.length, outsideSets };
     },
     timerResolution() {
       let best = Infinity;

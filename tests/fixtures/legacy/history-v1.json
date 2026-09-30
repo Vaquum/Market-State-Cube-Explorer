@@ -1,0 +1,29 @@
+{
+  "entries": [
+    {
+      "id": "h1",
+      "label": "Opened",
+      "hash": "#w=24h",
+      "tA": 3213312,
+      "tB": 3214080,
+      "cut": 3214083,
+      "n": 4,
+      "m": 0,
+      "window": "24h",
+      "replay": false
+    },
+    {
+      "id": "h2",
+      "label": "Window",
+      "hash": "#w=7d&mode=delta",
+      "tA": 3213312,
+      "tB": 3214080,
+      "cut": 3214083,
+      "n": 6,
+      "m": 0,
+      "window": "7d",
+      "replay": false
+    }
+  ],
+  "index": 1
+}

@@ -969,7 +969,8 @@
       warn: { cells: null, rows: null, lens: null },
       // the last DOM write key of each legend, so an unchanged legend writes nothing
       legendKey: { cells: "", rows: "", lens: "" },
-      // {causes, from, to, at}: what the last settle changed, per channel, for the legend details
+      // {causes, from, to}: what the last settle that changed a mapping changed, per channel, for the legend details;
+      // it stays until another change replaces it (a resize or a click is no reason to forget what changed)
       note: { cells: null, rows: null, lens: null },
       timer: 0,
       lastGestureAt: -Infinity,
@@ -1230,10 +1231,7 @@
       if (scaleRt.pinCause || nav.scaleCause) causes.push(scaleRt.pinCause ?? nav.scaleCause);
       if (scaleRt.hint) causes.push(scaleRt.hint);
       if (!causes.length) causes.push("fit");
-      scaleRt.note[channel] = { causes: [...new Set(causes)], from: prev.id, to: id, at: scaleRt.lastGestureAt };
-    } else if (scaleRt.note[channel] && scaleRt.note[channel].at < scaleRt.lastGestureAt) {
-      // The news is for the gesture that caused it: a later one that changes nothing ends it.
-      scaleRt.note[channel] = null;
+      scaleRt.note[channel] = { causes: [...new Set(causes)], from: prev.id, to: id };
     }
     scaleRt.prev[channel] = { id, key: cur.key, ctx: cur.ctx };
   }

@@ -5312,7 +5312,8 @@
       span = BAR_CHUNK * step,
       partial = S.replay && edge % step !== 0,
       tail = partial ? barEdges.get([live.generation, n, edge].join("|")) : null,
-      key = [live.generation, edge, S.replay, barsVersion].join("|"),
+      // A failed read changes the answer too, from waiting to failed.
+      key = [live.generation, edge, S.replay, barsVersion, barsIssue(n)].join("|"),
       hit = seriesMemo.get(n);
     if (hit?.key === key) return hit.out;
     const chunks = [];
@@ -6067,7 +6068,7 @@
       span = BAR_CHUNK * step,
       partial = S.replay && edge % step !== 0 && stop === edge,
       tailKey = [live.generation, n, edge].join("|"),
-      key = [n, a, stop, live.generation, edge, S.replay, barsVersion].join("|"),
+      key = [n, a, stop, live.generation, edge, S.replay, barsVersion, barsIssue(n)].join("|"),
       hit = rangeMemo.get(key);
     if (hit) return hit;
     let out = { state: "ready", bars: [], end: stop };
@@ -6630,16 +6631,13 @@
     ctx.fill();
     ctx.globalAlpha = 1;
   }
-  // A frame's bar at time t: the one it falls in, or the last one before.
-  function barAt(frame, t) {
-    let lo = 0,
-      hi = frame.starts.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (frame.starts[mid] <= t) lo = mid + 1;
-      else hi = mid;
-    }
-    return lo - 1;
+  // A frame's bar nearest time t: the one whose end, where its value is
+  // drawn, is closest, the later one on a tie; -1 without bars.
+  function barNear(frame, t) {
+    const ends = frame.ends,
+      j = endAt(ends, t);
+    if (j >= ends.length) return ends.length - 1;
+    return j > 0 && t - ends[j - 1] < ends[j] - t ? j - 1 : j;
   }
   // A bar's span as the tooltip names it: a day or a week by its dates.
   function frameBar(frame, i) {
@@ -6671,7 +6669,7 @@
     }
     if (l.kind !== "average") return false;
     const f = l.frame,
-      i = Math.min(barAt(f, hover?.t ?? f.end), f.closes.length - 1),
+      i = barNear(f, hover?.t ?? f.end),
       first = l.r.points[0]?.[2];
     if (i < 0 || first === undefined) return false;
     const at = Math.max(i, first),
@@ -6752,7 +6750,7 @@
         // The 15- and 3.75-minute bars are read to the end of the view's span.
         span = tf === "15m" || tf === "3m" ? averageSpan(AVERAGE_STEPS[tf]) : null;
       if (frame.state === "wide") notes.push(`The ${TF_NAMES[tf]} lines draw once their bars are a quarter pixel wide: zoom in.`);
-      else if (frame.state === "failed") notes.push(`The ${name} bars couldn't be read: ${frame.error}`);
+      else if (frame.state === "failed") notes.push(`The ${name} bars couldn't be read: ${frame.error}.`);
       else if (frame.state === "pending") notes.push(`Reading ${name} bars…`);
       else {
         if (frame.end < (span ? Math.min(edge, span.to) : edge)) notes.push(`Measured to ${when(frame.end)} UTC: the cube's measures end there.`);
@@ -6921,16 +6919,17 @@
     for (const [label, gy] of guides) text(label, G.x - 8, gy, colors.muted, "right");
     paneLegend(measure, [], null, top, note);
   }
-  // The pane's tooltip under an oscillator: the value at the pointer's bar,
-  // and a divergence or a cross there.
+  // The pane's tooltip under an oscillator: the value at the bar whose close,
+  // where it is drawn, is nearest the pointer, and a divergence or a cross there.
   function oscillatorTip(tip, p) {
     const o = paneShown.osc,
       measure = paneShown.measure;
-    if (!o || o.state !== "ready") return tipRows(tip, measure.label, "", [], "Reading its bars from the cube…");
+    if (!o || o.state !== "ready")
+      return tipRows(tip, measure.label, "", [], o?.state === "failed" ? `Its bars couldn't be read: ${o.error}` : "Reading its bars from the cube…");
     const f = o.frame,
-      i = barAt(f, p.t);
+      i = barNear(f, p.t);
     if (p.t >= last.cut) return tipRows(tip, measure.label, "", [], S.replay ? "Hidden in replay" : "After the data cutoff");
-    if (i < 0) return tipRows(tip, measure.label, "", [], "Before the history's first bar");
+    if (i < 0 || p.t < f.starts[0]) return tipRows(tip, measure.label, "", [], "Before the history's first bar");
     const head = `${measure.label} · at the close of ${frameBar(f, i)}`,
       two = (v) => (Number.isFinite(v) ? v.toFixed(2) : "—");
     if (paneShown.key === "macd1d") {

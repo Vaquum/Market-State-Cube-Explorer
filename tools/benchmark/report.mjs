@@ -16,7 +16,7 @@ export const LIMITS = Object.freeze([
   "B-L4: with 20 confirmation pairs a 99 % family-wise interval is wide; 'inconclusive' is a likely outcome and is reported as such, needing an explanation or the operator's decision (O-02).",
   "B-L5: headless shell and full Chrome differ; the mode is recorded and the operator's designated mode should match it.",
   "B-L6: the canvas bitmap is reallocated on every draw (geometry() assigns canvas.width) in both builds, so it sits inside every draw sample; the A/A floor may often exceed 0.2 ms on a laptop and 'environment-inconclusive' is a likely outcome.",
-  "The fake cube serves synthetic trades; fake-live timing excludes network and server latency, and the recorded cases measure only the page.",
+  "The fake cube serves synthetic trades; fake-live timing excludes network and server latency, the recorded cases measure only the page, and each build's fake keeps its server-side caches warm across the trials it serves.",
 ]);
 
 const fixed = (x, digits = 3) => (x === null || x === undefined ? "n/a" : Number(x).toFixed(digits));

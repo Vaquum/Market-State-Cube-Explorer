@@ -25,7 +25,7 @@
 // Not covered here: the mappings the page FITS (packages S, C, R: a fit's id after a fresh context needs a fit to exist), the pixels
 // of a restored mapping (package C), and the popover and menu controls that change the scale (package U). The descriptors these
 // tests restore are made in the test and carried by an address or a code, which is exactly what a second browser receives.
-const { test, expect } = require("./fixtures.js");
+const { test, expect, observe } = require("./fixtures.js");
 const S = require("./persistence-support.js");
 
 const STORE = "market-state-cube-explorer:";
@@ -131,6 +131,82 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect(S.param(restored, "bs")).toBe("i");
     expect(S.scOf(restored)).toBe(S.scOf(made.hash));
     expect(S.param(restored, "ap")).toBe(S.AP);
+  });
+
+  test("a FITTED view (Path, Intensity, the Comparison lock taken in the page) copied as a link and as a code restores the same mapping, policy, frozen axis and canvas in a fresh context with no cache", async ({ page, context, fakeFor, freshContext, probe }) => {
+    const fake = await fakeFor("mini");
+    await context.grantPermissions(CLIPBOARD, { origin: fake.url });
+    const surface = observe(page);
+    await page.goto(fake.url + "/#w=24h&vis=2&ap=" + S.AP + "&mode=path&pane=volume&bs=i");
+    await page.locator("#ol-canvas").waitFor();
+    // the page fits the mapping by itself (Explore), then one action holds it and freezes the displayed Auto axis
+    const calm = async (p, pr, su) => {
+      await fake.idle({ quietMs: 300 });
+      await pr.waitForQuiet({ quietMs: 450 });
+      await expect.poll(async () => (await su.chip("cells")).data.updating).toBe("false");
+      await pr.waitForQuiet({ quietMs: 300 });
+    };
+    await calm(page, probe, surface);
+    await expect.poll(async () => (await surface.chip("cells")).data.state).toBe("ready");
+    await S.popoverAction(page, surface, "Comparison lock");
+    await calm(page, probe, surface);
+    const read = async (su) => {
+      const cells = (await su.chip("cells")).data;
+      const axis = (await su.chip("axis")).data;
+      return { cells: [cells.state, cells.policy, cells.mappingId, cells.context, cells.fitThrough], axis: [axis.axisId, axis.axisState, axis.domain] };
+    };
+    const before = await read(surface);
+    expect(before.cells[1]).toBe("comparison");
+    expect(before.cells[2]).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expect(before.axis[1]).toBe("frozen");
+    const hash = (await S.where(page)).hash;
+    expect(S.param(hash, "lk")).toBe("1");
+    expect(S.scOf(hash)).toContain("a.pane.volume:x:");
+    const canvas = await S.canvasHash(page);
+    await page.locator("#ol-hist").click();
+    await page.locator("#ol-copy-link").click();
+    await expect.poll(() => S.clipboardText(page)).toContain(hash);
+    const link = await S.clipboardText(page);
+    await S.openQuery(page);
+    await page.locator("#ol-copy-view").click();
+    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:2\./);
+    const code = await S.clipboardText(page);
+    // a fresh context, nothing stored: the link alone carries the calibration and the frozen axis
+    const other = await freshContext();
+    const tab = await other.newPage();
+    expect((await other.storageState()).origins).toEqual([]);
+    await tab.goto(link);
+    await tab.locator("#ol-canvas").waitFor();
+    const fresh = observe(tab);
+    await expect.poll(async () => (await fresh.chip("cells")).data.state).toBe("ready");
+    await fake.idle({ quietMs: 400 });
+    await tab.waitForTimeout(600);
+    expect(await read(fresh)).toEqual(before);
+    expect((await S.where(tab)).hash).toBe(hash);
+    // the held mapping came back as the one that was fitted (its observation bound is the source's: nothing was refitted here)
+    expect((await fresh.chip("cells")).data.fitThrough).toBe(before.cells[4]);
+    // the same mapping draws the same pixels (DPR 1, the same fake data)
+    expect(await S.canvasHash(tab)).toBe(canvas);
+    // the view code does the same in a third context
+    const third = await freshContext();
+    const pasted = await third.newPage();
+    await pasted.goto(fake.url + "/");
+    await pasted.locator("#ol-canvas").waitFor();
+    await S.importCode(pasted, code);
+    await expect(pasted.locator("#ol-copy-status")).toHaveText("View restored");
+    const again = observe(pasted);
+    await expect.poll(async () => (await again.chip("cells")).data.state).toBe("ready");
+    await fake.idle({ quietMs: 400 });
+    await pasted.waitForTimeout(600);
+    expect(await read(again)).toEqual(before);
+    // the import was made in the open drawer, and a browser with nothing stored shows the neutral version notice: both take room from
+    // the chart, so with the drawer closed and the banner dismissed the chart is the source's
+    await S.notices(pasted);
+    await pasted.locator("#ol-drawer-toggle").click();
+    await expect(pasted.locator("#ol-drawer")).toHaveAttribute("data-open", "false");
+    await fake.idle({ quietMs: 400 });
+    await pasted.waitForTimeout(600);
+    expect(await S.canvasHash(pasted)).toBe(canvas);
   });
 
   test("a rank mapping with repeated values in its cohort comes back bit for bit: the same id in the address of a fresh context", async ({ page, fakeFor }) => {

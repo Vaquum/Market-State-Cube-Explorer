@@ -137,6 +137,24 @@ async function importCode(page, text) {
   await page.locator("#ol-import-text").fill(text);
   await page.locator("#ol-import-apply").click();
 }
+// One action of a chip's popover, by its name, the way a keyboard user takes it (open with Enter, activate with Enter, close again).
+async function popoverAction(page, surface, name, channel = "cells") {
+  const opened = await surface.openLegendDetails(channel);
+  const button = opened.popover.getByRole("button", { name: new RegExp(`^${name}`, "i") }).first();
+  await button.focus();
+  await page.keyboard.press("Enter");
+  await opened.close().catch(() => {});
+}
+// A digest of the pixels of the chart canvas at its own resolution (the harness runs at DPR 1), for "the same mapping draws the same".
+function canvasHash(page) {
+  return page.evaluate(() => {
+    const c = document.getElementById("ol-canvas");
+    const d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+    let h = 2166136261;
+    for (let i = 0; i < d.length; i++) h = Math.imul(h ^ d[i], 16777619) >>> 0;
+    return c.width + "x" + c.height + ":" + h;
+  });
+}
 // The clipboard of a page in a context that granted it.
 function clipboardText(page) {
   return page.evaluate(() => navigator.clipboard.readText());
@@ -149,5 +167,5 @@ async function openViews(page) {
 
 module.exports = {
   E, ENV, AP, ADDRESS_MAX, plain, view, address, cellsContext, valueRecord, rankRecord, DUPLICATE_VALUES, scOf, param, said, withoutSc,
-  gzipCode, bombCode, b64url, notices, noticeCodes, where, storage, openQuery, importCode, clipboardText, openViews,
+  gzipCode, bombCode, b64url, canvasHash, popoverAction, notices, noticeCodes, where, storage, openQuery, importCode, clipboardText, openViews,
 };

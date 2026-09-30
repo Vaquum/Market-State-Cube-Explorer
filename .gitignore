@@ -4,3 +4,9 @@ __pycache__/
 .venv/
 node_modules/
 .env
+# Test and benchmark output: regenerated on every run, never committed.
+test-results/
+playwright-report/
+blob-report/
+reports/
+.playwright-mcp/

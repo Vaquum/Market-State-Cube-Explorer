@@ -1,10 +1,6 @@
-.git
-.github
-.wrangler
-data
-docs
-src
-node_modules
-*.md
-.env
-.dev.vars
+# Allowlist: the build context is exactly what the Dockerfile copies.
+*
+!index.html
+!vendor/
+!tools/cube_bridge.py
+!tools/market_state_reader.py

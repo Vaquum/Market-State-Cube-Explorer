@@ -5379,10 +5379,28 @@
       if (info.time.cubeSeconds !== null) add("rowTimeCube", "Seconds the cube reports", dur(info.time.cubeSeconds), info.time.cubeSeconds);
     }
     if (info.relvol) {
-      const c = info.relvol.counts ?? {};
-      add("rowRelvolCounts", "Rows compared", JSON.stringify(c), c);
-      if (info.relvol.support) add("rowRelvolSupport", "Comparison support", JSON.stringify(info.relvol.support), info.relvol.support);
-      if (info.relvol.restriction) add("rowRelvolRestriction", "Restriction", String(info.relvol.restriction.text ?? JSON.stringify(info.relvol.restriction)), info.relvol.restriction);
+      const c = info.relvol.counts ?? {},
+        // TEXT(S1): the counts as words, each case that occurs, finite first
+        names = { finite: "finite", zero: "zero", negativeInfinite: "no current volume", noReference: "no reference", emptyBoth: "empty in both", underflow: "below the axis", overflow: "above the axis" },
+        counted = Object.entries(names)
+          .filter(([key]) => key === "finite" || c[key] > 0)
+          .map(([key, name]) => `${c[key] ?? 0} ${name}`)
+          .join(" · "),
+        sup = info.relvol.support;
+      add("rowRelvolCounts", "Rows compared", counted, c);
+      if (sup?.w)
+        add("rowRelvolSupport", "Comparison support", `${price(PR * sup.w[0])}–${price(PR * sup.w[1])} USDT, ${sup.kind ? String(sup.kind).replace(/-/g, " ") : sup.exact ? "exact rows" : "common rows"}`, sup);
+      if (info.relvol.restriction) {
+        const r = info.relvol.restriction;
+        add(
+          "rowRelvolRestriction",
+          "Restriction",
+          r.kind === "coarse-common-bins"
+            ? `Only bins wholly inside the support on both sides count; ${r.dropped} dropped`
+            : String(r.text ?? r.kind ?? ""),
+          r,
+        );
+      }
     }
     return { words, rows };
   }

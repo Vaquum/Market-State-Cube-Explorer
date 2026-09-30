@@ -15925,6 +15925,13 @@
         }
       : null;
   }
+  // A Local-contrast want that no longer applies: the controller's want and the record of what was asked for go
+  // together, so the tick never finds an ask whose want is gone.
+  function lensWantDrop() {
+    if (!scaleRt.ask.lens && !scaleRt.ctl.hasWants()) return;
+    scaleRt.ctl.cancel("lens");
+    scaleRt.ask.lens = null;
+  }
   // The lens's frame, for the rectangle and level of `p` (and the motion of `mp` under Path and Dwell): the
   // frame of E.readout over the LENS level and bounds, with the mapping chosen above, wrapped with what the
   // caption, the legend and the chip of the lens need. `scope` says whose mapping it is: "shared", "local",
@@ -15976,12 +15983,17 @@
           record = held;
         } else scope = "local-pending";
         contextKey = key;
-        // One want for the settled tick, replaced by the next lens position; it fits from lensCohortInputs.
-        if (!mine && scaleRt.ctl.request("lens", "init", key)) scaleArm();
+        // One want for the settled tick, replaced by the next lens position; it fits from lensCohortInputs. It goes
+        // through `scaleWant` (which records what was asked for, as the tick reads it back: a bare controller
+        // request would leave the tick with nothing to fit), and a lens position that found nothing to fit is not
+        // asked again (the tick leaves its key in `noFit`, as it does for a chart context). The pack generation is
+        // the memo: a descriptor fitted from earlier data answers for this position only within one generation.
+        const memo = "g" + live.generation;
+        if (!mine && scaleRt.noFit.lens !== key + "|" + memo) scaleWant("lens", "init", key, { ctx: ctxLens, ctxKey: key, memo });
       }
     }
     // a Local-contrast want that no longer applies (the option is off, or the measure has a fixed domain) is dropped
-    if (!scope.startsWith("local")) scaleRt.ctl.cancel("lens");
+    if (!scope.startsWith("local")) lensWantDrop();
     const frame = E.readout.cellsFrame({
       mode: S.mode,
       basis: eff.basis,
@@ -16247,7 +16259,7 @@
   function drawResolutionLens(sc) {
     if (!(S.lens || nav.alt || nav.hold)) {
       // a closed lens has no Local-contrast want to wait for
-      scaleRt.ctl.cancel("lens");
+      lensWantDrop();
       return;
     }
     const f = lensFrame();

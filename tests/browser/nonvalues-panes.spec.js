@@ -175,7 +175,7 @@ test.describe("B16c: a measured zero is a tick on the baseline", () => {
     await page.goto(`${fake.url}/${microView(5, "pane=delta")}`);
     await atRest(page, fake, probe);
     await needKeys(surface);
-    expect(await keyCount(surface, "zero")).toBe(1);
+    expect(await keyCount(surface, "zero-tick")).toBe(1);
   });
 });
 

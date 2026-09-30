@@ -5238,8 +5238,10 @@
       }
     }
     lensStatusWrite(sc);
-    // The footer keys: those of the channels in view that have marks, each id once, counts added
-    const legends = [scaleUi.models.cells, scaleUi.models.rows].filter(Boolean),
+    // The footer keys: those of the channels in view that have marks, each id once, counts added (the
+    // Columns pane's are the pane's own: paneLegendCommit, package X)
+    paneLegendCommit(sc);
+    const legends = [scaleUi.models.cells, scaleUi.models.rows, scaleUi.models.pane].filter(Boolean),
       keysKey =
         legends.map((l) => l.keys.map((k) => k.id + ":" + k.count).join(",")).join("|") + "|" + colourEpoch + "|" + (devicePixelRatio || 1);
     if (scaleUi.keysKey !== keysKey) {
@@ -5716,7 +5718,7 @@
       records
         .map((a) => [a.id, a.policy, a.typed, a.hold, a.mappingId, a.domain?.join("~"), a.clipped?.count, a.provenance?.through].join(":"))
         .join("|") +
-      "|" + S.scale.lock + "|" + scaleWorkspace() + "|" + colourEpoch;
+      "|" + S.scale.lock + "|" + scaleWorkspace() + "|" + colourEpoch + "|" + scaleUi.paneKey;
     if (scaleUi.axisKey === key) return;
     scaleUi.axisKey = key;
     scaleUi.axisRecords = records;
@@ -5783,7 +5785,16 @@
           add(E.text.key.below, String(rec.clipped.low), "clipLowFinite", rec.clipped.low);
           add(E.text.key.above, String(rec.clipped.high), "clipHighFinite", rec.clipped.high);
         }
+        // The Columns pane's axis also carries the pane's model fields and its keys (paneLegendCommit, package X)
+        const paneLegend = String(rec.id).startsWith("pane.") ? scaleUi.models.pane : null;
+        if (paneLegend)
+          for (const d of E.legend.details(paneLegend)) if (d.field.startsWith("model")) add(d.label, uiUtcText(d), d.field, d.canonical);
         box.append(list);
+        if (paneLegend) {
+          const keys = uiEl("div", "ol-legend-keys");
+          keys.append(...uiKeyList(paneLegend.keys, { state: colors.state, occupancy: colors.occupancy, surface: colors.surface }, true));
+          box.append(keys);
+        }
         if (rec.policy === "frozen") box.append(uiEl("p", "ol-legend-note", E.text.axis.frozenBy));
         if (rec.clipped?.count > 0) box.append(uiEl("p", "ol-legend-note", E.text.fill(E.text.axis.clipped, { n: rec.clipped.count, total: rec.clipped.total })));
         return box;
@@ -12332,7 +12343,7 @@
           }
           if (ENC.role === ROLE.ZERO) {
             // A measured zero has no length: a tick on the baseline says it was there.
-            see("zero");
+            see("zero-tick");
             marks.push({ id: "tick", xa, xb, y: signed ? zero : zero - 1 });
             continue;
           }
@@ -12470,6 +12481,41 @@
     }
   }
   scaleHooks.paneMarks = paneTally;
+  // The pane's Legend model (E.legend.build over the pane frame), for the generated keys of the footer and the
+  // axis popover's model and key fields (D.18). Built when what it is made of changed (the axis, the counts
+  // of the drawn marks, the model's status, the palette) and never in a steady frame; null when this frame has
+  // no pane frame (an oscillator, a fault). Called by the legend hook before it writes the footer keys, from
+  // the pane the same draw just painted (`sc.pane`, set by `activity`).
+  function paneLegendCommit(sc) {
+    const pane = sc.pane,
+      rec = pane?.axis,
+      frame = pane?.frame;
+    if (!frame || !rec) {
+      scaleUi.models.pane = null;
+      scaleUi.paneKey = "";
+      return;
+    }
+    const counts = pane.counts,
+      key = [
+        frame.fingerprint(),
+        rec.domain?.join(","),
+        rec.hold,
+        rec.policy,
+        Object.keys(counts).sort().map((id) => id + "=" + counts[id]).join(","),
+        pane.model?.status,
+        pane.model?.labels?.join("|"),
+        colourEpoch,
+      ].join(";");
+    if (scaleUi.paneKey === key) return;
+    scaleUi.paneKey = key;
+    scaleUi.models.pane = E.legend.build(frame, null, uiFmt, {
+      channel: "pane",
+      counts,
+      measureLabel: pane.measure.label,
+      updating: Boolean(rec.hold) && rec.hold !== "play",
+      paused: rec.hold === "play" ? "play" : false,
+    });
+  }
   // Efficiency: a column's USDT per 125 USDT row its trades touched, against
   // its parent column's one level up in time, as log2 of their ratio over
   // 0.70, the ratio expected: halving a column halves its volume, while its

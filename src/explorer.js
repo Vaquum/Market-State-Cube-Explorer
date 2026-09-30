@@ -2000,21 +2000,7 @@
     if (!ready) return;
     syncURL();
     saveHistory();
-    if (!window.explorerState) return;
-    try {
-      // The key and `version: 5` stay, so an older build still reads what this one writes (it ignores the
-      // members it does not know); visualVersion says which reading of the colours the view was made under.
-      window.explorerState.save({
-        version: 5,
-        visualVersion: 2,
-        prefs: Object.fromEntries(PREFS.map((k) => [k, S[k]])),
-        view: viewHash(),
-      });
-    } catch (error) {
-      // Not the copy status, which sits in a drawer panel that is usually closed: the banner says it, once
-      // for a run of failures, while this tab keeps the view.
-      postNotice({ code: "storage-failed", details: [String(error?.message ?? error)] });
-    }
+    saveLastView();
   }
   function restorePrefs(x) {
     for (const k of ["sideOpen", "drawerOpen"])
@@ -2087,6 +2073,9 @@
     if (view) {
       applyView(view);
       reportView(view);
+      // A legacy view is migrated once: it is stored as what it now is, so the next visit finds a
+      // version-2 view and owes no notice.
+      if (view.kind === "legacy") saveLastView();
     } else noteFirstVisit();
     return Boolean(view);
   }
@@ -2314,13 +2303,14 @@
   // refuses, the text is put in the Query tab's field and selected for the person to copy, and that is
   // said where it can be seen. Answers whether the clipboard took it.
   async function copyText(source, label) {
-    const made = Promise.resolve(typeof source === "function" ? source() : source);
+    const made = Promise.resolve(typeof source === "function" ? source() : source),
+      blob = made.then((text) => new Blob([text], { type: "text/plain" }));
+    // A text that cannot be made is reported below, once; neither promise may also raise an unhandled rejection.
     made.catch(() => {});
+    blob.catch(() => {});
     try {
       if (typeof ClipboardItem === "function" && navigator.clipboard?.write)
-        await navigator.clipboard.write([
-          new ClipboardItem({ "text/plain": made.then((text) => new Blob([text], { type: "text/plain" })) }),
-        ]);
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
       else await navigator.clipboard.writeText(await made);
       copyFallbackActive = false;
       el("copy-status").textContent = label + " copied";
@@ -11869,6 +11859,24 @@
   }
 
   // ---- storage: the last persist, the cache ----
+  // This browser's last view and workspace. The key and `version: 5` stay, so an older build still reads
+  // what this one writes (it ignores the members it does not know); visualVersion says which reading of
+  // the colours the view was made under.
+  function saveLastView() {
+    if (!window.explorerState) return;
+    try {
+      window.explorerState.save({
+        version: 5,
+        visualVersion: 2,
+        prefs: Object.fromEntries(PREFS.map((k) => [k, S[k]])),
+        view: viewHash(),
+      });
+    } catch (error) {
+      // Not the copy status, which sits in a drawer panel that is usually closed: the banner says it, once
+      // for a run of failures, while this tab keeps the view.
+      postNotice({ code: "storage-failed", details: [String(error?.message ?? error)] });
+    }
+  }
   // The address and the stored last view follow the descriptors after a commit, a policy action or a lock
   // change (the spine calls this through `scaleHooks.persist`). Written once the change has settled, and the
   // browser-wide cache is updated with the live contexts (their newest record each: the cache is for the
@@ -11955,8 +11963,8 @@
       kind: "view",
       query: { t1: b[0], t2: b[1], p1: b[2], p2: b[3], tR: Math.round(S.n), pR: Math.round(S.m) },
       view: {
+        // every field of the codec's table; `scale` is the ten raw preferences and nothing of the runtime state
         ...visual,
-        scale: state.scale,
         // The view's place: a window or the rectangle, whether the level follows it, and the selection.
         auto: S.auto,
         window: S.window,

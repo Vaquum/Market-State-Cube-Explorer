@@ -3134,7 +3134,11 @@
   }
   // The tooltip's row section: the row's USDT in the rectangle and its share
   // of it (left out over the profile, which gives them already), the
-  // underlay's value for the row over its period, and its relative volume.
+  // underlay's value for the row over its period, and its relative volume. The
+  // underlay's numbers are the Rows readout's own (the band the canvas encoded,
+  // through the same frame), and a relative volume that is not a number says
+  // which case it is: outside the comparison range, no current volume, no
+  // reference volume, or neither traded.
   function rowSection(r, money, share, exact, withRow = true) {
     const out = [],
       q = last.query,
@@ -3157,31 +3161,50 @@
       { approx, from } = underlayBasis(u.res);
     if (!u.bands) return [...out, [label, underlayWhy(u.res)]];
     if (from) out.push(["Period's rows", from]);
-    const band = u.bands.map.get(Math.floor(r / 2 ** (u.bands.m - renderM())));
+    const frame = last.sc?.rows ?? null,
+      band = u.bands.map.get(Math.floor(r / 2 ** (u.bands.m - renderM()))),
+      readout = frame && band && u.kind !== "relvol" ? frame.readout(band) : null,
+      // The observed amount of the band: the readout's, or (the scale display is off) the band's own.
+      observed = readout ? readout.observed?.value : u.kind === "volume" ? band?.v : u.kind === "delta" ? (band ? 2 * band.bv - band.v : undefined) : band?.w;
     if (u.kind === "volume")
-      out.push([label, band?.v > 0 ? `${approx}${money(band.v)} · ${share(band.v / u.bands.v)}` : "No trades in the period"]);
+      out.push([label, observed > 0 ? `${approx}${money(observed)} · ${share(observed / u.bands.v)}` : "No trades in the period"]);
     else if (u.kind === "delta")
-      out.push([label, band?.v > 0 ? approx + signed(2 * band.bv - band.v, money) : "No trades in the period"]);
-    else if (u.kind === "time")
+      out.push([label, band?.v > 0 ? approx + signed(observed, money) : "No trades in the period"]);
+    else if (u.kind === "time") {
       out.push([
         label,
-        band?.w > 0
-          ? `${exact ? secondsExact(band.w) : dur(band.w)} · ${share(u.bands.w > 0 ? band.w / u.bands.w : 0)}`
+        observed > 0
+          ? `${exact ? secondsExact(observed) : dur(observed)} · ${share(u.bands.w > 0 ? observed / u.bands.w : 0)}`
           : "The price wasn't here in the period",
       ]);
+      // The three seconds the read has: what it covered, what the rows hold, and what no row accounts for
+      // (only where the cube gave the period's total; the rows are never scaled to it).
+      const time = readout?.rows?.time;
+      if (time) {
+        const gap = E.measure.dwellResidual(time.coveredSeconds, time.cubeSeconds);
+        out.push(
+          [E.text.label.coverage, E.text.dwell.coverage],
+          ["Period covered", exact ? secondsExact(time.coveredSeconds) : dur(time.coveredSeconds)],
+          ["Attributed to rows", exact ? secondsExact(time.attributedSeconds) : dur(time.attributedSeconds)],
+          [
+            E.text.label.unattributed,
+            gap.measurable ? (exact ? secondsExact(gap.seconds) : dur(gap.seconds)) : gap.tag ? E.result.describe(gap).short : E.text.dwell.notMeasurable,
+          ],
+        );
+      }
+    }
     // Relative volume: the underlay's own value under Relative volume.
     const vb = u.volBands;
     if (vb) {
-      const e = u.rect && relativeVolume(vb, u.rect).get(Math.floor(r / 2 ** (vb.m - renderM())));
+      const rv = relvolFor(vb, u.vol, u.rect),
+        typed = rv.at(Math.floor(r / 2 ** (vb.m - renderM())));
       out.push([
         u.kind === "relvol" ? label : "Relative volume",
-        !u.rect
+        u.rect.state === "pending" || u.rect.state === "failed"
           ? "measuring the rectangle…"
-          : !e
-            ? "No trades in the period"
-            : e.none
-              ? `−2 · it traded in the period, not in the ${where}`
-              : approx + ratioText(e.value, exact),
+          : typed.tag === "finite"
+            ? approx + ratioText(typed.value, exact)
+            : E.result.describe(typed).short,
       ]);
     }
     return out;
@@ -4795,14 +4818,25 @@
     ctx.stroke();
     ctx.restore();
   }
-  function profile(query, b, state, under) {
+  function profile(query, b, state, under, sc) {
     if (!G.profile) return;
-    const max = d3.max(query.rows, (z) => z.v) || 1,
+    // The length of every bar: the registered axis of the current profile, over the rows it shows. It is the
+    // exact maximum of them, "0" for rows that are all zero, and "No data" for none (never a maximum of 1
+    // made up for an empty view); it waits for a measured rectangle and keeps its domain through a gesture.
+    const axis = axisFrame("profile.current", {
+        sign: "unsigned",
+        eligible: state === "exact" || state === "recorded" || state === "cube",
+        sig: [scaleWorkspace(), "profile.current", objId(query), state].join("|"),
+        summary: () => rowsScan(query.rows, 0, Infinity, rowsV),
+      }),
+      at = { t: 0, clip: 0 },
       px = G.x + G.w + 9,
       pw = G.profile - 29,
       ps = stepP(),
       va = markState.va,
       labels = [];
+    let low = 0,
+      high = 0;
     ctx.save();
     ctx.beginPath();
     ctx.rect(px, G.y, G.profile - 8, G.h);
@@ -4816,24 +4850,30 @@
       ctx.globalAlpha = 1;
     }
     // The underlay's second profile, behind the view's.
-    if (under?.bands) underProfile(under, px, pw);
-    for (const row of query.rows) {
+    if (under?.bands) underProfile(under, px, pw, sc);
+    for (const row of axis.typed === "none" ? [] : query.rows) {
       const ya = G.Y(Math.min((row.r + 1) * ps, b[3])),
         yb = G.Y(Math.max(row.r * ps, b[2]));
       if (yb <= ya) continue;
+      // A bar past a held domain (a gesture or Play keeps it) is clamped at the strip's edge and counted.
+      E.axis.coordinate(axis, row.v, at);
+      if (at.clip === E.scale.CLIP.LOW) low++;
+      else if (at.clip === E.scale.CLIP.HIGH) high++;
       ctx.fillStyle = S.poc && row.r === query.poc ? colors.poc : colors.muted;
       ctx.globalAlpha = S.poc && row.r === query.poc ? 0.75 : 0.32;
-      ctx.fillRect(px, ya, (pw * row.v) / max, Math.max(0.1, yb - ya - 0.7));
-      ctx.fillStyle = colors.buy;
+      ctx.fillRect(px, ya, pw * at.t, Math.max(0.1, yb - ya - 0.7));
+      E.axis.coordinate(axis, row.bv, at);
+      // The taker-buy subset of the row is an amount like the row: its interim colour, not a signed arm.
+      ctx.fillStyle = colors.legacyBuy;
       ctx.globalAlpha = 0.85;
-      ctx.fillRect(
-        px,
-        ya,
-        (pw * row.bv) / max,
-        Math.max(0.7, Math.min(2, (yb - ya) * 0.3)),
-      );
+      ctx.fillRect(px, ya, pw * at.t, Math.max(0.7, Math.min(2, (yb - ya) * 0.3)));
     }
     ctx.globalAlpha = 1;
+    axis.clipped.low = low;
+    axis.clipped.high = high;
+    axis.clipped.count = low + high;
+    axis.clipped.total = query.rows.length;
+    scaleHooks.axisChip?.(axis);
     if (S.level !== null) {
       const y = Math.round(G.Y(S.level)) + 0.5;
       ctx.setLineDash([6, 4]);
@@ -4862,7 +4902,7 @@
     if (S.poc) {
       for (const [row, symbol, color] of [
         [query.poc, "P", colors.poc],
-        [query.bpoc, "B", colors.buy],
+        [query.bpoc, "B", colors.legacyBuy],
       ]) {
         if (row === null) continue;
         const y = G.Y((row + 0.5) * ps);
@@ -4932,9 +4972,11 @@
     }
     return [i, hi];
   }
-  // The period's peaks among its rows in view, which the bands and the second
-  // profile are scaled to, as the view's profile is to its own rows: its most
-  // USDT, most signed USDT and most time in a row.
+  // LEGACY(S1): removed at convergence. The period's peaks among its rows in view,
+  // which the bands and the second profile were scaled to: its most USDT, most
+  // signed USDT and most time in a row. Nothing in the Rows channel reads it any
+  // more (the bands go through the period-wide mapping, the lengths through the
+  // registered axes); only the legacy legend text and draw() still ask for it.
   function underlayPeak(u) {
     const b = u.bands,
       rows = b.rows;
@@ -4950,10 +4992,8 @@
     }
     return { v: v || 1, d: d || 1, w: w || 1 };
   }
-  // A band's strength, 0 to 1, and its colour: volume in a neutral grey,
-  // delta and relative volume in the buy and sell colours (relative volume
-  // full at ±2), time at price in its own. Amounts go by the square root of
-  // their share of the peak in view, so the thinner rows still show.
+  // LEGACY(S1): removed at convergence. A band's strength, 0 to 1, and its
+  // colour, from the peak in view; the bands now encode through the Rows frame.
   function bandTone(u, x, rel) {
     const k = u.peak;
     if (u.kind === "volume") return [Math.sqrt(x.v / k.v), colors.ink];
@@ -4963,68 +5003,106 @@
     return [t, v >= 0 ? colors.buy : colors.sell];
   }
   // The underlay's bands: one per price row at the drawn row size, across the
-  // whole chart behind the cells, so they show where the view has no cells:
-  // the heavy levels it never visited. Each at a low alpha.
-  function paintBands(u) {
-    if (!u.bands) return;
-    const b = u.bands,
-      ps = 2 ** b.m,
-      rel = u.kind === "relvol" && u.rect ? relativeVolume(b, u.rect) : null,
-      rows = b.rows,
-      top = u.kind === "volume" ? 0.2 : u.kind === "time" ? 0.3 : 0.16;
-    if (u.kind === "relvol" && !rel) return;
-    let [i, hi] = rowsInView(rows, ps);
-    for (; i < rows.length && rows[i].r <= hi; i++) {
-      const x = rows[i],
-        [t, colour] = bandTone(u, x, rel);
-      if (!(t > 0)) continue;
-      const ya = G.Y((x.r + 1) * ps);
-      ctx.fillStyle = colour;
-      ctx.globalAlpha = top * t;
-      ctx.fillRect(G.x, ya, G.w, Math.max(0.5, G.Y(x.r * ps) - ya));
+  // whole chart behind the cells, so they show where the view has no cells: the
+  // heavy levels it never visited. Each is painted through the Rows frame (see
+  // bandPaint), at the fixed Rows alpha.
+  function paintBands(u, frame) {
+    if (!u.bands || !frame) return;
+    const relvol = u.kind === "relvol" ? u.relvol : null;
+    // A whole-result status (still reading, failed, no totals to compare) paints no band: the legend says why.
+    if (u.kind === "relvol" && relvol?.state !== "ok") return;
+    const ps = 2 ** u.bands.m;
+    ctx.globalAlpha = E.lut.ROWS_ALPHA;
+    bandInk = null;
+    if (relvol) {
+      const [lo, hi] = rowsBinRange(relvol, ps);
+      for (let j = lo; j <= hi; j++) {
+        rowsBin.r = j;
+        bandPaint(u, rowsBin, frame, ENC);
+      }
+    } else {
+      const rows = u.bands.rows;
+      let [i, hi] = rowsInView(rows, ps);
+      for (; i < rows.length && rows[i].r <= hi; i++) bandPaint(u, rows[i], frame, ENC);
     }
     ctx.globalAlpha = 1;
   }
   // The underlay's second profile, behind the view's: each row's value over
-  // its period, scaled to the period's own peak. Volume and time at price run
-  // from the strip's edge; delta and relative volume diverge from a centre
-  // line. The period's POC is a dashed line across the strip, and its 70%
-  // value area a bar down the strip's edge.
-  function underProfile(u, px, pw) {
+  // its period, on the length axis of its own (registered as
+  // profile.reference.<measure>: the exact maximum of the rows in view, or the
+  // fixed -2 to +2 of Relative volume), apart from the current profile's.
+  // Volume and time at price run from the strip's edge in the constant bar
+  // colour; delta and relative volume diverge from a centre line in the two
+  // arms. The period's POC is a dashed line across the strip, and its 70% value
+  // area a bar down the strip's edge.
+  function underProfile(u, px, pw, sc) {
     const b = u.bands,
       ps = 2 ** b.m,
       mid = px + pw / 2,
-      rel = u.kind === "relvol" && u.rect ? relativeVolume(b, u.rect) : null,
       rows = b.rows,
-      diverging = u.kind === "delta" || u.kind === "relvol";
+      kind = u.kind,
+      diverging = kind === "delta" || kind === "relvol",
+      relvol = kind === "relvol" ? u.relvol : null,
+      id = "profile.reference." + kind,
+      read = kind === "volume" ? rowsV : kind === "delta" ? rowsDelta : rowsW,
+      lut = sc?.lut,
+      // The constant bar colour of the active appearance and the two arms; the legacy ink if the scale display is off.
+      bar = lut ? lut.bar.css : colors.ink,
+      arms = lut ? [lut.positive.css[255], lut.negative.css[255]] : [colors.legacyBuy, colors.legacySell],
+      at = { t: 0, clip: 0 };
     let [i, hi] = rowsInView(rows, ps);
-    for (; i < rows.length && rows[i].r <= hi; i++) {
-      const x = rows[i],
-        ya = G.Y((x.r + 1) * ps),
-        h = Math.max(0.1, G.Y(x.r * ps) - ya - 0.7);
-      if (!diverging) {
-        const t = Math.min(1, u.kind === "volume" ? x.v / u.peak.v : x.w / u.peak.w);
-        if (!(t > 0)) continue;
-        ctx.fillStyle = u.kind === "volume" ? colors.ink : colors.time;
-        ctx.globalAlpha = u.kind === "volume" ? 0.16 : 0.28;
-        ctx.fillRect(px, ya, pw * t, h);
-        ctx.globalAlpha = 0.6;
-        ctx.fillRect(px + pw * t - 1, ya, 1, h);
-        continue;
+    const first = i,
+      axis = axisFrame(
+        id,
+        kind === "relvol"
+          ? { sign: "ratio", eligible: true, sig: "fixed" }
+          : {
+              sign: diverging ? "signed-symmetric" : "unsigned",
+              eligible: u.res.state === "ready" && !u.stale,
+              sig: [scaleWorkspace(), id, objId(rows), b.m, first, hi].join("|"),
+              summary: () => rowsScan(rows, first, hi, read),
+            },
+      );
+    let low = 0,
+      high = 0,
+      drawn = 0;
+    // "No data" draws no bar, and a whole-result status of Relative volume has none to draw.
+    if (axis.typed !== "none" && (kind !== "relvol" || relvol?.state === "ok"))
+      for (; i < rows.length && rows[i].r <= hi; i++) {
+        const x = rows[i],
+          ya = G.Y((x.r + 1) * ps),
+          h = Math.max(0.1, G.Y(x.r * ps) - ya - 0.7);
+        let value;
+        if (kind === "relvol") {
+          const typed = relvol.at(x.r);
+          if (typed.tag !== "finite") continue;
+          value = typed.value;
+        } else value = read(x);
+        E.axis.coordinate(axis, value, at);
+        drawn++;
+        if (at.clip === E.scale.CLIP.LOW) low++;
+        else if (at.clip === E.scale.CLIP.HIGH) high++;
+        if (!diverging) {
+          if (!(at.t > 0)) continue;
+          ctx.fillStyle = bar;
+          ctx.globalAlpha = kind === "volume" ? 0.16 : 0.28;
+          ctx.fillRect(px, ya, pw * at.t, h);
+          ctx.globalAlpha = 0.6;
+          ctx.fillRect(px + pw * at.t - 1, ya, 1, h);
+          continue;
+        }
+        if (!at.t) continue;
+        const w = (pw / 2) * Math.abs(at.t);
+        ctx.fillStyle = at.t > 0 ? arms[0] : arms[1];
+        ctx.globalAlpha = 0.35;
+        ctx.fillRect(at.t > 0 ? mid : mid - w, ya, w, h);
       }
-      const v =
-        u.kind === "delta"
-          ? (2 * x.bv - x.v) / u.peak.d
-          : rel?.get(x.r)
-            ? clamp(rel.get(x.r).value / 2, -1, 1)
-            : 0;
-      if (!v) continue;
-      const w = (pw / 2) * Math.abs(v);
-      ctx.fillStyle = v >= 0 ? colors.buy : colors.sell;
-      ctx.globalAlpha = 0.35;
-      ctx.fillRect(v >= 0 ? mid : mid - w, ya, w, h);
-    }
     ctx.globalAlpha = 1;
+    axis.clipped.low = low;
+    axis.clipped.high = high;
+    axis.clipped.count = low + high;
+    axis.clipped.total = drawn;
+    scaleHooks.axisChip?.(axis);
     if (diverging) markLine(mid, G.y, mid, G.y + G.h, colors.line, 1, 0.9);
     const vb = u.volBands;
     if (vb?.va) {
@@ -5046,12 +5124,16 @@
   // How the underlay's rows stand for its period where they aren't its own
   // exactly (the recorded snapshot): from coarser rows, its 1,000 USDT ones,
   // marked ≈; or at 125 USDT from a block's first whole column after the
-  // period starts, which is said.
+  // period starts. The trimmed start is said either way (the coarser rows
+  // begin on a whole column too). The Rows legend's details carry the same
+  // words, from the frame's description of the rows.
   function underlayBasis(res) {
     if (res.state !== "ready" || res.exact !== false) return { approx: "", from: "" };
-    if (res.rowPrice > 1) return { approx: "≈ ", from: `from ${price(PR * res.rowPrice)} USDT rows` };
-    const a = Math.ceil(res.span[0] / res.columns) * res.columns;
-    return { approx: "", from: a > res.span[0] ? `from ${when(a)} UTC` : "" };
+    const a = Math.ceil(res.span[0] / res.columns) * res.columns,
+      trimmed = a > res.span[0] ? `from ${when(a)} UTC` : "";
+    if (res.rowPrice > 1)
+      return { approx: "≈ ", from: `from ${price(PR * res.rowPrice)} USDT rows${trimmed ? `, starting ${when(a)} UTC` : ""}` };
+    return { approx: "", from: trimmed };
   }
   // Why the underlay has no rows to draw yet.
   function underlayWhy(res) {
@@ -7404,9 +7486,11 @@
       off: { name: "Off", desc: "No backdrop behind the cells" },
       volume: { name: "Volume", desc: "USDT traded at each price row over the period" },
       delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT at each price row over the period" },
+      // Version 2: both shares are taken over the same price range (the selection's, else the view's), so a
+      // rectangle that trades like its period reads 0 on every row; rows outside that range are not compared.
       relvol: {
         name: "Relative volume",
-        desc: "Each row's share of the view's USDT against its share of the period's, log₂",
+        desc: "Each row's share of the view's USDT against its share of the period's over the same price range, log₂",
       },
       time: { name: "Time at price", desc: "How long the price spent in each row over the period" },
     },
@@ -7518,10 +7602,11 @@
     byRows.set(bm, bands);
     return bands;
   }
-  // Relative volume: log2 of a row's share of the rectangle's USDT (the
-  // selection's, or the view's) over its share of the period's, at the bands'
-  // row size. A row the period traded but the rectangle didn't is −2; a row the
-  // period never traded has none. Kept for the last rectangle.
+  // LEGACY(S1): removed at convergence. Relative volume version 1, which the Rows frame below replaces
+  // (E.relvol.compute, over one price range for both sides): log2 of a row's share of the rectangle's USDT
+  // (the selection's, or the view's) over its share of the period's, at the bands' row size. A row the
+  // period traded but the rectangle didn't is −2; a row the period never traded has none. Kept for the
+  // last rectangle.
   const relMemo = new WeakMap();
   function relativeVolume(bands, query) {
     const hit = relMemo.get(bands);
@@ -7546,7 +7631,13 @@
   // What the underlay shows this frame, or null while it is off: its rows (the
   // lines' for the period, or Time at price's dwell), their bands at the drawn
   // row size, and the volume bands its POC, value area and relative volume
-  // come from. Relative volume waits for the rectangle's own measures.
+  // come from. `rect` is the rectangle the view compares with its period (its
+  // measure, bounds and read state: Relative volume says for itself when the
+  // rectangle is not measured yet); the rest describes the period's rows: their
+  // own row level, whether they are exact, the period's quality class, the
+  // edge they were read to, and whether they are the last period's while a new
+  // read is out. These stay on the frame and never on the cached bands, which
+  // are keyed by the rows alone.
   function underlayFrame(meas) {
     if (S.rows === "off") return null;
     const kind = S.rows,
@@ -7555,9 +7646,357 @@
       res = kind === "time" ? dwellShown(S.period) : vol,
       volBands = vol.state === "ready" && vol.rows ? underlayBands(vol, m) : null,
       bands = kind === "time" ? (res.state === "ready" && res.rows ? underlayBands(res, m) : null) : volBands,
-      rect = meas.state === "pending" || meas.state === "failed" ? null : meas.query;
-    return { kind, period: S.period, vol, res, bands, volBands, rect };
+      rect = { query: meas.query, b: meas.b, state: meas.state },
+      ready = res.state === "ready" && res.rows,
+      // Time at price ends where the dwell read did; the other measures at their period's span.
+      through = !ready ? null : kind === "time" && res.end !== undefined ? res.end : (res.span?.[1] ?? null);
+    return {
+      kind,
+      period: S.period,
+      vol,
+      res,
+      bands,
+      volBands,
+      rect,
+      stale: Boolean(res.stale),
+      own: ready ? Math.round(Math.log2(res.rowPrice || 1)) : 0,
+      exact: res.exact !== false,
+      rowPrice: res.rowPrice || 1,
+      through,
+      quality: ready ? rowsQuality(res) : "exact",
+    };
   }
+  // ---- The Rows channel of the scale spine (PRD-0002 S1, package R) ----
+  // What the row underlay colours with: one mapping for each (measure, period, row size, quality), fitted
+  // over ALL the measured rows of the period, off-screen ones included (never the peak in view), or the
+  // fixed log2 scale of Relative volume. The spine owns the clocks and the store; this block owns what is
+  // particular to rows: the context key, the cohort the spine fits from, the frame the bands and the profile
+  // encode through, the comparison Relative volume makes, and the marks the warning tally counts. It joins
+  // the spine through three hooks (rowsFrame, rowsCohort, rowsMarks), registered below.
+  const rowsRole = E.readout.ROLE,
+    rowsTag = E.result.TAG,
+    // The period identity of a rolling period needs its length; the calendar and dated ones need none.
+    rowsPeriodEnv = { T0, BASE, days: (key) => lineInfo(key)?.days };
+  // One small integer per object, for memo keys: arrays and query summaries carry no id of their own.
+  const objIds = new WeakMap();
+  let objIdCount = 0;
+  function objId(object) {
+    let id = objIds.get(object);
+    if (id === undefined) objIds.set(object, (id = ++objIdCount));
+    return id;
+  }
+  // The period's rows stand for it exactly, or as the snapshot's coarser rows (labelled with their size), or
+  // from its first whole column on (the snapshot's finest cells start on a column edge).
+  function rowsQuality(res) {
+    return res.rowPrice > 1 ? "approx-rows:" + res.rowPrice : res.exact === false ? "approx-start" : "exact";
+  }
+  // The Rows calibration context of what the underlay shows: measure, transform, period identity, effective
+  // row size, quality and workspace; no resolution level n, because rows do not depend on it. The period is
+  // the one the page asks for NOW (not the one of rows that are kept while the new ones are read), so at a
+  // calendar rollover the new period has no record and nothing is fitted from the last one's rows. Null
+  // until there are rows to calibrate on.
+  function rowsContext(under = underlayFrame(viewParts().meas)) {
+    if (!under?.bands) return null;
+    const eff = E.policy.effective(S.scale, under.kind, "rows");
+    return E.context.rowsKey({
+      measure: under.kind,
+      transform: eff.transform,
+      curve: eff.curve,
+      quality: under.quality,
+      period: E.context.periodIdentity(under.period, lineSpan(under.period) || under.res.span, rowsPeriodEnv),
+      rowSize: under.bands.m,
+      workspace: scaleWorkspace(),
+      instrument: INSTRUMENT,
+    });
+  }
+  // What the cohort of Rows needs, from the state at the moment it is asked (the spine calls it when a fit
+  // is due, never with a frame kept from an earlier draw). Every row of the period at the effective row size
+  // is in it, in view or not; each measure reads only the result that carries it (Time at price the dwell's
+  // rows). Relative volume has a fixed domain and no cohort. The extra fields are for the spine: the context
+  // and its key, and the inputs of the coherence check (the rows are the period's own, to its own end).
+  function rowsCohortInputs(vp) {
+    const under = underlayFrame(vp.meas);
+    if (!under || under.kind === "relvol") return null;
+    const res = under.res,
+      span = lineSpan(under.period),
+      ctx = rowsContext(under);
+    return {
+      rows: under.bands ? under.bands.rows : [],
+      measure: under.kind,
+      m: under.bands ? under.bands.m : renderM(),
+      res: { state: res.state, span: res.span ?? null, end: res.end, stale: under.stale },
+      stale: under.stale,
+      span,
+      cut: vp.cut,
+      quality: under.quality,
+      ctx,
+      key: ctx ? E.context.keyString(ctx) : null,
+      coherent: {
+        state: res.state,
+        stale: under.stale,
+        span1: res.span ? res.span[1] : null,
+        expectedEnd: span ? span[1] : null,
+      },
+    };
+  }
+  scaleHooks.rowsCohort = rowsCohortInputs;
+  // Relative volume of the rectangle against the period, through the module, IN the draw path: it needs only
+  // the rows inside the comparison range W (the rectangle's price bounds), a binary search and flat arrays,
+  // so it costs O(rows in W) and runs again only when the period's rows, the rectangle, W or the row level
+  // change (a vertical pan moves W, so it does every pan step). Kept for the last call; the result lives
+  // apart from the cached bands, which stay unrestricted (POC and value area keep their own periods).
+  const relvolMemo = { key: "", value: null };
+  function relvolFor(bands, res, rect) {
+    if (!bands || !res?.rows || !rect) return null;
+    const key = [objId(res.rows), objId(rect.query), rect.b[2], rect.b[3], bands.m, rect.state, res.stale ? 1 : 0].join("|");
+    if (relvolMemo.key === key) return relvolMemo.value;
+    const value = E.relvol.compute({
+      read: { meas: { state: rect.state }, res: { state: res.state }, stale: Boolean(res.stale) },
+      W: [rect.b[2], rect.b[3]],
+      period: { rows: res.rows, own: Math.round(Math.log2(res.rowPrice || 1)), exact: res.exact !== false },
+      current: { rows: rect.query.rows, m: rect.query.m ?? renderM() },
+      bm: bands.m,
+      hidden: false,
+    });
+    relvolMemo.key = key;
+    relvolMemo.value = value;
+    return value;
+  }
+  // The read state of the period's rows, for the frame: bands exist only while they are "ready".
+  function rowsRead(res) {
+    if (res.state === "failed") return { state: "failed", reason: String(res.error ?? "read failed") };
+    if (res.state === "pending") return { state: "pending", reason: "reading from the cube" };
+    if (res.state === "unrecorded") return { state: "unsupported", reason: "not recorded for this period" };
+    if (res.state === "none") return { state: "unsupported", reason: "no time before the data's edge" };
+    return null;
+  }
+  // What the readouts and the legend say about the rows behind a band (JSON-safe numbers and text): the
+  // period and its label, the row size asked for and the one in effect with its USDT size, the quality class,
+  // where the period starts and what it was read to, whether the rows are the last period's, Time at price's
+  // three seconds, and Relative volume's support and counts.
+  function rowsInfo(under, relvol) {
+    const { res, bands } = under,
+      span = lineSpan(under.period),
+      trimmed = bands && under.exact === false && res.columns ? Math.ceil(res.span[0] / res.columns) * res.columns : null;
+    return {
+      period: under.period,
+      periodLabel: periodLabel(under.period),
+      requestedM: renderM(),
+      effectiveM: bands ? bands.m : renderM(),
+      ownM: under.own,
+      rowUsdt: PR * 2 ** (bands ? bands.m : renderM()),
+      quality: under.quality,
+      approximate: under.exact === false,
+      trimmedFromBase: trimmed !== null && trimmed > res.span[0] ? trimmed : null,
+      fromBase: span ? span[0] : null,
+      throughBase: under.through,
+      stale: under.stale,
+      time:
+        under.kind === "time" && bands
+          ? {
+              // Wall-clock seconds the dwell read covers, the cube's own total for the period (absent when the
+              // cube did not say) and the sum of the rows the page holds: rows are never scaled to the total.
+              coveredSeconds: Math.max(0, Math.min(res.end ?? res.span[1], res.span[1]) - res.span[0]) * BASE,
+              cubeSeconds: Number.isFinite(res.w) ? res.w : null,
+              attributedSeconds: bands.w,
+            }
+          : null,
+      relvol: relvol && relvol.state === "ok" ? { counts: relvol.counts, support: relvol.support, restriction: relvol.restriction } : null,
+    };
+  }
+  // The observation a frame states: what was read, to when, at which generation and cutoff.
+  function rowsObservation(under, cutMs) {
+    return {
+      source: PACK.live ? "cube" : "recorded",
+      instrument: INSTRUMENT,
+      read: under.res.state,
+      updating: under.stale,
+      cutoffMs: cutMs,
+      liveCutoffMs: E.time.baseToMs(CUT, T0, BASE),
+      canonicalThroughMs: CANON === null ? null : E.time.baseToMs(CANON, T0, BASE),
+      token: PACK.state_token ?? null,
+      generation: live.generation,
+      replay: Boolean(S.replay),
+      coverage: "range",
+    };
+  }
+  // The surface colour as RGB for the legend's composites, parsed once for each theme epoch.
+  const rowsSurface = { epoch: -1, rgb: null };
+  let relvolDescriptor = null;
+  // The mapping the Rows channel draws with, by lookup only (a fit is the spine's, at a settled moment): the
+  // fixed log2 scale for Relative volume; else what E.policy.resolve finds in the store for the context,
+  // marked updating while a fit for the channel is waiting. Null when there is nothing to calibrate yet.
+  function rowsMapping(under, ctx, cutMs) {
+    if (under.kind === "relvol") return relvolDescriptor ?? (relvolDescriptor = E.scale.fixed("log2-ratio"));
+    if (!ctx) return null;
+    const resolved = E.policy.resolve({
+      channel: "r",
+      kind: "unbounded",
+      ctx,
+      scale: S.scale,
+      store: scaleRt.store,
+      workspace: scaleWorkspace(),
+      cutMs,
+    });
+    return resolved.state === "ok" && scaleRt.ctl.hasWants() && scaleRt.ctl.snapshot().wants.rows
+      ? { ...resolved, state: "updating" }
+      : resolved;
+  }
+  // The frame of the Rows channel for what the underlay shows, from the same inputs wherever it is asked
+  // (the draw, and the marks pass at a settled moment): the mapping, the Relative-volume result, the
+  // read state, the Lut and the description of the rows. Pure: it asks for nothing. `surface` (RGB) is for
+  // the legend's samples only, so the marks pass, which has no legend, leaves it out.
+  function rowsFrameOf(under, cutMs, lut, surface = null) {
+    const ctx = rowsContext(under),
+      mapping = rowsMapping(under, ctx, cutMs),
+      relvol = under.kind === "relvol" ? relvolFor(under.bands, under.vol, under.rect) : null;
+    const frame = E.readout.rowsFrame({
+      kind: under.kind,
+      rowSize: under.bands ? under.bands.m : renderM(),
+      mapping,
+      lut,
+      relvol,
+      read: rowsRead(under.res),
+      surface,
+      info: rowsInfo(under, relvol),
+      observation: rowsObservation(under, cutMs),
+      contextKey: ctx ? E.context.keyString(ctx) : null,
+    });
+    return { frame, ctx, mapping, relvol };
+  }
+  // A fit the Rows channel waits for, asked for from the draw (only a request: the spine runs it at a
+  // settled moment, when the reads are coherent): the first calibration of a context, and under Auto a
+  // refit when the period's rows have been read further than the calibration saw.
+  function rowsWant(under, built, cutMs) {
+    const { ctx, mapping } = built;
+    if (!ctx || under.kind === "relvol" || !mapping) return;
+    const key = E.context.keyString(ctx);
+    let asked = false;
+    if (mapping.state === "no-calibration") asked = scaleRt.ctl.request("rows", "init", key);
+    else if (S.scale.rows === "auto" && !S.scale.lock && under.through !== null && typeof mapping.record?.obsEndMs === "number") {
+      const edge = Math.min(E.time.baseToMs(under.through, T0, BASE), cutMs);
+      if (mapping.record.obsEndMs < edge) asked = scaleRt.ctl.request("rows", "auto", key + "|" + edge);
+    }
+    if (asked) scaleArm();
+  }
+  // The Rows frame of a draw, registered as the rowsFrame hook: `sc.rows`, which paintBands, the profile and
+  // the readouts encode through. `under.relvol` carries Relative volume's result to them.
+  function rowsScaleFrame(under, sc) {
+    if (!under) return null;
+    if (rowsSurface.epoch !== colourEpoch) {
+      rowsSurface.epoch = colourEpoch;
+      rowsSurface.rgb = E.lut.parseColor(colors.surface);
+    }
+    const built = rowsFrameOf(under, sc.cutMs, sc.lut, rowsSurface.rgb);
+    under.relvol = built.relvol;
+    rowsWant(under, built, sc.cutMs);
+    return built.frame;
+  }
+  scaleHooks.rowsFrame = rowsScaleFrame;
+  // The row indices a frame draws: the period's rows in view for the amounts; for Relative volume every bin
+  // of its comparison range in view, because rows only the rectangle traded (no reference) and rows only the
+  // period traded (no current volume) are marks too, and a bin outside the range is not drawn at all.
+  function rowsBinRange(relvol, ps) {
+    const lo = Math.floor(G.Y.invert(G.y + G.h) / ps),
+      hi = Math.floor(G.Y.invert(G.y) / ps),
+      s = relvol.support;
+    return s.first === null ? [1, 0] : [Math.max(lo, s.first), Math.min(hi, s.last)];
+  }
+  const rowsBin = { r: 0, v: 0, bv: 0, w: 0 };
+  // The three amounts a row holds, for the length axes: its USDT, its signed USDT and its time.
+  const rowsV = (x) => x.v,
+    rowsDelta = (x) => 2 * x.bv - x.v,
+    rowsW = (x) => x.w;
+  // What an axis needs to know of the rows it is drawn for: how many, and their extremes (one pass, no sort).
+  // From index `i` to the last row whose number is at most `hiRow`.
+  function rowsScan(rows, i, hiRow, read) {
+    let count = 0,
+      max = -Infinity,
+      min = Infinity;
+    for (; i < rows.length && rows[i].r <= hiRow; i++) {
+      const value = read(rows[i]);
+      count++;
+      if (value > max) max = value;
+      if (value < min) min = value;
+    }
+    return { count, max, min };
+  }
+  // The ink of the last band filled, so the fill style is assigned only when the colour changes.
+  let bandInk = null;
+  // One band: the Rows mapping's RAW role colour (the canvas paints it at the fixed Rows alpha, so the grid
+  // shows through; the legend samples the same blend), or the typed mark of a value that is not a number.
+  // Volume and Time at price use the rows role, Delta and Relative volume the arms (zero at the midpoint).
+  // A row with no trade (zero) and a row outside the comparison range draw no band. Negative infinity (the
+  // period traded here, the rectangle did not) is a 2 px tick in state ink at the plot's edge with the
+  // infinity plate where the band is 8 px or more; no reference (the rectangle traded, the period did not)
+  // a dotted 1 px tick. Both are opaque: they are marks, not part of the projection.
+  function bandPaint(u, x, frame, out) {
+    frame.encode(x, out);
+    const ps = 2 ** u.bands.m,
+      ya = G.Y((x.r + 1) * ps),
+      yb = G.Y(x.r * ps),
+      h = Math.max(0.5, yb - ya);
+    if (out.role === rowsRole.PATTERN) {
+      if (out.tag === rowsTag["negative-infinite"]) {
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = colors.state;
+        ctx.fillRect(G.x, ya, 2, h);
+        ctx.restore();
+        if (h >= 8) paintGlyph("infinity", G.x + 9, (ya + yb) / 2, 10);
+      } else if (out.tag === rowsTag["no-reference"]) {
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = colors.state;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([1, 2]);
+        ctx.beginPath();
+        ctx.moveTo(G.x + 0.5, ya);
+        ctx.lineTo(G.x + 0.5, ya + h);
+        ctx.stroke();
+        ctx.restore();
+      }
+      return;
+    }
+    if (out.css === null || out.role === rowsRole.ZERO) return;
+    if (bandInk !== out.css) ctx.fillStyle = bandInk = out.css;
+    ctx.fillRect(G.x, ya, G.w, h);
+  }
+  // The bands in view, counted as the marks of the warning tally: the same bands, through the same frame, as
+  // the paint. They run across the plot, so each is clipped to the plot only (not to the measured rectangle);
+  // a zero row is an occupied mark with no magnitude, negative infinity is occupied and outside the scale,
+  // no reference counts for its key alone.
+  function rowsMarks(tally, clip, vp) {
+    const under = underlayFrame(vp.meas);
+    if (!under?.bands) return;
+    const { frame, relvol } = rowsFrameOf(under, E.time.baseToMs(vp.cut, T0, BASE), lutFor(scaleRt.appearance, scaleRt.theme));
+    if (under.kind === "relvol" && relvol?.state !== "ok") return;
+    const area = { plot: clip.plot ?? clip, meas: null },
+      x0 = G.x,
+      x1 = G.x + G.w,
+      ps = 2 ** under.bands.m,
+      mark = (x) => {
+        frame.encode(x, ENC);
+        const y0 = G.Y((x.r + 1) * ps),
+          y1 = G.Y(x.r * ps);
+        if (ENC.role === rowsRole.PATTERN) {
+          if (ENC.tag === rowsTag["negative-infinite"]) tally.addBoxNegInf(x0, y0, x1, y1, area);
+          else if (ENC.tag === rowsTag["no-reference"]) tally.addNoRef();
+        } else if (ENC.css !== null) tally.addBox(x0, y0, x1, y1, area, ENC.idx, ENC.clip, true, ENC.role !== rowsRole.ZERO);
+      };
+    if (relvol) {
+      const [lo, hi] = rowsBinRange(relvol, ps);
+      for (let j = lo; j <= hi; j++) {
+        rowsBin.r = j;
+        mark(rowsBin);
+      }
+    } else {
+      const rows = under.bands.rows;
+      let [i, hi] = rowsInView(rows, ps);
+      for (; i < rows.length && rows[i].r <= hi; i++) mark(rows[i]);
+    }
+  }
+  scaleHooks.rowsMarks = rowsMarks;
   // The horizontal lines on, as drawn this frame: each with its key and its
   // own id, the family and tier it is drawn in, its price (base rows), its
   // span, whether it goes on dashed to the right edge, and its tag. A

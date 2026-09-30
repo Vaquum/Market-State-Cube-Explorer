@@ -5676,6 +5676,14 @@
     return { ok: reasons.length === 0, reasons };
   }
 
+  // The config part of a memo key: a finished string, or the fields of the object joined in a fixed order.
+  function lifConfigKey(config) {
+    if (typeof config === "string") return config;
+    if (!lifIsObject(config)) throw new TypeError("memoKey: config is a string or {mode, basis, pathBasis, transform, policy, lock, window}");
+    const w = Array.isArray(config.window) ? config.window[0] + "~" + config.window[1] : "";
+    return [config.mode, config.basis, config.pathBasis, config.transform, config.policy, config.lock ? "1" : "0", w].join(",");
+  }
+
   // E.lifecycle.memoKey (API.md A.3, C.10, S1-116): the key a fit is remembered under.
   //   [generation, edgeCut, b0, b1, b2, b3, n, m, configKey, cohortId].join("|")
   // parts = {generation, CUT, bounds:[b0,b1,b2,b3], n, m, config, cohortId} with n, m the EFFECTIVE level.
@@ -5685,13 +5693,6 @@
   // joined in that order (window as "lo~hi" or ""). NOT in the key, on purpose: the pack token (it changes at
   // every advance), the tile or block id (D4: a replaced exact tile is not another quality class), the theme and
   // the selection (Explore does not refit on a selection).
-  function lifConfigKey(config) {
-    if (typeof config === "string") return config;
-    if (!lifIsObject(config)) throw new TypeError("memoKey: config is a string or {mode, basis, pathBasis, transform, policy, lock, window}");
-    const w = Array.isArray(config.window) ? config.window[0] + "~" + config.window[1] : "";
-    return [config.mode, config.basis, config.pathBasis, config.transform, config.policy, config.lock ? "1" : "0", w].join(",");
-  }
-
   function lifMemoKey(parts) {
     if (!lifIsObject(parts)) throw new TypeError("memoKey needs a parts object");
     const b = parts.bounds;
@@ -10541,6 +10542,7 @@
     }
     return out;
   }
+  // E.indicators.emaOf (API.md A.3): the exponential moving average of n values, seeded with the SMA of its first n (from `from`); NaN before.
   function indEmaOf(values, n, from = 0) {
     const out = new Float64Array(values.length).fill(NaN),
       a = 2 / (n + 1);
@@ -10552,6 +10554,7 @@
     for (let i = from + n; i < values.length; i++) out[i] = e = a * values[i] + (1 - a) * e;
     return out;
   }
+  // E.indicators.rsiOf (API.md A.3): Wilder's RSI(n) of the closes, 0..100, NaN before the first full window.
   function indRsiOf(closes, n = 14) {
     const out = new Float64Array(closes.length).fill(NaN);
     if (closes.length <= n) return out;
@@ -10574,6 +10577,7 @@
     }
     return out;
   }
+  // E.indicators.bollingerOf (API.md A.3): {mid, upper, lower, width} of the SMA(n) plus and minus k population standard deviations.
   function indBollingerOf(closes, n = 20, k = 2) {
     const len = closes.length,
       nan = () => new Float64Array(len).fill(NaN),
@@ -10595,6 +10599,7 @@
     }
     return { mid, upper, lower, width };
   }
+  // E.indicators.macdOf (API.md A.3): {macd, signal, hist} of EMA(12) - EMA(26), its EMA(9) and their difference.
   function indMacdOf(closes) {
     const fast = indEmaOf(closes, 12),
       slow = indEmaOf(closes, 26),
@@ -10627,6 +10632,7 @@
   const indSqueezeBars = 500;
   const indSqueezeRank = 0.1;
   const indSqueezeDays = 182;
+  // E.indicators.squeezeBelow (API.md A.3): 1 where the bandwidth is below its p-th percentile of the last `size` bars (the 4-hour squeeze above).
   function indSqueezeBelow(width, size = indSqueezeBars, p = indSqueezeRank) {
     const out = new Uint8Array(width.length),
       win = [],
@@ -10652,6 +10658,7 @@
     }
     return out;
   }
+  // E.indicators.squeezeLowest (API.md A.3): 1 where the bandwidth is at its lowest of the trailing `size` bars (the daily squeeze above).
   function indSqueezeLowest(width, size = indSqueezeDays) {
     const out = new Uint8Array(width.length);
     for (let i = size - 1; i < width.length; i++) {

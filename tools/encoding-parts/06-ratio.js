@@ -118,15 +118,14 @@
 
   // E.ratio.efficiency (API.md C.1.7, C.14): log2((child.v / child.rows) / (parent.v / parent.rows) / baseline),
   // the USDT per touched row of a column against its parent's, relative to what the model expects
-  // (baseline = 2**(ISO_B - 1), E.model.PROVENANCE.baseline; passed in by the caller so this part does not
-  // depend on part 18, with that record as the fallback). Read status comes first (a failed or pending
+  // (baseline = 2**(ISO_B - 1), E.model.PROVENANCE.baseline; always passed in by the caller, so the result
+  // never depends on which parts happen to be loaded). Read status comes first (a failed or pending
   // touched-row read passes through), then structure (coarsest, open, unavailable), then the four counts in
   // the order child volume, child touched rows, parent volume, parent touched rows: a zero of any of them is
   // empty-population naming it, never negative-infinite (v / rows is undefined at 0 / 0). The value is
   // unclamped: beyond +-2 it is finite and only the coordinate is clipped.
   function ratEfficiency(input) {
     let baseline = input.baseline;
-    if (baseline === undefined && API.model && API.model.PROVENANCE) baseline = API.model.PROVENANCE.baseline;
     if (typeof baseline !== "number" || !(baseline > 0) || !Number.isFinite(baseline)) throw new TypeError("efficiency needs a positive finite baseline");
     const child = input.child || {};
     const parent = input.parent || {};

@@ -740,7 +740,8 @@ test("the settings the address carries are the persisted subset of E.policy (DEF
   const address = C.formatAddress(withScale({ basis: "intensity", curve: "linear", lock: true }), ENV).hash;
   assert.equal(address, "#w=24h&vis=2&ap=" + AP + "&bs=i&cv=l&lk=1");
   for (const name of ["basis", "curve", "lock"]) assert.deepEqual(persisted[name], scale[name], name);
-  const restored = plain(E.policy.restore(persisted));
+  // restore takes the envelope of API.md C.13: {scale, records, axes, replay}.
+  const restored = plain(E.policy.restore({ scale: persisted }));
   assert.deepEqual(restored.dropped, []);
   assert.equal(restored.scale.basis, "intensity");
 });

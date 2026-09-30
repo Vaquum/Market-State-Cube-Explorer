@@ -339,6 +339,27 @@ test.describe("B25 the adjacent profile tracks", () => {
       .toBe(true);
   });
 
+  test("during a drag the Auto domains stay where they were; once the drag settles they follow the rows", async ({ page, probe, fakeFor, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    await open(page, fake, probe, pane, addressOf(sc));
+    const domains = () => page.locator("#ol-profile-chip").evaluate((e) => ({ cur: e.dataset.currentDomain, ref: e.dataset.referenceDomain }));
+    const before = await domains();
+    const box = await page.locator("#ol-canvas").boundingBox();
+    const layout = await page.locator("#ol-canvas").evaluate((c) => c.dataset.layout.split(",").map(Number));
+    const x = box.x + layout[0] + layout[2] / 2,
+      y = box.y + layout[1] + layout[3] / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    // pan the view down by about ten rows and hold there: the pointer is still down
+    for (let step = 1; step <= 10; step++) await page.mouse.move(x, y + step * 50);
+    await probe.waitForQuiet({ quietMs: 300 });
+    expect(await domains(), "held through the gesture").toEqual(before);
+    await page.mouse.up();
+    await S.atRest(page, fake, probe);
+    await expect.poll(async () => (await domains()).ref !== before.ref, { message: "settled: the reference domain follows the rows now in view", timeout: 8000 }).toBe(true);
+  });
+
   test("a view with no trades has no domain: No data, no bars, never a maximum of 1", async ({ page, probe, fakeFor, pane }) => {
     const sc = scenario();
     const fake = await fakeFor("standard");

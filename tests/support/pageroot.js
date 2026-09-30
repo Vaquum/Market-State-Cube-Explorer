@@ -40,10 +40,9 @@ let built = null; // the temporary build of this process
 
 function resolvePageRoot({ env = process.env, repoRoot = REPO_ROOT } = {}) {
   if (env.EXPLORER_PAGE_ROOT) {
-    // Relative to where the command ran (npm scripts run at the root), then to the repository root.
-    const given = path.resolve(env.EXPLORER_PAGE_ROOT);
-    const dir = fs.existsSync(given) ? given : path.resolve(repoRoot, env.EXPLORER_PAGE_ROOT);
-    return checked(dir, "EXPLORER_PAGE_ROOT");
+    // Relative to the repository root (npm scripts run there); an absolute path is taken as it is. Resolving against
+    // the process's own working directory first would pick up a stray reports/page of whichever tree ran the command.
+    return checked(path.resolve(repoRoot, env.EXPLORER_PAGE_ROOT), "EXPLORER_PAGE_ROOT");
   }
   if (env.CONVERGENCE === "1") return checked(repoRoot, "CONVERGENCE=1 (the committed page)");
   if (!built) {

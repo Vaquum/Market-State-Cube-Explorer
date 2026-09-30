@@ -5990,7 +5990,7 @@
     scaleUi.models.pane = shown?.frame
       ? E.legend.build(shown.frame, scaleRt.warn.pane?.report ?? null, uiFmt, {
           channel: "pane",
-          counts: { ...counts, "zero-tick": counts.zero ?? 0 },
+          counts: { ...counts, "zero-tick": counts["zero-tick"] ?? counts.zero ?? 0 },
           measureLabel: shown.measure?.label,
           paused: rec.hold === "play" ? "play" : false,
         })

@@ -1963,3 +1963,290 @@
     min-height: 0;
   }
 }
+
+/* The scale display (PRD-0002 S1, package U): the legend chips and their popovers, the axis chip, the
+   Scale section of the menus, the notice banner, the lens's Local contrast toggle and the generated keys.
+   Controls are 24px high at least and type is 11px at least, every pair of colours is one of the tokens
+   above that passes on its backdrop, and nothing here moves: no transition and no animation. */
+#origo-lens .ol-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* The chart header is the anchor of the colour chips' popovers (placed by the page, under their chip). */
+#origo-lens .ol-chart-head {
+  position: relative;
+}
+#origo-lens .ol-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-s);
+  max-width: min(100%, 360px);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-s);
+  line-height: 1.3;
+  color: var(--ol-ink);
+  background: transparent;
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+  white-space: nowrap;
+}
+#origo-lens .ol-legend-chip > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#origo-lens .ol-legend-chip[aria-expanded="true"] {
+  background: var(--ol-on);
+}
+/* A warning thickens the border inward (no layout shift) and inks it */
+#origo-lens .ol-legend-chip[data-warn="true"] {
+  border-color: var(--ol-ink);
+  box-shadow: inset 0 0 0 1px var(--ol-ink);
+}
+#origo-lens .ol-ramp-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+#origo-lens canvas.ol-ramp {
+  display: block;
+  width: 64px;
+  height: 8px;
+  background: none;
+}
+#origo-lens .ol-rows-legend canvas.ol-ramp {
+  width: 36px;
+}
+/* The marker over a bar: where the value under the pointer sits, two pixels of ink with a surface halo. */
+#origo-lens .ol-legend-marker {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ol-ink);
+  box-shadow: 0 0 0 1px var(--ol-surface);
+  pointer-events: none;
+}
+#origo-lens .ol-axis-chip {
+  position: absolute;
+  z-index: 3;
+  margin: 0;
+  background: var(--ol-surface);
+  max-width: calc(100% - var(--sp-4));
+}
+/* The popovers: a dialog under the chip, at most 360px, scrolling inside itself. */
+#origo-lens .ol-legend-pop {
+  width: min(360px, calc(100vw - 2 * var(--gutter)));
+  max-height: min(70vh, 560px);
+  overflow: auto;
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-legend-pop:focus-visible {
+  outline-offset: -2px;
+}
+#origo-lens .ol-legend-part:empty {
+  display: none;
+}
+#origo-lens .ol-legend-bar {
+  position: relative;
+  width: 240px;
+  max-width: 100%;
+  height: 10px;
+  margin: var(--sp-2) 0 0;
+}
+#origo-lens .ol-legend-canvas {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  height: 10px;
+  border-radius: var(--r-s);
+}
+#origo-lens .ol-legend-ticks {
+  position: relative;
+  width: 240px;
+  max-width: 100%;
+  height: 16px;
+  margin-bottom: var(--sp-2);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-legend-tick {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+#origo-lens .ol-legend-tick[data-align="start"] {
+  transform: none;
+}
+#origo-lens .ol-legend-tick[data-align="end"] {
+  transform: translateX(-100%);
+}
+#origo-lens .ol-legend-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px var(--sp-3);
+  margin: var(--sp-2) 0;
+}
+#origo-lens .ol-legend-details dt {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-legend-details dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+#origo-lens .ol-legend-note {
+  margin: var(--sp-1) 0;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-legend-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin: var(--sp-2) 0;
+}
+#origo-lens .ol-key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  white-space: nowrap;
+}
+#origo-lens .ol-legend-warning,
+#origo-lens .ol-legend-lens,
+#origo-lens .ol-legend-axis {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  margin-top: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+}
+#origo-lens .ol-legend-lens > .ol-legend-details,
+#origo-lens .ol-legend-axis > .ol-legend-details {
+  flex-basis: 100%;
+}
+#origo-lens .ol-legend-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+#origo-lens .ol-legend-actions button[aria-pressed="true"] {
+  background: var(--ol-on);
+  border-color: var(--ol-accent);
+  font-weight: 500;
+}
+#origo-lens .ol-legend-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+#origo-lens .ol-legend-form-title {
+  flex-basis: 100%;
+  font-weight: 500;
+}
+#origo-lens .ol-legend-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+#origo-lens .ol-legend-field input {
+  width: 8em;
+  min-height: var(--h-s);
+  padding: 0 var(--sp-1);
+  font: inherit;
+  font-size: var(--fs-s);
+  color: var(--ol-ink);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-s);
+}
+#origo-lens .ol-legend-field input[aria-invalid="true"] {
+  border-width: 2px;
+}
+#origo-lens .ol-legend-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-weight: 500;
+}
+/* The Scale section of the Cells and Rows menus: long, so the menu scrolls inside itself. */
+#origo-lens .ol-mode-menu {
+  max-height: min(78vh, 640px);
+  overflow-y: auto;
+}
+#origo-lens .ol-item-desc:empty {
+  display: none;
+}
+/* The notice banner, modelled on the update banner: a border on the side says it is more than information. */
+#origo-lens .ol-notice {
+  flex-wrap: wrap;
+  border-left: 3px solid transparent;
+}
+#origo-lens .ol-notice[data-level="warning"],
+#origo-lens .ol-notice[data-level="error"] {
+  border-left-color: var(--ol-ink);
+}
+#origo-lens .ol-notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#origo-lens .ol-notice-queued {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-note-details {
+  flex-basis: 100%;
+  margin: 0;
+  padding-left: var(--sp-4);
+  color: var(--ol-muted);
+}
+/* The lens's Local contrast toggle, in its bar beside the depth. */
+#origo-lens .ol-lens-local {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--h-s);
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-s);
+  color: var(--ol-ink);
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* The generated keys in the footer, and their swatches: the glyphs of the role table, painted on a canvas. */
+#origo-lens .ol-keys-scale {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+}
+#origo-lens .ol-keys-scale:empty {
+  display: none;
+}
+#origo-lens .ol-data-key.ol-glyph {
+  display: inline-flex;
+  flex: none;
+  padding: 0;
+  background: var(--ol-surface);
+  box-shadow: inset 0 0 0 1px var(--ol-border);
+}
+#origo-lens .ol-data-key.ol-glyph canvas {
+  display: block;
+  width: 11px;
+  height: 11px;
+}
+/* "Not measured yet" is a pattern of dots in the state ink, as the plot draws it. */
+#origo-lens .ol-data-key.plain {
+  background:
+    radial-gradient(circle at 50% 50%, var(--ol-state) 0 1.2px, transparent 1.4px) 0 0 / 5px 5px,
+    var(--ol-surface);
+  box-shadow: inset 0 0 0 1px var(--ol-border);
+}

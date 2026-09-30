@@ -5094,7 +5094,10 @@
   const scaleUi = {
       // The Legend model of each colour channel, built when its key changed: the popover, the marker and the
       // footer keys read it, so nothing is built twice for one state.
-      models: { cells: null, rows: null },
+      models: { cells: null, rows: null, pane: null },
+      rowsInfo: null,
+      inks: null,
+      fallback: { cells: "", rows: "" },
       // What the marker drew last, and the footer keys' last write key
       markerKey: "",
       keysKey: "",
@@ -5102,6 +5105,7 @@
       // own, which the axis chip shows; the last write key of the chip and its last place
       axes: new Map(),
       pane: null,
+      paneShown: null,
       axisKey: "",
       lensKey: "",
       lensId: "",
@@ -5111,7 +5115,9 @@
       menuKey: "",
     },
     // A Readout's numeric key is column * 2^21 + row (cellKey above): the marker names the column and row
-    UI_CELL_STRIDE = 2097152;
+    UI_CELL_STRIDE = 2097152,
+    // TEXT(S1): the labels of the scale-change fields when they are empty (E.legend words them when there is a change)
+    UI_CHANGE_LABELS = { scaleChangeCause: "Changed by", scaleChangeFrom: "Was", scaleChangeTo: "Now" };
   function uiEl(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -5149,7 +5155,8 @@
   // What the settled warnings pass said about a channel, as a short string: the legend is rebuilt when the
   // shares, the clip counts or the warning set moved, and not when the pass re-ran to the same answer.
   function uiWarnStamp(channel) {
-    const report = scaleRt.warn[channel]?.report;
+    const entry = scaleRt.warn[channel],
+      report = entry?.report;
     if (!report) return "";
     const c = report.counts ?? {};
     return [
@@ -5164,15 +5171,37 @@
       c.exactLow,
       c.exactHigh,
       Math.round((report.shares?.area ?? 0) * 1000),
-      scaleRt.fitSeq?.[channel] ?? 0,
+      // the per-key counts the consumers' marks hooks kept beside the tally
+      Object.entries(entry.keys ?? {})
+        .map(([id, n]) => id + "=" + n)
+        .join("+"),
     ].join(",");
   }
-  // Marks per key id for the generated keys: the clip counts of the settled pass, and whatever per-role
-  // counts that pass kept beside them.
+  // What the spine's chip of a frame says beyond its ids (the attributes, the options the Legend is built
+  // with): anything in it that moved is a reason to write the chip again, since a context change, a fit
+  // number, a note or a count can leave the mapping id as it was.
+  function uiChipStamp(chip) {
+    if (!chip) return "";
+    const o = chip.opts ?? {},
+      n = o.note;
+    return [
+      Object.values(chip.attrs).join("~"),
+      n ? [n.causes?.join("/"), n.from, n.to].join(">") : "",
+      chip.fallback ?? "",
+      o.evicted ? "e" : "",
+      o.afterEdge ? "a" : "",
+      o.paused || "",
+      o.revisionStatus ?? "",
+      Object.entries(o.counts ?? {})
+        .map(([id, count]) => id + "=" + count)
+        .join("+"),
+    ].join("|");
+  }
+  // Marks per key id for a channel the spine made no chip for (the lens): whatever its own tally counted.
   function legendCounts(channel) {
     const entry = scaleRt.warn[channel],
       c = entry?.report?.counts,
-      out = { ...(entry?.keyCounts ?? null) };
+      out = { ...(entry?.keys ?? null) };
     if (c) {
       out["clip-low"] = c.low;
       out["clip-high"] = c.high;
@@ -5183,71 +5212,58 @@
     }
     return out;
   }
-  // The last settle's scale change as the legend reads it: the cause words and the ids before and after.
-  function legendNote(channel) {
-    // the spine keeps one note per channel (a Pin can change Cells and Rows for different causes)
-    const note = scaleRt.note?.[channel];
-    if (!note) return null;
-    const causes = [].concat(note.causes ?? note.cause ?? []).filter(Boolean),
-      pick = (ids) => (typeof ids === "string" ? ids : Array.isArray(ids) ? ids.join(", ") : (ids?.[channel] ?? undefined));
-    if (!causes.length) return null;
-    return { causes, from: note.from ?? pick(note.oldIds), to: note.to ?? pick(note.newIds) };
-  }
   // The Legend of a channel's frame (a model, allocated; only when the chip's key changed or a popover opens).
-  function legendOf(channel, frame) {
-    const input = frame.legendInput();
+  // The spine's chip of the frame carries the options and the warnings report it was made with (its note of a
+  // scale change, the counts of its settled pass, the paused and evicted states); a channel with no chip of
+  // its own (the lens) is built from its own tally.
+  function legendOf(channel, frame, chip) {
+    let input = frame.legendInput();
     if (!input) return null;
+    // The recorded model's standing at the effective cutoff is disclosed wherever a scale is (DD-35, S1-147: it
+    // follows the cutoff in every mode, and is not a property of the scale's eligibility): a Cells frame that
+    // names no model of its own carries the one behind the price-axis diagonal.
+    if (channel === "cells" && !input.model && typeof input.observation?.cutoffMs === "number")
+      input = { ...input, model: E.model.describe("diagonal", input.observation.cutoffMs, input.level?.n ?? renderN()) };
     const auto = S.scale[channel === "lens" ? "cells" : channel] === "auto",
       paused = auto && S.scale.lock ? "lock" : auto && scaleRt.playing ? "play" : false,
-      // what the spine knows of the channel's state beyond the frame: a failed read, a replay edge the held
-      // mapping reaches past, a context the store let go
-      chip = scaleRt.sc?.chip?.[channel]?.opts;
+      base = chip
+        ? chip.opts
+        : { channel, counts: legendCounts(channel), paused, updating: frame.mappingState === "updating" };
     return {
       input,
-      legend: E.legend.build(input, scaleRt.warn[channel]?.report ?? null, uiFmt, {
+      chip,
+      legend: E.legend.build(input, chip ? chip.warn : (scaleRt.warn[channel]?.report ?? null), uiFmt, {
+        ...base,
         channel,
-        updating: chip?.updating,
-        failed: chip?.failed,
-        afterEdge: chip?.afterEdge,
-        evicted: chip?.evicted,
-        counts: legendCounts(channel),
         measureLabel: channel === "rows" ? (ROWS_INFO[S.rows]?.name ?? S.rows) : MODE_NAMES[S.mode],
-        note: legendNote(channel),
-        paused,
         shortExposure: scaleRt.warn[channel]?.shortExposure,
-        revisionStatus: nav.revision?.kind === "none" ? "none" : undefined,
       }),
     };
   }
   // The observation attributes of a chip (INTEGRATION D.18), from the same frame that painted: a frame log
-  // can assert them per draw. The spine may hand over its own values in `sc.chips[channel]` (camel-cased
-  // dataset names); they replace the ones derived here.
-  function legendAttrs(node, channel, built, sc) {
+  // can assert them per draw. The spine's chip hands them over (attribute names and strings); a channel it
+  // made no chip for (the lens) gets them derived from its Legend input here.
+  function legendAttrs(node, channel, built) {
     const { input, legend } = built,
-      rows = channel === "rows",
-      attrs = {
-        state: legend.state === "ok" ? "ready" : legend.state,
-        policy: channel === "lens" && S.scale.local ? "local" : (input.policy ?? ""),
-        mappingId: input.desc?.id ?? input.mappingId ?? "",
-        appearance: input.lut.id,
-        workspace: scaleWorkspace(),
-        transform: input.transform ?? "",
-        basis: input.basis ?? "",
-        context: input.contextKey ?? "",
-        fitThrough: String(input.calibration?.obsEndMs ?? ""),
-        fitSeq: String(scaleRt.fitSeq?.[channel] ?? 0),
-        override: input.external ? "external" : "",
-        updating: String(legend.state === "updating"),
-        ...sc.chips?.[channel],
-      };
-    if (rows) {
-      attrs.rowSize ??= String(input.level?.m ?? "");
-      attrs.quality ??= String(input.info?.quality ?? "");
-    } else {
-      attrs.effectiveN ??= String(input.level?.n ?? "");
-      attrs.effectiveM ??= String(input.level?.m ?? "");
-    }
-    for (const [name, value] of Object.entries(attrs)) if (node.dataset[name] !== String(value)) node.dataset[name] = String(value);
+      attrs = built.chip
+        ? built.chip.attrs
+        : {
+            "data-state": legend.state === "ok" ? "ready" : legend.state,
+            "data-policy": S.scale.local ? "local" : (input.policy ?? ""),
+            "data-mapping-id": input.desc?.id ?? input.mappingId ?? "",
+            "data-appearance": input.lut.id,
+            "data-workspace": scaleWorkspace(),
+            "data-transform": input.transform ?? "",
+            "data-basis": input.basis ?? "",
+            "data-context": input.contextKey ?? "",
+            "data-effective-n": String(input.level?.n ?? ""),
+            "data-effective-m": String(input.level?.m ?? ""),
+            "data-fit-through": String(input.calibration?.obsEndMs ?? ""),
+            "data-fit-seq": String(scaleRt.seq.lens),
+            "data-override": input.external ? "external" : "",
+            "data-updating": String(legend.state === "updating"),
+          };
+    for (const [name, value] of Object.entries(attrs)) if (node.getAttribute(name) !== value) node.setAttribute(name, value);
     return attrs;
   }
   // A legend bar: the exact colour row of the Lut through the transform (E.legend.barPixels), blitted one
@@ -5304,33 +5320,75 @@
     }
     return out;
   }
-  // The text of a chip and its accessible name, written only when it changed.
-  function legendChip(node, textId, legend) {
+  // What the Rows frame says about the rows behind the bands (its `info`, which E.legend.build does not read):
+  // the period, the row size in USDT, the quality class, where the period starts and what it was read to,
+  // Time at price's seconds and Relative volume's counts. Returned as the short words the chip adds and as
+  // the detail rows of its popover.
+  function uiRowsInfo(info) {
+    if (!info) return { words: [], rows: [] };
+    const words = [info.periodLabel, `${compact(info.rowUsdt)} USDT rows`],
+      rows = [],
+      add = (field, label, text, canonical) => rows.push({ field, label, value: text, canonical });
+    // TEXT(S1): the labels and words of the Rows details
+    if (info.approximate) words.unshift("≈");
+    add("rowPeriod", "Period", info.periodLabel, info.period);
+    add("rowSize", "Row size", `${compact(info.rowUsdt)} USDT`, info.effectiveM);
+    if (info.effectiveM !== info.requestedM) add("rowSizeAsked", "Row size asked for", `${compact(PR * 2 ** info.requestedM)} USDT`, info.requestedM);
+    add("rowQuality", "Quality", info.approximate ? `Approximate (${info.quality})` : "Exact", info.quality);
+    if (info.fromBase !== null) add("rowFrom", "Period starts", uiUtcMs(E.time.baseToMs(info.fromBase, T0, BASE)), E.time.baseToMs(info.fromBase, T0, BASE));
+    if (info.trimmedFromBase !== null)
+      add("rowTrimmed", "Coarse rows start", uiUtcMs(E.time.baseToMs(info.trimmedFromBase, T0, BASE)), E.time.baseToMs(info.trimmedFromBase, T0, BASE));
+    if (info.throughBase !== null && info.throughBase !== undefined)
+      add("rowThrough", "Read through", uiUtcMs(E.time.baseToMs(info.throughBase, T0, BASE)), E.time.baseToMs(info.throughBase, T0, BASE));
+    if (info.stale) add("rowStale", "Rows", "Updating", true);
+    if (info.time) {
+      add("rowTimeCovered", "Seconds covered", dur(info.time.coveredSeconds), info.time.coveredSeconds);
+      add("rowTimeAttributed", "Seconds attributed to rows", dur(info.time.attributedSeconds), info.time.attributedSeconds);
+      if (info.time.cubeSeconds !== null) add("rowTimeCube", "Seconds the cube reports", dur(info.time.cubeSeconds), info.time.cubeSeconds);
+    }
+    if (info.relvol) {
+      const c = info.relvol.counts ?? {};
+      add("rowRelvolCounts", "Rows compared", JSON.stringify(c), c);
+      if (info.relvol.support) add("rowRelvolSupport", "Comparison support", JSON.stringify(info.relvol.support), info.relvol.support);
+      if (info.relvol.restriction) add("rowRelvolRestriction", "Restriction", String(info.relvol.restriction.text ?? JSON.stringify(info.relvol.restriction)), info.relvol.restriction);
+    }
+    return { words, rows };
+  }
+  // The text of a chip and its accessible name, written only when it changed. Rows add the period, the row size
+  // and the quality after the scale's own words (a long chip is cut at its end, and the scale is what matters).
+  function legendChip(node, textId, legend, rows) {
     const chip = E.legend.chip(legend),
-      text = el(textId);
-    if (text.textContent !== chip.text) text.textContent = chip.text;
-    if (node.getAttribute("aria-label") !== chip.label) node.setAttribute("aria-label", chip.label);
+      text = el(textId),
+      more = rows ? uiRowsInfo(rows).words.join(" · ") : "",
+      shown = more ? `${chip.text} · ${more}` : chip.text,
+      label = more ? `${chip.label}, ${more}` : chip.label;
+    if (text.textContent !== shown) text.textContent = shown;
+    if (node.getAttribute("aria-label") !== label) node.setAttribute("aria-label", label);
   }
   // One colour channel's chip, written when the key computed from its ids changed; in a steady frame that
   // is one object and a few string joins, and no Legend model is built (DD-90).
-  function legendChannel(channel, frame, sc, node, textId, barId, barWidth) {
-    const key = E.legend.keyOf({
-      mappingId: frame.mappingId,
-      appearanceId: sc.lut.id,
-      themeEpoch: colourEpoch,
-      policy: legendPolicy(channel),
-      state: frame.mappingState,
-      warnStamp: uiWarnStamp(channel),
-      marker: null,
-      level: frame.level,
-    });
+  function legendChannel(channel, frame, sc, node, textId, barId, barWidth, under) {
+    const chip = sc.chip[channel],
+      key = E.legend.keyOf({
+        mappingId: frame.mappingId,
+        appearanceId: sc.lut.id,
+        themeEpoch: colourEpoch,
+        policy: legendPolicy(channel) + "|" + uiChipStamp(chip) + (under ? "|" + [under.period, under.bands?.m, under.quality, under.stale, under.through, under.exact].join(",") : ""),
+        state: frame.mappingState,
+        warnStamp: uiWarnStamp(channel),
+        marker: null,
+        level: frame.level,
+      });
     if (scaleRt.legendKey[channel] === key) return;
     scaleRt.legendKey[channel] = key;
-    const built = legendOf(channel, frame);
+    const built = legendOf(channel, frame, chip);
     if (!built) return;
     scaleUi.models[channel] = built.legend;
-    legendChip(node, textId, built.legend);
-    legendAttrs(node, channel, built, sc);
+    // why this channel is not what the lock holds (Not held by Comparison lock: ...), for its popover
+    scaleUi.fallback[channel] = chip?.fallback ?? "";
+    if (channel === "rows") scaleUi.rowsInfo = built.input.info ?? null;
+    legendChip(node, textId, built.legend, channel === "rows" ? built.input.info : null);
+    legendAttrs(node, channel, built);
     // A warning shows on the chip's border too, for the moment its text is cut short
     node.dataset.warn = String(built.legend.warnings.some((w) => w.id === "range-exceeded" || w.id === "low-discrimination"));
     el(barId).hidden = false;
@@ -5345,6 +5403,8 @@
   function legendWrite(sc, under) {
     const inks = { state: colors.state, occupancy: colors.occupancy, surface: colors.surface },
       rowsChip = el("rows-legend");
+    // the popovers built outside this function (an axis popover refreshed by renderUi) take the same inks
+    scaleUi.inks = inks;
     legendChannel("cells", sc.cells, sc, el("legend"), "legend-text", "ramp", 64);
     // Rows show with the underlay; without a Rows frame there is nothing to map, and the chip says so.
     if (!under) {
@@ -5357,7 +5417,7 @@
       scaleRt.legendKey.rows = "";
     } else {
       if (rowsChip.hidden) rowsChip.hidden = false;
-      if (sc.rows) legendChannel("rows", sc.rows, sc, rowsChip, "rows-legend-text", "rows-ramp", 36);
+      if (sc.rows) legendChannel("rows", sc.rows, sc, rowsChip, "rows-legend-text", "rows-ramp", 36, under);
       else if (scaleRt.legendKey.rows !== "none") {
         scaleRt.legendKey.rows = "none";
         scaleUi.models.rows = null;
@@ -5368,8 +5428,10 @@
       }
     }
     lensStatusWrite(sc);
+    // The axis chip first: it builds the Columns pane's Legend, whose marks the footer keys count too
+    axisChipCommit();
     // The footer keys: those of the channels in view that have marks, each id once, counts added
-    const legends = [scaleUi.models.cells, scaleUi.models.rows].filter(Boolean),
+    const legends = [scaleUi.models.cells, scaleUi.models.rows, scaleUi.models.pane].filter(Boolean),
       keysKey =
         legends.map((l) => l.keys.map((k) => k.id + ":" + k.count).join(",")).join("|") + "|" + colourEpoch + "|" + (devicePixelRatio || 1);
     if (scaleUi.keysKey !== keysKey) {
@@ -5383,7 +5445,6 @@
         }
       el("keys-scale").replaceChildren(...uiKeyList([...merged.values()], inks, false));
     }
-    axisChipCommit();
   }
   scaleHooks.legend = legendWrite;
   // The lens's status element: a text mirror of the STABLE part of its caption (the measure, whether it
@@ -5405,7 +5466,7 @@
       });
     if (scaleUi.lensKey === key) return;
     scaleUi.lensKey = key;
-    const built = legendOf("lens", frame);
+    const built = legendOf("lens", frame, null);
     if (!built) return;
     const { legend } = built,
       node = el("lens-status"),
@@ -5423,7 +5484,7 @@
         .filter(Boolean)
         .join(" · ");
     scaleUi.lensId = built.input.desc?.id ?? built.input.mappingId ?? "";
-    legendAttrs(node, "lens", built, sc);
+    legendAttrs(node, "lens", built);
     if (!transient && node.textContent !== words) node.textContent = words;
   }
   // The marker on the legend bar: where the value under the pointer (or of the table row) sits, written
@@ -5443,9 +5504,10 @@
     note.hidden = !found;
     if (popMarker) popMarker.hidden = !found;
     if (!found) {
-      delete marker.dataset.coordinate;
-      delete marker.dataset.readout;
-      delete marker.dataset.clip;
+      // The attributes stay (empty) so the observation surface always finds the element; `hidden` says it is off
+      marker.dataset.coordinate = "";
+      marker.dataset.readout = "";
+      marker.dataset.clip = "";
       note.textContent = "";
       return;
     }
@@ -5515,7 +5577,8 @@
       });
       if (rowEnd[1] > -Infinity) ticks.style.height = "30px";
       dyn("bar", [bar, ticks]);
-      const details = E.legend.details(legend).map((d) => {
+      const legendDetails = E.legend.details(legend),
+        details = legendDetails.map((d) => {
           const dt = uiEl("dt", "", d.label),
             dd = uiEl("dd", "ol-num", uiUtcText(d));
           dd.dataset.field = d.field;
@@ -5524,8 +5587,26 @@
           return [dt, dd];
         }),
         list = uiEl("dl", "ol-legend-details");
+      // Rows say what the rows are: the period, the row size, the quality and what they were read to
+      for (const d of channel === "rows" ? uiRowsInfo(scaleUi.rowsInfo).rows : []) {
+        const dd = uiEl("dd", "ol-num", d.value);
+        dd.dataset.field = d.field;
+        if (d.canonical !== null && d.canonical !== undefined) dd.dataset.value = typeof d.canonical === "string" ? d.canonical : JSON.stringify(d.canonical);
+        details.push([uiEl("dt", "", d.label), dd]);
+      }
+      // The scale change is always a field, empty when the last settle changed nothing, so that "no change was
+      // announced" is something a reader of the page finds and not an absence
+      for (const name of ["scaleChangeCause", "scaleChangeFrom", "scaleChangeTo"])
+        if (!legendDetails.some((d) => d.field === name)) {
+          const dd = uiEl("dd", "ol-num", "");
+          dd.dataset.field = name;
+          dd.dataset.value = "";
+          details.push([uiEl("dt", "", UI_CHANGE_LABELS[name]), dd]);
+        }
       list.append(...details.flat());
-      const notes = legend.notes.map((text) => uiEl("p", "ol-legend-note", text));
+      const notes = [...(scaleUi.fallback[channel] ? [scaleUi.fallback[channel]] : []), ...legend.notes].map((text) =>
+        uiEl("p", "ol-legend-note", text),
+      );
       dyn("details", [...notes, list]);
       dyn("keys", uiKeyList(legend.keys, inks, true));
       dyn("warnings", uiWarnings(legend.warnings, channel));
@@ -5539,9 +5620,12 @@
   }
   // The details that are instants arrive as milliseconds (the canonical number stays in data-value); they
   // read as UTC times.
+  function uiUtcMs(ms) {
+    return new Date(ms).toISOString().replace(/(:\d\d)?\.000Z$/, "Z");
+  }
   function uiUtcText(detail) {
     return ["fitThrough", "obsCutoff", "obsCanonical"].includes(detail.field) && typeof detail.canonical === "number"
-      ? new Date(detail.canonical).toISOString().replace(/(:\d\d)?\.000Z$/, "Z")
+      ? uiUtcMs(detail.canonical)
       : detail.value;
   }
   // The warnings of a legend: each with its text, its detail and the actions that answer it. A warning
@@ -5699,10 +5783,10 @@
       wrap.append(uiEl("span", "", label), input);
       return wrap;
     };
-    // TEXT(S1): the names of the numbers of a manual domain and of a share window
+    // TEXT(S1): the title of a share window; its numbers are named lo and hi, as a manual domain's are U and k
     const legend = uiEl("span", "ol-legend-form-title", share ? "Share window" : E.text.ui.manual);
     const fields = share
-      ? [field("lo", "Low", { min: 0, max: 1 }), field("hi", "High", { min: 0, max: 1 })]
+      ? [field("lo", "lo", { min: 0, max: 1 }), field("hi", "hi", { min: 0, max: 1 })]
       : kind === "value-linear"
         ? [field("U", "U", { min: 0 })]
         : [field("U", "U", { min: 0 }), field("k", "k", { min: 0 })];
@@ -5817,10 +5901,14 @@
   // An axis the draw in progress has just scaled (registered as `axisChip`; called by the pane, the
   // oscillators and the profiles). Only the pane's record becomes the chip; all of them are listed in the
   // popover. A null record says nothing: the chip is hidden when no pane axis was handed over this frame.
-  function axisChipWrite(rec) {
+  function axisChipWrite(rec, shown) {
     if (!rec) return;
     scaleUi.axes.set(rec.id, rec);
-    if (String(rec.id).startsWith("pane.")) scaleUi.pane = rec;
+    if (String(rec.id).startsWith("pane.")) {
+      scaleUi.pane = rec;
+      // what the pane drew this frame: its frame (the Legend input), its model and its per-key counts
+      scaleUi.paneShown = shown ?? null;
+    }
   }
   scaleHooks.axisChip = axisChipWrite;
   // The end of the draw: the chip's place (re-set on every draw from the geometry, because the pane moves
@@ -5829,13 +5917,19 @@
   function axisChipCommit() {
     const chip = el("axis-chip"),
       rec = scaleUi.pane,
+      shown = scaleUi.paneShown,
       records = [...scaleUi.axes.values()];
-    scaleUi.pane = null;
+    scaleUi.pane = scaleUi.paneShown = null;
     scaleUi.axes.clear();
     if (!rec) {
       if (!chip.hidden) {
         chip.hidden = true;
         if (pop.open?.button === chip) closePop();
+      }
+      if (scaleUi.models.pane) {
+        scaleUi.models.pane = null;
+        scaleUi.axisKey = "";
+        scaleUi.keysKey = "";
       }
       return;
     }
@@ -5845,14 +5939,27 @@
       right = Math.round(G.width - (G.x + G.w) + 4) + "px";
     if (chip.style.top !== top) chip.style.top = top;
     if (chip.style.right !== right) chip.style.right = right;
-    const key =
-      records
-        .map((a) => [a.id, a.policy, a.typed, a.hold, a.mappingId, a.domain?.join("~"), a.clipped?.count, a.provenance?.through].join(":"))
-        .join("|") +
-      "|" + S.scale.lock + "|" + scaleWorkspace() + "|" + colourEpoch;
+    const counts = shown?.counts ?? {},
+      key =
+        records
+          .map((a) => [a.id, a.policy, a.typed, a.hold, a.mappingId, a.domain?.join("~"), a.clipped?.count, a.provenance?.through].join(":"))
+          .join("|") +
+        "|" + S.scale.lock + "|" + scaleWorkspace() + "|" + colourEpoch + "|" + (shown?.key ?? "") + "|" + (shown?.model?.status ?? "") +
+        "|" + Object.entries(counts).join(",");
     if (scaleUi.axisKey === key) return;
     scaleUi.axisKey = key;
     scaleUi.axisRecords = records;
+    // The pane's Legend: its details (the model's provenance for Efficiency), and the generated keys its marks
+    // need (a zero tick, a column with no value, a value beyond the axis). An oscillator has no frame to ask.
+    scaleUi.models.pane = shown?.frame
+      ? E.legend.build(shown.frame, scaleRt.warn.pane?.report ?? null, uiFmt, {
+          channel: "pane",
+          counts: { ...counts, "zero-tick": counts.zero ?? 0 },
+          measureLabel: shown.measure?.label,
+          paused: rec.hold === "play" ? "play" : false,
+        })
+      : null;
+    scaleUi.keysKey = "";
     const text = uiAxisText(rec);
     if (el("axis-chip-text").textContent !== text) el("axis-chip-text").textContent = text;
     const label = `${E.text.ui.scale}: ${text}`;
@@ -5867,7 +5974,7 @@
       basis: "",
       context: rec.id,
       fitThrough: String(rec.provenance?.through ?? ""),
-      fitSeq: String(scaleRt.fitSeq?.axis ?? 0),
+      fitSeq: String(scaleRt.seq.axis ?? 0),
       override: "",
       updating: String(Boolean(rec.hold) && rec.hold !== "play"),
       axisId: rec.id,
@@ -5921,6 +6028,23 @@
         if (rec.clipped?.count > 0) box.append(uiEl("p", "ol-legend-note", E.text.fill(E.text.axis.clipped, { n: rec.clipped.count, total: rec.clipped.total })));
         return box;
       });
+    // The pane's own details (measure, unit, the model's provenance for Efficiency) and its keys with counts
+    const legend = scaleUi.models.pane;
+    if (legend) {
+      const list = uiEl("dl", "ol-legend-details"),
+        inks = scaleUi.inks;
+      for (const d of E.legend.details(legend)) {
+        const dd = uiEl("dd", "ol-num", uiUtcText(d));
+        dd.dataset.field = d.field;
+        if (d.canonical !== null && d.canonical !== undefined) dd.dataset.value = typeof d.canonical === "string" ? d.canonical : JSON.stringify(d.canonical);
+        list.append(uiEl("dt", "", d.label), dd);
+      }
+      const keys = uiEl("div", "ol-legend-keys");
+      keys.append(...uiKeyList(legend.keys, inks, true));
+      const detail = uiEl("section", "ol-legend-axis");
+      detail.append(list, keys);
+      sections.push(detail);
+    }
     panel.querySelector('[data-part="axes"]').replaceChildren(...sections);
     const lock = panel.querySelector('[data-action="lock"]');
     lock.setAttribute("aria-pressed", String(S.scale.lock));
@@ -6093,25 +6217,41 @@
     if (scaleRt.fault) uiFault();
     if (!cur) {
       box.hidden = true;
+      el("notice-text").replaceChildren();
     } else {
-      const item = uiEl("span", "ol-notice-item"),
-        waiting = queue.list().filter((row) => !row.dismissed).length - 1;
-      item.dataset.notice = cur.id;
-      item.dataset.code = cur.code;
-      item.dataset.count = String(cur.count);
-      item.dataset.level = cur.level;
-      // TEXT(S1): the level word, for a reader that cannot see the box's border
-      if (cur.level !== "info") item.append(uiEl("span", "ol-sr", cur.level === "error" ? "Error: " : "Warning: "));
-      item.append(document.createTextNode(cur.text + (cur.count > 1 ? ` (×${cur.count})` : "")));
-      el("notice-text").replaceChildren(item, ...(waiting > 0 ? [uiEl("span", "ol-notice-queued", ` +${waiting} more`)] : []));
+      // Every notice still waiting is in the banner's DOM (so the observation surface and a reader of the page
+      // find each one with its count and its lines), and only the current one shows: the rest are hidden until
+      // this one is dismissed.
+      const waiting = queue.list().filter((row) => !row.dismissed),
+        items = waiting.map((row) => {
+          const item = uiEl("span", "ol-notice-item"),
+            here = row.id === cur.id;
+          item.dataset.notice = row.id;
+          item.dataset.code = row.code;
+          item.dataset.count = String(row.count);
+          item.dataset.level = row.level;
+          item.hidden = !here;
+          // TEXT(S1): the level word, for a reader that cannot see the box's border
+          if (row.level !== "info") item.append(uiEl("span", "ol-sr", row.level === "error" ? "Error: " : "Warning: "));
+          item.append(document.createTextNode(row.text + (row.count > 1 ? ` (×${row.count})` : "")));
+          if (row.details.length) {
+            const list = uiEl("ul", "ol-note-details");
+            list.append(...row.details.map((line) => uiEl("li", "", line)));
+            // the lines are there for every notice; only the current one's can be opened
+            list.hidden = !(here && scaleUi.noticeOpen === row.id);
+            if (here) list.id = "ol-note-details";
+            item.append(list);
+          }
+          return item;
+        });
+      // TEXT(S1): the count of the notices that wait behind the one shown
+      if (waiting.length > 1) items.push(uiEl("span", "ol-notice-queued", ` +${waiting.length - 1} more`));
+      el("notice-text").replaceChildren(...items);
       box.dataset.level = cur.level;
-      const more = el("notice-more"),
-        list = el("note-details");
-      more.hidden = cur.details.length === 0;
       if (scaleUi.noticeOpen !== cur.id) scaleUi.noticeOpen = "";
-      list.replaceChildren(...cur.details.map((line) => uiEl("li", "", line)));
-      list.hidden = more.hidden || scaleUi.noticeOpen !== cur.id;
-      more.setAttribute("aria-expanded", String(!list.hidden));
+      const more = el("notice-more");
+      more.hidden = cur.details.length === 0;
+      more.setAttribute("aria-expanded", String(scaleUi.noticeOpen === cur.id));
       box.dataset.noticeId = cur.id;
       box.hidden = false;
     }
@@ -6170,9 +6310,9 @@
     el("lens-local").addEventListener("change", () => scaleSet({ type: "local", value: el("lens-local").checked }));
     el("notice-dismiss").addEventListener("click", () => noticeHide(el("notice").dataset.noticeId));
     el("notice-more").addEventListener("click", () => {
-      const list = el("note-details"),
-        open = list.hidden;
-      list.hidden = !open;
+      const list = document.getElementById("ol-note-details"),
+        open = Boolean(list?.hidden);
+      if (list) list.hidden = !open;
       scaleUi.noticeOpen = open ? el("notice").dataset.noticeId : "";
       el("notice-more").setAttribute("aria-expanded", String(open));
     });

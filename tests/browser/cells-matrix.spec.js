@@ -284,3 +284,142 @@ for (const theme of ["light", "dark"]) {
     }
   });
 }
+
+// ---- large cases: the recorded snapshot and the `mini` fake, at a level with over a hundred cells ---------------------------------------
+//
+// The same rules over every cell of a cell-aligned rectangle that ends before the cutoff, so that every cell is a whole cell and the
+// Explore cohort is exactly the cells of the rectangle. The cells come from the exact-rational reference (the trades the fake serves) or
+// from the independent decoder of data/snapshot.json (the recorded page, which holds volume, taker-buy volume and the two trade counts).
+const { tradesOf, baseOf } = require("./scale-helpers.js");
+const T0_MS = Date.parse("2021-01-01T00:00:00Z");
+const stampOfBase = (b) => new Date(T0_MS + b * 56250).toISOString().slice(0, 16) + "Z";
+
+// A case: {cells, parents, n, m, rect, hash(combo)}. `cells` and `parents` are [{c, r, v, bv, ct, bt}].
+function largeCase({ cells, parents, n, m, b0, b1, r0, r1 }) {
+  const rect = { tA: b0, tB: b1, pA: r0, pB: r1 };
+  return {
+    cells,
+    parents,
+    n,
+    m,
+    rect,
+    hash: (combo) =>
+      `#t=${stampOfBase(b0)}~${stampOfBase(b1)}&p=${r0 * ROW_USDT}~${r1 * ROW_USDT}&r=${n},${m}&mode=${combo.mode}&vis=2&ap=${APPEARANCE}` +
+      [combo.basis === "intensity" ? "&bs=i" : "", combo.transform === "rank" ? "&tr=r" : ""].join(""),
+  };
+}
+
+function miniCase() {
+  const trades = tradesOf("mini");
+  const [n, m] = [3, 0];
+  const b0 = baseOf("2026-09-23T12:00Z");
+  const b1 = baseOf("2026-09-24T00:00Z");
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const x of trades) {
+    const col = x.t_ms / 56250;
+    if (col >= b0 && col < b1) {
+      lo = Math.min(lo, x.price);
+      hi = Math.max(hi, x.price);
+    }
+  }
+  const r0 = Math.floor(lo / 12500 / 2) * 2;
+  const r1 = Math.ceil((hi / 12500 + 1) / 2) * 2;
+  const at = (nn, mm) => reference.cells(trades, { n: nn, m: mm, b0, b1, r0, r1 });
+  return largeCase({ cells: at(n, m), parents: at(n + 1, m + 1), n, m, b0, b1, r0, r1 });
+}
+
+function snapshotCase() {
+  const { blocks } = reference.snapshot.loadSnapshot();
+  const [n, m] = [4, 1];
+  const b0 = baseOf("2026-09-22T00:00Z");
+  const b1 = baseOf("2026-09-23T00:00Z");
+  const agg = (nn, mm) =>
+    reference.snapshot
+      .aggregate(blocks.recent, { n: nn, m: mm, colLo: b0 / 2 ** nn, colHi: b1 / 2 ** nn })
+      .map((z) => ({ c: z.c, r: z.r, v: z.vol, bv: z.tbvol, ct: z.ct, bt: z.bt }));
+  const cells = agg(n, m);
+  const parents = agg(n + 1, m + 1);
+  const rows = cells.map((z) => z.r);
+  const r0 = Math.floor((Math.min(...rows) * 2 ** m) / 2 ** (m + 1)) * 2 ** (m + 1);
+  const r1 = Math.ceil(((Math.max(...rows) + 1) * 2 ** m) / 2 ** (m + 1)) * 2 ** (m + 1);
+  return largeCase({ cells, parents, n, m, b0, b1, r0, r1 });
+}
+
+// The marks of a large case for a combination (base rows are of 125 USDT; a cell of level (n, m) is whole and exposes 2^n columns and
+// 2^m rows, and the open column does not come into it).
+function largeMarks(combo, cs, colours) {
+  const { n, m } = cs;
+  const seconds = 2 ** n * COLUMN_SECONDS;
+  const width = 2 ** m * ROW_USDT;
+  const amount = (z) => {
+    const x = combo.mode === "trades" ? z.ct : combo.mode === "delta" ? 2 * z.bv - z.v : combo.mode === "size" ? z.v / z.ct : z.v;
+    return combo.basis === "intensity" ? (x * 60 * ROW_USDT) / (seconds * width) : x;
+  };
+  if (combo.mode === "flow" || combo.mode === "flowtrades")
+    return cs.cells.map((z) => valueMark(z, fixedSigned(combo.mode === "flow" ? z.bv / z.v : z.bt / z.ct, { lo: 0, hi: 1, mid: 0.5 }), colours));
+  if (combo.mode === "cascade") {
+    const parentOf = new Map(cs.parents.map((p) => [`${p.c}:${p.r}`, p]));
+    return cs.cells.map((z) => {
+      const p = parentOf.get(`${Math.floor(z.c / 2)}:${Math.floor(z.r / 2)}`);
+      return valueMark(z, fixedSigned(Math.log2((4 * z.v) / p.v), { lo: -2, hi: 2, mid: 0 }), colours);
+    });
+  }
+  const values = cs.cells.map(amount);
+  const map = explore(values, { signed: combo.mode === "delta", transform: combo.transform, curve: "log" });
+  return cs.cells.map((z, i) => valueMark(z, map(values[i]), colours));
+}
+
+// One canvas read for every mark of a large case: each fill is on the canvas at one of its four inner corners.
+async function expectLargeCanvas(page, draw, marks, cs, label) {
+  const points = [];
+  const seen = new Map();
+  for (const mark of marks) {
+    const box = boxOf(draw.plot, cs.rect, cs.n, cs.m, mark.c, mark.r);
+    const ops = opsOfBox(draw, box);
+    const what = `${label}: cell ${mark.c}:${mark.r}`;
+    expect(ops, `${what} is painted once`).toHaveLength(1);
+    expect(ops[0].op, `${what}: a ${mark.kind}`).toBe(mark.kind === "outline" ? "strokeRect" : "fillRect");
+    expect(ops[0].style, `${what}: the colour of the pinned Lut`).toBe(mark.style);
+    if (mark.kind === "fill" && box.x1 - box.x0 > 8 && box.y1 - box.y0 > 8) seen.set(mark, corners(box).map((p) => points.push(p) - 1));
+  }
+  const pixels = await pixelsAt(page, points);
+  for (const [mark, at] of seen) expect(at.map((i) => pixels[i]), `${label}: cell ${mark.c}:${mark.r} shows ${mark.style} on the canvas`).toContain(mark.style);
+  return seen.size;
+}
+
+const LARGE = [];
+for (const mode of ["volume", "trades"])
+  for (const basis of ["amount", "intensity"])
+    for (const transform of ["value", "rank"]) LARGE.push({ name: `${mode} ${basis} ${transform}`, mode, basis, transform });
+LARGE.push({ name: "size mean value", mode: "size", basis: "amount", transform: "value" });
+LARGE.push({ name: "size mean rank", mode: "size", basis: "amount", transform: "rank" });
+LARGE.push({ name: "delta amount value", mode: "delta", basis: "amount", transform: "value" });
+LARGE.push({ name: "delta intensity value", mode: "delta", basis: "intensity", transform: "value" });
+LARGE.push({ name: "flow", mode: "flow", basis: "amount", transform: "value" });
+LARGE.push({ name: "flowtrades", mode: "flowtrades", basis: "amount", transform: "value" });
+LARGE.push({ name: "cascade", mode: "cascade", basis: "amount", transform: "value" });
+
+for (const [source, profile, build] of [["the mini fake", "mini", miniCase], ["the recorded snapshot", "recorded", snapshotCase]]) {
+  for (const theme of ["light", "dark"]) {
+    test.describe(`large case on ${source}, ${theme} theme`, () => {
+      const cs = build();
+      test("the case has over a hundred cells", () => {
+        expect(cs.cells.length).toBeGreaterThan(100);
+      });
+      for (const combo of LARGE) {
+        test(combo.name, async ({ freshContext, fakeFor }) => {
+          const { page, surface, context } = await open({ freshContext, fakeFor }, profile, cs.hash(combo), { colorScheme: theme });
+          const colours = await pageColours(page, theme);
+          const draw = await lastDraw(page);
+          const chip = (await surface.chip("cells")).data;
+          expect(["ready", "fixed"], `calibrated (${chip.state})`).toContain(chip.state);
+          if (combo.transform === "rank") expect(chip.transform).toBe("rank");
+          const checked = await expectLargeCanvas(page, draw, largeMarks(combo, cs, colours), cs, `${source} ${combo.name}`);
+          expect(checked, "the pixels of most cells were read").toBeGreaterThan(cs.cells.length / 2);
+          await context.close();
+        });
+      }
+    });
+  }
+}

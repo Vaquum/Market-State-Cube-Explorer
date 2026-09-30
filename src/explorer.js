@@ -1132,7 +1132,9 @@
         lock: S.scale.lock,
         window: eff.window,
       },
-      cohortId: parts.meas.state,
+      // Path and Dwell are read apart from the rectangle: a motion block that has arrived, or ended elsewhere,
+      // is other data than the same rectangle before it (the warnings pass counts the marks it draws).
+      cohortId: parts.meas.state + (parts.moving ? "|" + (parts.mv?.src ? parts.mv.end : "-") : ""),
     });
   }
   // Ask the controller for a calibration of a channel and remember what it was asked for. True when this call
@@ -1850,6 +1852,8 @@
         key: cur.warnKey,
         tally,
         keys,
+        // the legend's counts read this name (legendCounts), the chip's options the one above: one object
+        keyCounts: keys,
         report: E.warn.evaluate(tally, { meaningful: cur.meaningful }),
       };
       changed = true;
@@ -1864,7 +1868,7 @@
           keys = {};
         tally.reset();
         scaleHooks.paneMarks(tally, keys);
-        scaleRt.warn.pane = { key, tally, keys, report: E.warn.evaluate(tally, { meaningful: false }) };
+        scaleRt.warn.pane = { key, tally, keys, keyCounts: keys, report: E.warn.evaluate(tally, { meaningful: false }) };
         changed = true;
       }
     }

@@ -104,7 +104,9 @@ test("a theme flip paints the same entries in the dark table and asks for nothin
   const after = (await ctx.surface.chip("cells")).data;
   expect(after.mappingId).toBe(before.mappingId);
   expect(after.fitSeq).toBe(before.fitSeq);
-  expect(ctx.fake.log().filter((entry) => entry.path.startsWith("/cube/")), "no request after the flip").toEqual([]);
+  // The page's own pack poll (the liveness check on its timer, slot "poll") is not something the flip asked for: a read of the
+  // measurement or the tiles would be.
+  expect(ctx.fake.log().filter((entry) => entry.path.startsWith("/cube/") && entry.slot !== "poll"), "no read after the flip").toEqual([]);
 });
 
 test("Replay: the canvas paints the mapping fitted in the replay workspace, on observations up to the edge", async ({ freshContext, fakeFor }) => {

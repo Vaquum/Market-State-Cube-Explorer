@@ -1,0 +1,66 @@
+{
+ "note": "sRGB primaries in CIE Lab, D50 (Bradford adapted), the values of Bruce Lindbloom's calculator; d3-color rounds its matrices, so agreement is to about 0.02, not 1e-4.",
+ "tolerance": 0.02,
+ "points": [
+  {
+   "rgb": [
+    255,
+    255,
+    255
+   ],
+   "lab": [
+    100,
+    0,
+    0
+   ]
+  },
+  {
+   "rgb": [
+    0,
+    0,
+    0
+   ],
+   "lab": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "rgb": [
+    255,
+    0,
+    0
+   ],
+   "lab": [
+    54.2917,
+    80.8125,
+    69.8851
+   ]
+  },
+  {
+   "rgb": [
+    0,
+    255,
+    0
+   ],
+   "lab": [
+    87.8185,
+    -79.2711,
+    80.9946
+   ]
+  },
+  {
+   "rgb": [
+    0,
+    0,
+    255
+   ],
+   "lab": [
+    29.5678,
+    68.2986,
+    -112.0294
+   ]
+  }
+ ]
+}

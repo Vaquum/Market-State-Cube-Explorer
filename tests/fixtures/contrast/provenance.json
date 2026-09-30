@@ -1,0 +1,9 @@
+{
+  "kind": "hand-computed",
+  "expectationSource": "hand-computed",
+  "generator": null,
+  "seed": null,
+  "source": "new-controls.json: one row per foreground and background token pair that an S1-introduced text or control uses, with the WCAG 2.x threshold it must meet (4.5 for small text, 3 for an essential boundary) or an exempt reason.",
+  "extractedOn": "2026-09-30",
+  "notes": "The thresholds come from WCAG 2.x and issue45 D11. The pairs and their backdrops come from API.md B.9 and INTEGRATION.md D.4 to D.9 (what the code draws and over what). The measured ratios quoted in the notes were computed by hand with the design documents' scripts (API.md Appendix A.1), not by the code under test; contrast.test.js recomputes each pair from the real tokens with tests/reference/contrast.js."
+}

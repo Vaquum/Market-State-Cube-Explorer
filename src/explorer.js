@@ -5822,7 +5822,7 @@
     // TEXT(S1): the title of a share window; its numbers are named lo and hi, as a manual domain's are U and k
     const legend = uiEl("span", "ol-legend-form-title", share ? "Share window" : E.text.ui.manual);
     const fields = share
-      ? [field("lo", "lo", { min: 0, max: 1 }), field("hi", "hi", { min: 0, max: 1 })]
+      ? [field("lo", "Low", { min: 0, max: 1 }), field("hi", "High", { min: 0, max: 1 })]
       : kind === "value-linear"
         ? [field("U", "U", { min: 0 })]
         : [field("U", "U", { min: 0 }), field("k", "k", { min: 0 })];
@@ -6059,16 +6059,7 @@
           add(E.text.key.below, String(rec.clipped.low), "clipLowFinite", rec.clipped.low);
           add(E.text.key.above, String(rec.clipped.high), "clipHighFinite", rec.clipped.high);
         }
-        // The Columns pane's axis also carries the pane's model fields and its keys (paneLegendCommit, package X)
-        const paneLegend = String(rec.id).startsWith("pane.") ? scaleUi.models.pane : null;
-        if (paneLegend)
-          for (const d of E.legend.details(paneLegend)) if (d.field.startsWith("model")) add(d.label, uiUtcText(d), d.field, d.canonical);
         box.append(list);
-        if (paneLegend) {
-          const keys = uiEl("div", "ol-legend-keys");
-          keys.append(...uiKeyList(paneLegend.keys, scaleUi.inks, true));
-          box.append(keys);
-        }
         if (rec.policy === "frozen") box.append(uiEl("p", "ol-legend-note", E.text.axis.frozenBy));
         if (rec.clipped?.count > 0) box.append(uiEl("p", "ol-legend-note", E.text.fill(E.text.axis.clipped, { n: rec.clipped.count, total: rec.clipped.total })));
         return box;

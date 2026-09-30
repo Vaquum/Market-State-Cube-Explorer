@@ -1119,7 +1119,8 @@
         mode: S.mode,
         basis: eff.basis,
         pathBasis: eff.pathBasis,
-        transform: eff.transform,
+        // the curve is part of the transform: a linear fit must never answer for a log one
+        transform: eff.transform === "rank" ? "rank" : "value-" + eff.curve,
         policy: S.scale.cells,
         lock: S.scale.lock,
         window: eff.window,
@@ -1708,7 +1709,8 @@
     // for a context that has no mapping for this cutoff.
     if (!context || key !== ask.ctxKey) return drop(false);
     if (ask.kind === "init" && !lens && scaleRt.store.lookup(workspace, key, cutMs)) return drop(false);
-    const memoKey = [channel, workspace, S.replay ? cutMs : "", memo].join("|"),
+    // The context is in the key besides the data: what was fitted for one context answers for no other.
+    const memoKey = [channel, workspace, S.replay ? cutMs : "", key, memo].join("|"),
       hit = ask.kind === "fit" ? null : scaleRt.fitMemo.get(memoKey);
     let found = hit ?? null;
     if (!found) {

@@ -9,6 +9,8 @@
 // the last gesture plus one fit and one draw, and every read the view needs is answered first. So calm = the fake has
 // no request for a while, no draw frame for a while, and the chip says it is no longer updating.
 const { expect } = require("@playwright/test");
+const { resolveProfile, EPOCH_MS } = require("../support/profiles.js");
+const ref = require("../reference/index.js");
 
 // The window keys of the page (observe.js PRESET_KEYS), by name.
 const KEY_OF = Object.freeze({ "24h": "6", "7d": "7", "30d": "8", "1y": "9", all: "0" });
@@ -97,4 +99,44 @@ function framesWithEdge(frames, edges) {
   });
 }
 
-module.exports = { KEY_OF, calm, gotoWindow, identity, field, popoverAction, edgeLogger, framesWithEdge };
+// ---- the reference side (tests/reference: exact arithmetic, no code of the page or of the fake) ----
+
+// The trades of a fake profile as the reference calculator reads them.
+function tradesOf(profile, options) {
+  const { store } = resolveProfile(profile, options);
+  const out = [];
+  for (let i = 0; i < store.length; i++) out.push({ t_ms: store.t[i], price: store.price[i], qty: store.qty[i], takerBuy: store.buy[i] === 1, count: store.count[i] });
+  return out;
+}
+
+// The base column (a number of 56.25 s columns since 2021-01-01T00:00Z) of a UTC stamp; an integer when the stamp is on a column edge.
+function baseOf(iso) {
+  return (Date.parse(iso) - EPOCH_MS) / 56250;
+}
+
+// For the cells of a cell-aligned rectangle at level (n, m) against the top U of a Value scale: how many are occupied and how many
+// of them lie ABOVE it (a value exactly on U is on the scale, not beyond it). The marks share is outside / occupied; the area share
+// equals it when every occupied cell has the same box, which a cell-aligned rectangle inside the plot guarantees.
+function referenceShares(trades, { n, m, from, to, rows, U }) {
+  const cells = ref.cells(trades, { n, m, b0: baseOf(from), b1: baseOf(to), r0: rows[0], r1: rows[1] });
+  const occupied = cells.filter((c) => c.v > 0);
+  const outside = occupied.filter((c) => c.v > U).length;
+  return { occupied: occupied.length, outside, share: occupied.length ? outside / occupied.length : 0 };
+}
+
+// The base rows [r0, r1) that hold every trade of [from, to) (a rectangle whose prices enclose the data, on the 125 USDT grid).
+function priceRowsOf(trades, from, to) {
+  const a = Date.parse(from) - EPOCH_MS;
+  const b = Date.parse(to) - EPOCH_MS;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const x of trades) {
+    if (x.t_ms < a || x.t_ms >= b) continue;
+    lo = Math.min(lo, x.price);
+    hi = Math.max(hi, x.price);
+  }
+  return [Math.floor(lo / 12500), Math.floor(hi / 12500) + 1];
+}
+
+module.exports = {
+  tradesOf, baseOf, referenceShares, priceRowsOf, KEY_OF, calm, gotoWindow, identity, field, popoverAction, edgeLogger, framesWithEdge };

@@ -54,21 +54,39 @@ const LEGACY_VIEW = "#w=7d&mode=flow&rows=relvol&pane=volume";
 const LEGACY_V5 = { version: 5, prefs: {}, view: LEGACY_VIEW };
 
 test.describe("B14 persistence: fresh browser, round trips and migration", () => {
-  test("the default-only address is #w=24h&vis=2&ap=<id>, and a fresh browser has no workspace cache", async ({ page, fakeFor, surface }) => {
+  // The fake cube is closed by a fixture that is torn down before the page is: a live page polling the pack in that gap logs a failed
+  // fetch, which is the harness's teardown order and no behaviour of the page. The pages are closed first.
+  test.afterEach(async ({ context }) => {
+    await Promise.all(context.pages().map((p) => p.close().catch(() => {})));
+  });
+
+  test("the default-only address is #w=24h&vis=2&ap=<id>, and a fresh browser has no workspace cache", async ({ page, fakeFor }) => {
+    // what the browser held when the first script ran: nothing
+    await page.context().addInitScript(() => {
+      try {
+        window.__keysAtStart = Object.keys(localStorage);
+      } catch {
+        window.__keysAtStart = null;
+      }
+    });
     const fake = await fakeFor("mini");
     await page.goto(fake.url + "/");
     await fake.idle();
-    expect((await S.where(page)).hash).toBe("#w=24h&vis=2&ap=" + S.AP);
-    const stored = await S.storage(page);
-    expect(Object.keys(stored.local)).not.toContain("scales:v1");
+    expect(await page.evaluate(() => window.__keysAtStart)).toEqual([]);
+    // the settings part of the address is the default-only form ...
+    expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=24h&vis=2&ap=" + S.AP);
+    // ... and once the Explore mapping is fitted it is in the address too (a fresh context restores it from the address alone)
+    await expect.poll(async () => S.scOf((await S.where(page)).hash), { timeout: 10000 }).toMatch(/^c:e:/);
+    // the workspace cache is written after the commit (debounced), holding the mapping of the live workspace
+    await expect.poll(async () => (await S.storage(page)).local["scales:v1"], { timeout: 10000 }).toContain("contexts");
     // a setting changes the address and keeps the two fixed parameters in their place
     await page.keyboard.press("m");
     await expect.poll(async () => (await S.where(page)).hash).toMatch(/^#w=24h&vis=2&ap=slate2-8f7890f7&mode=/);
     // one neutral version notice for a browser with nothing stored (no other)
-    expect(await S.noticeCodes(surface)).toEqual(["version-default"]);
+    expect(await S.noticeCodes(page)).toEqual(["version-default"]);
   });
 
-  test("a customised view (Path, Intensity, Comparison lock, Rows), copied as a link and as a code, restores byte for byte in a fresh context", async ({ page, context, fakeFor, freshContext, surface }) => {
+  test("a customised view (Path, Intensity, Comparison lock, Rows), copied as a link and as a code, restores byte for byte in a fresh context", async ({ page, context, fakeFor, freshContext }) => {
     const fake = await fakeFor("mini");
     const axes = [{ id: "pane.volume", domain: [0, 1920000000], policy: "frozen", through: 1790251320000 }];
     const scales = [S.valueRecord("path", 4, 0, 730.25, 41.5, { policy: "k", origin: "manual" })];
@@ -95,9 +113,7 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     await tab.goto(link);
     await tab.locator("#ol-canvas").waitFor();
     await expect.poll(async () => (await S.where(tab)).hash).toBe(made.hash);
-    const again = await S.storage(tab);
-    expect(Object.keys(again.local)).not.toContain("scales:v1");
-    expect(await S.noticeCodes(require("./observe.js").observe(tab))).not.toContain("scale-dropped");
+    expect(await S.noticeCodes(tab)).not.toContain("scale-dropped");
     // the view code: copied here, pasted there, gives the same view and the same address
     await S.openQuery(page);
     await page.locator("#ol-copy-view").click();
@@ -115,7 +131,6 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect(S.param(restored, "bs")).toBe("i");
     expect(S.scOf(restored)).toBe(S.scOf(made.hash));
     expect(S.param(restored, "ap")).toBe(S.AP);
-    void surface;
   });
 
   test("a rank mapping with repeated values in its cohort comes back bit for bit: the same id in the address of a fresh context", async ({ page, fakeFor }) => {
@@ -141,76 +156,77 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect(made.hash).toContain("&sw=0.4~0.6");
     await page.goto(fake.url + "/" + made.hash);
     await fake.idle();
-    await expect.poll(async () => (await S.where(page)).hash).toBe(made.hash);
+    await expect.poll(async () => S.withoutSc((await S.where(page)).hash)).toBe(S.withoutSc(made.hash));
   });
 
-  test("the bare root: a stored version-2 view restores silently", async ({ page, context, fakeFor, surface }) => {
+  test("the bare root: a stored version-2 view restores silently", async ({ page, context, fakeFor }) => {
     const fake = await fakeFor("mini");
     await seed(context, { "view:v5": { version: 5, visualVersion: 2, prefs: {}, view: V2_VIEW } });
     await page.goto(fake.url + "/");
     await fake.idle();
-    expect((await S.where(page)).hash).toBe(V2_VIEW);
-    expect(await S.noticeCodes(surface)).toEqual([]);
+    expect(S.withoutSc((await S.where(page)).hash)).toBe(V2_VIEW);
+    expect(await S.noticeCodes(page)).toEqual([]);
   });
 
-  test("the bare root: a stored legacy view restores with the legacy notice, once", async ({ page, context, fakeFor, surface }) => {
+  test("the bare root: a stored legacy view restores with the legacy notice, once", async ({ page, context, fakeFor }) => {
     const fake = await fakeFor("mini");
     await seed(context, { "view:v5": LEGACY_V5 });
     await page.goto(fake.url + "/");
     await fake.idle();
     // the view is the legacy one, now written as version 2
-    const hash = (await S.where(page)).hash;
+    const hash = S.withoutSc((await S.where(page)).hash);
     expect(hash).toMatch(/^#w=7d&vis=2&ap=slate2-8f7890f7&mode=flow&pane=volume&rows=relvol$/);
-    const list = await S.notices(surface);
+    const list = await S.notices(page);
     expect(list.map((n) => n.code)).toEqual(["legacy-migrated"]);
-    // the notice lists every setting whose meaning changed: mode, Rows and the pane (the words come from the module's migrate table)
-    for (const setting of ["mode=flow", "rows=relvol", "pane=volume"]) expect(list[0].text).toContain(setting);
+    // the notice lists every setting whose meaning changed: mode, Rows and the pane (the words come from the module's migrate table,
+    // behind the banner's Details toggle)
+    for (const setting of ["mode", "rows", "pane"]) expect(S.said(list[0])).toContain(setting);
     // the next open of this browser sees a version-2 view: no notice
     const again = await page.context().newPage();
     await again.goto(fake.url + "/");
     await again.locator("#ol-canvas").waitFor();
-    expect(await S.noticeCodes(require("./observe.js").observe(again))).toEqual([]);
+    expect(await S.noticeCodes(again)).toEqual([]);
   });
 
-  test("the bare root: a stored version-4 view (the recorded legacy fixture) restores migrated, with the legacy notice", async ({ page, context, fakeFor, surface }) => {
+  test("the bare root: a stored version-4 view (the recorded legacy fixture) restores migrated, with the legacy notice", async ({ page, context, fakeFor }) => {
     const fake = await fakeFor("mini");
     const v4 = JSON.parse(require("node:fs").readFileSync(require("node:path").join(__dirname, "../fixtures/legacy/view-v4.json"), "utf8"));
     await seed(context, { "view:v4": v4 });
     await page.goto(fake.url + "/");
     await fake.idle();
     // the fixture's window, mode and level lock come back as a version-2 address, and the notice names the migrated mode
-    expect((await S.where(page)).hash).toBe("#w=7d&vis=2&ap=" + S.AP + "&mode=flow");
-    const list = await S.notices(surface);
+    expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=7d&vis=2&ap=" + S.AP + "&mode=flow");
+    const list = await S.notices(page);
     expect(list.map((n) => n.code)).toEqual(["legacy-migrated"]);
-    expect(list[0].text).toContain("mode=flow");
+    expect(S.said(list[0])).toContain("mode");
     // the workspace of the fixture (its prefs) came back too
     expect((await S.storage(page)).local["view:v5"]).toContain("visualVersion");
   });
 
-  test("the bare root: nothing stored gives the default view and one neutral notice, once per browser", async ({ page, context, fakeFor, surface }) => {
+  test("the bare root: nothing stored gives the default view and one neutral notice, once per browser", async ({ page, context, fakeFor }) => {
     const fake = await fakeFor("mini");
     await page.goto(fake.url + "/");
     await fake.idle();
-    expect((await S.where(page)).hash).toBe("#w=24h&vis=2&ap=" + S.AP);
-    const list = await S.notices(surface);
+    expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=24h&vis=2&ap=" + S.AP);
+    const list = await S.notices(page);
     expect(list.map((n) => n.code)).toEqual(["version-default"]);
     expect(list[0].count).toBe(1);
     // a second tab of the same browser: the flag is stored, no second notice
     const tab = await context.newPage();
     await tab.goto(fake.url + "/");
     await tab.locator("#ol-canvas").waitFor();
-    expect(await S.noticeCodes(require("./observe.js").observe(tab))).toEqual([]);
+    expect(await S.noticeCodes(tab)).toEqual([]);
   });
 
-  test("a link at startup restores the preferences and skips the stored view, with no notice for it", async ({ page, context, fakeFor, surface }) => {
+  test("a link at startup restores the preferences and skips the stored view, with no notice for it", async ({ page, context, fakeFor }) => {
     const fake = await fakeFor("mini");
     await seed(context, { "view:v5": { ...LEGACY_V5, prefs: { drawer: "cells", drawerOpen: true } } });
     await page.goto(fake.url + "/#w=30d&vis=2&ap=" + S.AP);
     await fake.idle();
-    expect((await S.where(page)).hash).toBe("#w=30d&vis=2&ap=" + S.AP);
+    expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=30d&vis=2&ap=" + S.AP);
     // the preference (the open drawer) came back; the stored legacy view was neither applied nor reported
     await expect(page.locator("#ol-drawer")).toHaveAttribute("data-open", "true");
-    expect(await S.noticeCodes(surface)).toEqual([]);
+    expect(await S.noticeCodes(page)).toEqual([]);
   });
 
   test("two tabs of one browser keep their own active snapshot; the cache is read once and a storage event changes nothing", async ({ context, fakeFor }) => {
@@ -239,24 +255,24 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect(S.param(before, "mode")).toBeNull();
   });
 
-  test("a legacy link migrates with one notice per payload and tab; the address becomes version 2", async ({ page, fakeFor, surface }) => {
+  test("a legacy link migrates with one notice per payload and tab; the address becomes version 2", async ({ page, fakeFor }) => {
     const fake = await fakeFor("mini");
     await page.goto(fake.url + "/" + "#w=24h&mode=flow&rows=relvol&pane=volume");
     await fake.idle();
-    expect((await S.where(page)).hash).toBe("#w=24h&vis=2&ap=" + S.AP + "&mode=flow&pane=volume&rows=relvol");
-    const first = await S.notices(surface);
-    expect(first.filter((n) => n.code === "legacy-migrated")).toHaveLength(1);
+    expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=24h&vis=2&ap=" + S.AP + "&mode=flow&pane=volume&rows=relvol");
     // the same payload again in this tab (an address typed into the bar) is not reported again
     await page.evaluate(() => {
       location.hash = "#w=24h&mode=flow&rows=relvol&pane=volume";
     });
-    await expect.poll(async () => (await S.where(page)).hash).toBe("#w=24h&vis=2&ap=" + S.AP + "&mode=flow&pane=volume&rows=relvol");
-    const second = (await S.notices(surface)).filter((n) => n.code === "legacy-migrated");
-    expect(second).toHaveLength(1);
-    expect(second[0].count).toBe(1);
+    await expect.poll(async () => S.withoutSc((await S.where(page)).hash)).toBe("#w=24h&vis=2&ap=" + S.AP + "&mode=flow&pane=volume&rows=relvol");
+    await page.waitForTimeout(300);
+    // the banner's rows: one report, seen once (a second report would be a second row or a count of 2)
+    const reports = (await S.notices(page)).filter((n) => n.code === "legacy-migrated");
+    expect(reports).toHaveLength(1);
+    expect(reports[0].count).toBe(1);
   });
 
-  test("a legacy named view opens migrated and is not rewritten until it is saved again", async ({ page, context, fakeFor, surface }) => {
+  test("a legacy named view opens migrated and is not rewritten until it is saved again", async ({ page, context, fakeFor }) => {
     const fake = await fakeFor("mini");
     const entry = { name: "Old flow", live: false, span: 10, lead: 0, auto: true, mode: "flow", pane: "cells", rows: "off", period: "90d", hash: "#w=7d&mode=flow", tA: 1, tB: 2, cut: 3, n: 6, m: 0, window: "7d", replay: false };
     await seed(context, { "views:v1": [entry] });
@@ -268,7 +284,7 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     await expect(page.locator("#ol-saved")).toContainText("saved before visual version 2");
     await page.locator("#ol-saved .ol-entry").first().click();
     await expect.poll(async () => (await S.where(page)).hash).toContain("mode=flow");
-    expect((await S.noticeCodes(surface)).filter((c) => c === "legacy-migrated")).toHaveLength(1);
+    expect((await S.noticeCodes(page)).filter((c) => c === "legacy-migrated")).toHaveLength(1);
     // the stored entry is exactly what it was
     expect((await S.storage(page)).local["views:v1"]).toBe(raw);
     // saving it again stamps version 2
@@ -295,17 +311,16 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect(S.param((await S.where(page)).hash, "mode")).not.toBeNull();
   });
 
-  test("an appearance the page does not build keeps the default and says so", async ({ page, fakeFor, surface }) => {
+  test("an appearance the page does not build keeps the default and says so", async ({ page, fakeFor }) => {
     const fake = await fakeFor("mini");
     for (const ap of ["nosuch9-12345678", "slate2-00000000"]) {
       const tab = await page.context().newPage();
       await tab.goto(fake.url + "/#w=24h&vis=2&ap=" + ap);
       await tab.locator("#ol-canvas").waitFor();
-      await expect.poll(async () => (await S.where(tab)).hash).toBe("#w=24h&vis=2&ap=" + S.AP);
-      expect(await S.noticeCodes(require("./observe.js").observe(tab))).toContain("appearance-mismatch");
+      await expect.poll(async () => S.withoutSc((await S.where(tab)).hash)).toBe("#w=24h&vis=2&ap=" + S.AP);
+      expect(await S.noticeCodes(tab)).toContain("appearance-mismatch");
       await tab.close();
     }
-    void surface;
   });
 
   test("the original build opens a vis=2 address and reads what this build stored (rollback, B22's persistence half)", async ({ page, fakeFor, baselinePage }) => {

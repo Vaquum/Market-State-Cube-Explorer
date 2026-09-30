@@ -509,7 +509,7 @@ One line per decision; the reasons are in the section named in the last column o
 | DD-26 | lens tiles are flagged and never become the display source before Pin (amended by DD-96: a pure predicate, no promotion side effect) | D.4 |
 | DD-27 | `VISUAL_KEYS` replaces the ten parallel lists; address grammar and `checkView` move into `codec` behind an `env` | C.13 |
 | DD-28 | portable code `origo-cube:2.` (gzip) with an uncompressed `origo-cube:2j.` fallback; `inflate`/`deflate` injected | C.13 |
-| DD-29 | limits enforced on write and read; the 8192 counts the full URL (amended by DD-68: the named-view cap of 200 applies to new saves and imports only) | C.13 |
+| DD-29 | limits enforced on write and read; the 8192 counts the full URL (the named-view cap of DD-68 is void, DR-31: no cap on named views) | C.13 |
 | DD-30 | token renames (`--ol-positive/negative/midpoint`), interim `--ol-legacy-buy/sell`, aliases `--ol-occupancy/--ol-state`, `--ol-time` removed | D.11 |
 | DD-31 | Scale section = `menuitemradio` groups in the Cells/Rows menus; manual domain and actions in the legend popover | D.7 |
 | DD-32 | every S1 string in `E.text` | D.11 |
@@ -548,7 +548,7 @@ One line per decision; the reasons are in the section named in the last column o
 | DD-65 | (AM-03) `S.scale.held` is keyed `channel\|classKey`; a Cells hold or manual domain never reaches Rows; the lock holds each channel's own active mapping and the legend shows original support | C.8, C.9 |
 | DD-66 | (AM-09) a narrowed share window keeps its kind: Taker flow = symmetric half-width -> `fixed-diverging{0.5-h, 0.5+h, 0.5}`; Dwell = `fixed-linear{lo, hi}`; asymmetric input is rejected | C.5, B.5 |
 | DD-67 | (AM-11, A-16) an "authorized fit" passed `coherent`, `settled`, replay eligibility, quality class and policy; never a partial arrival, placeholder, failed read or one forbidden by the lock | C.10 |
-| DD-68 | (AM-20) no `snapshot:v1` key; `backup(key)` is tested; `NAMED_VIEWS_MAX` (200) applies to new saves and imports only, never to reading or rewriting existing lists; a named view stores a portable `code` only at ladder level 1 or worse and only when the code is <= 64 KiB | INTEGRATION D.9 |
+| DD-68 | (AM-20) no `snapshot:v1` key; `backup(key)` is tested; VOID (DR-31): there is no named-view cap and no `NAMED_VIEWS_MAX`; a failed write is a visible notice and the running state stays usable; a named view stores a portable `code` only at ladder level 1 or worse and only when the code is <= 64 KiB | INTEGRATION D.9 |
 | DD-69 | (AM-21) axis policy travels implicitly in addresses (absent = Auto, `lk=1` + `a.<id>` records = Frozen) and explicitly in portable codes; `applyVisual` applies `ap` and posts `appearanceMismatch` | B.15, C.13 |
 | DD-70 | (AM-05) Short exposure follows DR-10 literally: strict < 0.10 on EITHER fraction, for any measure with an exposure denominator (`usesOf` only decides applicability) | C.1.3 |
 | DD-71 | (AM-04) `curve` is reachable: reducer action `{type:"curve"}`, `offers().curve`, and three Transform items (Value (log), Value (linear), Relative rank) in the Scale section | C.9, INTEGRATION D.7 |

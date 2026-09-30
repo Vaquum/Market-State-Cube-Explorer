@@ -3537,7 +3537,7 @@
           coordinate.t,
         ],
         [
-          "Colour step",
+          "Color step",
           coordinate.idx < 0
             ? E.text.key.zero
             : coordinate.role === "midpoint"

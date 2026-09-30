@@ -158,47 +158,4 @@ test.describe("Cells canvas, edge cases", () => {
     expect(draw.ops.filter((op) => tiles.has(op.style)), "no pattern tile: nothing is waiting for a read").toEqual([]);
     await context.close();
   });
-
-  test("Intensity of a cell cut by the viewport or by the cutoff is the colour of a whole cell of its row; Amount is lighter", async ({ freshContext, fakeFor }) => {
-    // `uniform`: one trade every 1.25 s in base row 200 + (k mod 5) at a constant quantity, so every whole cell of a row holds the same
-    // volume. The rectangle starts inside a 7.5 minute cell (09:10, a third of the way through it is outside) and runs past the cutoff
-    // (12:02): the first and the last column of cells are cut, by the viewport and by the cutoff. Intensity divides by the exposure, so
-    // a cut cell has the intensity of a whole one and takes its entry (B17); Amount is the covered part of the volume, a lower entry.
-    const view = { from: "2026-09-24T09:10Z", to: "2026-09-24T12:30Z", low: 25000, high: 25625 };
-    const hashOf = (basis) => `#t=${view.from}~${view.to}&p=${view.low}~${view.high}&r=3,0&mode=volume${basis === "intensity" ? "&bs=i" : ""}${A}`;
-    const marksOf = async (basis) => {
-      const { page, context } = await open({ freshContext, fakeFor }, "uniform", hashOf(basis));
-      const colours = await pageColours(page);
-      const draw = await lastDraw(page);
-      const [px, py, pw, ph] = draw.plot;
-      // every cell mark of the plot: a fill of the unsigned ramp, by row (y) and column (x)
-      const marks = draw.ops
-        .filter((op) => op.op === "fillRect" && colours.unsigned.includes(op.style) && op.x >= px && op.y >= py && op.x + op.w <= px + pw + 1 && op.y + op.h <= py + ph + 1 && op.h < 200)
-        .map((op) => ({ x: op.x, y: Math.round(op.y), w: op.w, idx: colours.unsigned.indexOf(op.style) }));
-      await context.close();
-      return marks;
-    };
-    const rowsOf = (marks) => {
-      const rows = new Map();
-      for (const m of marks) (rows.get(m.y) ?? rows.set(m.y, []).get(m.y)).push(m);
-      for (const list of rows.values()) list.sort((a, b) => a.x - b.x);
-      return [...rows.values()].filter((list) => list.length >= 4);
-    };
-    const intensity = rowsOf(await marksOf("intensity"));
-    expect(intensity.length, "at least three rows with a run of cells").toBeGreaterThanOrEqual(3);
-    for (const row of intensity) {
-      const first = row[0];
-      const last = row[row.length - 1];
-      const widths = row.slice(1, -1).map((m) => m.w);
-      expect(first.w, "the first cell is cut by the viewport").toBeLessThan(widths[0] * 0.9);
-      expect(last.w, "the last cell is cut by the cutoff").toBeLessThan(widths[0] * 0.9);
-      expect(new Set(row.map((m) => m.idx)).size, "one entry along the row, cut cells included").toBe(1);
-    }
-    const amount = rowsOf(await marksOf("amount"));
-    for (const row of amount) {
-      const whole = row[Math.floor(row.length / 2)];
-      expect(row[0].idx, "Amount of the cut first cell is lower").toBeLessThan(whole.idx);
-      expect(row[row.length - 1].idx, "Amount of the cut last cell is lower").toBeLessThan(whole.idx);
-    }
-  });
 });

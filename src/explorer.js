@@ -71,17 +71,38 @@
     profileWidth = (width) => (width > 470 ? 79 : 52);
   // The chart's panes: prices on top, activity under them sharing the time
   // axis, about 15% of the height, and the time labels along the bottom.
-  function layout(width, height) {
+  // The event strip (PRD-0002 S2): one lane of EVENT_LANE px for each event kind that is switched on, between the
+  // price pane and the activity pane. Where the chart is too short to keep the price pane at least EVENT_MIN_PLOT
+  // px tall beside its lanes, the strip is one line that says how many events there are instead.
+  // Reference strokes (PRD-0002 S2): 1.5 px ordinarily, 2.5 at the most, and never more than 1 px of casing a side.
+  const REFERENCE_STROKE = 1.5,
+    REFERENCE_STROKE_MAX = 2.5;
+  const EVENT_LANE = 14,
+    EVENT_GAP = 3,
+    EVENT_MIN_PLOT = 150;
+  // The Rows strip (PRD-0002 S2): 12 px, fixed, immediately right of the heatmap, while Rows is on; the profile
+  // tracks start after it.
+  const ROWS_STRIP = 12;
+  function layout(width, height, lanes = 0, strip = 0) {
     const profile = profileWidth(width),
       free = Math.max(1, height - PLOT_TOP - AXIS),
       ah = clamp(Math.round(free * 0.15), 36, 120),
-      h = Math.max(1, free - ah - PANE_GAP);
+      collapsed = lanes > 0 && free - ah - PANE_GAP - lanes * EVENT_LANE - EVENT_GAP < EVENT_MIN_PLOT,
+      eh = lanes === 0 ? 0 : collapsed ? EVENT_LANE : lanes * EVENT_LANE,
+      eventStrip = lanes === 0 ? 0 : eh + EVENT_GAP,
+      h = Math.max(1, free - ah - PANE_GAP - eventStrip);
+    const w = Math.max(1, width - PLOT_LEFT - profile - GUTTER - strip);
     return {
       x: PLOT_LEFT,
       y: PLOT_TOP,
-      w: Math.max(1, width - PLOT_LEFT - profile - GUTTER),
+      w,
+      sx: PLOT_LEFT + w,
+      sw: strip,
       h,
-      ay: PLOT_TOP + h + PANE_GAP,
+      ey: PLOT_TOP + h + EVENT_GAP,
+      eh,
+      ecollapsed: collapsed,
+      ay: PLOT_TOP + h + eventStrip + PANE_GAP,
       ah,
       axis: height - AXIS / 2,
       profile,
@@ -771,7 +792,7 @@
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    G = { width, height, ...layout(width, height) };
+    G = { width, height, ...layout(width, height, eventKinds().length, S.rows !== "off" ? ROWS_STRIP : 0) };
     G.X = d3
       .scaleLinear()
       .domain([S.tA, S.tB])
@@ -2206,6 +2227,7 @@
       bar.style.top = top + "px";
       labelsTaken.push([left, top - 4, left + w, top + bar.offsetHeight]);
     }
+    temporaryRegions = [];
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, G.width, G.height);
     ctx.fillStyle = colors.surface;
@@ -2217,11 +2239,10 @@
     paintCoverage(b);
     grid();
     if (under) paintBands(under, sc.rows);
+    // The whole block's cells are drawn as they are, selection or not: a selection is a boundary, never a fade.
     if (S.selection) {
-      ctx.globalAlpha = 0.25;
       if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u, sc.cellsFull);
       else for (const z of full.cells) fillCell(z, full, u, sc.cellsFull);
-      ctx.globalAlpha = 1;
     }
     ctx.save();
     const x1 = G.X(b[0]),
@@ -2235,9 +2256,10 @@
     else for (const z of shown.cells) fillCell(z, full, u, sc.cells);
     ctx.restore();
     markings(shown, cut);
-    paintUnfinished(shown);
+    occlusionPlan(cut);
     drawClock(cut);
     drawLines(cut);
+    occlusionNotice();
     if (S.tab === "evidence") {
       const ev = settledEvidence();
       // Busy until a result for this view is up: the panel may still show the last one.
@@ -2250,19 +2272,17 @@
       const ev = settledEvidence();
       if (ev) evidenceCases(ev);
     }
+    // The layers, bottom to top: the surface and the keys of what was not observed, the Rows projection, the cells'
+    // opaque fills or movement strokes, the bounded references and event boundaries, the state annotations (open,
+    // partial, provisional), then the selection, and last the lens and the tooltips.
+    paintUnfinished(shown);
     if (S.selection) {
-      ctx.strokeStyle = colors.accent;
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(
-        G.X(b[0]),
-        G.Y(b[3]),
-        G.X(b[1]) - G.X(b[0]),
-        G.Y(b[2]) - G.Y(b[3]),
-      );
+      selectionFrame(G.X(b[0]), G.Y(b[3]), G.X(b[1]), G.Y(b[2]));
       // While a selection is dragged the rectangle under the pointer shows
       // too, dashed; the solid outline is the cells it takes in.
       if (S.select && drag?.moved && !drag.lens) {
         const [ta, tb, pa, pb] = S.selection;
+        ctx.strokeStyle = colors.ink;
         ctx.setLineDash([4, 3]);
         ctx.lineWidth = 1;
         ctx.strokeRect(G.X(ta), G.Y(pb), G.X(tb) - G.X(ta), G.Y(pa) - G.Y(pb));
@@ -2348,8 +2368,10 @@
     ctx.restore();
     const ro = readouts(cut);
     axes(ro);
+    paintRowsStrip(under, sc.rows, sc);
     profile(query, b, meas.state, under, sc);
     activity(shown, cut, mv, full, sc);
+    paintEvents(cut);
     crosshair(ro);
     querySummary(meas, mv);
     // The legends: the chips when the DOM package has registered them; none after a fault, which turns the
@@ -2373,6 +2395,11 @@
       marks.vaLow === null || meas.state === "pending" || meas.state === "failed"
         ? "—"
         : price(marks.vaLow) + "–" + price(marks.vaHigh);
+    const regions = temporaryRegions.map((r) => `${r.kind}:${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.w)},${Math.round(r.h)}`).join(";");
+    if ((canvas.dataset.temporary ?? "") !== regions) {
+      if (regions) canvas.dataset.temporary = regions;
+      else delete canvas.dataset.temporary;
+    }
     last = { full, query, shown, meas, b, cut, mv, under, sc };
     if (transition) {
       if (u >= 1) transition = null;
@@ -4166,8 +4193,8 @@
         : "";
   }
   function onProfile(p) {
-    const px = G.x + G.w + 9;
-    return p.x >= px && p.x <= px + G.profile - 8 && p.y >= G.y && p.y <= G.y + G.h;
+    const px = G.x + G.w + G.sw + 9;
+    return p.x >= G.x + G.w && p.x <= px + G.profile - 8 && p.y >= G.y && p.y <= G.y + G.h;
   }
   // ---- The readout consumers (PRD-0002 S1) ----
   // The tooltip, the Cells table and the inspector say what a cell measures by reading the ONE readout of
@@ -4529,6 +4556,9 @@
           ],
           note,
         );
+    } else if (last && inStrip(p) && eventAt(p)) {
+      eventTip(tip, eventAt(p));
+      syncRowHover(null);
     } else if (last && paneShown && inActivity(p)) {
       paneTip(tip, p, money, count, share, exact, note);
       syncRowHover(null);
@@ -7319,6 +7349,39 @@
     ctx.stroke();
     ctx.restore();
   }
+  // A two-tone stroke: the same path drawn as a wide casing in the surface colour and then as a narrow core in ink,
+  // so at least one of the two contrasts with whatever fill, empty cell or state mark lies under it (the stroke
+  // table of the composition: selection 1.5 core in a 3.5 casing, hover and table link 1 in 3, lens frame 1.5 in
+  // 3.5). `draw` adds the path to the current context path; nothing under the stroke is tinted or faded.
+  function twoTone(draw, core = 1.5, casing = 3.5) {
+    ctx.save();
+    ctx.lineJoin = "miter";
+    ctx.beginPath();
+    draw();
+    ctx.strokeStyle = colors.surface;
+    ctx.lineWidth = casing;
+    ctx.stroke();
+    ctx.strokeStyle = colors.ink;
+    ctx.lineWidth = core;
+    ctx.stroke();
+    ctx.restore();
+  }
+  // The selection's frame: its support edge, and a short tick outward of each corner along both edges. The ticks
+  // say where the rectangle ends; they are not handles and nothing drags them.
+  function selectionFrame(x1, y1, x2, y2) {
+    const tick = 6;
+    twoTone(() => {
+      ctx.rect(x1, y1, x2 - x1, y2 - y1);
+    });
+    twoTone(() => {
+      for (const [x, dx, y, dy] of [[x1, -1, y1, -1], [x2, 1, y1, -1], [x1, -1, y2, 1], [x2, 1, y2, 1]]) {
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + dx * tick, y);
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y + dy * tick);
+      }
+    });
+  }
   function profile(query, b, state, under, sc) {
     if (!G.profile) return;
     // The length of every bar: the registered axis of the current profile, over the rows it shows. It is the
@@ -7331,7 +7394,7 @@
         summary: () => rowsScan(query.rows, 0, Infinity, rowsV),
       }),
       at = { t: 0, clip: 0 },
-      px = G.x + G.w + 9,
+      px = G.x + G.w + G.sw + 9,
       pw = G.profile - 29,
       ps = stepP(),
       va = markState.va,
@@ -7477,6 +7540,63 @@
   // whole chart behind the cells, so they show where the view has no cells: the
   // heavy levels it never visited. Each is painted through the Rows frame (see
   // bandPaint), at the fixed Rows alpha.
+  // The Rows strip (PRD-0002 S2): the row values at full strength in a fixed 12 px column immediately right of the
+  // heatmap, one block per row of the EFFECTIVE row size (a coarse recorded row is one tall block, never eight
+  // pretend 125 USDT ones). It is the authoritative Rows display: cells, the lens and the references never cover
+  // it, and it takes the registered Rows mapping, so its colours are the legend's.
+  function paintRowsStrip(u, frame, sc) {
+    if (!G.sw) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(G.sx, G.y, G.sw, G.h);
+    ctx.clip();
+    ctx.fillStyle = colors.surface;
+    ctx.fillRect(G.sx, G.y, G.sw, G.h);
+    const relvol = u?.kind === "relvol" ? u.relvol : null;
+    if (u?.bands && frame && !(u.kind === "relvol" && relvol?.state !== "ok")) {
+      const ps = 2 ** u.bands.m,
+        block = (x) => {
+          frame.encode(x, ENC);
+          const ya = G.Y((x.r + 1) * ps),
+            yb = G.Y(x.r * ps),
+            h = Math.max(0.5, yb - ya);
+          if (ENC.role === rowsRole.PATTERN) {
+            if (ENC.tag === rowsTag["negative-infinite"]) {
+              ctx.fillStyle = colors.state;
+              ctx.fillRect(G.sx, ya, G.sw, h);
+            } else if (ENC.tag === rowsTag["no-reference"]) {
+              ctx.strokeStyle = colors.state;
+              ctx.lineWidth = 1;
+              ctx.setLineDash([1, 2]);
+              ctx.beginPath();
+              ctx.moveTo(G.sx + G.sw / 2, ya);
+              ctx.lineTo(G.sx + G.sw / 2, ya + h);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
+            return;
+          }
+          if (ENC.css === null || ENC.role === rowsRole.ZERO) return;
+          // The bands' raw Volume/Time ramp is for the 16% blend; the strip is opaque, so it takes the unsigned ramp at
+          // the same entry.
+          ctx.fillStyle = ENC.role === rowsRole.ROWS && sc?.lut?.unsigned ? sc.lut.unsigned.css[ENC.idx] : ENC.css;
+          ctx.fillRect(G.sx, ya, G.sw, h);
+        };
+      if (relvol) {
+        const [lo, hi] = rowsBinRange(relvol, ps);
+        for (let j = lo; j <= hi; j++) {
+          rowsBin.r = j;
+          block(rowsBin);
+        }
+      } else {
+        const rows = u.bands.rows;
+        let [i, hi] = rowsInView(rows, ps);
+        for (; i < rows.length && rows[i].r <= hi; i++) block(rows[i]);
+      }
+    }
+    ctx.restore();
+    line(G.sx + 0.5, G.y, G.sx + 0.5, G.y + G.h, colors.line, 1);
+  }
   function paintBands(u, frame) {
     if (!u.bands || !frame) return;
     const relvol = u.kind === "relvol" ? u.relvol : null;
@@ -7910,7 +8030,9 @@
       const t = colors.tiers[tier] || colors.tiers.long,
         c = d3.lch(colors.family[family]);
       c.c *= t.chroma;
-      style = { colour: c.formatHex(), width: t.width };
+      // An ordinary reference stroke is 1.5 px whatever its timeframe (the timeframe shows in its tag and the
+      // tier's saturation); a weighted or focused line may reach 2.5, whose 1 px casing each side totals 4.5.
+      style = { colour: c.formatHex(), width: REFERENCE_STROKE };
       styleMemo.set(key, style);
       while (styleMemo.size > 64) styleMemo.delete(styleMemo.keys().next().value);
     }
@@ -9350,11 +9472,6 @@
           on,
         });
       }
-      if (spec.fill) {
-        const [a, b] = curves.slice(-2),
-          first = Math.max(a.r.points[0]?.[2] ?? Infinity, b.r.points[0]?.[2] ?? Infinity);
-        if (Number.isFinite(first)) fills.push({ key, frame, a: a.values, b: b.values, i0: first, i1: frame.closes.length - 1, tier, alpha: 0.16 });
-      }
       if (spec.bands) {
         const bb = indicator(frame, "bb", 20);
         for (const [part, values, weight] of [
@@ -9390,38 +9507,6 @@
       }
     }
     return { curves, fills, crosses };
-  }
-  // A fill between two of a frame's series from bar i0 to i1, over the view,
-  // one point to a pixel column.
-  function drawFill(f, right) {
-    const ends = f.frame.ends,
-      i0 = Math.max(f.i0, endAt(ends, S.tA) - 1),
-      i1 = Math.min(f.i1, endAt(ends, S.tB) + 1);
-    if (i1 <= i0) return;
-    const xs = [],
-      top = [],
-      bottom = [];
-    let lastX = -Infinity;
-    for (let i = i0; i <= i1; i++) {
-      if (!Number.isFinite(f.a[i]) || !Number.isFinite(f.b[i])) continue;
-      const x = G.X(ends[i]);
-      if (x - lastX < 1 && xs.length && i < i1) continue;
-      xs.push(x);
-      top.push(G.Y(f.a[i] / PR));
-      bottom.push(G.Y(f.b[i] / PR));
-      lastX = x;
-      if (x > right + 2) break;
-    }
-    if (xs.length < 2) return;
-    ctx.beginPath();
-    ctx.moveTo(xs[0], top[0]);
-    for (let i = 1; i < xs.length; i++) ctx.lineTo(xs[i], top[i]);
-    for (let i = xs.length - 1; i >= 0; i--) ctx.lineTo(xs[i], bottom[i]);
-    ctx.closePath();
-    ctx.fillStyle = lineStyle("average", f.tier).colour;
-    ctx.globalAlpha = f.alpha;
-    ctx.fill();
-    ctx.globalAlpha = 1;
   }
   // A frame's bar nearest time t: the one whose end, where its value is
   // drawn, is closest, the later one on a tie; -1 without bars.
@@ -10894,9 +10979,10 @@
       };
     items.sort((a, b) => b.to - b.from - (a.to - a.from));
     for (const l of items) {
+      if (occlusion.off.has(l.id)) continue;
       const style = lineStyle(l.family, l.tier),
         hot = hover?.line === l.id,
-        width = style.width * (l.weight || 1) + (hot ? 1 : 0),
+        width = Math.min(style.width * (l.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX),
         y = Math.round(G.Y(l.at)) + 0.5,
         xa = clamp(G.X(l.from), G.x - 2, right),
         xb = clamp(G.X(l.to), G.x - 2, right),
@@ -10908,7 +10994,7 @@
       lineHits.push({ key: l.key, id: l.id, y, xa: xl, xb: xe, item: l, colour: style.colour });
       if (y < G.y - 4 || y > G.y + G.h + 4 || xe <= G.x) continue;
       // The halo, then the span solid and the rest of the way dashed.
-      haloAt(width + 3, xl, y, xe);
+      haloAt(width + 2, xl, y, xe);
       if (xa > xl) stroke(style.colour, Math.max(1, width * 0.8), "1,3", 0.9, xl, y, xa);
       if (xb > xa) stroke(style.colour, width, "", 1, xa, y, xb);
       if (l.on && right > xb) stroke(style.colour, Math.max(1, width * 0.7), "5,4", 0.85, xb, y, right);
@@ -10919,18 +11005,18 @@
     ctx.beginPath();
     ctx.rect(G.x, G.y, G.w, G.h);
     ctx.clip();
-    // Under the lines, the support band's fill and the squeezes'; then the
-    // VWAPs and the averages: haloed, one point to a pixel column, and on at
-    // their latest value to the right edge.
-    for (const f of fills) drawFill(f, right);
+    // The VWAPs and the averages: haloed, one point to a pixel column, and on at
+    // their latest value to the right edge. The support band and the squeezes draw no area over the cells: the
+    // band is its two boundary curves, and a squeeze is an interval of the event strip.
     for (const c of curves) {
+      if (occlusion.off.has(c.id)) continue;
       const style = lineStyle(c.family || "vwap", c.tier),
         hot = hover?.line === c.id,
-        { xs, ys, vals } = curveVertices(c.r.points, right);
+        { xs, ys, vals } = occlusion.vertices.get(c.id) ?? curveVertices(c.r.points, right);
       if (!xs.length) continue;
       c.colour = style.colour;
       c.at = vals[vals.length - 1] / PR;
-      const width = style.width * (c.weight || 1) + (hot ? 1 : 0),
+      const width = Math.min(style.width * (c.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX),
         path = () => {
           ctx.beginPath();
           ctx.moveTo(xs[0], ys[0]);
@@ -10938,7 +11024,7 @@
         };
       ctx.strokeStyle = colors.surface;
       ctx.globalAlpha = 0.85;
-      ctx.lineWidth = width + 3;
+      ctx.lineWidth = width + 2;
       path();
       ctx.stroke();
       ctx.globalAlpha = 1;
@@ -11092,6 +11178,131 @@
     deribit: { dash: [2, 2], width: 1 },
   };
   let clockHits = [];
+  // The calendar events of a kind that are far enough apart to draw at this zoom.
+  function clockShown(kind) {
+    return spaced(CLOCK[kind].gap)
+      ? clockEvents(kind, S.tA, S.tB)
+      : kind === "deribit"
+        ? clockEvents(kind, S.tA, S.tB).filter((e) => spaced(e.weight === 3 ? 91 * DAYS : 28 * DAYS) && e.weight > 1)
+        : [];
+  }
+  // ---- The occlusion budget (PRD-0002 S2) ----
+  // Persistent reference strokes, their casings and their tag plates may cover at most OCCLUSION_BUDGET of the
+  // price pane, each cell counted once. The plan runs before anything is drawn: marks are taken in priority
+  // order into a 2 px occupancy grid (rebuilt when the geometry changes, bounded by the pane's size, no pixel
+  // scan), and a mark that would pass the budget is suppressed and counted, unless it is the focused one. The
+  // Lines menu still lists every line; the count of what shows is on the canvas (data-occlusion) and on the chart.
+  const OCCLUSION_BUDGET = 0.2,
+    OCC_CELL = 2,
+    OCC_PRIORITY = { profile: 1, session: 2, structure: 3, average: 4, vwap: 5 };
+  let occlusion = { off: new Set(), vertices: new Map(), shown: 0, eligible: 0, focusOver: false };
+  // The temporary region replacements of this draw (the lens; a tooltip or popover is DOM and outside the canvas).
+  // They are exempt from the occlusion budget, named on the canvas (data-temporary) so a pixel test can mask
+  // exactly their rectangles, and cover no persistent mark that the budget counted.
+  let temporaryRegions = [];
+  function noteTemporary(kind, x, y, w, h) {
+    temporaryRegions.push({ kind, x, y, w, h });
+  }
+  function occlusionPlan(cut) {
+    const off = new Set(),
+      vertices = new Map();
+    occlusion = { off, vertices, shown: 0, eligible: 0, focusOver: false };
+    if (!G.w || !G.h) return;
+    const cols = Math.ceil(G.w / OCC_CELL),
+      rows = Math.ceil(G.h / OCC_CELL),
+      grid = new Uint8Array(cols * rows),
+      limit = Math.floor(cols * rows * OCCLUSION_BUDGET);
+    let used = 0;
+    // The cells a rectangle covers, inside the pane, that are not yet taken; `take` marks them.
+    const cells = (x0, y0, x1, y1, take) => {
+      let n = 0;
+      const c0 = Math.max(0, Math.floor((x0 - G.x) / OCC_CELL)),
+        c1 = Math.min(cols - 1, Math.floor((x1 - G.x) / OCC_CELL)),
+        r0 = Math.max(0, Math.floor((y0 - G.y) / OCC_CELL)),
+        r1 = Math.min(rows - 1, Math.floor((y1 - G.y) / OCC_CELL));
+      for (let r = r0; r <= r1; r++)
+        for (let c = c0; c <= c1; c++) {
+          const k = r * cols + c;
+          if (!grid[k]) {
+            n++;
+            if (take) grid[k] = 1;
+          }
+        }
+      return n;
+    };
+    const right = G.x + G.w,
+      candidates = [];
+    const items = S.lines.length ? lineItems(cut) : [];
+    for (const l of items) {
+      if (l.kind === "swing" || l.eq) continue;
+      const style = lineStyle(l.family, l.tier),
+        hot = hover?.line === l.id,
+        width = Math.min(style.width * (l.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX) + 2,
+        y = Math.round(G.Y(l.at)) + 0.5,
+        xe = l.on ? right : clamp(G.X(l.to), G.x - 2, right),
+        xl = l.lead === undefined ? clamp(G.X(l.from), G.x - 2, right) : clamp(G.X(l.lead), G.x - 2, right);
+      if (y < G.y - 4 || y > G.y + G.h + 4 || xe <= G.x) continue;
+      // The tag plate at the line's end: about 70 by 16 px
+      candidates.push({ id: l.id, hot, rank: OCC_PRIORITY[l.family] ?? 6, rects: [[xl, y - width / 2, xe, y + width / 2], [right - 70, y - 8, right, y + 8]] });
+    }
+    for (const c of items.curves || []) {
+      const { xs, ys, vals } = curveVertices(c.r.points, right);
+      vertices.set(c.id, { xs, ys, vals });
+      if (!xs.length) continue;
+      const style = lineStyle(c.family || "vwap", c.tier),
+        hot = hover?.line === c.id,
+        half = (Math.min(style.width * (c.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX) + 2) / 2,
+        rects = [];
+      for (let i = 1; i < xs.length; i++) {
+        const steps = Math.max(1, Math.ceil(Math.max(Math.abs(xs[i] - xs[i - 1]), Math.abs(ys[i] - ys[i - 1])) / OCC_CELL));
+        for (let k = 0; k <= steps; k++) {
+          const x = xs[i - 1] + ((xs[i] - xs[i - 1]) * k) / steps,
+            y = ys[i - 1] + ((ys[i] - ys[i - 1]) * k) / steps;
+          rects.push([x - half, y - half, x + half, y + half]);
+        }
+      }
+      rects.push([right - 70, ys[ys.length - 1] - 8, right, ys[ys.length - 1] + 8]);
+      candidates.push({ id: c.id, hot, rank: OCC_PRIORITY[c.family || "vwap"] ?? 5, rects });
+    }
+    for (const kind of S.lines.filter((k) => CLOCK[k])) {
+      const look = CLOCK_LOOK[kind],
+        rects = clockShown(kind).map((e) => {
+          const x = G.X(e.t);
+          return [x - look.width, G.y, x + look.width, G.y + G.h];
+        });
+      if (rects.length) candidates.push({ id: "clock|" + kind, hot: false, rank: 7, rects });
+    }
+    candidates.sort((a, b) => Number(b.hot) - Number(a.hot) || a.rank - b.rank);
+    for (const m of candidates) {
+      let cost = 0;
+      for (const r of m.rects) cost += cells(r[0], r[1], r[2], r[3], false);
+      occlusion.eligible++;
+      if (!m.hot && used + cost > limit) {
+        off.add(m.id);
+        continue;
+      }
+      if (m.hot && used + cost > limit) occlusion.focusOver = true;
+      for (const r of m.rects) cells(r[0], r[1], r[2], r[3], true);
+      used += cost;
+      occlusion.shown++;
+    }
+  }
+  // What the budget left out, said where it happened: the canvas carries the counts (for a reader of the page and a
+  // test) and a label at the pane's top right names them. The focused mark alone over the budget is said too,
+  // never hidden by a wider casing.
+  function occlusionNotice() {
+    const held = occlusion.eligible - occlusion.shown,
+      value = held > 0 || occlusion.focusOver ? `${occlusion.shown}/${occlusion.eligible}${occlusion.focusOver ? "!" : ""}` : "";
+    if (canvas.dataset.occlusion !== value) {
+      if (value) canvas.dataset.occlusion = value;
+      else delete canvas.dataset.occlusion;
+    }
+    if (!value || !G.w) return;
+    // TEXT(S1): the occlusion budget's count
+    const words = held > 0 ? `${occlusion.shown} of ${occlusion.eligible} reference marks shown · 20% budget` : "The focused mark alone passes the 20% budget";
+    ctx.font = `${TYPE.s}px ${FONT}`;
+    chartLabel(words, G.x + G.w - ctx.measureText(words).width - 14, G.y + G.h - 10);
+  }
   function drawClock(cut) {
     if (clockHits.length) clockHits = [];
     if (!S.lines.length) return;
@@ -11111,27 +11322,29 @@
             y0 = G.Y(g.hi / PR),
             y1 = G.Y(g.lo / PR);
           if (x1 < G.x || x0 > G.x + G.w || y1 < G.y || y0 > G.y + G.h) continue;
-          ctx.fillStyle = colour;
-          ctx.globalAlpha = 0.16;
-          ctx.fillRect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0));
+          // The gap is the rectangle between its reopen and spot prices, from its reopen to where it was traded
+          // back through (or the latest data): an outline and a name, never a tint over the cells under it. Its
+          // interval is in the event strip.
+          const wide = Math.max(1, x1 - x0),
+            tall = Math.max(1, y1 - y0);
+          ctx.strokeStyle = colour;
+          ctx.globalAlpha = 0.7;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x0 + 0.5, y0 + 0.5, wide - 1, tall - 1);
           ctx.globalAlpha = 1;
-          markLine(x0, y0, x1, y0, colour, 1, 0.7);
-          markLine(x0, y1, x1, y1, colour, 1, 0.7);
+          if (wide > 62 && tall > 16) chartLabel(g.filled === null || g.filled === undefined ? "CME gap · open" : "CME gap", x0 + 4, y0 + 12);
           clockHits.push({ gap: g, box: [x0, Math.min(y0, y1 - 3), x1, Math.max(y1, y0 + 3)] });
         }
     }
     for (const kind of kinds) {
+      if (occlusion.off.has("clock|" + kind)) continue;
       const look = CLOCK_LOOK[kind],
-        events = spaced(CLOCK[kind].gap)
-          ? clockEvents(kind, S.tA, S.tB)
-          : kind === "deribit"
-            ? clockEvents(kind, S.tA, S.tB).filter((e) => spaced(e.weight === 3 ? 91 * DAYS : 28 * DAYS) && e.weight > 1)
-            : [];
+        events = clockShown(kind);
       for (const weight of [1, 2, 3]) {
         const drawn = events.filter((e) => (e.weight || 1) === weight);
         if (!drawn.length) continue;
         ctx.strokeStyle = colour;
-        ctx.lineWidth = look.width * (weight === 3 ? 2 : weight === 2 ? 1.5 : 1);
+        ctx.lineWidth = Math.min(look.width * (weight === 3 ? 2 : weight === 2 ? 1.5 : 1), REFERENCE_STROKE_MAX);
         ctx.globalAlpha = 0.6;
         ctx.setLineDash(look.dash);
         ctx.beginPath();
@@ -11183,6 +11396,113 @@
       `${d3.utcFormat("%a")(date(e.t))} ${when(e.t)} UTC`,
       [],
       h.events.map(clockNote).filter(Boolean),
+    );
+  }
+  // ---- The event strip ----
+  // Which event kinds have a lane: the squeeze of each Bollinger timeframe that is on, and the CME spot gap.
+  function eventKinds() {
+    const kinds = [];
+    if (S.lines.includes("bb4h")) kinds.push("squeeze4h");
+    if (S.lines.includes("bb1d")) kinds.push("squeeze1d");
+    if (S.lines.includes("cme") && PACK.live) kinds.push("cmegap");
+    return kinds;
+  }
+  const EVENT_NAMES = {
+    squeeze4h: { name: "4h squeeze", long: "Bollinger squeeze on 4-hour bars" },
+    squeeze1d: { name: "1D squeeze", long: "Bollinger squeeze on daily bars" },
+    cmegap: { name: "CME gap", long: "CME spot gap" },
+  };
+  let eventHits = [];
+  // The intervals of each lane, merged where two of one kind overlap (the marks draw the union; the readout keeps
+  // each event): {id, events: [{t0, t1, open, what}], spans: [{t0, t1, events}]}.
+  function eventLanes(cut) {
+    const kinds = eventKinds();
+    if (!kinds.length) return [];
+    const lanes = kinds.map((id) => ({ id, events: [], spans: [], pending: false }));
+    const lane = (id) => lanes.find((l) => l.id === id);
+    const fills = S.lines.length ? lineItems(cut).fills || [] : [];
+    for (const f of fills) {
+      const l = f.squeeze && lane(f.key === "bb4h" ? "squeeze4h" : f.key === "bb1d" ? "squeeze1d" : "");
+      if (!l) continue;
+      const ends = f.frame.ends,
+        [i0, i1] = f.squeeze;
+      l.events.push({ t0: ends[Math.max(0, i0 - 1)], t1: ends[i1], open: false, what: "Squeeze" });
+    }
+    const gapLane = lane("cmegap");
+    if (gapLane) {
+      const s = barSeries(6);
+      if (s.state === "ready")
+        for (const g of cmeGaps(s)) gapLane.events.push({ t0: g.open, t1: g.filled ?? Math.min(s.end, cut), open: g.filled === null || g.filled === undefined, what: "CME gap", gap: g });
+      else gapLane.pending = true;
+    }
+    for (const l of lanes) {
+      l.events.sort((a, b) => a.t0 - b.t0);
+      for (const e of l.events) {
+        const last = l.spans[l.spans.length - 1];
+        if (last && e.t0 <= last.t1) {
+          last.t1 = Math.max(last.t1, e.t1);
+          last.events.push(e);
+        } else l.spans.push({ t0: e.t0, t1: e.t1, events: [e] });
+      }
+    }
+    return lanes;
+  }
+  // The strip under the price pane: a lane per kind, its marks opaque and of one fixed role (the state ink), drawn as
+  // the union of the lane's events, the lane's name beside it in the price labels' column.
+  function paintEvents(cut) {
+    eventHits = [];
+    if (!G.eh) return;
+    const lanes = eventLanes(cut);
+    if (!lanes.length) return;
+    ctx.save();
+    if (G.ecollapsed) {
+      // TEXT(S1): the disclosure of a strip with no room for its lanes: each kind and how many events it holds
+      const words = lanes.map((l) => `${EVENT_NAMES[l.id].name} ${l.events.length}`).join(" · ");
+      text(`${words} · lanes need a taller chart`, G.x + 4, G.ey + EVENT_LANE / 2, colors.muted, "left");
+      eventHits.push({ lane: "all", box: [G.x, G.ey, G.x + G.w, G.ey + G.eh], lanes });
+      ctx.restore();
+      return;
+    }
+    lanes.forEach((l, i) => {
+      const y = G.ey + i * EVENT_LANE,
+        yc = y + EVENT_LANE / 2;
+      line(G.x, y + EVENT_LANE - 0.5, G.x + G.w, y + EVENT_LANE - 0.5, colors.line, 1);
+      text(EVENT_NAMES[l.id].name, G.x - 6, yc, colors.muted, "right");
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(G.x, y, G.w, EVENT_LANE);
+      ctx.clip();
+      ctx.fillStyle = colors.state;
+      for (const span of l.spans) {
+        const x0 = G.X(span.t0),
+          x1 = G.X(span.t1);
+        if (x1 < G.x || x0 > G.x + G.w) continue;
+        ctx.fillRect(Math.max(G.x, x0), y + 3, Math.max(2, Math.min(G.x + G.w, x1) - Math.max(G.x, x0)), EVENT_LANE - 6);
+        eventHits.push({ lane: l.id, box: [x0, y, Math.max(x1, x0 + 2), y + EVENT_LANE], span });
+      }
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+  function inStrip(p) {
+    return G.eh > 0 && p.x >= G.x - 60 && p.x <= G.x + G.w && p.y >= G.ey && p.y <= G.ey + G.eh;
+  }
+  function eventAt(p) {
+    return eventHits.find((h) => p.x >= h.box[0] && p.x <= h.box[2] && p.y >= h.box[1] && p.y <= h.box[3]) || null;
+  }
+  function eventTip(tip, h) {
+    if (h.lane === "all") {
+      tipRows(tip, "Events", "The chart is too short to show its lanes", h.lanes.map((l) => [EVENT_NAMES[l.id].name, String(l.events.length)]), "");
+      return;
+    }
+    const span = h.span,
+      fmt = (e) => `${when(e.t0)} → ${e.open ? "open" : when(e.t1)} UTC`;
+    tipRows(
+      tip,
+      EVENT_NAMES[h.lane].long,
+      span.events.length > 1 ? `${span.events.length} events merged in this mark` : fmt(span.events[0]),
+      span.events.length > 1 ? span.events.map((e) => [e.what, fmt(e)]) : [],
+      "An interval of the source bars, known once the bar that ends it has closed",
     );
   }
   function clockNote(e) {
@@ -13050,21 +13370,16 @@
           [innerTop, innerBottom] = rows(q, 1, 3),
           median = G.Y((e.poc + Math.round(q[2]) + 0.5) * ps),
           chosen = h === S.horizon;
-        if (key === "all") {
-          ctx.strokeStyle = color;
-          ctx.lineWidth = chosen ? 1.5 : 1;
-          ctx.globalAlpha = chosen ? 0.9 : 0.55;
-          ctx.strokeRect(left, outerTop + 0.5, width, outerBottom - outerTop - 1);
-          ctx.fillStyle = color;
-          ctx.globalAlpha = 0.14;
-          ctx.fillRect(left, innerTop, width, innerBottom - innerTop);
-        } else {
-          ctx.fillStyle = color;
-          ctx.globalAlpha = 0.22;
-          ctx.fillRect(left, outerTop, width, outerBottom - outerTop);
-          ctx.globalAlpha = 0.45;
-          ctx.fillRect(left, innerTop, width, innerBottom - innerTop);
-        }
+        // The empirical 80% range (outer) and 50% range (inner) are outlines, never a tint over the cells: the
+        // counts and the percentages are in the inspector.
+        ctx.strokeStyle = color;
+        ctx.lineWidth = chosen ? 1.5 : 1;
+        ctx.globalAlpha = chosen ? 0.9 : 0.6;
+        ctx.strokeRect(left, outerTop + 0.5, width, outerBottom - outerTop - 1);
+        ctx.setLineDash([2, 2]);
+        ctx.globalAlpha = chosen ? 0.8 : 0.5;
+        ctx.strokeRect(left, innerTop + 0.5, width, innerBottom - innerTop - 1);
+        ctx.setLineDash([]);
         ctx.globalAlpha = 1;
         line(left, median, left + width, median, color, chosen ? 2.5 : 2, 0.9);
         ends[key] = { x: xb, y: median };
@@ -13259,7 +13574,7 @@
   }
   function navGeometry() {
     const r = canvas.getBoundingClientRect();
-    return layout(r.width, r.height);
+    return layout(r.width, r.height, eventKinds().length, S.rows !== "off" ? ROWS_STRIP : 0);
   }
   function autoLevel() {
     if (!S.auto || !(S.tB > S.tA) || !(S.pB > S.pA)) return false;
@@ -15893,9 +16208,10 @@
       }
     }
     ctx.restore();
-    ctx.strokeStyle = colors.accent;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    // The lens is a region replacement, named as one: a solid two-tone frame (1.5 ink in a 3.5 casing) and, under it, its
+    // caption. It lies inside the heatmap and never over the external Rows strip.
+    twoTone(() => ctx.rect(x + 0.5, y + 0.5, w - 1, h - 1));
+    noteTemporary("lens", x, y, w, h);
     lensCaption(x, y, h, [
       [label, colors.ink],
       [sub, colors.muted],
@@ -15970,9 +16286,7 @@
       top = y - h >= G.y + 4 ? y - h : y + lensHeight - 1;
     ctx.fillStyle = colors.surface;
     ctx.fillRect(left, top, w, h);
-    ctx.strokeStyle = colors.accent;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h);
+    twoTone(() => ctx.rect(left + 0.5, top + 0.5, w - 1, h));
     fitted.forEach(([s, color], i) =>
       text(s, left + 7, top + 11.5 + 15 * i, color, "left", 11),
     );

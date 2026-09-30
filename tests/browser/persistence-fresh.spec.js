@@ -172,6 +172,21 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect(await S.noticeCodes(require("./observe.js").observe(again))).toEqual([]);
   });
 
+  test("the bare root: a stored version-4 view (the recorded legacy fixture) restores migrated, with the legacy notice", async ({ page, context, fakeFor, surface }) => {
+    const fake = await fakeFor("mini");
+    const v4 = JSON.parse(require("node:fs").readFileSync(require("node:path").join(__dirname, "../fixtures/legacy/view-v4.json"), "utf8"));
+    await seed(context, { "view:v4": v4 });
+    await page.goto(fake.url + "/");
+    await fake.idle();
+    // the fixture's window, mode and level lock come back as a version-2 address, and the notice names the migrated mode
+    expect((await S.where(page)).hash).toBe("#w=7d&vis=2&ap=" + S.AP + "&mode=flow");
+    const list = await S.notices(surface);
+    expect(list.map((n) => n.code)).toEqual(["legacy-migrated"]);
+    expect(list[0].text).toContain("mode=flow");
+    // the workspace of the fixture (its prefs) came back too
+    expect((await S.storage(page)).local["view:v5"]).toContain("visualVersion");
+  });
+
   test("the bare root: nothing stored gives the default view and one neutral notice, once per browser", async ({ page, context, fakeFor, surface }) => {
     const fake = await fakeFor("mini");
     await page.goto(fake.url + "/");

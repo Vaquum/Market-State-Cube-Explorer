@@ -157,6 +157,29 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     expect(S.param((await S.where(page)).hash, "lk")).toBe("1");
   });
 
+  test("a browser that cannot compress writes the uncompressed code (origo-cube:2j.), and any browser reads it back", async ({ page, context, fakeFor, freshContext }) => {
+    await context.addInitScript(() => {
+      delete window.CompressionStream;
+    });
+    const fake = await fakeFor("mini");
+    await context.grantPermissions(CLIPBOARD, { origin: fake.url });
+    await open(page, fake, "#w=24h&vis=2&ap=" + S.AP + "&mode=delta&bs=i");
+    await S.openQuery(page);
+    await page.locator("#ol-copy-view").click();
+    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:2j\./);
+    const code = await S.clipboardText(page);
+    // the uncompressed form is percent-encoded canonical JSON of the same payload
+    expect(JSON.parse(decodeURIComponent(code.slice("origo-cube:2j.".length)))).toMatchObject({ visualVersion: 2, kind: "view", appearance: { id: S.AP } });
+    const other = await freshContext();
+    const tab = await other.newPage();
+    await tab.goto(fake.url + "/");
+    await tab.locator("#ol-canvas").waitFor();
+    await S.importCode(tab, code);
+    await expect(tab.locator("#ol-copy-status")).toHaveText("View restored");
+    expect(S.param((await S.where(tab)).hash, "mode")).toBe("delta");
+    expect(S.param((await S.where(tab)).hash, "bs")).toBe("i");
+  });
+
   test("more than 8192 characters: the address is scale ids only, the status names the level, Copy link offers the full code, the code restores exactly", async ({ page, context, fakeFor, freshContext, surface }) => {
     const fake = await fakeFor("mini");
     await context.grantPermissions(CLIPBOARD, { origin: fake.url });

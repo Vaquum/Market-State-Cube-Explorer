@@ -2039,37 +2039,7 @@
         ? typeof x.view === "string"
           ? readView(x.view)
           : null
-        : legacyStored(
-            checkView({
-              window: x.window,
-              tA: x.tA,
-              tB: x.tB,
-              pA: x.pA,
-              pB: x.pB,
-              auto: x.auto !== false,
-              n: x.n,
-              m: x.m,
-              follow: x.diagonal
-                ? "diagonal"
-                : x.coupled
-                  ? "coupled"
-                  : x.refit === false
-                    ? "free"
-                    : "refit",
-              mode: x.mode,
-              poc: x.poc !== false,
-              area: x.area === true,
-              untested: x.untested === true,
-              selection: x.selection,
-              anchor: x.anchor,
-              replay: x.replay === true,
-              tab: x.tab,
-              evidenceKind: x.evidenceKind,
-              horizon: x.horizon,
-              barrier: x.barrier,
-            }),
-            x,
-          );
+        : legacyStored(checkView(legacyRaw(x)), x);
     if (view) {
       applyView(view);
       reportView(view);
@@ -11635,8 +11605,9 @@
       pA: S.pA,
       pB: S.pB,
       auto: S.auto,
-      n: S.n,
-      m: S.m,
+      // whole levels: a level held while a gesture is still moving it is the one it will settle on
+      n: Number.isFinite(S.n) ? Math.round(S.n) : S.n,
+      m: Number.isFinite(S.m) ? Math.round(S.m) : S.m,
       selection: S.selection,
       anchor: S.anchor,
       replay: S.replay,
@@ -11721,6 +11692,28 @@
         code: "import-rejected",
         text: E.text.fill(PERSIST_TEXT.addressRejected, { reason: address.reasons[0] ?? "" }),
       });
+  }
+  // The raw view of a version-4 stored object (the last view and the workspace in one, the view as plain
+  // fields): where the view is, written out, and every other field by the codec's table, so a setting the
+  // table knows is read here too. `follow` was three flags then; checkView validates all of it.
+  function legacyRaw(x) {
+    const raw = {
+      window: x.window,
+      tA: x.tA,
+      tB: x.tB,
+      pA: x.pA,
+      pB: x.pB,
+      auto: x.auto !== false,
+      n: x.n,
+      m: x.m,
+      follow: x.diagonal ? "diagonal" : x.coupled ? "coupled" : x.refit === false ? "free" : "refit",
+      selection: x.selection,
+      anchor: x.anchor,
+      replay: x.replay === true,
+    };
+    for (const entry of E.codec.VISUAL_KEYS)
+      if (entry.legacy) for (const path of entry.fields) if (path !== "follow") raw[path] = x[path];
+    return raw;
   }
   // A version-4 stored view is a legacy payload: its choices are kept and the notice names what changed.
   function legacyStored(view, x) {

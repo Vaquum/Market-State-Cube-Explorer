@@ -32,9 +32,12 @@
   let CANON = canonOf(PACK);
   // Diagonal through the resolution lattice: least-squares fit of
   // log2(median column price range / 125) against n over the full history,
-  // n = 6..13, measured on the 2026-09-24 extraction (exponent 0.49).
-  const ISO_A = -1.06,
-    ISO_B = 0.486,
+  // n = 6..13, measured on the 2026-09-24 extraction (exponent 0.49). The two
+  // numbers are the recorded model's (E.model.PROVENANCE, which also says what
+  // is not known about the fit), so the diagonal chooser, the Efficiency
+  // baseline and every label about them read one record.
+  const ISO_A = E.model.PROVENANCE.ISO_A,
+    ISO_B = E.model.PROVENANCE.ISO_B,
     N_MAX = 20,
     M_MAX = 9,
     TILE_COLUMNS = 4096;
@@ -2830,7 +2833,7 @@
       coupled: { name: "Coupled", desc: "Zooming time zooms price by the same factor" },
       diagonal: {
         name: "Diagonal",
-        desc: "Zooming time by k zooms price by √k, and the price level follows the measured diagonal",
+        desc: `Zooming time by k zooms price by √k, and the price level follows the measured diagonal. ${E.text.model.diagonalUse}`,
         keys: "D",
       },
     },
@@ -2881,13 +2884,13 @@
       size: { name: "Trade size", desc: "Average USDT per trade in each column" },
       efficiency: {
         name: "Efficiency",
-        desc: "USDT per 125 USDT row each column's trades touched, against its parent column's",
+        desc: "USDT per 125 USDT row each column's trades touched, against its parent column's and the recorded model's expected ratio; the pane says how that model stands at the cutoff",
       },
       choppiness: { name: "Choppiness", desc: "How far the price travelled in each column, over its range" },
       perpath: { name: "Volume per path", desc: "USDT traded in each column per USDT the price moved" },
       rsi1d: { name: "RSI 14 · 1D", desc: "Wilder's RSI of the daily closes, with 70 and 30 guides and divergences between daily swings" },
       rsi4h: { name: "RSI 14 · 4h", desc: "The same on 4-hour bars, with divergences between 4-hour swings" },
-      macd1d: { name: "MACD · 1D", desc: "EMA(12) − EMA(26) of the daily closes, its signal EMA(9) and histogram, with crosses" },
+      macd1d: { name: "MACD · 1D", desc: "EMA(12) − EMA(26) of the daily closes in USDT, its signal EMA(9) and their histogram, on one axis symmetric about zero, with crosses" },
     },
     PANE_GROUPS = [
       ["Follow", ["cells"]],
@@ -3727,16 +3730,20 @@
     return { rows: [["Cascade", why[e.state]]], note: "" };
   }
   // The pane's column under the pointer: its value and what it is made of,
-  // or why it has none.
+  // or why it has none, and where the value sits on the pane's axis. The
+  // value and the why come from the pane's frame (one Readout per column,
+  // the same record the bar was encoded from); the rows beside them are the
+  // column's own amounts. Numeric rows name themselves for a test.
   function paneTip(tip, p, money, count, share, exact, note) {
     if (paneShown.measure.osc) return oscillatorTip(tip, p);
     const ts = stepT(),
       c = Math.floor(p.t / ts),
       head = `${range(c * ts, (c + 1) * ts)} UTC · ${dur(ts * BASE)}`,
-      { key, measure, cols } = paneShown,
+      { key, measure, cols, axis: rec, frame, model } = paneShown,
       x = cols.find((y) => y.c === c),
       mv = last.mv,
       sub = [measure.label, measure.unit].filter(Boolean).join(" · ");
+    scaleRt.tipReadout = null;
     if (p.t >= last.cut) return tipRows(tip, head, sub, [], S.replay ? "Hidden in replay" : "After the data cutoff");
     if (!x) {
       const b = last.b,
@@ -3758,82 +3765,94 @@
                 : "No trades in this column";
       return tipRows(tip, head, sub, [], why);
     }
-    if (measure.ratio && x.state !== "ok") {
-      const why = {
-        coarsest: "No coarser level to compare with",
-        open: S.replay ? "Its parent column runs past the replay's edge" : "Its parent column is still open",
-        outside: "Only part of its parent column is loaded",
-        unavailable: "The recorded snapshot has no 125 USDT rows here",
-        pending: "Reading its rows from the cube…",
-        failed: `The cube didn't answer: ${x.error}`,
-        none: "No trades in this column",
-      };
-      return tipRows(tip, head, sub, [], why[x.state]);
+    if (!frame) return tipRows(tip, head, sub, [], E.text.notice.scaleFault);
+    // The column's readout: its typed result, its place on the axis and whether the axis leaves it out.
+    const readout = frame.readout(x, { ctx: x.ctx, index: x.c }),
+      typed = readout.typed,
+      at = `pane:${rec.id}:${c}`,
+      modelNote = model ? modelNoteWords(model) : "";
+    scaleRt.tipReadout = readout;
+    if (typed.tag !== "finite") {
+      // Why there is no bar: the typed reason in the module's words, with what a person would add about
+      // the level (the parent column of a ratio) where the reason alone is short.
+      const more =
+        typed.tag === "waiting-for-complete-parent"
+          ? S.replay
+            ? "Its parent column runs past the replay's edge"
+            : "Its parent column is still open"
+          : typed.tag === "unsupported" && x.state === "unavailable"
+            ? "The recorded snapshot has no 125 USDT rows here"
+            : typed.tag === "unsupported"
+              ? "Only part of its parent column is loaded"
+              : "";
+      tipRows(tip, head, sub, [], [E.result.describe(typed).long, more, modelNote]);
+      return paneTipFields(tip, [], at);
     }
-    // A ratio's entry, or else the column itself and its value.
-    const col = x,
-      value = measure.ratio ? x.value : measure.value(x),
-      rows =
+    const value = typed.value,
+      // [label, text, field, canonical]: what the row says, and the number a test reads back.
+      list =
         key === "cascade"
           ? [
-              ["Of its parent column", share(x.share)],
-              ["Value", ratioText(value, exact)],
-              ["Column", money(x.w.v)],
-              ["Parent column", money(x.p.v)],
+              ["Of its parent column", share(x.share), "share", x.share],
+              ["Value", ratioText(value, exact), "value", value],
+              ["Column", money(x.w.v), "volume", x.w.v],
+              ["Parent column", money(x.p.v), "parentVolume", x.p.v],
             ]
           : key === "efficiency"
             ? [
-                ["Efficiency", ratioText(value, exact)],
-                ["USDT per row", money(x.e)],
-                ["Rows touched", integer(x.w.rows)],
-                ["Parent's USDT per row", money(x.ep)],
-                ["Parent's rows", integer(x.p.rows)],
+                ["Efficiency", ratioText(value, exact), "value", value],
+                ["USDT per row", money(x.e), "perRow", x.e],
+                ["Rows touched", integer(x.w.rows), "rows", x.w.rows],
+                ["Parent's USDT per row", money(x.ep), "parentPerRow", x.ep],
+                ["Parent's rows", integer(x.p.rows), "parentRows", x.p.rows],
               ]
             : key === "choppiness"
               ? [
-                  ["Path ÷ range", compact(value)],
-                  ["Path", money(col.p)],
-                  ["Range", col.ct > 0 ? money(col.hi - col.lo) : "—"],
+                  ["Path ÷ range", compact(value), "value", value],
+                  ["Path", money(x.p), "path", x.p],
+                  ["Range", money(x.hi - x.lo), "range", x.hi - x.lo],
                 ]
               : key === "perpath"
                 ? [
-                    ["USDT per USDT moved", compact(value)],
-                    ["Volume", money(col.v)],
-                    ["Path", money(col.p)],
+                    ["USDT per USDT moved", compact(value), "value", value],
+                    ["Volume", money(x.v), "volume", x.v],
+                    ["Path", money(x.p), "path", x.p],
                   ]
                 : key === "delta"
                   ? [
-                      ["Buy − sell", signed(value, money)],
-                      ["Volume", money(col.v)],
-                      ["Taker buys", share(col.bv / col.v)],
+                      ["Buy − sell", signed(value, money), "value", value],
+                      ["Volume", money(x.v), "volume", x.v],
+                      ["Taker buys", share(x.bv / x.v), "takerShare", x.bv / x.v],
                     ]
                   : key === "takertrades"
                     ? [
-                        ["Buy − sell trades", signed(value, count)],
-                        ["Trades", count(col.ct)],
-                        ["Taker-buy trades", share(col.ct ? col.bt / col.ct : 0)],
+                        ["Buy − sell trades", signed(value, count), "value", value],
+                        ["Trades", count(x.ct), "trades", x.ct],
+                        ["Taker-buy trades", share(x.ct ? x.bt / x.ct : 0), "takerShare", x.ct ? x.bt / x.ct : 0],
                       ]
                     : key === "size"
                       ? [
-                          ["Trade size", col.ct ? money(value) : "—"],
-                          ["Trades", count(col.ct)],
+                          ["Trade size", money(value), "value", value],
+                          ["Trades", count(x.ct), "trades", x.ct],
                         ]
                       : key === "trades"
                         ? [
-                            ["Trades", count(col.ct)],
-                            ["Volume", money(col.v)],
+                            ["Trades", count(x.ct), "value", value],
+                            ["Volume", money(x.v), "volume", x.v],
                           ]
                         : [
-                            ["Volume", money(col.v)],
-                            ["Trades", count(col.ct)],
+                            ["Volume", money(x.v), "value", value],
+                            ["Trades", count(x.ct), "trades", x.ct],
                           ],
+      axis = paneAxisTipRows(rec, value),
       notes =
         key === "cascade" && x.alone
           ? "The other column in its parent had no trades"
           : key === "efficiency"
-            ? "Its USDT per 125 USDT row its trades touched, over its parent column's, against the 0.70 expected"
+            ? `Its USDT per 125 USDT row its trades touched, over its parent column's, against the ${EFFICIENCY_EXPECTED.toFixed(2)} the recorded model expects`
             : "";
-    tipRows(tip, head, sub, rows, [notes, note]);
+    tipRows(tip, head, sub, [...list.map(([label, text]) => [label, text]), ...axis.rows], [notes, modelNote, note]);
+    paneTipFields(tip, [...list.map(([, , field, canonical]) => ({ field, canonical })), ...axis.meta], at);
   }
   // The tooltip's row section: the row's USDT in the rectangle and its share
   // of it (left out over the profile, which gives them already), the
@@ -7595,6 +7614,8 @@
   // EMA(9) of it and its histogram their difference. Each has a value from
   // its first full window on (NaN before), drawn at the end of its bar, whose
   // close it takes in.
+  // LEGACY(S1): the nine definitions from here to divergencesOf and the SQUEEZE_* constants are unused now
+  // (the call sites below read E.indicators); removed at convergence.
   function smaOf(values, n) {
     const out = new Float64Array(values.length).fill(NaN);
     for (let i = n - 1; i < values.length; i++) {
@@ -7826,14 +7847,14 @@
       const c = frame.closes;
       v =
         name === "sma"
-          ? smaOf(c, n)
+          ? E.indicators.smaOf(c, n)
           : name === "ema"
-            ? emaOf(c, n)
+            ? E.indicators.emaOf(c, n)
             : name === "rsi"
-              ? rsiOf(c, n)
+              ? E.indicators.rsiOf(c, n)
               : name === "bb"
-                ? bollingerOf(c, n)
-                : macdOf(c);
+                ? E.indicators.bollingerOf(c, n)
+                : E.indicators.macdOf(c);
       frame.memo.set(key, v);
     }
     return v;
@@ -7854,7 +7875,7 @@
     let runs = frame.memo.get("squeezes");
     if (!runs) {
       const width = indicator(frame, "bb", 20).width,
-        flags = frame.tf === "1d" ? squeezeLowest(width) : squeezeBelow(width);
+        flags = frame.tf === "1d" ? E.indicators.squeezeLowest(width) : E.indicators.squeezeBelow(width);
       runs = [];
       for (let i = 0; i < flags.length; i++)
         if (flags[i]) {
@@ -7867,7 +7888,7 @@
   }
   function frameCrosses(frame) {
     let out = frame.memo.get("crosses");
-    if (!out) frame.memo.set("crosses", (out = crossesOf(indicator(frame, "sma", 50), indicator(frame, "sma", 200))));
+    if (!out) frame.memo.set("crosses", (out = E.indicators.crossesOf(indicator(frame, "sma", 50), indicator(frame, "sma", 200))));
     return out;
   }
   // The moving averages' rows: each one's timeframe, and the averages it
@@ -8184,25 +8205,66 @@
     if (!hit) {
       if (key === "macd1d") {
         const m = indicator(frame, "macd", 0);
-        hit = { state: "ready", frame, ...m, crosses: crossesOf(m.macd, m.signal) };
+        hit = { state: "ready", frame, ...m, crosses: E.indicators.crossesOf(m.macd, m.signal) };
       } else {
         const rsi = indicator(frame, "rsi", 14),
           swings = key === "rsi4h" ? fourHourSwings(barSeries(8)) : structureNow(barSeries(9)).daily;
-        hit = { state: "ready", frame, rsi, divergences: divergencesOf(swings, rsi) };
+        hit = { state: "ready", frame, rsi, divergences: E.indicators.divergencesOf(swings, rsi) };
       }
       frame.memo.set(key, hit);
     }
     return hit;
   }
+  // The bars an oscillator's pane reads are all read: no chunk of its timeframe is still to come (one that
+  // failed is not waited for). The axis is fitted only on bars that are.
+  function oscBarsCoherent(n) {
+    const span = BAR_CHUNK * 2 ** n;
+    for (let j = Math.floor((cutEdge() - 1) / span); j >= 0; j--) {
+      const want = barChunkWant(n, j);
+      if (want && !motion.failed.has(want.key)) return false;
+    }
+    const tail = barEdgeWant(n);
+    return !(tail && !motion.failed.has(tail.key));
+  }
+  // MACD, its signal and its histogram over the bars i0..i1 as one summary, for the one axis they share.
+  function oscMacdSummary(o, i0, i1) {
+    let count = 0,
+      max = -Infinity,
+      min = Infinity;
+    for (let i = i0; i <= i1; i++)
+      for (const v of [o.macd[i], o.signal[i], o.hist[i]])
+        if (Number.isFinite(v)) {
+          count++;
+          if (v > max) max = v;
+          if (v < min) min = v;
+        }
+    return { count, max, min };
+  }
   // The pane under an oscillator: RSI with its 70 and 30 guides and its
-  // divergences, bearish in the sell colour and bullish in the buy colour, or
+  // divergences, bearish in the negative colour and bullish in the positive one, or
   // MACD's histogram, line and signal with its crosses; each on its own bars,
-  // one point to a pixel column, sharing the chart's time axis.
-  function drawOscillator(key, measure, cut) {
+  // one point to a pixel column, sharing the chart's time axis. RSI's axis is
+  // fixed, 0 to 100; MACD's is one axis for its three series, symmetric about
+  // zero and as long as the largest of them in view (No data before its first
+  // value), which holds still while a gesture is on and then follows.
+  function drawOscillator(key, measure, cut, sc) {
     const top = G.ay,
       h = G.ah,
       right = G.x + G.w,
-      o = oscillatorOf(key);
+      o = oscillatorOf(key),
+      id = "pane." + key,
+      // The registry's record, unless the scale display is off (then the pane holds its bars back).
+      axisOf = (spec) => {
+        if (sc === INERT_SC) return null;
+        try {
+          return axisFrame(id, spec);
+        } catch (error) {
+          scaleFault(error);
+          return null;
+        }
+      },
+      place = { t: 0, clip: 0 };
+    let rec = null;
     ctx.fillStyle = colors.surface;
     ctx.fillRect(G.x, top, G.w, h);
     ctx.save();
@@ -8219,12 +8281,13 @@
     let note = "",
       scale = null,
       guides = [];
-    if (o.state !== "ready")
+    if (o.state !== "ready") {
       note =
         o.state === "failed"
           ? `the bars couldn't be read: ${o.error}`
           : `reading ${key === "rsi4h" ? "4-hour" : "8-hour"} bars from the cube…`;
-    else {
+      rec = axisOf(key === "macd1d" ? { sign: "signed-symmetric", eligible: false, sig: "" } : { eligible: true, sig: "" });
+    } else {
       const f = o.frame,
         i0 = Math.max(0, endAt(f.ends, S.tA) - 1),
         i1 = Math.min(f.ends.length - 1, endAt(f.ends, S.tB)),
@@ -8259,77 +8322,149 @@
           ctx.stroke();
         };
       if (key === "macd1d") {
-        let max = 0;
-        for (let i = i0; i <= i1; i++)
-          for (const v of [o.macd[i], o.signal[i], o.hist[i]]) if (Number.isFinite(v)) max = Math.max(max, Math.abs(v));
-        max = max || 1;
-        const zero = top + h / 2,
-          room = h / 2 - 6,
-          y = (v) => zero - (v / max) * room;
-        markLine(G.x, zero, right, zero, colors.line, 1, 0.9);
-        // The histogram, a bar to a day, thinned to one a pixel column.
-        let lastX = -Infinity;
-        for (let i = i0; i <= i1; i++) {
-          const v = o.hist[i];
-          if (!Number.isFinite(v)) continue;
-          const xa = G.X(f.starts[i]),
-            xb = G.X(f.ends[i]);
-          if (xb - lastX < 1 && xb - xa < 1) continue;
-          lastX = xb;
-          ctx.fillStyle = v >= 0 ? colors.buy : colors.sell;
-          ctx.globalAlpha = 0.45;
-          ctx.fillRect(xa, Math.min(zero, y(v)), Math.max(0.6, xb - xa - (xb - xa > 3 ? 1 : 0)), Math.abs(y(v) - zero));
-        }
-        ctx.globalAlpha = 1;
-        stroke(pts(o.signal, y), lineStyle("average", "long").colour, 1.25);
-        stroke(pts(o.macd, y), colors.ink, 1.5);
-        for (const x of o.crosses) {
-          if (x.i < i0 || x.i > i1) continue;
-          const cx = G.X(f.ends[x.i]),
-            cy = y(o.macd[x.i]);
-          ctx.beginPath();
-          ctx.arc(cx, cy, 3, 0, 2 * Math.PI);
-          ctx.fillStyle = x.up ? colors.buy : colors.sell;
-          ctx.fill();
-          ctx.strokeStyle = colors.surface;
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        }
-        scale = `±${compact(max)}`;
-      } else {
-        const y = (v) => top + 4 + (1 - v / 100) * (h - 8);
-        for (const g of [70, 30]) {
-          ctx.setLineDash([3, 3]);
-          markLine(G.x, y(g), right, y(g), colors.line, 1, 1);
-          ctx.setLineDash([]);
-        }
-        stroke(pts(o.rsi, y), colors.ink, 1.5);
-        for (const d of o.divergences) {
-          if (d.b.confirmed > cut || f.ends[d.b.i] < S.tA || f.ends[d.a.i] > S.tB) continue;
-          const colour = d.bearish ? colors.sell : colors.buy;
-          line(G.X(f.ends[d.a.i]), y(d.r0), G.X(f.ends[d.b.i]), y(d.r1), colour, 2, 0.95);
-          for (const [s, r] of [
-            [d.a, d.r0],
-            [d.b, d.r1],
-          ]) {
-            ctx.beginPath();
-            ctx.arc(G.X(f.ends[s.i]), y(r), 2.5, 0, 2 * Math.PI);
-            ctx.fillStyle = colour;
-            ctx.fill();
+        // One axis for the three series, fitted on the exact largest of them in view once their bars
+        // are read; it holds through a gesture and Play (the chip says so) and is never 1 by default.
+        rec = axisOf({
+          sign: "signed-symmetric",
+          eligible: oscBarsCoherent(9),
+          sig: [scaleWorkspace(), id, live.generation, barsVersion, cutEdge(), S.replay, key, i0, i1, o.state].join("|"),
+          summary: () => oscMacdSummary(o, i0, i1),
+        });
+        if (rec?.clipped) {
+          // Bars beyond a held or frozen domain are drawn at its edge and counted.
+          const cl = rec.clipped;
+          cl.low = cl.high = cl.count = 0;
+          if (rec.typed !== "none" && (rec.hold !== null || rec.policy === "frozen")) {
+            cl.total = 0;
+            for (let i = i0; i <= i1; i++)
+              for (const v of [o.macd[i], o.signal[i], o.hist[i]])
+                if (Number.isFinite(v)) {
+                  cl.total++;
+                  const c = E.axis.coordinate(rec, v, place).clip;
+                  if (c === E.scale.CLIP.LOW || c === E.scale.CLIP.HIGH) {
+                    cl.count++;
+                    if (c === E.scale.CLIP.LOW) cl.low++;
+                    else cl.high++;
+                  }
+                }
           }
         }
-        guides = [70, 30].map((g) => [String(g), y(g)]);
+        if (rec && rec.typed !== "none") {
+          const zero = top + h / 2,
+            room = h / 2 - 6,
+            y = (v) => zero - E.axis.coordinate(rec, v, place).t * room;
+          markLine(G.x, zero, right, zero, colors.line, 1, 0.9);
+          // The histogram, a bar to a day, thinned to one a pixel column.
+          let lastX = -Infinity;
+          for (let i = i0; i <= i1; i++) {
+            const v = o.hist[i];
+            if (!Number.isFinite(v)) continue;
+            const xa = G.X(f.starts[i]),
+              xb = G.X(f.ends[i]);
+            if (xb - lastX < 1 && xb - xa < 1) continue;
+            lastX = xb;
+            ctx.fillStyle = v >= 0 ? colors.positive : colors.negative;
+            ctx.globalAlpha = 0.45;
+            ctx.fillRect(xa, Math.min(zero, y(v)), Math.max(0.6, xb - xa - (xb - xa > 3 ? 1 : 0)), Math.abs(y(v) - zero));
+          }
+          ctx.globalAlpha = 1;
+          stroke(pts(o.signal, y), lineStyle("average", "long").colour, 1.25);
+          stroke(pts(o.macd, y), colors.ink, 1.5);
+          for (const x of o.crosses) {
+            if (x.i < i0 || x.i > i1) continue;
+            const cx = G.X(f.ends[x.i]),
+              cy = y(o.macd[x.i]);
+            ctx.beginPath();
+            ctx.arc(cx, cy, 3, 0, 2 * Math.PI);
+            ctx.fillStyle = x.up ? colors.positive : colors.negative;
+            ctx.fill();
+            ctx.strokeStyle = colors.surface;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+        scale = !rec || rec.typed === "none" ? E.text.axis.none : rec.typed === "zero-only" ? E.text.axis.zero : `±${compact(rec.domain[1])}`;
+      } else {
+        // RSI's axis is fixed at 0 to 100, its guides at 30 and 70: the record's, so the line, the guides, the
+        // labels and the tooltip place a value the same way.
+        rec = axisOf({ eligible: true, sig: "" });
+        if (rec?.typed === "finite") {
+          const y = (v) => top + 4 + (1 - E.axis.coordinate(rec, v, place).t) * (h - 8),
+            ticks = E.axis.ticks(rec, h - 8),
+            guideY = ticks.filter((t) => t.kind === "guide").map((t) => y(t.value));
+          for (const gy of guideY) {
+            ctx.setLineDash([3, 3]);
+            markLine(G.x, gy, right, gy, colors.line, 1, 1);
+            ctx.setLineDash([]);
+          }
+          // The guides' labels, and the ends' where they are clear of a guide's.
+          guides = ticks
+            .filter((t) => t.kind === "guide" || guideY.every((gy) => Math.abs(gy - y(t.value)) >= 12))
+            .map((t) => [String(t.value), clamp(y(t.value), top + 6, top + h - 6)]);
+          stroke(pts(o.rsi, y), colors.ink, 1.5);
+          for (const d of o.divergences) {
+            if (d.b.confirmed > cut || f.ends[d.b.i] < S.tA || f.ends[d.a.i] > S.tB) continue;
+            const colour = d.bearish ? colors.legacySell : colors.legacyBuy;
+            line(G.X(f.ends[d.a.i]), y(d.r0), G.X(f.ends[d.b.i]), y(d.r1), colour, 2, 0.95);
+            for (const [s, r] of [
+              [d.a, d.r0],
+              [d.b, d.r1],
+            ]) {
+              ctx.beginPath();
+              ctx.arc(G.X(f.ends[s.i]), y(r), 2.5, 0, 2 * Math.PI);
+              ctx.fillStyle = colour;
+              ctx.fill();
+            }
+          }
+        }
       }
     }
     ctx.restore();
-    paneShown = { key, measure, osc: o, cols: [] };
+    paneShown = { key, measure, osc: o, cols: [], axis: rec, frame: null, model: null };
+    if (sc !== INERT_SC) sc.pane = paneShown;
     // The scale in the price labels' column: the RSI's guides, MACD's largest value.
     if (scale) text(scale, G.x - 8, top + 7, colors.muted, "right");
     for (const [label, gy] of guides) text(label, G.x - 8, gy, colors.muted, "right");
-    paneLegend(measure, [], null, top, note);
+    paneLegend(measure, [], null, top, note, rec, "");
+    scaleHooks.axisChip?.(rec, paneShown);
+  }
+  // The tooltip's pane rows that say where a value sits on the pane's axis: the axis in words, its domain
+  // as numbers, the value's place on it and whether the axis leaves it out. `meta` is parallel to the rows
+  // (what a test reads as [data-field][data-canonical], see paneTipFields).
+  function paneAxisTipRows(rec, value) {
+    const rows = [],
+      meta = [];
+    if (!rec) return { rows, meta };
+    rows.push(["Axis", paneAxisNote(rec)]);
+    meta.push(null);
+    if (rec.typed === "finite" && Number.isFinite(value)) {
+      const at = E.axis.coordinate(rec, value, { t: 0, clip: 0 }),
+        beyond = at.clip === E.scale.CLIP.LOW || at.clip === E.scale.CLIP.HIGH;
+      rows.push([
+        "Axis domain",
+        rec.sign === "unsigned" ? `${compact(rec.domain[0])} to ${compact(rec.domain[1])}` : `${signed(rec.domain[0], compact)} to ${signed(rec.domain[1], compact)}`,
+      ]);
+      meta.push({ field: "axisHigh", canonical: rec.domain[1] });
+      rows.push(["On the axis", `${(at.t * 100).toFixed(0)}%${beyond ? " · beyond the axis" : ""}`]);
+      meta.push({ field: "axisPosition", canonical: at.t });
+    }
+    return { rows, meta };
+  }
+  // The numeric rows of a pane's tooltip carry [data-field] and [data-canonical] (INTEGRATION D.18) and the
+  // tooltip names the readout it was built from, "pane:<axis id>:<column or bar>". `meta` is parallel to
+  // the rows tipRows just wrote; a null entry is a row with nothing to read back.
+  function paneTipFields(tip, meta, readout) {
+    const values = tip.querySelectorAll(".ol-tip-rows dd");
+    meta.forEach((m, i) => {
+      if (!m || !values[i]) return;
+      values[i].dataset.field = m.field;
+      values[i].dataset.canonical = String(m.canonical);
+    });
+    if (readout) tip.dataset.readout = readout;
   }
   // The pane's tooltip under an oscillator: the value at the bar whose close,
-  // where it is drawn, is nearest the pointer, and a divergence or a cross there.
+  // where it is drawn, is nearest the pointer, and a divergence or a cross there,
+  // with where that value sits on the pane's axis.
   function oscillatorTip(tip, p) {
     const o = paneShown.osc,
       measure = paneShown.measure;
@@ -8340,10 +8475,15 @@
     if (p.t >= last.cut) return tipRows(tip, measure.label, "", [], S.replay ? "Hidden in replay" : "After the data cutoff");
     if (i < 0 || p.t < f.starts[0]) return tipRows(tip, measure.label, "", [], "Before the history's first bar");
     const head = `${measure.label} · at the close of ${frameBar(f, i)}`,
-      two = (v) => (Number.isFinite(v) ? v.toFixed(2) : "—");
+      two = (v) => (Number.isFinite(v) ? v.toFixed(2) : "—"),
+      rec = paneShown.axis,
+      readout = rec ? `pane:${rec.id}:${i}` : "";
+    // An oscillator's bar has no Readout record of the module's (its values are the page's own series).
+    scaleRt.tipReadout = null;
     if (paneShown.key === "macd1d") {
-      const x = o.crosses.find((c) => c.i === i);
-      return tipRows(
+      const x = o.crosses.find((c) => c.i === i),
+        axis = paneAxisTipRows(rec, o.macd[i]);
+      tipRows(
         tip,
         head,
         x ? (x.up ? "MACD crossed above its signal" : "MACD crossed below its signal") : "",
@@ -8352,12 +8492,25 @@
           ["Signal", two(o.signal[i])],
           ["Histogram", two(o.hist[i])],
           ["Close", `${price(Math.round(100 * f.closes[i]) / 100)} USDT`],
+          ...axis.rows,
         ],
-        Number.isFinite(o.signal[i]) ? "EMA(12) − EMA(26) of the daily closes; its signal the EMA(9) of it" : "From its first full window: the 34th day",
+        Number.isFinite(o.signal[i]) ? "EMA(12) − EMA(26) of the daily closes in USDT; its signal the EMA(9) of it" : "From its first full window: the 34th day",
+      );
+      return paneTipFields(
+        tip,
+        [
+          Number.isFinite(o.macd[i]) ? { field: "macd", canonical: o.macd[i] } : null,
+          Number.isFinite(o.signal[i]) ? { field: "signal", canonical: o.signal[i] } : null,
+          Number.isFinite(o.hist[i]) ? { field: "histogram", canonical: o.hist[i] } : null,
+          { field: "close", canonical: f.closes[i] },
+          ...axis.meta,
+        ],
+        readout,
       );
     }
-    const d = o.divergences.find((x) => x.b.i === i && x.b.confirmed <= last.cut);
-    return tipRows(
+    const d = o.divergences.find((x) => x.b.i === i && x.b.confirmed <= last.cut),
+      axis = paneAxisTipRows(rec, o.rsi[i]);
+    tipRows(
       tip,
       head,
       d ? `${d.bearish ? "Bearish" : "Bullish"} divergence from ${frameBar(f, d.a.i)}` : "",
@@ -8365,8 +8518,19 @@
         ["RSI 14", two(o.rsi[i])],
         ["Close", `${price(Math.round(100 * f.closes[i]) / 100)} USDT`],
         ...(d ? [["RSI at the swing before", two(d.r0)]] : []),
+        ...axis.rows,
       ],
       Number.isFinite(o.rsi[i]) ? "Wilder's smoothing of gains and losses over 14 bars" : "From its first full window: the 15th bar",
+    );
+    paneTipFields(
+      tip,
+      [
+        Number.isFinite(o.rsi[i]) ? { field: "rsi", canonical: o.rsi[i] } : null,
+        { field: "close", canonical: f.closes[i] },
+        ...(d ? [{ field: "rsiBefore", canonical: d.r0 }] : []),
+        ...axis.meta,
+      ],
+      readout,
     );
   }
   // The row underlay (Rows, U): each price row's value over a period of its
@@ -10482,49 +10646,68 @@
   }
   // Each measure's name and unit, and its value from a column of the
   // rectangle's cells, or of their path and dwell (motion), up to where those
-  // end. A ratio is log2 of the actual over the expected, from the level's
-  // whole columns, on the buy and sell colours and full at ±2.
-  const PANE_MEASURES = {
-    volume: { label: "Volume", unit: "USDT", value: (c) => c.v },
-    delta: { label: "Delta", unit: "USDT", signed: true, value: (c) => 2 * c.bv - c.v },
-    takertrades: { label: "Buy − sell trades", unit: "", signed: true, value: (c) => 2 * c.bt - c.ct },
-    trades: { label: "Trades", unit: "", value: (c) => c.ct },
-    size: { label: "Trade size", unit: "USDT a trade", value: (c) => (c.ct > 0 ? c.v / c.ct : 0) },
-    choppiness: {
-      label: "Choppiness",
-      unit: "path ÷ range",
-      motion: true,
-      value: (c) => (c.ct > 0 && c.hi > c.lo ? c.p / (c.hi - c.lo) : 0),
+  // end. A value is E.measure.columnValue's, so a column that has none (no
+  // trades, no price range, no path) is a typed non-value the pane marks and
+  // never a zero bar. A ratio is log2 of the actual over the expected, from
+  // the level's whole columns, on a fixed axis of ±2 in the positive and
+  // negative arms.
+  const PANE_NUMBER = { tag: 0, value: NaN, reason: null, denominator: null },
+    // The number a column has under a measure, or NaN where it has none.
+    paneNumber = (key, c) => {
+      E.measure.columnValue(key, c, null, PANE_NUMBER);
+      return PANE_NUMBER.tag === E.result.TAG.finite ? PANE_NUMBER.value : NaN;
     },
-    perpath: { label: "Volume per path", unit: "USDT per USDT moved", motion: true, value: (c) => (c.p > 0 ? c.v / c.p : 0) },
-    cascade: { label: "Share of parent column", unit: "log₂ vs even", ratio: true },
-    efficiency: { label: "Efficiency", unit: "log₂ vs expected", ratio: true },
-    rsi1d: { label: "RSI 14 · 1D", unit: "", osc: true },
-    rsi4h: { label: "RSI 14 · 4h", unit: "", osc: true },
-    macd1d: { label: "MACD · 1D", unit: "12, 26, 9", osc: true },
-  };
-  // The pane's measure and columns as last drawn, which its tooltip reads.
+    PANE_MEASURES = {
+      volume: { label: "Volume", unit: "USDT", value: (c) => paneNumber("volume", c) },
+      delta: { label: "Delta", unit: "USDT", signed: true, value: (c) => paneNumber("delta", c) },
+      takertrades: { label: "Buy − sell trades", unit: "", signed: true, value: (c) => paneNumber("takertrades", c) },
+      trades: { label: "Trades", unit: "", value: (c) => paneNumber("trades", c) },
+      size: { label: "Trade size", unit: "USDT a trade", value: (c) => paneNumber("size", c) },
+      choppiness: {
+        label: "Choppiness",
+        unit: "path ÷ range",
+        motion: true,
+        value: (c) => paneNumber("choppiness", c),
+      },
+      perpath: { label: "Volume per path", unit: "USDT per USDT moved", motion: true, value: (c) => paneNumber("perpath", c) },
+      cascade: { label: "Share of parent column", unit: "log₂ vs even", ratio: true },
+      efficiency: { label: "Efficiency", unit: "log₂ vs expected", ratio: true },
+      rsi1d: { label: "RSI 14 · 1D", unit: "", osc: true },
+      rsi4h: { label: "RSI 14 · 4h", unit: "", osc: true },
+      // The parameters are in the name: USDT is what it measures.
+      macd1d: { label: "MACD 12, 26, 9 · 1D", unit: "USDT", osc: true },
+    };
+  // The pane's measure, columns, axis and frame as last drawn, which its tooltip reads.
   let paneShown = null;
-  // A ratio's columns in view between `from` and `to`, each with its value, or
-  // why it has none. The other measures' columns are the cells' own (activity).
+  // A Cascade column entry as the ratio kernel takes it: the column and its parent column, whole, at
+  // factor 2 (two child columns to a parent), or why there is no pair.
+  function paneCascadeRatio(e) {
+    return { structure: e.state === "ok" || e.state === "none" ? "complete" : e.state, childV: e.w?.v, parentV: e.p?.v, factor: 2 };
+  }
+  // A ratio's columns in view between `from` and `to`, each with its typed result (`typed`, from the
+  // ratio kernel; `ctx` is what the pane frame evaluates it from) or why it has none. The other
+  // measures' columns are the cells' own (paneColumns).
   function ratioColumns(key, full, ts, from, to) {
     const out = [];
     if (key === "cascade") {
       const cx = full?.cascade,
         cols = cx ? full.cols : [];
-      for (let i = bisectColumn(cols, Math.floor(from / ts)); i < cols.length && cols[i].c * ts < to; i++)
-        out.push(cascadeColumn(cx, cols[i].c));
+      for (let i = bisectColumn(cols, Math.floor(from / ts)); i < cols.length && cols[i].c * ts < to; i++) {
+        // A copy: the level's entries are kept with the level and this adds what the pane needs.
+        const e = cascadeColumn(cx, cols[i].c),
+          input = paneCascadeRatio(e);
+        out.push({ ...e, typed: E.ratio.cascade(input), ctx: { ratio: input } });
+      }
     } else if (to > from) {
       const ex = efficiencyContext(renderN());
-      for (let c = Math.floor(from / ts); c * ts < to; c++) {
-        const e = efficiencyOf(ex, c);
-        if (e.state !== "none") out.push(e);
-      }
+      // A column with no value is listed too: its typed reason is what the pane marks.
+      for (let c = Math.floor(from / ts); c * ts < to; c++) out.push(efficiencyOf(ex, c));
     }
     return out;
   }
-  function activity(shown, cut, mv, full) {
-    if (PANE_MEASURES[paneMeasure()]?.osc) return drawOscillator(paneMeasure(), PANE_MEASURES[paneMeasure()], cut);
+  // The columns the pane draws between the view, the rectangle, the cutoff and where the motion read
+  // ends: what `activity` paints, `paneTally` counts and `paneTip` looks a column up in.
+  function paneColumns(shown, cut, mv, full) {
     const ts = stepT(),
       b = bounds(),
       key = paneMeasure(),
@@ -10532,18 +10715,125 @@
       end = measure.motion ? (mv?.src ? mv.end : -Infinity) : Infinity,
       from = Math.max(S.tA, b[0]),
       to = Math.min(S.tB, cut, b[1], end),
-      // A column of the cells, or of their path and dwell, with a value; a
-      // ratio's, with its value or why it has none.
+      // A column of the cells, or of their path and dwell; a ratio's, with its typed result.
       cols = measure.ratio
         ? ratioColumns(key, full, ts, from, to)
-        : ((measure.motion ? mv?.shown : shown)?.cols || []).filter((c) => (c.c + 1) * ts > from && c.c * ts < to),
-      value = measure.ratio ? (x) => x.value : measure.value,
+        : ((measure.motion ? mv?.shown : shown)?.cols || []).filter((c) => (c.c + 1) * ts > from && c.c * ts < to);
+    return { key, measure, ts, b, end, from, to, cols };
+  }
+  // The count, largest and smallest of the values a measure has on these columns: what an Auto axis fits.
+  // A column without a value is not counted (an axis is never fitted to nothing, and never to a zero that
+  // is not there).
+  function paneColumnSummary(key, cols) {
+    let count = 0,
+      max = -Infinity,
+      min = Infinity;
+    for (const col of cols) {
+      const v = paneNumber(key, col);
+      if (v !== v) continue;
+      count++;
+      if (v > max) max = v;
+      if (v < min) min = v;
+    }
+    return { count, max, min };
+  }
+  // The registered axis of an ordinary column pane (the spine's axisFrame, the one wrapper around the
+  // registry): a ratio's is fixed at ±2; an Auto one takes the exact maximum of the values displayed, once
+  // the read that feeds the pane has settled (a rectangle still being measured, or a motion read still
+  // out, is not a cohort). The signature changes exactly when a displayed value might.
+  function paneAxis(pane, mv) {
+    const { key, measure, cols, from, to, b } = pane,
+      id = "pane." + key;
+    if (measure.ratio) return axisFrame(id, { eligible: true, sig: "" });
+    const meas = measurement(),
+      ready =
+        (meas.state === "exact" || meas.state === "recorded" || meas.state === "cube") &&
+        !meas.updating &&
+        (!measure.motion || Boolean(mv?.src && !motionIssue()));
+    return axisFrame(id, {
+      sign: measure.signed ? "signed-symmetric" : "unsigned",
+      eligible: ready,
+      sig: [
+        scaleWorkspace(),
+        id,
+        live.generation,
+        PACK.state_token ?? "",
+        cutEdge(),
+        S.replay,
+        renderN(),
+        renderM(),
+        b.join(","),
+        from,
+        to,
+        cols.length,
+        meas.state,
+        meas.updating ? 1 : 0,
+        mv?.src ? mv.end : "-",
+      ].join("|"),
+      summary: () => paneColumnSummary(key, cols),
+    });
+  }
+  // What the pane says about its axis, in words from E.text: "Auto axis ±1.92 B", "Fixed scale ±2",
+  // "Frozen ±1.92 B", "0", "No data", and why it is not current ("Updating", "Auto paused", how many bars
+  // the held domain leaves out). The chip carries the full detail; this is the canvas's short form.
+  function paneAxisNote(rec) {
+    if (!rec) return "";
+    const T = E.text,
+      parts = [],
+      sign = rec.sign === "unsigned" ? "" : "±";
+    if (rec.typed === "none") parts.push(rec.hold === "waiting" ? T.axis.waiting : T.axis.none);
+    else if (rec.typed === "zero-only") parts.push(`${rec.policy === "frozen" ? T.policy.axisFrozen : T.policy.axisAuto} ${T.axis.zero}`);
+    else {
+      const value = rec.policy === "fixed" && rec.sign === "unsigned" ? `${rec.domain[0]}–${rec.domain[1]}` : sign + compact(rec.domain[1]);
+      parts.push(`${rec.policy === "fixed" ? T.policy.fixed : rec.policy === "frozen" ? T.policy.axisFrozen : T.policy.axisAuto} ${value}`);
+    }
+    if (rec.external) parts.push(T.state.external);
+    if (rec.hold === "play") parts.push(T.axis.paused);
+    else if (rec.hold === "gesture" || rec.hold === "cap" || rec.hold === "settling") parts.push(T.axis.updating);
+    // Bars a HELD or frozen domain leaves out; a fixed axis's are the edge triangles and their key's count.
+    if (rec.policy !== "fixed" && rec.clipped?.count > 0) parts.push(T.fill(T.axis.clipped, { n: rec.clipped.count, total: rec.clipped.total }));
+    return parts.join(" · ");
+  }
+  // How the recorded model stands for one use ("efficiency" or "diagonal") at level n and the effective
+  // cutoff, as one line: its timing status and, where the level lies outside the levels it was fitted on,
+  // that it is extrapolated (the equality with it is still drawn). Empty when there is nothing to disclose.
+  function modelStatusLine(use, n) {
+    try {
+      return modelNoteWords(E.model.describe(use, E.time.baseToMs(activeCutoff(), T0, BASE), n));
+    } catch (error) {
+      scaleFault(error);
+      return "";
+    }
+  }
+  // The words of a model note: its disclosure labels, and for a model that can only have been fitted
+  // before the cutoff by the conservative bound, the status line E.model.describe leaves to its consumers.
+  const modelNoteWords = (note) =>
+    (note.status === "eligible-by-bound" ? [E.text.model.eligibleByBound, ...note.labels] : note.labels).join(" · ");
+  function activity(shown, cut, mv, full, sc) {
+    const first = paneMeasure();
+    if (PANE_MEASURES[first]?.osc) return drawOscillator(first, PANE_MEASURES[first], cut, sc);
+    const pane = paneColumns(shown, cut, mv, full),
+      { key, measure, ts, b, end, cols } = pane,
       signed = measure.signed || measure.ratio,
-      max = measure.ratio ? 2 : d3.max(cols, (c) => Math.abs(value(c))) || 1,
       top = G.ay,
       h = G.ah,
       zero = signed ? top + h / 2 : top + h,
       room = (signed ? h / 2 : h) - 4;
+    // The axis and the frame that encodes every column through it. A fault here is the scale display's, not
+    // the chart's: the pane then draws no bars and says why (see scaleFault).
+    let rec = null,
+      frame = null,
+      model = null;
+    if (sc !== INERT_SC && sc.lut) {
+      try {
+        rec = paneAxis(pane, mv);
+        model = key === "efficiency" ? E.model.describe("efficiency", E.time.baseToMs(cut, T0, BASE), renderN()) : null;
+        frame = E.readout.paneFrame({ key, axis: rec, lut: sc.lut, model });
+      } catch (error) {
+        scaleFault(error);
+        rec = frame = null;
+      }
+    }
     ctx.fillStyle = colors.surface;
     ctx.fillRect(G.x, top, G.w, h);
     ctx.save();
@@ -10559,30 +10849,83 @@
     }
     timeGrid(top, top + h);
     if (signed) markLine(G.x, zero, G.x + G.w, zero, colors.line, 1, 0.9);
-    let bars = 0;
-    for (const x of cols) {
-      if (measure.ratio && x.state !== "ok") continue;
-      const xa = G.X(Math.max(x.c * ts, b[0])),
-        xb = G.X(Math.min((x.c + 1) * ts, cut, b[1], end));
-      if (xb <= xa) continue;
-      bars++;
-      const v = measure.ratio ? clamp(x.value, -2, 2) : value(x),
-        bh = (Math.abs(v) / max) * room,
-        y = signed ? (v >= 0 ? zero - bh : zero) : zero - bh;
-      ctx.fillStyle = measure.ratio
-        ? divergingColour(v / 2, 1)
-        : signed
-          ? v >= 0
-            ? colors.buy
-            : colors.sell
-          : colors.volume;
+    // What the columns are, by how the frame encodes them: bars, and the marks of the ones that have no
+    // bar. `counts` is per key of the role table, every column counted whether or not its glyph fits.
+    const counts = {},
+      marks = [],
+      see = (id) => (counts[id] = (counts[id] || 0) + 1);
+    // The axis record keeps this frame's clip counts: the bars the held or fixed domain leaves out.
+    if (rec && !rec.clipped) rec.clipped = { low: 0, high: 0, count: 0, total: 0 };
+    const clipped = rec?.clipped;
+    if (clipped) clipped.low = clipped.high = clipped.count = clipped.total = 0;
+    if (frame) {
+      const ROLE = E.readout.ROLE,
+        CLIP = E.scale.CLIP,
+        FINITE = E.result.TAG.finite;
+      let css = null;
       ctx.globalAlpha = measure.ratio ? 0.85 : 0.65;
-      ctx.fillRect(xa, y, Math.max(0.1, xb - xa - (xb - xa > 3 ? 1 : 0)), bh);
+      for (const x of cols) {
+        const xa = G.X(Math.max(x.c * ts, b[0])),
+          xb = G.X(Math.min((x.c + 1) * ts, cut, b[1], end));
+        if (xb <= xa) continue;
+        frame.encode(x, ENC, x.ctx);
+        if (ENC.tag === FINITE) {
+          if (ENC.role === ROLE.NONE) continue;
+          clipped.total++;
+          if (ENC.clip === CLIP.LOW || ENC.clip === CLIP.HIGH) {
+            clipped.count++;
+            if (ENC.clip === CLIP.LOW) clipped.low++;
+            else clipped.high++;
+            see(ENC.clip === CLIP.LOW ? "clip-low" : "clip-high");
+            marks.push({ id: ENC.clip === CLIP.LOW ? "tri-down" : "tri-up", xa, xb, y: ENC.clip === CLIP.LOW ? top + h - 4 : top + 4 });
+          }
+          if (ENC.role === ROLE.ZERO) {
+            // A measured zero has no length: a tick on the baseline says it was there.
+            see("zero");
+            marks.push({ id: "tick", xa, xb, y: signed ? zero : zero - 1 });
+            continue;
+          }
+          if (ENC.css !== css) ctx.fillStyle = css = ENC.css;
+          const bh = Math.abs(ENC.t) * room;
+          ctx.fillRect(xa, ENC.t >= 0 ? zero - bh : zero, Math.max(0.1, xb - xa - (xb - xa > 3 ? 1 : 0)), bh);
+          continue;
+        }
+        // A value the column does not have: the glyph of its tag, counted under the key of the tag.
+        const tag = E.result.TAGS[ENC.tag];
+        if (ENC.role === ROLE.NONE || !ENC.pattern) continue;
+        see(tag);
+        // An open parent keeps its own hatch below; a column that is not there at all is no mark.
+        if (tag === "waiting-for-complete-parent") continue;
+        const last = marks[marks.length - 1];
+        if (last && last.id === ENC.pattern && ENC.pattern.startsWith("pattern-") && Math.abs(last.xb - xa) < 0.5) last.xb = xb;
+        else marks.push({ id: ENC.pattern, xa, xb, y: ENC.pattern === "diamond" ? (signed ? zero : zero - 4) : ENC.pattern === "infinity" ? top + h - 6 : 0 });
+      }
+      ctx.globalAlpha = 1;
+      for (const mark of marks) {
+        const w = mark.xb - mark.xa,
+          cx = (mark.xa + mark.xb) / 2;
+        if (mark.id === "tick") paintGlyph("tick", cx, mark.y, 6, { width: Math.max(1, w) });
+        else if (mark.id === "diamond") {
+          // A glyph is drawn where its column is at least as wide as it; otherwise it is only counted.
+          if (w >= 6) paintGlyph(mark.id, cx, mark.y, 6);
+        } else if (mark.id === "tri-up" || mark.id === "tri-down") {
+          // The edge triangles go over the label plate: they are painted after it (below).
+        } else if (mark.id === "infinity") {
+          if (w >= 10) paintGlyph("infinity", cx, mark.y, 10);
+        } else if (w < 4) {
+          // Below the pixel size a texture can be read at: a flat neutral fill, the readout has the tag.
+          ctx.globalAlpha = 0.3;
+          ctx.fillStyle = colors.state;
+          ctx.fillRect(mark.xa, top, Math.max(w, 1), h);
+          ctx.globalAlpha = 1;
+        } else {
+          ctx.fillStyle = patternFor(mark.id);
+          ctx.fillRect(mark.xa, top, w, h);
+        }
+      }
     }
     ctx.globalAlpha = 1;
-    // A ratio's columns without a value: those whose parent runs past the data
-    // are unfinished, like the open column; those it can't be read for are
-    // unavailable.
+    // A ratio's columns whose parent runs past the data are unfinished, like the open column: hatched.
     if (measure.ratio) {
       const span = 2 * ts,
         at = Math.floor(cut / span) * span;
@@ -10590,35 +10933,35 @@
         const xa = Math.max(G.x, G.X(at));
         hatchRect(xa, top, Math.min(G.x + G.w, G.X(cut)) - xa, h, colors.poc, 7, 0.25);
       }
-      let run = null;
-      const flush = () => {
-        if (run) hatchRect(G.X(run[0]), top, G.X(run[1]) - G.X(run[0]), h, colors.line, 11, 0.6);
-        run = null;
-      };
-      for (const x of cols)
-        if (x.state === "outside" || x.state === "unavailable") {
-          const a = Math.max(x.c * ts, b[0]),
-            z = Math.min((x.c + 1) * ts, cut, b[1]);
-          if (run && run[1] === a) run[1] = z;
-          else {
-            flush();
-            run = [a, z];
-          }
-        }
-      flush();
     }
     ctx.restore();
-    paneShown = { key, measure, cols };
-    // The scale in the price labels' column: the largest value, or a ratio's
-    // full strength.
-    if (bars || measure.ratio)
-      text((signed ? "±" : "") + (measure.ratio ? "2" : compact(max)), G.x - 8, top + 7, colors.muted, "right");
-    paneLegend(measure, cols, mv, top);
+    paneShown = { key, measure, cols, axis: rec, frame, model, ts, counts };
+    if (sc !== INERT_SC) sc.pane = paneShown;
+    // The scale in the price labels' column: what the axis is. A ratio's ticks are its fixed ones that fit.
+    const at = (s, y) => text(s, G.x - 8, clamp(y, top + 7, top + h - 6), colors.muted, "right");
+    if (rec) {
+      if (rec.typed === "none") at(E.text.axis.none, top + 7);
+      else if (rec.typed === "zero-only") at(E.text.axis.zero, top + 7);
+      else if (measure.ratio) for (const t of E.axis.ticks(rec, 2 * room)) at(t.label, zero - t.t * room);
+      else at((signed ? "±" : "") + compact(rec.domain[1]), top + 7);
+    }
+    paneLegend(measure, cols, mv, top, "", rec, model ? modelNoteWords(model) : "");
+    // The triangles that say a value lies beyond the axis, over the pane and its label.
+    if (marks.some((mark) => mark.id === "tri-up" || mark.id === "tri-down")) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(G.x, top, G.w, h);
+      ctx.clip();
+      for (const mark of marks)
+        if ((mark.id === "tri-up" || mark.id === "tri-down") && mark.xb - mark.xa >= 6) paintGlyph(mark.id, (mark.xa + mark.xb) / 2, mark.y, 6);
+      ctx.restore();
+    }
+    scaleHooks.axisChip?.(rec, paneShown);
   }
-  // The pane's name and unit at its top left, and what it is still reading or
-  // couldn't read. Measured only when its words or the pane's width change.
+  // The pane's name and unit at its top left, what its axis is, and what it is still reading or couldn't
+  // read. Measured only when its words or the pane's width change.
   let paneLabel = { s: "", width: 0, text: "", w: 0 };
-  function paneLegend(measure, cols, mv, top, extra = "") {
+  function paneLegend(measure, cols, mv, top, extra = "", axis = null, model = "") {
     const has = (state) => measure.ratio && cols.some((x) => x.state === state),
       note = measure.osc
         ? extra
@@ -10639,7 +10982,9 @@
                 : has("unavailable")
                   ? `125 USDT rows are recorded here for the last ${renderN() >= 4 ? 30 : 7} days`
                   : "",
-      s = note ? `${measure.label}${measure.unit ? " · " + measure.unit : ""} · ${note}` : measure.unit ? `${measure.label} · ${measure.unit}` : measure.label;
+      // The axis words and the model's follow the name: the memo below is keyed on the whole string, so a
+      // change of domain, "Updating" or "No data" is a new label.
+      s = [measure.label, measure.unit, paneAxisNote(axis), note, model].filter(Boolean).join(" · ");
     ctx.font = `${TYPE.s}px ${FONT}`;
     if (paneLabel.s !== s || paneLabel.width !== G.w) {
       const fitted = fitText(s, G.w - 12);
@@ -10651,6 +10996,29 @@
     ctx.globalAlpha = 1;
     text(paneLabel.text, G.x + 6, top + 8.5, colors.muted, "left");
   }
+  // The warning tally's feeder for the pane (DD-76): the bars as drawn now, each once, with its place on the
+  // axis and whether it is beyond it. The columns come from the current state at the moment of the call;
+  // the axis is the registry's current record, never a fresh fit (the tick only counts, it does not refit).
+  // A bar's index is its length on the axis in 256 steps, so "low discrimination" reads as most bars being
+  // tiny against the axis.
+  function paneTally(tally) {
+    const vp = viewParts(),
+      pane = paneColumns(vp.shown, vp.cut, vp.mv, vp.full);
+    if (pane.measure.osc) return;
+    const rec = scaleRt.axes.get("pane." + pane.key, scaleWorkspace());
+    if (!rec || rec.typed === "none") return;
+    const frame = E.readout.paneFrame({ key: pane.key, axis: rec, lut: lutFor(scaleRt.appearance, scaleRt.theme) }),
+      ROLE = E.readout.ROLE,
+      FINITE = E.result.TAG.finite,
+      end = pane.end;
+    for (const x of pane.cols) {
+      if (G.X(Math.min((x.c + 1) * pane.ts, vp.cut, pane.b[1], end)) <= G.X(Math.max(x.c * pane.ts, pane.b[0]))) continue;
+      frame.encode(x, ENC, x.ctx);
+      if (ENC.tag !== FINITE || ENC.role === ROLE.NONE) continue;
+      tally.add(E.scale.index(ENC.t), ENC.clip, true, ENC.role !== ROLE.ZERO);
+    }
+  }
+  scaleHooks.paneMarks = paneTally;
   // Efficiency: a column's USDT per 125 USDT row its trades touched, against
   // its parent column's one level up in time, as log2 of their ratio over
   // 0.70, the ratio expected: halving a column halves its volume, while its
@@ -10662,7 +11030,7 @@
   // cells, and from 15 minutes the 30-day archive with the recent tier after
   // it), and live, elsewhere, from the cube (/cube/touched), a chunk of 512
   // columns at a time.
-  const EFFICIENCY_EXPECTED = 2 ** (ISO_B - 1),
+  const EFFICIENCY_EXPECTED = E.model.PROVENANCE.baseline,
     TOUCHED_CHUNK = 512,
     touches = new Map(),
     touchedMaps = new WeakMap();
@@ -10693,15 +11061,26 @@
       chunk: null,
     };
   }
+  // A column Efficiency has no pair for, or none yet, with its typed result from the ratio kernel:
+  // "coarsest" (no coarser level: no-coarser-parent), "open" (its parent runs past the data:
+  // waiting-for-complete-parent), "unavailable" (the recorded snapshot has no 125 USDT rows: unsupported),
+  // "pending" and "failed" (the read of its rows). `ctx` is what the pane frame evaluates it from.
+  function efficiencyColumnEntry(c, state, error) {
+    const input = { baseline: EFFICIENCY_EXPECTED };
+    if (state === "pending") input.read = { state: "pending", reason: "reading rows" };
+    else if (state === "failed") input.read = { state: "failed", reason: String(error) };
+    else input.structure = state;
+    return { c, state, error, typed: E.ratio.efficiency(input), ctx: { ratio: input } };
+  }
   function efficiencyOf(ex, c) {
     const n = ex.n;
-    if (n >= N_MAX) return { c, state: "coarsest" };
+    if (n >= N_MAX) return efficiencyColumnEntry(c, "coarsest");
     const span = 2 ** (n + 1),
       pc = Math.floor(c / 2),
       a = pc * span,
       z = a + span;
     // A parent that runs past the data is unfinished, as the open column is.
-    if (z > ex.cut) return { c, state: "open" };
+    if (z > ex.cut) return efficiencyColumnEntry(c, "open");
     for (const h of ex.blocks)
       if (a >= h.start && z <= h.end) {
         if (!h.cols) {
@@ -10710,7 +11089,7 @@
         }
         return efficiencyFrom(h.cols, h.parents, c, pc);
       }
-    if (!PACK.live) return { c, state: "unavailable" };
+    if (!PACK.live) return efficiencyColumnEntry(c, "unavailable");
     // Columns in view share a chunk or two: each is looked up once a frame.
     const k = Math.floor(a / (TOUCHED_CHUNK * 2 ** n));
     if (ex.chunk?.k !== k) {
@@ -10720,15 +11099,23 @@
     }
     const { key, hit } = ex.chunk;
     if (hit) return efficiencyFrom(hit.cols, hit.parents, c, pc);
-    return key && cube.failed.has(key) ? { c, state: "failed", error: cube.failed.get(key) } : { c, state: "pending" };
+    return key && cube.failed.has(key) ? efficiencyColumnEntry(c, "failed", cube.failed.get(key)) : efficiencyColumnEntry(c, "pending");
   }
+  // A column's Efficiency from its counts and its parent's: the ratio kernel's typed result, which is
+  // empty-population naming the count that is 0 where a column has no trades or touched no row ("none"),
+  // and otherwise log2 of the two USDT per row over the model's expected ratio.
   function efficiencyFrom(cols, parents, c, pc) {
     const w = cols.get(c),
-      p = parents.get(pc);
-    if (!(w?.v > 0 && w.rows > 0 && p?.v > 0 && p.rows > 0)) return { c, state: "none" };
-    const e = w.v / w.rows,
-      ep = p.v / p.rows;
-    return { c, state: "ok", value: Math.log2(e / ep / EFFICIENCY_EXPECTED), e, ep, w, p };
+      p = parents.get(pc),
+      input = {
+        structure: "complete",
+        child: { v: w?.v, rows: w?.rows },
+        parent: { v: p?.v, rows: p?.rows },
+        baseline: EFFICIENCY_EXPECTED,
+      },
+      typed = E.ratio.efficiency(input);
+    if (typed.tag !== "finite") return { c, state: "none", typed, ctx: { ratio: input } };
+    return { c, state: "ok", value: typed.value, typed, ctx: { ratio: input }, e: w.v / w.rows, ep: p.v / p.rows, w, p };
   }
   // Chunk k of level n: its columns up to the last whole parent before the
   // data's edge.
@@ -12898,7 +13285,10 @@
     // would lay the page out again, in the next frame's draw.
     const pixels = `${fmt(px)} × ${fmt(py)} px per cell`;
     if (el("pixel-state").textContent !== pixels) el("pixel-state").textContent = pixels;
-    nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)`;
+    // The diagonal is the recorded model's: the one string says how it stands at the cutoff (timing, and
+    // whether the requested level lies outside the levels it was fitted on).
+    const model = modelStatusLine("diagonal", S.n);
+    nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)${model ? ` · ${model}` : ""}`;
     if (!nav.planeHover) setPlaneStatus(nav.planeStatus);
     const gesture = S.lens
       ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · V: pan"

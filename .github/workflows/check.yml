@@ -1,22 +1,137 @@
 name: Check explorer
+# Two callers: pushes and pull requests run it as a workflow of its own, and deploy.yml runs it through
+# workflow_call so that the checks and the deploy are one run for one commit. There is no concurrency
+# group here on purpose: a group derived from the caller's would deadlock or cancel the caller.
 on:
   push:
   pull_request:
+  workflow_call:
+    outputs:
+      sha:
+        description: The commit every job in this workflow checked out and tested
+        value: ${{ jobs.static.outputs.sha }}
 permissions:
   contents: read
 jobs:
-  check:
-    runs-on: ubuntu-latest
+  static:
+    name: Build, syntax, goldens, image and deploy payload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
+      # Every checkout names the commit and then proves it got it: inside a called workflow the github
+      # context is the caller's, and on a pull request github.sha is the merge commit, not the branch head.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - id: commit
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # The deploy gate: the committed index.html must be exactly what the sources build.
       - run: python3 tools/build.py --check
-      - run: node --check src/explorer.js
-      - run: node --check src/state.js
-      - run: python3 -m py_compile tools/cube_bridge.py tools/market_state_reader.py
+      # tools/encoding-parts/ is left out until the assembly commit deletes it: a part is a fragment of one
+      # module (its footer has a top-level return), so node --check cannot parse it alone.
+      - run: git ls-files -- 'src/*.js' 'tests/*.js' 'tests/*.mjs' 'tools/*.js' 'tools/*.mjs' | grep -v '^tests/fixtures/' | grep -v '^tools/encoding-parts/' | xargs -r -n1 node --check
+      - run: python3 -m py_compile tools/cube_bridge.py tools/market_state_reader.py tools/build.py
+      # Only compares: a mismatch fails the job, nothing here rewrites a golden file to make itself pass.
+      - run: npm run golden:check
       - run: printf 'EXPLORER_AUTH_USER=x\nEXPLORER_AUTH_PASS=y\n' > .env && docker compose config -q
+      - name: The image holds only what the Dockerfile copies
+        run: |
+          docker build -t cube-explorer:check .
+          docker run --rm --entrypoint find cube-explorer:check /app -type f | LC_ALL=C sort > "$RUNNER_TEMP/image-files.txt"
+          printf '%s\n' /app/index.html /app/tools/cube_bridge.py /app/tools/market_state_reader.py /app/vendor/D3-LICENSE /app/vendor/d3.min.js | diff -u - "$RUNNER_TEMP/image-files.txt"
+      - name: The deploy payload stays small
+        run: |
+          rsync -a --prune-empty-dirs --filter='merge .github/deploy.filter' ./ "$RUNNER_TEMP/payload/"
+          du -sk "$RUNNER_TEMP/payload" | awk '{ print $1 " KiB"; exit ($1 > 4096) }'
+  unit:
+    name: Node tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      # python3 is needed by the build test, which calls tools/build.py without writing index.html.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # A glob that matches no file makes the Node runner exit 0, so an empty suite must fail here.
+      - run: test "$(git ls-files 'tests/unit/*.test.js' | wc -l)" -gt 0
+      - run: npm run test:ci
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: unit-report
+          path: reports/
+          retention-days: 14
+          if-no-files-found: ignore
+  browser:
+    name: Browser tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      # fetch-depth 0: the rollback, parity and benchmark tests build the original page from git history.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      # The revision comes from the lockfile (npx runs the installed CLI), never from @latest.
+      - run: npx playwright install --with-deps --only-shell chromium
+      # CONVERGENCE=1 serves the committed index.html, the one thing this workflow certifies.
+      - run: npm run test:browser
+        env:
+          CONVERGENCE: '1'
+      # Checks that the benchmark tool runs and its report validates. Timing never gates a deploy.
+      - run: npm run benchmark:smoke
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: browser-report
+          path: |
+            reports/
+            test-results/
+            playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
+  bridge:
+    name: Fake cube against the real bridge functions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # The Dockerfile's numpy pin: the functions checked here are the ones the image runs.
+      - run: pip install --no-cache-dir numpy==2.4.6
+      - run: python3 tests/reference/bridge_crosscheck.py --require-numpy

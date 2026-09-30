@@ -132,16 +132,22 @@
   // the finite POSITIVE values of a cohort (zeros are separately keyed and must not compress the low end;
   // rank is offered only for unsigned unbounded measures). knots[j] is the Type-7 quantile at q = j/256,
   // made non-decreasing after rounding. It is an APPROXIMATION and says so (algorithm "type7-257@1"): it is
-  // not an exact empirical midrank between knots. An empty positive set is No calibration (C.3 literally).
+  // not an exact empirical midrank between knots. A cohort with no positive value splits as fitValue does
+  // (DR-40, D3): measured zeros only is a valid zero-only calibration (a later nonzero value is out of
+  // domain until a fit replaces it), and a cohort with no finite value >= 0 at all (empty, or only
+  // negatives and non-finite values that E.cohort has excluded and counted) is No calibration.
   function sclFitRank(cohort) {
     const values = sclValuesOf(cohort);
     const buf = new Float64Array(values.length);
     let n = 0;
+    let zeros = 0;
     for (let i = 0; i < values.length; i++) {
       const x = values[i];
-      if (sclIsNumber(x) && x > 0) buf[n++] = x;
+      if (!sclIsNumber(x)) continue;
+      if (x > 0) buf[n++] = x;
+      else if (x === 0) zeros++;
     }
-    if (n === 0) return sclNoCalibration("empty cohort");
+    if (n === 0) return zeros > 0 ? { state: "ok", descriptor: sclZeroOnly(false) } : sclNoCalibration("empty cohort");
     const s = buf.subarray(0, n);
     s.sort();
     const knots = [];

@@ -323,7 +323,7 @@ Verified by scanning `git show 8c82ca1:src/explorer.js` with comments blanked; t
 
 | Class | Occurrences (baseline) |
 |---|---|
-| Cell/row/column fields | `bv` (50 occurrences), `bt` (27), `bpoc` (514, 533, 545, 1472, 2322, 2835, 4432, DOM id at 2989), `buyShare` (9212, 9410, 9469), `q.bv/q.bt` from `taker_buy_volume`/`taker_buy_trade_count` (1467-1472), bars `bv` (5183, 5192); block cells `bv` (302, 314, 9895) |
+| Cell/row/column fields | `bv`, `bt` (66 and 40 whole-word occurrences in `src/explorer.js` at the baseline), `bpoc` (514, 533, 545, 1472, 2322, 2835, 4432, DOM id at 2989), `buyShare` (9212, 9410, 9469), `q.bv/q.bt` from `taker_buy_volume`/`taker_buy_trade_count` (1467-1472), bars `bv` (5183, 5192); block cells `bv` (302, 314, 9895) |
 | Sort keys and ids | `CELL_SORTS` `buyvol`, `buytrades` (39-40, 2420-2421), `CASE_SORTS` `buy` (45, 9410), `data-sort="buyvol"\|"buytrades"`, `data-case-sort="buy"`, `#ol-buyvol`, `#ol-buycount`, `#ol-buypoc-value`, `#ol-key-bpoc` |
 | Visible labels naming the measure | "Buy USDT", "Buy trades", "Buy share" (view.html 1101-1107, 1196-1197), "B · buy POC" (1280), "Taker-buy USDT/trades" (1361, 1364), "Buy POC centre" (1378), "Buy share · volume" (1387), tooltip "Taker buys", "Taker-buy trades", "Buy − sell", "Buy − sell trades", "Buy point of control" (2673-2681, 2835, 2842-2843, 2914-2916), "lower/middle/upper buy-share third" (9258-9260), `MODE_INFO`/`PANE_INFO`/`ROWS_INFO` "Taker-buy minus taker-sell USDT" (1724, 1746, 6973), legend "Taker buys 25% · 50% · 75%" (4143-4144, 11301) |
 | Server/wire | tools/cube_bridge.py `taker_buy_volume`, `taker_buy_trade_count`, `taker_buy_poc`, `tbvol`, `tbcnt`, `buyVolume`, `buyTrades` (lines 29, 46, 59, 62, 67, 117, 203, 211, 323, 325, 386, 450-451, 679, 871-872, 903); `buyVolume`/`buyTrades` are not read by src/; docs/data-and-semantics.md `buy_volume` (13) |
@@ -335,7 +335,7 @@ Verified by scanning `git show 8c82ca1:src/explorer.js` with comments blanked; t
 | taker-buy subset bar in `colors.buy` | `profile` 4394-4401 | S2 makes it a neutral labelled inset; until then it blocks retiring `colors.buy` |
 | Buy POC line/label in `colors.buy` | `profile` 4432, 4437; F-08 | S2 (profile tracks) and S3 move it to the gold profile role with a distinguishing label/glyph |
 | `S.mode === "flow"` naming ("Taker flow") drawn positive/negative | `cellColour` 4278 | fine: the name is data, the colours become `+/-/mid` |
-| README/help prose describing a data measure in role words | 2.7 | reword by role, keep data names |
+| README/help prose describing a data measure in role words | README.md, docs/data-and-semantics.md, help strings (R-13, R-14, R-15) | reword by role, keep data names |
 
 Each has an owner in the inventory (C-11b, C-11d, F-08, C-02) and stays in the allowlist until it moves; none is exempted by name.
 
@@ -344,7 +344,7 @@ Each has an owner in the inventory (C-11b, C-11d, F-08, C-02) and stays in the a
 - After an OS colour-scheme flip the toolbar Lines dots (D-04) keep the old scheme's colours until an unrelated `update()`; `.ol-family-dot` and `.ol-line-swatch` are written only while their popover is open. S3 owns them; every new colour writer of S1 is refreshed by `themeChanged()` (N-12) and covered by B04.
 - Reduced motion is read once at load (line 48) and only nulls the 170 ms level-change morph; new legends and notices are static.
 - The recorded page has no motion, OHLC, bars, moving averages, VWAP, Time-at-price or oscillators: C-08, the motion measures of C-12, C-13 and the live-only families of D-06 are exercised only through the fake cube.
-- The image excludes `docs`, `src`, `*.md` and `data` (`.dockerignore`); this file and the tests never ship, and the lint reads sources, not the built `index.html`.
+- The image carries only `index.html`, `vendor/` and the two bridge Python files (the Dockerfile `COPY` set, mirrored by the `.dockerignore` allowlist); this file and the tests never ship, and the lint reads sources, not the built `index.html`.
 
 ## 6. CSS rules that paint with a market hue or a keyed neutral state (baseline `src/explorer.css`)
 

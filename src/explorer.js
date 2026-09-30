@@ -4,6 +4,15 @@
     el = (id) => root.querySelector("#ol-" + id),
     qsa = (s) => root.querySelectorAll(s),
     PACK = JSON.parse(document.getElementById("origo-lens-data").textContent);
+  // The measurement module (src/encoding.js), inlined before this script. Everything the chart says about
+  // a value comes from it, so a page that lacks it says so in its own loading line and stops, where a
+  // missing module would otherwise surface as an error nobody sees. `E.text` cannot be used here: E is
+  // what is missing.
+  const E = window.explorerEncoding;
+  if (!E) {
+    el("loading").textContent = "The explorer's measurement module did not load. Reload the page.";
+    throw new Error("explorerEncoding is missing");
+  }
   const BASE = PACK.base_seconds,
     PR = PACK.base_price,
     T0 = PACK.t0,
@@ -124,6 +133,9 @@
       cellDir: -1,
       caseSort: "date",
       caseDir: -1,
+      // What the person chose for the scales (Scale sections of the menus): raw preferences, never
+      // rewritten to fit the current measure; E.policy.effective says what they mean for it.
+      scale: structuredClone(E.policy.DEFAULTS),
     };
   let sources = {},
     G = {},
@@ -712,6 +724,21 @@
       probe.style.color = `var(--ol-${key})`;
       colors[key] = getComputedStyle(probe).color;
     }
+    // The roles of visual version 2 (the tokens sit beside the old ones until every consumer has moved):
+    // positive, negative and midpoint for signed measures, occupancy and state for marks that carry no
+    // value, and the two interim names for the unsigned marks that still use the taker sides.
+    for (const [key, token] of [
+      ["positive", "positive"],
+      ["negative", "negative"],
+      ["midpoint", "midpoint"],
+      ["occupancy", "occupancy"],
+      ["state", "state"],
+      ["legacyBuy", "legacy-buy"],
+      ["legacySell", "legacy-sell"],
+    ]) {
+      probe.style.color = `var(--ol-${token})`;
+      colors[key] = getComputedStyle(probe).color;
+    }
     // The line families' colours, and each tier's weight and saturation.
     colors.family = {};
     for (const key of ["poc", "level", "average", "vwap", "clock"]) {
@@ -727,6 +754,7 @@
       };
     probe.remove();
     buildRamp();
+    themeChanged();
   }
   function requestDraw() {
     if (!raf)
@@ -907,9 +935,295 @@
     line(G.x, G.y + G.h, G.x + G.w, G.y + G.h, colors.line);
     line(G.x, G.ay + G.ah, G.x + G.w, G.ay + G.ah, colors.line);
   }
-  function draw() {
-    if (!ready) return;
-    geometry();
+  // ---- The scale spine (PRD-0002 S1) ----
+  // The per-draw scale frame `sc` and the state behind it. Every consumer of a value's colour receives `sc`
+  // as its last argument and encodes through it; the measurement module (E) owns the arithmetic and this
+  // block owns the page: when a mapping is resolved, what is held, when the timers wake. The consumer
+  // packages join through `scaleHooks` (an unregistered hook is a no-op, so every merge order runs), and the
+  // functions below are the ones a consumer may call without a hook. The first version is a skeleton: the
+  // frames exist and say "No calibration", nothing resolves, fits or wakes yet, and the page draws exactly
+  // what it drew before.
+  const scaleRt = {
+      // live and replay workspaces; replay is tab memory only
+      store: E.store.create(),
+      // settle 200 ms, Auto cap 500 ms, one want per channel
+      ctl: E.lifecycle.controller(),
+      axes: E.axis.registry(),
+      notices: E.notice.create({ now: () => Date.now() }),
+      // "appearance|theme" -> Lut; encoding builds, the page caches
+      lut: new Map(),
+      // "kind|colourEpoch|dpr" -> CanvasPattern
+      patterns: new Map(),
+      // the previous Resolved of each channel, for the "Scale changed" diff
+      prev: { cells: null, rows: null },
+      // memoKey -> Calibration; cleared on a whole pack, never on a delta
+      fitMemo: new Map(),
+      // {key, tally, report} per channel, computed by the settled tick only
+      warn: { cells: null, rows: null, lens: null },
+      // the last DOM write key of each legend, so an unchanged legend writes nothing
+      legendKey: { cells: "", rows: "", lens: "" },
+      // {text, cause, oldIds, newIds, atMs}: what the last settle changed
+      note: null,
+      timer: 0,
+      lastGestureAt: -Infinity,
+      playing: false,
+      tipStamp: "",
+      tipReadout: null,
+      rowReadout: null,
+      appearance: E.lut.DEFAULT_APPEARANCE,
+      // the theme the surface colour belongs to, set by themeChanged
+      theme: "light",
+      // set by scaleFault: the scale display is off for the rest of the session
+      fault: false,
+    },
+    // The ONE scratch object frame.encode fills for a mark (no allocation per mark). It has the shape the
+    // frames write, so every call sees the same object layout.
+    ENC = {
+      tag: 0,
+      value: NaN,
+      signed: false,
+      short: false,
+      reason: null,
+      denominator: null,
+      role: 0,
+      idx: -1,
+      clip: 0,
+      t: 0,
+      pattern: null,
+      css: null,
+    },
+    // The optional hooks the consumer packages register (see the hooks table of the design): one
+    // `scaleHooks.name = fn;` statement directly after the function it names.
+    scaleHooks = {},
+    // What a fault leaves behind (scaleFault fills it): an occupancy-only chart and the legacy legend.
+    INERT_SC = { cells: null, cellsFull: null, rows: null, lens: null, stamp: "inert", cutMs: 0, lut: null };
+  // The read-only state a fit is authorised against: a fit reads it when it is requested and checks it again
+  // just before it commits, so no fit lands on a pack, cutoff or token that has moved on.
+  function acceptedState() {
+    return { generation: live.generation, token: PACK.state_token ?? null, cut: CUT, canon: CANON };
+  }
+  // Which workspace a lookup reads, at lookup time: replay never writes the live one.
+  function scaleWorkspace() {
+    return S.replay ? "replay" : "live";
+  }
+  // The Cells calibration context of what is drawn now, by its EFFECTIVE level and preferences (a measure that
+  // cannot use a preference reads it as its default, and the raw preference is never rewritten). Geometry
+  // has nothing to calibrate.
+  function cellsContext() {
+    if (S.mode === "geometry") return null;
+    const eff = E.policy.effective(S.scale, S.mode);
+    return E.context.cellsKey({
+      measure: S.mode,
+      basis: eff.basis,
+      pathBasis: eff.pathBasis,
+      transform: eff.transform,
+      curve: eff.curve,
+      n: renderN(),
+      m: renderM(),
+      workspace: scaleWorkspace(),
+      instrument: INSTRUMENT,
+    });
+  }
+  // The two callbacks every cells frame takes from the page. They forward to the consumer hooks so a frame
+  // built before those hooks exist still works: an unregistered `cellMeasured` counts every cell as
+  // measured, an unregistered `cascadeEntry` leaves a Cascade cell pending.
+  function scaleMeasured(z) {
+    return scaleHooks.cellMeasured?.(z);
+  }
+  function scaleCascade(z, out) {
+    scaleHooks.cascadeEntry?.(z, out);
+  }
+  // The key that says whether anything a readout or a legend was built from has changed: every channel's
+  // mapping id, the appearance, the theme epoch and the pack generation. Nothing in it is a timestamp.
+  function scaleStamp(sc) {
+    return [
+      sc.cells.mappingId,
+      sc.rows?.mappingId ?? "",
+      sc.lens?.mappingId ?? "",
+      sc.lut.id,
+      colourEpoch,
+      live.generation,
+    ].join("|");
+  }
+  // The per-draw resolution: one frame per colour channel, from what the page shows. Here every mapping is
+  // "No calibration" (a geometry view needs none), so a frame encodes occupancy only; the real resolution
+  // replaces the mapping and nothing else in this function.
+  function scaleFrame(cut, parts) {
+    const { meas, mv, moving } = parts,
+      eff = E.policy.effective(S.scale, S.mode),
+      lut = lutFor(scaleRt.appearance, scaleRt.theme),
+      context = cellsContext(),
+      cutMs = E.time.baseToMs(cut, T0, BASE),
+      frameOf = (bounds) =>
+        E.readout.cellsFrame({
+          mode: S.mode,
+          basis: eff.basis,
+          pathBasis: eff.pathBasis,
+          level: { n: renderN(), m: renderM() },
+          bounds,
+          cut,
+          cutMs,
+          end: mv ? mv.end : Infinity,
+          geom: { BASE, PR },
+          CUT,
+          replay: S.replay,
+          mapping: context ? { state: "no-calibration", reason: "uninitialized" } : null,
+          lut,
+          read: null,
+          measured: scaleMeasured,
+          cascade: scaleCascade,
+          contextKey: context ? E.context.keyString(context) : null,
+          t0: T0,
+        }),
+      cells = frameOf(meas.b),
+      sc = {
+        cells,
+        // the selection's faded full-range layer, over the whole block rather than the rectangle
+        cellsFull: S.selection ? frameOf(moving ? (mv?.fullBounds ?? meas.b) : null) : cells,
+        rows: null,
+        lens: null,
+        cutMs,
+        lut,
+        stamp: "",
+      };
+    sc.stamp = scaleStamp(sc);
+    return sc;
+  }
+  // The Lut of an appearance in a theme, built once: a theme flip is a lookup, never a refit or a fetch.
+  function lutFor(name, theme) {
+    const key = name + "|" + theme;
+    let lut = scaleRt.lut.get(key);
+    if (!lut) scaleRt.lut.set(key, (lut = E.lut.build(name, theme)));
+    return lut;
+  }
+  // The canvas pattern of a non-value kind ("pattern-dots", a typed tag such as "pending"): the module draws
+  // a tile in css px scaled to whole device pixels, and the pattern undoes the device scale so the tile
+  // keeps its css size. Cached per theme epoch and pixel ratio.
+  function patternFor(kind) {
+    const dpr = devicePixelRatio || 1,
+      key = kind + "|" + colourEpoch + "|" + dpr;
+    let pattern = scaleRt.patterns.get(key);
+    if (!pattern) {
+      const tile = E.role.tile(kind, {
+        dpr,
+        ink: colors.state,
+        ground: colors.surface,
+        font: `${TYPE.s}px ${FONT}`,
+        makeCanvas: (w, h) => Object.assign(document.createElement("canvas"), { width: w, height: h }),
+      });
+      pattern = ctx.createPattern(tile, "repeat");
+      pattern.setTransform(new DOMMatrix().scale(1 / dpr));
+      scaleRt.patterns.set(key, pattern);
+    }
+    return pattern;
+  }
+  // One glyph of the role table (a hollow diamond, a triangle, a zero tick, the negative-infinity plate),
+  // centred on (x, y), in the ink its row names: state ink for marks that say why there is no value,
+  // occupancy ink for outlines.
+  function paintGlyph(id, x, y, size, opts) {
+    const ink = E.role.GLYPHS[id]?.ink === "occupancy" ? colors.occupancy : colors.state;
+    E.role.paint(ctx, id, x, y, size, ink, { ground: colors.surface, font: `${TYPE.s}px ${FONT}`, ...opts });
+  }
+  // A new theme: a new epoch, the Lut for the new surface, no patterns and no legend written yet. Mapping
+  // ids, contexts and the stores do not depend on the theme, so nothing is fetched and nothing is refitted.
+  function themeChanged() {
+    colourEpoch++;
+    const rgb = E.lut.parseColor(colors.surface);
+    scaleRt.theme = rgb ? E.lut.themeOf(rgb) : d3.lab(colors.surface).l < 50 ? "dark" : "light";
+    scaleRt.patterns.clear();
+    Object.assign(scaleRt.legendKey, { cells: "", rows: "", lens: "" });
+    try {
+      lutFor(scaleRt.appearance, scaleRt.theme);
+    } catch (error) {
+      scaleFault(error);
+    }
+  }
+  // Something in the scale display threw: say so once and draw occupancy only, with the legacy legend, for
+  // the rest of the session. The frame below does not depend on E (E is what may be at fault).
+  function scaleFault(error) {
+    if (!scaleRt.fault) {
+      scaleRt.fault = true;
+      const inert = {
+        kind: "cells",
+        get mode() {
+          return S.mode;
+        },
+        mappingId: "",
+        mappingState: "no-calibration",
+        encode(z, out) {
+          out.css = colors.occupancy;
+          out.pattern = null;
+          out.tag = 0;
+          out.value = NaN;
+          out.signed = false;
+          out.short = false;
+          out.reason = null;
+          out.denominator = null;
+          out.role = 6;
+          out.idx = -1;
+          out.clip = 0;
+          out.t = 0;
+          return out;
+        },
+        readout: () => null,
+        legendInput: () => null,
+        fingerprint: () => "inert",
+      };
+      INERT_SC.cells = INERT_SC.cellsFull = inert;
+      postNotice({ code: "scale-fault", details: [String(error?.message ?? error)] });
+    }
+    return INERT_SC;
+  }
+  // A notice for the banner: queued, coalesced by the queue, shown by the DOM package when it is there.
+  function postNotice(input) {
+    const row = scaleRt.notices.post(input);
+    scaleHooks.notice?.();
+    return row;
+  }
+  // The stamp of a gesture (a pointer, a wheel tick, a key, a resize, a replay step, Play): when it was,
+  // and a wake, because a gesture's end is what lets a pending calibration settle. The page's own
+  // `gestureAt` and `gesturing()` stay as they are (they also gate continuations and the cutoff follow).
+  function noteGesture() {
+    scaleRt.lastGestureAt = performance.now();
+    scaleArm();
+  }
+  // DR-17's own settle predicate, apart from `gesturing()`.
+  function calibrationSettled() {
+    return E.lifecycle.settled({
+      now: performance.now(),
+      lastGestureAt: scaleRt.lastGestureAt,
+      held: heldNow(),
+      settleMs: E.TIMING.SETTLE_MS,
+    }).settled;
+  }
+  // What is held down right now, by name (for the settle predicate, tests and the chip details). It
+  // allocates, so it never runs on a per-move path; `heldCount` is the cheap form.
+  function heldNow() {
+    const names = [];
+    if (drag) names.push("drag");
+    if (nav.pinch) names.push("pinch");
+    if (nav.pointers.size) names.push("pointer");
+    if (nav.zoomKeys.size) names.push("zoomKey");
+    if (nav.zoomPending) names.push("zoomEnd");
+    return names;
+  }
+  // How many holds there are, without allocating: `update()` runs on every pointer move.
+  function heldCount() {
+    return (drag ? 1 : 0) + (nav.pinch ? 1 : 0) + nav.pointers.size + nav.zoomKeys.size + (nav.zoomPending ? 1 : 0);
+  }
+  // Is a read the view needs still outstanding? A read that failed is not: the wants keep returning after a
+  // failure (only `cube.failed` remembers it), and waiting for one would hold calibration back for good.
+  function viewReadPending() {
+    return (
+      cube.stale ||
+      ["measure", "tile", "lens"].includes(cube.busy?.kind) ||
+      [measureWant(), tileWant(), lensWant()].some((want) => want && !cube.failed.has(want.key))
+    );
+  }
+  // What the page derives from its state to draw one frame: the block shown, the cutoff, the aggregates and
+  // the measured rectangle, path and dwell. `draw()` destructures it; the cohorts and the marks hooks call
+  // it again when they fire, so what they count can never drift from what was drawn.
+  function viewParts() {
     const src = displaySource(),
       cut = activeCutoff(),
       // Under Path and Dwell the cells shade by their own motion, over the
@@ -930,16 +1244,113 @@
       // Path and dwell, while a movement view shows them.
       mv = movementOn() ? motionView(src, cut, meas) : null,
       ts = stepT(),
-      ps = stepP(),
+      ps = stepP();
+    return { src, cut, moving, sum, full, meas, b, query, shown, mv, ts, ps };
+  }
+  // The axis of a column pane, an oscillator or a profile, through the one registry. Inert here: it answers
+  // "No data" for every axis.
+  function axisFrame(id, spec) {
+    return {
+      id,
+      policy: "auto",
+      sign: spec?.sign ?? "unsigned",
+      typed: "none",
+      domain: null,
+      natural: null,
+      mappingId: null,
+      hold: null,
+      external: false,
+      initial: false,
+      clipped: { low: 0, high: 0, count: 0, total: 0 },
+    };
+  }
+  // The id of the tile that would show the view, and whether a tile is the lens's alone: a lens tile is
+  // never the display source before Pin. Pure predicates, no state change.
+  function viewTileId() {
+    const [n, m] = viewLevel(),
+      [a, b] = viewRange();
+    return tileSpec(n, m, a, b)?.id ?? null;
+  }
+  function lensOnly(s, want = viewTileId()) {
+    return Boolean(s.lens) && s.id !== S.dataset && s.id !== want;
+  }
+  // The plain inputs of a channel's cohort, from the state at the moment it is asked (never from a frame
+  // kept from an earlier draw), through the consumer's hook. None registered: nothing to fit from.
+  function cohortInputs(channel) {
+    const vp = viewParts(),
+      // The cells cohort of a motion measure is its own (Path and Dwell), not the volume cells a motion
+      // pane may show beside it.
+      hook =
+        channel === "cells"
+          ? movementMode()
+            ? scaleHooks.motionCohort
+            : scaleHooks.cellsCohort
+          : channel === "rows"
+            ? scaleHooks.rowsCohort
+            : channel === "lens"
+              ? scaleHooks.lensCohort
+              : undefined;
+    return hook ? hook(vp) : null;
+  }
+  // Wake the calibration clock, cheaply: it runs on every pointer move of a pan, so it only makes sure ONE
+  // timer exists, and only when something waits and nothing is held (a gesture's end calls noteGesture,
+  // which arms again). The expensive work (coherence, cohorts, fits) is scaleTick's.
+  function scaleArm() {
+    if (scaleRt.timer || (!scaleRt.ctl.hasWants() && !scaleRt.axes.hasPending()) || heldCount() > 0) return;
+    scaleRt.timer = setTimeout(scaleTick, Math.max(0, E.TIMING.SETTLE_MS - (performance.now() - scaleRt.lastGestureAt)));
+  }
+  // The settled tick. Nothing asks for a calibration yet, so there is nothing to do but let the clock re-arm.
+  function scaleTick() {
+    scaleRt.timer = 0;
+  }
+  // A person's choice in a Scale control: reduced into the raw preferences, then the same redraw and save
+  // as any other control. The effects the reducer returns (invalidate, request a fit, hold, freeze an axis)
+  // are executed by the real tick; raw preferences are never rewritten by a measure change.
+  function scaleSet(action) {
+    const out = E.policy.reduce(S.scale, action, {
+      mode: S.mode,
+      rows: S.rows === "off" ? "volume" : S.rows,
+      live: Boolean(PACK.live),
+    });
+    S.scale = out.scale;
+    for (const notice of out.notices) postNotice(notice);
+    update();
+    save();
+    scaleHooks.persist?.();
+  }
+  // What a settle changed (resolution, period, lock, pin), for the disclosure in the legend details.
+  function scaleDisclose() {}
+
+  function draw() {
+    if (!ready) return;
+    geometry();
+    const { src, cut, moving, sum, full, meas, b, query, shown, mv, ts, ps } = viewParts(),
       u = transition
         ? clamp((performance.now() - transition.start) / 170, 0, 1)
         : 1;
+    // The scale frame: one resolved mapping per colour channel. A fault in it is not the chart's: it leaves
+    // an occupancy-only chart and the legacy legend, and says so once (see scaleFault).
+    let sc;
+    try {
+      sc = scaleRt.fault ? INERT_SC : scaleFrame(cut, { src, full, meas, shown, mv, moving, u });
+    } catch (error) {
+      sc = scaleFault(error);
+    }
     prepareMeasures(full, shown, query, b, moving);
     // Cascade's parents: the level one coarser in both time and price.
     if (S.mode === "cascade") levelCascade(full, src, sum);
     // The row underlay, while it shows, scaled to its rows in view.
     const under = underlayFrame(meas);
     if (under?.bands) under.peak = underlayPeak(under);
+    // Rows' frame, from the package that owns it (none yet: no Rows frame). The stamp then names its mapping too.
+    if (sc !== INERT_SC) {
+      try {
+        sc.rows = scaleHooks.rowsFrame?.(under, sc) ?? null;
+        if (sc.rows) sc.stamp = scaleStamp(sc);
+      } catch (error) {
+        sc = scaleFault(error);
+      }
+    }
     labelsTaken = [];
     // Latest sits over the plot's top right when it shows, and the replay
     // transport on the replay line: labels keep clear of both.
@@ -980,11 +1391,11 @@
     ctx.clip();
     paintCoverage(b);
     grid();
-    if (under) paintBands(under);
+    if (under) paintBands(under, sc.rows);
     if (S.selection) {
       ctx.globalAlpha = 0.25;
-      if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u);
-      else for (const z of full.cells) fillCell(z, full, u);
+      if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u, sc.cellsFull);
+      else for (const z of full.cells) fillCell(z, full, u, sc.cellsFull);
       ctx.globalAlpha = 1;
     }
     ctx.save();
@@ -995,8 +1406,8 @@
     ctx.beginPath();
     ctx.rect(x1, y1, x2 - x1, y2 - y1);
     ctx.clip();
-    if (moving) paintMotion(shown, mv.shown, mv, b, u);
-    else for (const z of shown.cells) fillCell(z, full, u);
+    if (moving) paintMotion(shown, mv.shown, mv, b, u, sc.cells);
+    else for (const z of shown.cells) fillCell(z, full, u, sc.cells);
     ctx.restore();
     markings(shown, cut);
     paintUnfinished(shown);
@@ -1081,14 +1492,17 @@
     }
     // The cell of the table row under the pointer, outlined on the chart.
     if (tableHover) {
-      const { c, r } = tableHover;
+      // The row stands at the level it was listed at, which is the drawn one unless it says otherwise.
+      const { c, r } = tableHover,
+        tt = tableHover.n === undefined ? ts : 2 ** tableHover.n,
+        tp = tableHover.m === undefined ? ps : 2 ** tableHover.m;
       ctx.strokeStyle = colors.ink;
       ctx.lineWidth = 2;
       ctx.strokeRect(
-        G.X(c * ts) - 1,
-        G.Y((r + 1) * ps) - 1,
-        G.X((c + 1) * ts) - G.X(c * ts) + 2,
-        G.Y(r * ps) - G.Y((r + 1) * ps) + 2,
+        G.X(c * tt) - 1,
+        G.Y((r + 1) * tp) - 1,
+        G.X((c + 1) * tt) - G.X(c * tt) + 2,
+        G.Y(r * tp) - G.Y((r + 1) * tp) + 2,
       );
     }
     // The row under the pointer, over the prices or the profile, outlined
@@ -1105,20 +1519,30 @@
         ctx.globalAlpha = 1;
       }
     }
-    drawResolutionLens();
+    drawResolutionLens(sc);
     ctx.restore();
     const ro = readouts(cut);
     axes(ro);
-    profile(query, b, meas.state, under);
-    activity(shown, cut, mv, full);
+    profile(query, b, meas.state, under, sc);
+    activity(shown, cut, mv, full, sc);
     crosshair(ro);
     querySummary(meas, mv);
-    el("legend-text").textContent = legendText(full, mv);
-    el("legend-text").title =
-      LEGEND_TITLES[S.mode] +
-      (moving && !mv.src && motionIssue() ? ` They couldn't be read: ${motionIssue()}.` : "");
-    el("ramp").style.background = legendRamp();
-    underlayLegend(under);
+    // The legends: the chips when the DOM package has registered them, the legacy lines until then (and
+    // after a fault, which turns the scale display off).
+    if (scaleHooks.legend && sc !== INERT_SC) {
+      try {
+        scaleHooks.legend(sc, under);
+      } catch (error) {
+        scaleFault(error);
+      }
+    } else {
+      el("legend-text").textContent = legendText(full, mv);
+      el("legend-text").title =
+        LEGEND_TITLES[S.mode] +
+        (moving && !mv.src && motionIssue() ? ` They couldn't be read: ${motionIssue()}.` : "");
+      el("ramp").style.background = legendRamp();
+      underlayLegend(under);
+    }
     const marks = marksReadout(b);
     el("ray-count").textContent = marks.rayCount + " untested levels";
     el("ray-count").hidden = !S.untested;
@@ -1126,10 +1550,16 @@
       marks.vaLow === null || meas.state === "pending" || meas.state === "failed"
         ? "—"
         : price(marks.vaLow) + "–" + price(marks.vaHigh);
-    last = { full, query, shown, meas, b, cut, mv, under };
+    last = { full, query, shown, meas, b, cut, mv, under, sc };
     if (transition) {
       if (u >= 1) transition = null;
       else requestDraw();
+    }
+    // The tooltip and the legend marker follow a mapping, theme or pack that changed under them.
+    try {
+      scaleHooks.refreshTip?.();
+    } catch (error) {
+      scaleFault(error);
     }
   }
   // The crosshair's readouts where the pointer is on either pane, each rounded
@@ -3045,6 +3475,9 @@
     updateNavigation();
     requestDraw();
     scheduleCube();
+    // The Scale section and the legend chips (DOM package), and the calibration clock.
+    scaleHooks.renderUi?.();
+    scaleArm();
   }
   function bindRoot() {
     el("query-text").addEventListener("blur", () => {
@@ -9662,6 +10095,14 @@
     planeHover: false,
     planeButtons: null,
     bound: false,
+    // A zoom gesture whose last step has come but whose price refit has not landed: a hold for the
+    // calibration clock, from the first step to the refit.
+    zoomPending: false,
+    // How the data last changed under the view, for the readout's observation block: nothing, the
+    // provisional minutes replaced by the archive's, or a whole new pack (kind "unknown").
+    revision: { kind: "none" },
+    // The cause the next scale disclosure names (pin, lock, policy), set where the change is made.
+    scaleCause: null,
   };
   function stepAnchor(delta) {
     S.anchor = clamp(
@@ -9676,6 +10117,7 @@
     update();
     recordView("Anchor");
     save();
+    noteGesture();
   }
   // Playing a replay steps its anchor a column at a time at the chosen speed,
   // moving the view on when the line nears its right edge, and stops at the
@@ -9686,6 +10128,10 @@
     player.timer = on ? setInterval(playStep, 1000 / Number(el("speed").value)) : 0;
     el("play").setAttribute("aria-pressed", String(on));
     el("play").setAttribute("aria-label", on ? "Pause" : "Play");
+    // Auto colour pauses while it plays and resumes once the pause or scrub has settled.
+    scaleRt.playing = on;
+    noteGesture();
+    scaleArm();
   }
   function playStep() {
     const end = Math.floor(CUT / stepT()) * stepT();
@@ -9990,6 +10436,7 @@
     cube.busy = null;
     if (cube.stale) pollLive();
     update();
+    scaleArm();
     pumpCube();
   }
   // Path and dwell (PRD-0023): how the price moved inside each cell, which the
@@ -10360,6 +10807,7 @@
     motion.busy = null;
     if (cube.stale) pollLive();
     requestDraw();
+    scaleArm();
     // The Lines popover says what its bars are waiting on, and the days the
     // bars now reach may need reading in the first slot.
     renderLines();
@@ -11161,6 +11609,7 @@
   // of its last input.
   function zoomStep(timeZoomed) {
     nav.zoomTime = nav.zoomTime || timeZoomed;
+    nav.zoomPending = true;
     clearTimeout(nav.zoomTimer);
   }
   function endZoom(timeZoomed, label = "Zoom") {
@@ -11169,6 +11618,10 @@
     if (nav.zoomKeys.size || nav.pinch) return;
     nav.zoomTimer = setTimeout(() => {
       if (nav.zoomTime) refitAfterGesture();
+      // The refit has landed (20 ms after a 200 ms settle): the hold ends here, and the end of a gesture
+      // is a stamp and a wake.
+      nav.zoomPending = false;
+      noteGesture();
       nav.zoomTime = false;
       recordView(nav.zoomLabel);
       save();
@@ -11505,6 +11958,7 @@
       nav.alt = e.altKey;
       el("tip").hidden = true;
       nav.touchTip = false;
+      noteGesture();
       if (nav.pointers.size === 2) {
         clearTimeout(nav.holdTimer);
         nav.hold = false;
@@ -11568,6 +12022,7 @@
         S.window = "";
         // The price range refits once, when a finger lifts (see finish).
         settleNavigation(null, false);
+        noteGesture();
         return;
       }
       if (drag?.axis) {
@@ -11584,6 +12039,7 @@
           true,
         );
         drag.axis.y = p.y;
+        noteGesture();
         return;
       }
       if (S.lens || nav.alt || nav.hold || drag?.lens) {
@@ -11591,6 +12047,7 @@
         hover = null;
         requestDraw();
         scheduleCube();
+        noteGesture();
         return;
       }
       if (!drag) {
@@ -11628,8 +12085,9 @@
         S.window = "";
         settleNavigation(null, false);
       }
+      noteGesture();
     });
-    const finish = (e) => {
+    const finishPointer = (e) => {
       clearTimeout(nav.holdTimer);
       nav.pointers.delete(e.pointerId);
       if (nav.pinch) {
@@ -11692,6 +12150,12 @@
         tooltip(p);
       }
     };
+    // The end of a pointer is a stamp and a wake on every path out of it, AFTER the hold is released: a
+    // fit that waited on the drag is armed again only by this call.
+    const finish = (e) => {
+      finishPointer(e);
+      noteGesture();
+    };
     canvas.addEventListener("pointerup", finish);
     // A tapped tooltip closes at the next touch anywhere but on it.
     document.addEventListener(
@@ -11713,6 +12177,7 @@
       nav.hold = false;
       drag = null;
       requestDraw();
+      noteGesture();
     });
     canvas.addEventListener("pointerleave", (e) => {
       // A finger lifted leaves the canvas: the tooltip its tap opened stays.
@@ -11754,6 +12219,7 @@
         if (!e.deltaY) return;
         nav.wheel = { target, at: now };
         gestureAt = now;
+        noteGesture();
         const alone = target === "price-axis",
           priceOnly = target === "chart-price",
           // Around the pointer, kept within the view; an axis's own zoom is
@@ -11857,6 +12323,7 @@
         centre = { t: (S.tA + S.tB) / 2, p: (S.pA + S.pB) / 2 };
       // A held key repeats like a gesture: the continuations wait for it to end.
       if (e.repeat) gestureAt = performance.now();
+      if (step) noteGesture();
       if (e.key === "?") openKeys();
       else if (digit) chooseWindow(WINDOW_KEYS[digit]);
       else if (bracket)
@@ -11959,7 +12426,10 @@
       }
       const id = e.code || e.key;
       nav.pressed.delete(id);
-      if (nav.zoomKeys.delete(id) && !nav.zoomKeys.size) endZoom(false);
+      if (nav.zoomKeys.delete(id)) {
+        if (!nav.zoomKeys.size) endZoom(false);
+        noteGesture();
+      }
     });
     window.addEventListener("blur", () => {
       // Losing focus lets go of every key and pointer, and ends a zoom gesture
@@ -11978,6 +12448,9 @@
       clearTimeout(nav.holdTimer);
       if (scaled) settleNavigation("Price scale", false);
       requestDraw();
+      // Every hold was just let go of, with nothing else to say so: stamp and wake, or a fit that waited
+      // on one would never be armed again.
+      noteGesture();
     });
   }
 
@@ -11994,24 +12467,28 @@
     S.mode = mode;
     update();
     save();
+    scaleArm();
   }
   function setPane(pane) {
     if (!panes().includes(pane)) return;
     S.pane = pane;
     update();
     save();
+    scaleArm();
   }
   function setRows(rows) {
     if (!rowsChoices().includes(rows)) return;
     S.rows = rows;
     update();
     save();
+    scaleArm();
   }
   function setPeriod(key) {
     if (!validPeriod(key)) return;
     S.period = key;
     update();
     save();
+    scaleArm();
   }
   // The level line (X): one dashed line on a price row's centre, kept as its
   // price, so it stays put through zooms and resolution changes. With no line,
@@ -12056,6 +12533,7 @@
     recordView(S.replay ? "Replay" : "Cutoff");
     update();
     save();
+    noteGesture();
   }
   // The same span, moved to end at the cutoff with a tenth of it to spare, as a
   // window does; replay ends, since the latest data is what was asked for.
@@ -12067,6 +12545,7 @@
     S.replay = false;
     S.window = "";
     settleNavigation("Latest", true);
+    noteGesture();
   }
   // Escape closes what is open first, then clears the selection, then goes
   // back to Pan from Select or the lens.
@@ -12281,6 +12760,10 @@
           delete PACK.blocks[id];
         }
       live.generation++;
+      // A whole pack is a new cube state: memoised fits are dropped, but the stores are not (a mapping's
+      // identity survives a revision), and nothing says what changed.
+      scaleRt.fitMemo.clear();
+      nav.revision = { kind: "unknown", atMs: Date.now() };
       measured.clear();
       motion.sources = {};
       motion.view = null;
@@ -12334,7 +12817,11 @@
       if (key in body) PACK[key] = body[key];
     CUT = (Date.parse(PACK.cutoff) / 1000 - T0) / BASE;
     CANON = canonOf(PACK);
-    if (!whole && wasCanon !== null && CANON !== wasCanon) dropMotionAfter(wasCanon);
+    if (!whole && wasCanon !== null && CANON !== wasCanon) {
+      dropMotionAfter(wasCanon);
+      // The archive replaced minutes that were provisional.
+      nav.revision = { kind: "provisional-replaced", throughMs: E.time.baseToMs(wasCanon, T0, BASE), atMs: Date.now() };
+    }
     CUT_YEAR = date(CUT).getUTCFullYear();
     groups.clear();
     evidenceCache.clear();
@@ -12344,6 +12831,7 @@
     limits();
     update();
     title();
+    scaleArm();
   }
   // A view that showed the old cutoff moves with it, keeping its span; a window
   // keeps its length. Not during a gesture, and never in replay.
@@ -12422,6 +12910,7 @@
   bindRoot();
   bindEvidence();
   bindNavigation();
+  scaleHooks.bindUi?.();
   try {
     qsa("button,input,select").forEach((control) => (control.disabled = true));
     el("market").textContent = PACK.live ? "LIVE" : "RECORDED";
@@ -12444,12 +12933,14 @@
     qsa("button,input,select").forEach((control) => (control.disabled = false));
     startHistory(linked ? "Link" : restored ? "Restored" : "Opened");
     update();
+    scaleArm();
     title();
     new ResizeObserver(() => {
       if (ready) {
         geometry();
         if (S.auto) autoLevel();
         update();
+        noteGesture();
       }
     }).observe(canvas);
     matchMedia("(prefers-color-scheme: dark)").addEventListener(
@@ -12477,6 +12968,7 @@
         limits();
         evidenceCache.clear();
         update();
+        scaleArm();
       } catch (error) {
         loadState[id] = "unavailable";
         el("loading").textContent = `${id} unavailable: ${error.message}`;

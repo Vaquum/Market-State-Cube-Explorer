@@ -4807,6 +4807,8 @@
           part(".ol-drawer-bar") +
           part(".ol-status") +
           part("#ol-loading") +
+          // the notice banner, when one shows, takes its height from the chart too
+          part("#ol-notice") +
           8;
       return Math.max(120, part(".ol-chart") - used - 220);
     };
@@ -5046,6 +5048,1090 @@
     if (menu.hidden) button.click();
     else focusMenuItem(menu, checkedItem(menu));
   }
+  // ---- The scale display's DOM (PRD-0002 S1, package U) ----
+  // The legend chips, their detail popovers, the axis chip, the Scale sections of the Cells and Rows menus,
+  // the notice banner, the lens's Local contrast toggle and the generated keys. Every value and every
+  // sentence here comes from the measurement module (E) and the frames the spine built for the draw that
+  // paints; this block only writes them into the page, and only when what they were made from changed
+  // (E.legend.keyOf is computed from ids before any Legend model exists, so a steady frame builds none).
+  // Nothing here is an aria-live region: a state is visible text in a chip that a person can open, never a
+  // polite announcement on every zoom step (the banner and the lens status are the two status elements, and
+  // both change only on an event).
+  const scaleUi = {
+      // The Legend model of each colour channel, built when its key changed: the popover, the marker and the
+      // footer keys read it, so nothing is built twice for one state.
+      models: { cells: null, rows: null },
+      // What the marker drew last, and the footer keys' last write key
+      markerKey: "",
+      keysKey: "",
+      // The axes drawn in the frame in progress (the registry records the axis hooks hand over) and the pane's
+      // own, which the axis chip shows; the last write key of the chip and its last place
+      axes: new Map(),
+      pane: null,
+      axisKey: "",
+      lensKey: "",
+      lensId: "",
+      axisRecords: [],
+      noticeVersion: -1,
+      noticeOpen: "",
+      menuKey: "",
+    },
+    // A Readout's numeric key is column * 2^21 + row (cellKey above): the marker names the column and row
+    UI_CELL_STRIDE = 2097152;
+  function uiEl(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  // Numbers as a chart reads them: compact magnitudes, a share as a percentage, durations in their units.
+  // The canonical number always travels beside its text (data-value), so this never changes what a value is.
+  function uiFmt(value, unit) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return String(value);
+    if (unit === "share") return +(value * 100).toPrecision(3) + "%";
+    if (unit === "seconds") return dur(value);
+    return compact(value);
+  }
+  // The preference part of a legend's write key. The mapping id alone does not name what a chip says: Explore
+  // and Auto can hold the same mapping, the lock and Local contrast change what the popover offers, and a
+  // change of measure, basis or transform moves the context even when two fits happen to give one mapping.
+  function legendPolicy(channel) {
+    const sc = S.scale;
+    return [
+      sc.lock ? "L" : "",
+      sc[channel] ?? "",
+      sc.local ? "l" : "",
+      scaleRt.playing ? "p" : "",
+      channel === "rows" ? S.rows + S.period : S.mode,
+      sc.basis,
+      sc.pathBasis,
+      sc.transform,
+      sc.curve,
+      sc.rowsTransform,
+    ].join(":");
+  }
+  // What the settled warnings pass said about a channel, as a short string: the legend is rebuilt when the
+  // shares, the clip counts or the warning set moved, and not when the pass re-ran to the same answer.
+  function uiWarnStamp(channel) {
+    const report = scaleRt.warn[channel]?.report;
+    if (!report) return "";
+    const c = report.counts ?? {};
+    return [
+      report.rangeExceeded ? 1 : 0,
+      report.lowDiscrimination ?? "-",
+      c.marks,
+      c.outside,
+      c.low,
+      c.high,
+      c.negInf,
+      c.noRef,
+      c.exactLow,
+      c.exactHigh,
+      Math.round((report.shares?.area ?? 0) * 1000),
+      scaleRt.fitSeq?.[channel] ?? 0,
+    ].join(",");
+  }
+  // Marks per key id for the generated keys: the clip counts of the settled pass, and whatever per-role
+  // counts that pass kept beside them.
+  function legendCounts(channel) {
+    const entry = scaleRt.warn[channel],
+      c = entry?.report?.counts,
+      out = { ...(entry?.keyCounts ?? null) };
+    if (c) {
+      out["clip-low"] = c.low;
+      out["clip-high"] = c.high;
+      out["negative-infinite"] = c.negInf;
+      out["no-reference"] = c.noRef;
+      out["exact-low"] = c.exactLow;
+      out["exact-high"] = c.exactHigh;
+    }
+    return out;
+  }
+  // The last settle's scale change as the legend reads it: the cause words and the ids before and after.
+  function legendNote(channel) {
+    const note = scaleRt.note;
+    if (!note) return null;
+    const causes = [].concat(note.causes ?? note.cause ?? []).filter(Boolean),
+      pick = (ids) => (typeof ids === "string" ? ids : Array.isArray(ids) ? ids.join(", ") : (ids?.[channel] ?? undefined));
+    if (!causes.length) return null;
+    return { causes, from: pick(note.oldIds), to: pick(note.newIds) };
+  }
+  // The Legend of a channel's frame (a model, allocated; only when the chip's key changed or a popover opens).
+  function legendOf(channel, frame) {
+    const input = frame.legendInput();
+    if (!input) return null;
+    const auto = S.scale[channel === "lens" ? "cells" : channel] === "auto",
+      paused = auto && S.scale.lock ? "lock" : auto && scaleRt.playing ? "play" : false;
+    return {
+      input,
+      legend: E.legend.build(input, scaleRt.warn[channel]?.report ?? null, uiFmt, {
+        channel,
+        counts: legendCounts(channel),
+        measureLabel: channel === "rows" ? (ROWS_INFO[S.rows]?.name ?? S.rows) : MODE_NAMES[S.mode],
+        note: legendNote(channel),
+        paused,
+        shortExposure: scaleRt.warn[channel]?.shortExposure,
+        revisionStatus: nav.revision?.kind === "none" ? "none" : undefined,
+      }),
+    };
+  }
+  // The observation attributes of a chip (INTEGRATION D.18), from the same frame that painted: a frame log
+  // can assert them per draw. The spine may hand over its own values in `sc.chips[channel]` (camel-cased
+  // dataset names); they replace the ones derived here.
+  function legendAttrs(node, channel, built, sc) {
+    const { input, legend } = built,
+      rows = channel === "rows",
+      attrs = {
+        state: legend.state === "ok" ? "ready" : legend.state,
+        policy: channel === "lens" && S.scale.local ? "local" : (input.policy ?? ""),
+        mappingId: input.desc?.id ?? input.mappingId ?? "",
+        appearance: input.lut.id,
+        workspace: scaleWorkspace(),
+        transform: input.transform ?? "",
+        basis: input.basis ?? "",
+        context: input.contextKey ?? "",
+        fitThrough: String(input.calibration?.obsEndMs ?? ""),
+        fitSeq: String(scaleRt.fitSeq?.[channel] ?? 0),
+        override: input.external ? "external" : "",
+        updating: String(legend.state === "updating"),
+        ...sc.chips?.[channel],
+      };
+    if (rows) {
+      attrs.rowSize ??= String(input.level?.m ?? "");
+      attrs.quality ??= String(input.info?.quality ?? "");
+    } else {
+      attrs.effectiveN ??= String(input.level?.n ?? "");
+      attrs.effectiveM ??= String(input.level?.m ?? "");
+    }
+    for (const [name, value] of Object.entries(attrs)) if (node.dataset[name] !== String(value)) node.dataset[name] = String(value);
+    return attrs;
+  }
+  // A legend bar: the exact colour row of the Lut through the transform (E.legend.barPixels), blitted one
+  // device pixel per sample into a canvas of the bar's css size, so the bar is the colours the chart draws
+  // and never a gradient between them.
+  function legendBar(canvas, legend, cssWidth, cssHeight) {
+    const dpr = devicePixelRatio || 1,
+      w = Math.max(1, Math.round(cssWidth * dpr)),
+      h = Math.max(1, Math.round(cssHeight * dpr)),
+      row = E.legend.barPixels(legend, w),
+      data = new Uint8ClampedArray(w * h * 4);
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    for (let y = 0; y < h; y++) data.set(row, y * w * 4);
+    canvas.getContext("2d").putImageData(new ImageData(data, w, h), 0, 0);
+  }
+  // The position of a marker along a bar, clamped to the bar's ends (a value beyond the domain sits at the
+  // end and the key counts it).
+  const uiBarLeft = (p) => clamp(p, 0, 1) * 100 + "%";
+  // One key swatch: the role table's glyph painted by the same function the plot uses, so a key cannot drift
+  // from its mark. The inks come from the caller (this helper reads no palette itself).
+  function uiKeySwatch(glyph, inks) {
+    const dpr = devicePixelRatio || 1,
+      size = 11,
+      canvas = document.createElement("canvas"),
+      g = E.role.GLYPHS[glyph],
+      body = Boolean(g.pattern) || g.kind === "outline" || g.kind === "line",
+      ctx2 = canvas.getContext("2d");
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    canvas.setAttribute("aria-hidden", "true");
+    ctx2.setTransform(dpr, 0, 0, dpr, 0, 0);
+    E.role.paint(ctx2, glyph, size / 2, size / 2, body ? size : size - 3, g.ink === "occupancy" ? inks.occupancy : inks.state, {
+      ground: inks.surface,
+      font: `${TYPE.s}px ${FONT}`,
+    });
+    const swatch = uiEl("i", "ol-data-key ol-glyph");
+    swatch.append(canvas);
+    return swatch;
+  }
+  // The keys of a legend as list items: `[data-key]` with the glyph id as its role and the count of marks.
+  // `all` lists the keys with no marks too (a popover), else only those with marks (the footer).
+  function uiKeyList(keys, inks, all) {
+    const out = [];
+    for (const key of keys) {
+      if (!all && key.count <= 0) continue;
+      const item = uiEl("span", "ol-key");
+      item.dataset.key = key.id;
+      if (key.glyph) item.dataset.role = key.glyph;
+      item.dataset.count = String(key.count);
+      if (key.glyph) item.append(uiKeySwatch(key.glyph, inks));
+      item.append(document.createTextNode(key.label + (all ? ` ${key.count}` : "")));
+      out.push(item);
+    }
+    return out;
+  }
+  // The text of a chip and its accessible name, written only when it changed.
+  function legendChip(node, textId, legend) {
+    const chip = E.legend.chip(legend),
+      text = el(textId);
+    if (text.textContent !== chip.text) text.textContent = chip.text;
+    if (node.getAttribute("aria-label") !== chip.label) node.setAttribute("aria-label", chip.label);
+  }
+  // One colour channel's chip, written when the key computed from its ids changed; in a steady frame that
+  // is one object and a few string joins, and no Legend model is built (DD-90).
+  function legendChannel(channel, frame, sc, node, textId, barId, barWidth) {
+    const key = E.legend.keyOf({
+      mappingId: frame.mappingId,
+      appearanceId: sc.lut.id,
+      themeEpoch: colourEpoch,
+      policy: legendPolicy(channel),
+      state: frame.mappingState,
+      warnStamp: uiWarnStamp(channel),
+      marker: null,
+      level: frame.level,
+    });
+    if (scaleRt.legendKey[channel] === key) return;
+    scaleRt.legendKey[channel] = key;
+    const built = legendOf(channel, frame);
+    if (!built) return;
+    scaleUi.models[channel] = built.legend;
+    legendChip(node, textId, built.legend);
+    legendAttrs(node, channel, built, sc);
+    // A warning shows on the chip's border too, for the moment its text is cut short
+    node.dataset.warn = String(built.legend.warnings.some((w) => w.id === "range-exceeded" || w.id === "low-discrimination"));
+    el(barId).hidden = false;
+    legendBar(el(barId), built.legend, barWidth, 8);
+    // The footer keys and the popover follow the model. The popover is built whether or not it is open: its
+    // fields, warnings and keys are the page's observation surface (INTEGRATION D.18), written by the draw that
+    // paints, and this runs only when the chip's key changed.
+    scaleUi.keysKey = "";
+    legendPop(channel);
+  }
+  // The legend chips, the lens status and the generated keys, once per draw (registered as `legend`).
+  function legendWrite(sc, under) {
+    const inks = { state: colors.state, occupancy: colors.occupancy, surface: colors.surface },
+      rowsChip = el("rows-legend");
+    legendChannel("cells", sc.cells, sc, el("legend"), "legend-text", "ramp", 64);
+    // Rows show with the underlay; without a Rows frame there is nothing to map, and the chip says so.
+    if (!under) {
+      if (!rowsChip.hidden) {
+        rowsChip.hidden = true;
+        if (pop.open?.button === rowsChip) closePop();
+      }
+      // The next Rows legend is written afresh, even if its ids equal the last one's
+      scaleUi.models.rows = null;
+      scaleRt.legendKey.rows = "";
+    } else {
+      if (rowsChip.hidden) rowsChip.hidden = false;
+      if (sc.rows) legendChannel("rows", sc.rows, sc, rowsChip, "rows-legend-text", "rows-ramp", 36);
+      else if (scaleRt.legendKey.rows !== "none") {
+        scaleRt.legendKey.rows = "none";
+        scaleUi.models.rows = null;
+        el("rows-ramp").hidden = true;
+        el("rows-legend-text").textContent = E.text.state.noCalibration;
+        rowsChip.dataset.state = "no-calibration";
+        rowsChip.setAttribute("aria-label", E.text.ui.scale + ": " + E.text.state.noCalibration);
+      }
+    }
+    lensStatusWrite(sc);
+    // The footer keys: those of the channels in view that have marks, each id once, counts added
+    const legends = [scaleUi.models.cells, scaleUi.models.rows].filter(Boolean),
+      keysKey =
+        legends.map((l) => l.keys.map((k) => k.id + ":" + k.count).join(",")).join("|") + "|" + colourEpoch + "|" + (devicePixelRatio || 1);
+    if (scaleUi.keysKey !== keysKey) {
+      scaleUi.keysKey = keysKey;
+      const merged = new Map();
+      for (const legend of legends)
+        for (const key of legend.keys) {
+          const seen = merged.get(key.id);
+          if (seen) seen.count += key.count;
+          else merged.set(key.id, { ...key });
+        }
+      el("keys-scale").replaceChildren(...uiKeyList([...merged.values()], inks, false));
+    }
+    axisChipCommit();
+  }
+  scaleHooks.legend = legendWrite;
+  // The lens's status element: a text mirror of the STABLE part of its caption (the measure, whether it
+  // shares the Cells mapping or has its own, the mapping's short id and its state), so a screen reader
+  // finds it once per change. The shares live in the Cells popover. Written only while the lens shows, and
+  // only when that text changed.
+  function lensStatusWrite(sc) {
+    if (!S.lens) return;
+    const frame = sc.lens ?? sc.cells,
+      key = E.legend.keyOf({
+        mappingId: frame.mappingId,
+        appearanceId: sc.lut.id,
+        themeEpoch: colourEpoch,
+        policy: S.scale.local ? "local" : "shared",
+        state: frame.mappingState,
+        warnStamp: uiWarnStamp("lens"),
+        marker: null,
+        level: frame.level,
+      });
+    if (scaleUi.lensKey === key) return;
+    scaleUi.lensKey = key;
+    const built = legendOf("lens", frame);
+    if (!built) return;
+    const { legend } = built,
+      node = el("lens-status"),
+      // A read or a refit in progress is a moment, not a fact to announce: the attributes show it, the text
+      // (the one status element a reader hears) waits for the settled state
+      transient = legend.state === "updating" || legend.state === "pending",
+      state = legend.state === "no-calibration" ? E.text.state.noCalibration : legend.state === "updating" ? E.text.state.updating : "",
+      words = [
+        MODE_NAMES[S.mode],
+        // TEXT(S1): "Shared scale" has no key of its own in E.text
+        S.scale.local ? E.text.policy.local : "Shared scale",
+        (built.input.desc?.id ?? built.input.mappingId ?? "").slice(0, 8),
+        state,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    scaleUi.lensId = built.input.desc?.id ?? built.input.mappingId ?? "";
+    legendAttrs(node, "lens", built, sc);
+    if (!transient && node.textContent !== words) node.textContent = words;
+  }
+  // The marker on the legend bar: where the value under the pointer (or of the table row) sits, written
+  // only when it moved (registered as `legendMarker`, called from the tooltip, the table hover and
+  // refreshTip, whatever hid the tip clearing it). The marker carries the coordinate and the readout key it
+  // was made from, so a test can compare it with the tooltip and the pixel.
+  function legendMarker(readout) {
+    const legend = scaleUi.models.cells,
+      found = readout && legend ? E.legend.marker(legend, readout) : null,
+      key = found ? `${found.p.toFixed(4)}|${found.clip}|${readout.key}|${readout.level?.n}:${readout.level?.m}` : "";
+    if (scaleUi.markerKey === key) return;
+    scaleUi.markerKey = key;
+    const marker = el("legend-marker"),
+      note = el("legend-marker-text"),
+      popMarker = el("legend-pop").querySelector(".ol-legend-marker");
+    marker.hidden = !found;
+    note.hidden = !found;
+    if (popMarker) popMarker.hidden = !found;
+    if (!found) {
+      delete marker.dataset.coordinate;
+      delete marker.dataset.readout;
+      delete marker.dataset.clip;
+      note.textContent = "";
+      return;
+    }
+    const at = uiBarLeft(found.p);
+    marker.style.left = at;
+    marker.dataset.coordinate = String(found.t);
+    marker.dataset.clip = String(found.clip);
+    // The cell key is column * 2^21 + row; the readout's attribute names its level first, as the tooltip's does
+    if (typeof readout.key === "number") {
+      const r = ((readout.key % UI_CELL_STRIDE) + UI_CELL_STRIDE) % UI_CELL_STRIDE;
+      marker.dataset.readout = `${readout.level?.n}:${readout.level?.m}:${(readout.key - r) / UI_CELL_STRIDE}:${r}`;
+    } else marker.dataset.readout = String(readout.key);
+    // TEXT(S1): the sentence for assistive technology, which cannot see where a marker sits on a bar
+    note.textContent = `Value under the pointer at ${Math.round(clamp(found.p, 0, 1) * 100)}% of the scale`;
+    if (popMarker) popMarker.style.left = at;
+  }
+  scaleHooks.legendMarker = legendMarker;
+  // The popover of a colour chip: its bar and ticks, the details list, the keys with their counts, the
+  // warnings with their actions, the scale change, and (built once, so typing is never disturbed) the
+  // actions and the manual-domain form. One builder for both colour chips (each chip has its own panel,
+  // because bindPop closes a panel when its button is pressed again).
+  function legendPop(channel) {
+    const panel = el(channel === "rows" ? "rows-legend-pop" : "legend-pop"),
+      chip = el(channel === "rows" ? "rows-legend" : "legend"),
+      legend = scaleUi.models[channel],
+      inks = { state: colors.state, occupancy: colors.occupancy, surface: colors.surface };
+    if (!panel.firstChild) uiPopSkeleton(panel, channel);
+    const part = (name) => panel.querySelector(`[data-part="${name}"]`),
+      focused = panel.contains(document.activeElement) ? document.activeElement : null,
+      action = focused?.dataset.action,
+      dyn = (name, nodes) => part(name).replaceChildren(...nodes);
+    if (!legend) {
+      dyn("bar", []);
+      dyn("details", [uiEl("p", "", E.text.state.noCalibration)]);
+      dyn("keys", []);
+      dyn("warnings", []);
+      dyn("lens", []);
+    } else {
+      // The bar, at the popover's own width, with its ticks as text and the marker over it
+      const bar = uiEl("div", "ol-legend-bar"),
+        canvas = uiEl("canvas", "ol-legend-canvas"),
+        marker = uiEl("i", "ol-legend-marker");
+      canvas.setAttribute("aria-hidden", "true");
+      marker.hidden = el("legend-marker").hidden || channel !== "cells";
+      marker.style.left = el("legend-marker").style.left;
+      bar.append(canvas, marker);
+      legendBar(canvas, legend, 240, 10);
+      // The tick labels sit under the bar at their true positions; one that would overlap the last label of
+      // its row goes to a second row (the widths are an estimate of 6px a character, which is enough to
+      // keep "0" and a k of 30.0 k apart)
+      const ticks = uiEl("div", "ol-legend-ticks ol-num"),
+        rowEnd = [-Infinity, -Infinity];
+      ticks.setAttribute("aria-hidden", "true");
+      legend.bar.ticks.forEach((tick, i, all) => {
+        const node = uiEl("span", "ol-legend-tick", tick.label),
+          align = i === 0 ? "start" : i === all.length - 1 ? "end" : "mid",
+          width = tick.label.length * 6 + 6,
+          x = clamp(tick.p, 0, 1) * 240,
+          left = align === "start" ? x : align === "end" ? x - width : x - width / 2,
+          row = left < rowEnd[0] ? 1 : 0;
+        rowEnd[row] = Math.max(rowEnd[row], left + width);
+        node.dataset.kind = tick.kind;
+        node.style.left = uiBarLeft(tick.p);
+        node.style.top = 2 + row * 14 + "px";
+        node.dataset.align = align;
+        ticks.append(node);
+      });
+      if (rowEnd[1] > -Infinity) ticks.style.height = "30px";
+      dyn("bar", [bar, ticks]);
+      const details = E.legend.details(legend).map((d) => {
+          const dt = uiEl("dt", "", d.label),
+            dd = uiEl("dd", "ol-num", uiUtcText(d));
+          dd.dataset.field = d.field;
+          if (d.canonical !== null && d.canonical !== undefined)
+            dd.dataset.value = typeof d.canonical === "string" ? d.canonical : JSON.stringify(d.canonical);
+          return [dt, dd];
+        }),
+        list = uiEl("dl", "ol-legend-details");
+      list.append(...details.flat());
+      const notes = legend.notes.map((text) => uiEl("p", "ol-legend-note", text));
+      dyn("details", [...notes, list]);
+      dyn("keys", uiKeyList(legend.keys, inks, true));
+      dyn("warnings", uiWarnings(legend.warnings, channel));
+      dyn("lens", channel === "cells" && S.lens ? uiLensBlock(inks) : []);
+    }
+    part("appearance").textContent = legend ? E.text.fill(E.text.ui.appearance, { id: legend.summary.appearance }) : "";
+    uiPopActions(panel, channel);
+    // A rebuilt warning action that had the focus gets it back; a popover that lost it gets it itself
+    if (focused && !focused.isConnected) (action && panel.querySelector(`[data-action="${action}"]`))?.focus() ?? panel.focus();
+    uiPopPlace(panel, chip, channel === "rows" ? "start" : "end");
+  }
+  // The details that are instants arrive as milliseconds (the canonical number stays in data-value); they
+  // read as UTC times.
+  function uiUtcText(detail) {
+    return ["fitThrough", "obsCutoff", "obsCanonical"].includes(detail.field) && typeof detail.canonical === "number"
+      ? new Date(detail.canonical).toISOString().replace(/(:\d\d)?\.000Z$/, "Z")
+      : detail.value;
+  }
+  // The warnings of a legend: each with its text, its detail and the actions that answer it. A warning
+  // never recolours or refits anything by itself; it offers Fit, Auto color, Open lens (the main chart) or
+  // Local contrast (the lens), and each is a real button.
+  function uiWarnings(warnings, channel) {
+    return warnings.map((w) => {
+      const box = uiEl("div", "ol-legend-warning");
+      box.dataset.warning = w.id;
+      if (w.shares) {
+        box.dataset.shareMarks = String(w.shares.marks);
+        box.dataset.shareArea = String(w.shares.area);
+      }
+      box.append(uiEl("strong", "", w.text));
+      if (w.detail) box.append(uiEl("span", "ol-legend-note ol-num", w.detail));
+      const words = E.text.warn.action;
+      for (const name of w.actions) {
+        const button = uiEl("button", "ol-action ol-s cursor-interaction", name === "open-lens" ? words.openLens : words[name]);
+        button.type = "button";
+        button.dataset.action = `warn-${name}`;
+        button.dataset.channel = channel;
+        box.append(button);
+      }
+      return box;
+    });
+  }
+  // The lens's own block in the Cells popover: whether it shares the Cells mapping or has a mapping of its
+  // own, that mapping, and its shares of marks outside its scale (the lens reports its own tally).
+  function uiLensBlock(inks) {
+    const box = uiEl("div", "ol-legend-lens"),
+      report = scaleRt.warn.lens?.report,
+      model = scaleUi.models.cells,
+      list = uiEl("dl", "ol-legend-details"),
+      add = (label, value, field, canonical) => {
+        const dd = uiEl("dd", "ol-num", value);
+        dd.dataset.field = field;
+        if (canonical !== undefined && canonical !== null) dd.dataset.value = String(canonical);
+        list.append(uiEl("dt", "", label), dd);
+      };
+    // TEXT(S1): the lens block's heading
+    box.append(uiEl("strong", "", "Lens"));
+    add(E.text.ui.policy, S.scale.local ? E.text.policy.local : "Shared scale", "policy", S.scale.local ? "local" : "shared");
+    // TEXT(S1): the lens block's mapping label
+    add("Mapping", scaleUi.lensId || model?.summary.scaleId || "", "mappingId", scaleUi.lensId || model?.summary.scaleId);
+    if (report) {
+      add("Marks outside the scale", uiFmt(report.shares.marks, "share"), "shareMarks", report.shares.marks);
+      add("Area outside the scale", uiFmt(report.shares.area, "share"), "shareArea", report.shares.area);
+    }
+    box.append(list);
+    const warnings = [];
+    if (report?.rangeExceeded) warnings.push({ id: "range-exceeded", text: E.text.warn.rangeExceeded, shares: report.shares, actions: ["fit", "auto", "local"] });
+    if (report?.lowDiscrimination)
+      warnings.push({ id: "low-discrimination", text: E.text.warn.lowDisc, shares: report.shares, actions: ["fit", "auto", "local"] });
+    box.append(...uiWarnings(warnings, "lens"));
+    return [box];
+  }
+  // The static skeleton of a colour popover: parts the builder fills and two it builds once.
+  function uiPopSkeleton(panel, channel) {
+    const head = uiEl("div", "ol-pop-head");
+    head.append(uiEl("span", "", channel === "rows" ? E.text.ui.scale + " · Rows" : E.text.ui.details));
+    panel.append(head);
+    const part = (name) => {
+      const node = uiEl("div", "ol-legend-part");
+      node.dataset.part = name;
+      if (name === "keys") node.className += " ol-legend-keys";
+      return node;
+    };
+    // What a person came for comes first: the bar, the warnings and the actions; the long details last
+    panel.append(part("bar"), part("warnings"));
+    const actions = uiEl("div", "ol-legend-actions");
+    actions.dataset.part = "actions";
+    actions.setAttribute("role", "group");
+    // TEXT(S1): the group's name
+    actions.setAttribute("aria-label", "Scale actions");
+    for (const [name, label] of [
+      ["fit", E.text.ui.fit],
+      ["auto", E.text.policy.auto],
+      ["lock", E.text.ui.lock],
+      ["local", E.text.ui.local],
+    ]) {
+      const button = uiEl("button", "ol-action ol-s cursor-interaction", label);
+      button.type = "button";
+      button.dataset.action = name;
+      button.dataset.channel = channel;
+      actions.append(button);
+    }
+    const why = uiEl("p", "ol-legend-note");
+    why.dataset.part = "why";
+    const form = uiEl("form", "ol-legend-form");
+    form.dataset.part = "manual";
+    form.noValidate = true;
+    form.dataset.channel = channel;
+    const note = uiEl("p", "ol-legend-note");
+    note.dataset.part = "appearance";
+    panel.append(actions, why, form, part("keys"), part("lens"), part("details"), note);
+  }
+  // The buttons of the popover: their pressed state and whether the measure offers them, with the reason
+  // beside them when it does not (never a title). The manual form follows the measure: a Value scale takes U
+  // and k (U alone when linear), a manual share window takes a low and a high.
+  function uiPopActions(panel, channel) {
+    const cells = channel !== "rows",
+      subject = cells ? S.mode : S.rows,
+      part = (name) => panel.querySelector(`[data-part="${name}"]`);
+    if (!subject || subject === "off" || (cells && E.measure.MODES[subject].kind === "occupancy")) {
+      part("actions").hidden = part("why").hidden = part("manual").hidden = true;
+      return;
+    }
+    const offers = E.policy.offers(cells ? "cells" : "rows", subject, S.scale, Boolean(PACK.live), cells ? MODE_NAMES[subject] : ROWS_INFO[subject].name),
+      eff = E.policy.effective(S.scale, subject, cells ? undefined : "rows"),
+      reasons = [],
+      set = (name, { pressed = null, enabled, reason }) => {
+        const button = part("actions").querySelector(`[data-action="${name}"]`);
+        if (pressed !== null) button.setAttribute("aria-pressed", String(pressed));
+        else button.removeAttribute("aria-pressed");
+        button.disabled = !enabled;
+        button.hidden = enabled === null;
+        if (!enabled && reason) reasons.push(reason);
+      };
+    part("actions").hidden = false;
+    set("fit", { enabled: offers.fit, reason: offers.reasons.fit });
+    set("auto", {
+      pressed: S.scale[channel === "rows" ? "rows" : "cells"] === "auto",
+      enabled: offers.policy.includes("auto") || S.scale[channel === "rows" ? "rows" : "cells"] === "auto",
+      reason: offers.reasons["policy.auto"],
+    });
+    set("lock", { pressed: S.scale.lock, enabled: offers.lock || S.scale.lock, reason: offers.reasons.lock });
+    // Local contrast is the lens's: offered in the Cells popover while the lens is the tool
+    const local = part("actions").querySelector('[data-action="local"]');
+    local.hidden = !(cells && S.lens);
+    if (!local.hidden) set("local", { pressed: S.scale.local, enabled: offers.local || S.scale.local, reason: offers.reasons.local });
+    part("why").textContent = [...new Set(reasons)].join(" · ");
+    part("why").hidden = reasons.length === 0;
+    uiPopForm(part("manual"), channel, subject, eff, offers);
+  }
+  // The manual-domain form of a popover, rebuilt only when its kind changed (so a value being typed stays).
+  function uiPopForm(form, channel, subject, eff, offers) {
+    const share = subject === "flow" || subject === "flowtrades" || subject === "dwell",
+      kind = share ? "window" : offers.fit ? (eff.curve === "linear" && eff.transform === "value" ? "value-linear" : "value-log1p") : "";
+    form.hidden = kind === "" || eff.transform === "rank";
+    if (form.dataset.kind === kind && form.childElementCount) return;
+    form.dataset.kind = kind;
+    form.replaceChildren();
+    if (form.hidden) return;
+    const field = (name, label, attrs) => {
+      const wrap = uiEl("label", "ol-legend-field"),
+        input = uiEl("input", "ol-num");
+      input.type = "number";
+      input.name = name;
+      input.step = "any";
+      input.inputMode = "decimal";
+      Object.assign(input, attrs);
+      wrap.append(uiEl("span", "", label), input);
+      return wrap;
+    };
+    // TEXT(S1): the names of the numbers of a manual domain and of a share window
+    const legend = uiEl("span", "ol-legend-form-title", share ? "Share window" : E.text.ui.manual);
+    const fields = share
+      ? [field("lo", "Low", { min: 0, max: 1 }), field("hi", "High", { min: 0, max: 1 })]
+      : kind === "value-linear"
+        ? [field("U", "U", { min: 0 })]
+        : [field("U", "U", { min: 0 }), field("k", "k", { min: 0 })];
+    const apply = uiEl("button", "ol-action ol-s cursor-interaction", E.text.ui.apply),
+      clear = uiEl("button", "ol-action ol-s cursor-interaction", share ? "Clear window" : E.text.ui.clearManual),
+      error = uiEl("p", "ol-legend-error");
+    apply.type = "submit";
+    clear.type = "button";
+    clear.dataset.action = share ? "clear-window" : "clear-manual";
+    clear.dataset.channel = channel;
+    error.dataset.part = "error";
+    error.id = `ol-${channel}-form-error`;
+    error.hidden = true;
+    form.append(legend, ...fields, apply, clear, error);
+  }
+  // Where a popover sits: under its chip, or over it where the window has more room above (the axis chip
+  // sits at the bottom of the plot), within the host it is positioned in, kept inside the viewport, and no
+  // taller than the room it has.
+  function uiPopPlace(panel, chip, align) {
+    const host = panel.offsetParent;
+    if (!host) return;
+    const at = chip.getBoundingClientRect(),
+      below = innerHeight - at.bottom - 12,
+      above = at.top - 12;
+    panel.style.maxHeight = Math.max(160, Math.min(560, Math.max(below, above))) + "px";
+    const width = panel.offsetWidth,
+      height = panel.offsetHeight,
+      left = align === "end" ? chip.offsetLeft + chip.offsetWidth - width : chip.offsetLeft;
+    panel.style.left = clamp(left, 8, Math.max(8, host.clientWidth - width - 8)) + "px";
+    panel.style.right = "auto";
+    panel.style.top = (height > below && above > below ? chip.offsetTop - 6 - height : chip.offsetTop + chip.offsetHeight + 6) + "px";
+  }
+  // The manual form's submit: checked here so the reason shows beside the number that caused it (the same
+  // checks the reducer makes, through the module), then handed to the spine like any other choice.
+  function uiApplyManual(form) {
+    const channel = form.dataset.channel,
+      kind = form.dataset.kind,
+      value = (name) => (form.elements[name].value.trim() === "" ? NaN : Number(form.elements[name].value)),
+      fail = (text, input) => {
+        const error = form.querySelector('[data-part="error"]');
+        error.textContent = text;
+        error.hidden = false;
+        input.setAttribute("aria-invalid", "true");
+        input.setAttribute("aria-describedby", error.id);
+        input.focus();
+      };
+    for (const input of form.elements) input.removeAttribute?.("aria-invalid");
+    form.querySelector('[data-part="error"]').hidden = true;
+    if (kind === "window") {
+      const win = [value("lo"), value("hi")],
+        out = E.policy.reduce(S.scale, { type: "window", value: win }, { mode: S.mode, live: Boolean(PACK.live) });
+      if (!win.every(Number.isFinite) || out.rejected)
+        return fail(out.rejected?.reason ?? E.text.reject.windowRange, form.elements.lo);
+      return scaleSet({ type: "window", value: win });
+    }
+    const U = value("U"),
+      k = kind === "value-linear" ? undefined : value("k"),
+      fit = E.scale.manual({ kind, signed: false, U, k });
+    if (fit.state !== "ok") return fail(E.text.reject.manual, form.elements[Number.isFinite(U) && U > 0 ? "k" : "U"]);
+    return scaleSet({ type: "manual", channel: channel === "rows" ? "rows" : "cells", U, k });
+  }
+  // What a popover button does. The warnings' buttons and the action row share the names: Fit, Auto color
+  // and Comparison lock toggle state through the spine's scaleSet; Open lens only moves the focus to the lens
+  // tool and changes nothing (a warning is advice, never a state change); Local contrast is the lens's own.
+  function uiPopAction(button) {
+    const name = button.dataset.action,
+      channel = button.dataset.channel === "rows" ? "rows" : "cells";
+    if (name === "warn-open-lens") {
+      closePop();
+      if (PHONE.matches && root.dataset.sheet !== "open") setSheet(true);
+      el("lens").focus();
+    } else if (name === "fit" || name === "warn-fit") scaleSet({ type: "fit", channel });
+    else if (name === "auto" || name === "warn-auto")
+      scaleSet({ type: "policy", channel, value: name === "auto" && S.scale[channel] === "auto" ? "explore" : "auto" });
+    else if (name === "lock") scaleSet({ type: S.scale.lock ? "unlock" : "lock" });
+    else if (name === "local" || name === "warn-local") scaleSet({ type: "local", value: name === "warn-local" ? true : !S.scale.local });
+    else if (name === "clear-manual") scaleSet({ type: "clearManual", channel });
+    else if (name === "clear-window") scaleSet({ type: "window", value: null });
+  }
+  // ---- the axis chip ----
+  // The text of an axis chip from its registry record: the policy and the exact domain, or why there is none
+  // (no data, updating, paused by Play).
+  function uiAxisText(rec) {
+    const t = E.text;
+    if (!rec || rec.typed === "none") return t.axis.none;
+    if (rec.hold === "play") return t.axis.paused;
+    if (rec.hold === "waiting") return t.axis.waiting;
+    if (rec.hold) return t.axis.updating;
+    const name = rec.policy === "frozen" ? t.policy.axisFrozen : rec.policy === "fixed" ? t.policy.fixed : t.policy.axisAuto;
+    return [name, uiAxisDomain(rec)].filter(Boolean).join(" · ");
+  }
+  // The words of an axis unit id (an id with no string of its own reads as itself)
+  function uiAxisUnit(unit) {
+    const u = E.text.unit;
+    return { usdt: u.usdt, trades: u.trades, "usdt-per-trade": u.usdtPerTrade, "log2-ratio": u.log2, seconds: u.seconds }[unit] ?? unit ?? "";
+  }
+  // "±1.92 B USDT", "0 – 100", "−2 – 2 log2 ratio": the domain as the chart's own numbers read it
+  function uiAxisDomain(rec) {
+    if (rec.typed === "zero-only" || !Array.isArray(rec.domain)) return E.text.axis.zero;
+    const [lo, hi] = rec.domain,
+      span = rec.sign === "signed-symmetric" ? "±" + uiFmt(hi, rec.unit) : `${uiFmt(lo, rec.unit)} – ${uiFmt(hi, rec.unit)}`;
+    return rec.unit ? `${span} ${uiAxisUnit(rec.unit)}` : span;
+  }
+  // The axis state of D.18 for a record
+  function uiAxisState(rec) {
+    if (!rec || rec.typed === "none") return "none";
+    if (rec.hold === "play") return "paused";
+    if (rec.hold) return "updating";
+    if (rec.typed === "zero-only") return "zero-only";
+    return rec.policy === "frozen" ? "frozen" : rec.policy === "fixed" ? "fixed" : "auto";
+  }
+  // An axis the draw in progress has just scaled (registered as `axisChip`; called by the pane, the
+  // oscillators and the profiles). Only the pane's record becomes the chip; all of them are listed in the
+  // popover. A null record says nothing: the chip is hidden when no pane axis was handed over this frame.
+  function axisChipWrite(rec) {
+    if (!rec) return;
+    scaleUi.axes.set(rec.id, rec);
+    if (String(rec.id).startsWith("pane.")) scaleUi.pane = rec;
+  }
+  scaleHooks.axisChip = axisChipWrite;
+  // The end of the draw: the chip's place (re-set on every draw from the geometry, because the pane moves
+  // with a resize and with the splitter), and its text and attributes from the pane's record, written when
+  // the axes of the frame changed. The axes of the frame become the popover's list.
+  function axisChipCommit() {
+    const chip = el("axis-chip"),
+      rec = scaleUi.pane,
+      records = [...scaleUi.axes.values()];
+    scaleUi.pane = null;
+    scaleUi.axes.clear();
+    if (!rec) {
+      if (!chip.hidden) {
+        chip.hidden = true;
+        if (pop.open?.button === chip) closePop();
+      }
+      return;
+    }
+    if (chip.hidden) chip.hidden = false;
+    // Two string compares per draw: the chip sits inside the pane's top right corner
+    const top = Math.round(G.ay + 2) + "px",
+      right = Math.round(G.width - (G.x + G.w) + 4) + "px";
+    if (chip.style.top !== top) chip.style.top = top;
+    if (chip.style.right !== right) chip.style.right = right;
+    const key =
+      records
+        .map((a) => [a.id, a.policy, a.typed, a.hold, a.mappingId, a.domain?.join("~"), a.clipped?.count, a.provenance?.through].join(":"))
+        .join("|") +
+      "|" + S.scale.lock + "|" + scaleWorkspace() + "|" + colourEpoch;
+    if (scaleUi.axisKey === key) return;
+    scaleUi.axisKey = key;
+    scaleUi.axisRecords = records;
+    const text = uiAxisText(rec);
+    if (el("axis-chip-text").textContent !== text) el("axis-chip-text").textContent = text;
+    const label = `${E.text.ui.scale}: ${text}`;
+    if (chip.getAttribute("aria-label") !== label) chip.setAttribute("aria-label", label);
+    const attrs = {
+      state: rec.typed === "none" ? "no-calibration" : rec.hold === "play" ? "paused" : rec.hold ? "updating" : rec.typed === "zero-only" ? "zero-only" : rec.policy === "fixed" ? "fixed" : "ready",
+      policy: rec.policy === "frozen" ? "frozen" : rec.policy === "fixed" ? "fixed" : "auto",
+      mappingId: rec.mappingId ?? "",
+      appearance: scaleRt.lut.get(scaleRt.appearance + "|" + scaleRt.theme)?.id ?? "",
+      workspace: rec.provenance?.workspace ?? scaleWorkspace(),
+      transform: "axis",
+      basis: "",
+      context: rec.id,
+      fitThrough: String(rec.provenance?.through ?? ""),
+      fitSeq: String(scaleRt.fitSeq?.axis ?? 0),
+      override: "",
+      updating: String(Boolean(rec.hold) && rec.hold !== "play"),
+      axisId: rec.id,
+      domain: Array.isArray(rec.domain) ? rec.domain.join(",") : "",
+      axisState: uiAxisState(rec),
+    };
+    for (const [name, value] of Object.entries(attrs)) if (chip.dataset[name] !== value) chip.dataset[name] = value;
+    axisPop();
+  }
+  // The axis popover: every axis the frame drew (the pane, the profiles), each with its policy, domain,
+  // unit, provenance, hold reason and clip counts, and the Comparison lock, which freezes them all.
+  function axisPop() {
+    const panel = el("axis-pop"),
+      chip = el("axis-chip");
+    if (!panel.firstChild) {
+      const head = uiEl("div", "ol-pop-head"),
+        body = uiEl("div", "ol-legend-part"),
+        actions = uiEl("div", "ol-legend-actions"),
+        lock = uiEl("button", "ol-action ol-s cursor-interaction", E.text.ui.lock);
+      head.append(uiEl("span", "", "Axes"));
+      body.dataset.part = "axes";
+      lock.type = "button";
+      lock.dataset.action = "lock";
+      actions.append(lock);
+      panel.append(head, body, actions);
+    }
+    const focused = panel.contains(document.activeElement) ? document.activeElement : null,
+      sections = scaleUi.axisRecords.map((rec) => {
+        const box = uiEl("section", "ol-legend-axis"),
+          list = uiEl("dl", "ol-legend-details"),
+          add = (label, value, field, canonical) => {
+            const dd = uiEl("dd", "ol-num", value);
+            dd.dataset.field = field;
+            if (canonical !== undefined && canonical !== null) dd.dataset.value = typeof canonical === "string" ? canonical : JSON.stringify(canonical);
+            list.append(uiEl("dt", "", label), dd);
+          };
+        box.dataset.axisId = rec.id;
+        box.append(uiEl("strong", "", `${rec.id} · ${uiAxisText(rec)}`));
+        add(E.text.ui.policy, rec.policy === "frozen" ? E.text.policy.axisFrozen : rec.policy === "fixed" ? E.text.policy.fixed : E.text.policy.axisAuto, "policy", rec.policy);
+        if (rec.mappingId) add("Mapping", rec.mappingId, "mappingId", rec.mappingId);
+        add("Domain", uiAxisDomain(rec), "domain", rec.domain);
+        if (rec.unit) add("Unit", uiAxisUnit(rec.unit), "unit", rec.unit);
+        if (rec.provenance?.through) add("Fitted through", uiUtcText({ field: "fitThrough", canonical: rec.provenance.through, value: String(rec.provenance.through) }), "fitThrough", rec.provenance.through);
+        if (rec.hold) add("Hold", rec.hold, "hold", rec.hold);
+        if (rec.clipped) {
+          add(E.text.key.below, String(rec.clipped.low), "clipLowFinite", rec.clipped.low);
+          add(E.text.key.above, String(rec.clipped.high), "clipHighFinite", rec.clipped.high);
+        }
+        box.append(list);
+        if (rec.policy === "frozen") box.append(uiEl("p", "ol-legend-note", E.text.axis.frozenBy));
+        if (rec.clipped?.count > 0) box.append(uiEl("p", "ol-legend-note", E.text.fill(E.text.axis.clipped, { n: rec.clipped.count, total: rec.clipped.total })));
+        return box;
+      });
+    panel.querySelector('[data-part="axes"]').replaceChildren(...sections);
+    const lock = panel.querySelector('[data-action="lock"]');
+    lock.setAttribute("aria-pressed", String(S.scale.lock));
+    if (focused && !focused.isConnected) lock.focus();
+    uiPopPlace(panel, chip, "end");
+  }
+  // ---- the Scale sections of the Cells and Rows menus ----
+  // One item of the Scale section: a native button with an accessible name and, when there is one, a
+  // description (why it is not offered, what an approximation is). A disabled item stays in the list and
+  // says why, so nothing is explained by a hover.
+  function uiScaleItem(spec) {
+    const b = menuItem(
+      spec.role,
+      [svgIcon("check", "ol-icon ol-check"), itemText(spec.id, spec.name, spec.desc ?? "")],
+      () => {
+        if (!spec.disabled) uiScaleChoose(spec.channel, spec.key);
+      },
+    );
+    b.setAttribute("aria-labelledby", `ol-${spec.id}-name`);
+    if (spec.desc) b.setAttribute("aria-describedby", `ol-${spec.id}-desc`);
+    b.setAttribute("aria-checked", String(Boolean(spec.checked)));
+    if (spec.disabled) b.setAttribute("aria-disabled", "true");
+    b.dataset.scaleItem = spec.key;
+    b.dataset.scaleChannel = spec.channel;
+    return b;
+  }
+  // The Scale section of a menu, from what the measure offers (E.policy.offers decides which groups and
+  // items exist; nothing is hard-coded here). Basis, Transform (Value (log), Value (linear), Relative
+  // rank), Scale policy, and the lock, Local contrast and Fit. No item has a shortcut of its own.
+  function uiScaleSection(channel) {
+    const cells = channel === "cells",
+      subject = cells ? S.mode : S.rows;
+    if (!subject || subject === "off" || (cells && E.measure.MODES[subject].kind === "occupancy")) return [];
+    const name = cells ? MODE_NAMES[subject] : ROWS_INFO[subject].name,
+      offers = E.policy.offers(channel, subject, S.scale, Boolean(PACK.live), name);
+    if (!offers.available) return [];
+    const t = E.text,
+      parts = [],
+      rule = uiEl("div", "ol-menu-rule"),
+      group = (label, items) => {
+        const box = uiEl("div"),
+          head = uiEl("div", "ol-menu-cap", label);
+        head.id = `ol-scale-${channel}-cap-${parts.length}`;
+        box.setAttribute("role", "group");
+        box.setAttribute("aria-labelledby", head.id);
+        box.append(head, ...items);
+        parts.push(box);
+      },
+      item = (key, label, extra) =>
+        uiScaleItem({
+          channel,
+          key,
+          id: `scale-${channel}-${key.replace(":", "-")}`,
+          name: label,
+          role: extra.role ?? "menuitemradio",
+          checked: uiScaleChecked(channel, key),
+          disabled: extra.disabled,
+          desc: extra.disabled ? extra.reason : extra.desc,
+        });
+    rule.setAttribute("role", "separator");
+    parts.push(rule);
+    // Basis: Amount and Intensity where the measure lists them, Path's three variants for Path
+    if (offers.basis.length)
+      group(t.ui.basis, [
+        item("basis:amount", t.basis.amount, { disabled: !offers.basis.includes("amount"), reason: offers.reasons["basis.amount"] }),
+        item("basis:intensity", t.basis.intensity, { disabled: !offers.basis.includes("intensity"), reason: offers.reasons["basis.intensity"] }),
+      ]);
+    if (offers.pathBasis.length)
+      group(
+        t.ui.basis,
+        [["spans", t.basis.spans], ["usdt", t.basis.usdt], ["perMinute", t.basis.perMinute]].map(([key, label]) =>
+          item("path:" + key, label, { disabled: !offers.pathBasis.includes(key), reason: offers.reasons["pathBasis." + key] }),
+        ),
+      );
+    // Transform: the two Values where the measure is unbounded, Relative rank only where it has one
+    if (offers.transform.length)
+      group(t.ui.transform, [
+        item("transform:log", t.transform.valueLog, { disabled: !offers.transform.includes("value") }),
+        item("transform:linear", t.transform.valueLinear, { disabled: !offers.curve.includes("linear"), reason: offers.reasons["curve.linear"] }),
+        ...(offers.transform.includes("rank") ? [item("transform:rank", t.transform.rank, { desc: t.rank.approx })] : []),
+      ]);
+    // Scale policy: Explore and Auto color (Auto is withheld under the lock, and says so)
+    group(t.ui.policy, [
+      item("policy:explore", t.policy.explore, { disabled: !offers.policy.includes("explore"), reason: offers.reasons["policy.auto"] }),
+      item("policy:auto", t.policy.auto, { disabled: !offers.policy.includes("auto"), reason: offers.reasons["policy.auto"] }),
+    ]);
+    // The lock is one action for every channel; Local contrast is the lens's; Fit replaces the mapping once
+    group(t.ui.scale, [
+      item("lock", t.ui.lock, { role: "menuitemcheckbox", disabled: !(offers.lock || S.scale.lock), reason: offers.reasons.lock }),
+      ...(cells ? [item("local", t.ui.local + " (lens)", { role: "menuitemcheckbox", disabled: !(offers.local || S.scale.local), reason: offers.reasons.local })] : []),
+      item("fit", t.ui.fit, { role: "menuitem", disabled: !offers.fit, reason: offers.reasons.fit }),
+    ]);
+    return parts;
+  }
+  // Whether a Scale item is on, from the raw preferences through what the measure reads of them.
+  function uiScaleChecked(channel, key) {
+    const cells = channel === "cells",
+      subject = cells ? S.mode : S.rows,
+      [group, value] = key.split(":");
+    if (group === "lock") return S.scale.lock;
+    if (group === "local") return S.scale.local;
+    if (group === "fit" || !subject || subject === "off") return false;
+    const eff = E.policy.effective(S.scale, subject, cells ? undefined : "rows");
+    if (group === "basis") return eff.basis === value;
+    if (group === "path") return eff.pathBasis === value;
+    if (group === "transform") return value === "rank" ? eff.transform === "rank" : eff.transform === "value" && eff.curve === value;
+    if (group === "policy") return S.scale[channel] === value;
+    return false;
+  }
+  // What choosing a Scale item does: one action, or two for a Transform that also leaves Relative rank
+  // (the reducer never rewrites a field it was not asked to set).
+  function uiScaleChoose(channel, key) {
+    const field = channel === "cells" ? "transform" : "rowsTransform",
+      [group, value] = key.split(":");
+    if (group === "basis") scaleSet({ type: "basis", value });
+    else if (group === "path") scaleSet({ type: "pathBasis", value });
+    else if (group === "transform") {
+      if (value === "rank") scaleSet({ type: field, value: "rank" });
+      else {
+        if (S.scale[field] !== "value") scaleSet({ type: field, value: "value" });
+        if (S.scale.curve !== value) scaleSet({ type: "curve", value });
+      }
+    } else if (group === "policy") scaleSet({ type: "policy", channel, value });
+    else if (group === "lock") scaleSet({ type: S.scale.lock ? "unlock" : "lock" });
+    else if (group === "local") scaleSet({ type: "local", value: !S.scale.local });
+    else if (group === "fit") scaleSet({ type: "fit", channel });
+  }
+  // What update() asks of the DOM package on every input (registered as `renderUi`): the pressed state of
+  // the built Scale items, the lens bar's Local contrast toggle, and an open popover's buttons. Everything
+  // hangs on one key of the preferences, so a pointer move that changes none of them does a string join.
+  function renderScaleUi() {
+    const s = S.scale,
+      key = [S.mode, S.rows, PACK.live ? 1 : 0, S.lens ? 1 : 0, s.basis, s.pathBasis, s.transform, s.curve, s.rowsTransform, s.cells, s.rows, s.local ? 1 : 0, s.lock ? 1 : 0, s.window?.join("~")].join("|");
+    if (key === scaleUi.menuKey) return;
+    scaleUi.menuKey = key;
+    // Local contrast is the lens's: offered, and shown, only where the measure has a scale to fit
+    const toggle = el("lens-local");
+    el("lens-local-label").hidden = !E.policy.offers("cells", S.mode, s, Boolean(PACK.live)).local;
+    if (toggle.checked !== s.local) toggle.checked = s.local;
+    for (const b of qsa("#ol-mode-menu [data-scale-item], #ol-rows-menu [data-scale-item]")) {
+      const on = String(uiScaleChecked(b.dataset.scaleChannel, b.dataset.scaleItem));
+      if (b.getAttribute("aria-checked") !== on) b.setAttribute("aria-checked", on);
+    }
+    if (pop.open) {
+      const panel = pop.open.panel;
+      // A menu that is open while its measure changes (a shortcut) is rebuilt, the focused item kept
+      if (panel === el("mode-menu") || panel === el("rows-menu")) {
+        const at = document.activeElement,
+          item = at?.dataset?.scaleItem;
+        (panel === el("mode-menu") ? buildModeMenu : buildRowsMenu)();
+        if (panel.contains(at) && !at.isConnected)
+          (item && panel.querySelector(`[data-scale-item="${item}"]`))?.focus() ?? focusMenuItem(panel, checkedItem(panel));
+      } else if (panel === el("legend-pop")) legendPop("cells");
+      else if (panel === el("rows-legend-pop")) legendPop("rows");
+      else if (panel === el("axis-pop")) axisPop();
+    }
+  }
+  scaleHooks.renderUi = renderScaleUi;
+  // ---- the notice banner ----
+  // One notice at a time (the most serious, then the newest), its count when the same thing keeps happening,
+  // how many more wait, a Details toggle for its lines and Dismiss. Not animated, and a status element that
+  // changes once per event: the queue's own version says when, so a stream of repeats is one DOM write each.
+  function noticeShow() {
+    const queue = scaleRt.notices;
+    if (queue.version === scaleUi.noticeVersion) return;
+    scaleUi.noticeVersion = queue.version;
+    const box = el("notice"),
+      cur = queue.current(),
+      was = box.hidden;
+    if (scaleRt.fault) uiFault();
+    if (!cur) {
+      box.hidden = true;
+    } else {
+      const item = uiEl("span", "ol-notice-item"),
+        waiting = queue.list().filter((row) => !row.dismissed).length - 1;
+      item.dataset.notice = cur.id;
+      item.dataset.code = cur.code;
+      item.dataset.count = String(cur.count);
+      item.dataset.level = cur.level;
+      // TEXT(S1): the level word, for a reader that cannot see the box's border
+      if (cur.level !== "info") item.append(uiEl("span", "ol-sr", cur.level === "error" ? "Error: " : "Warning: "));
+      item.append(document.createTextNode(cur.text + (cur.count > 1 ? ` (×${cur.count})` : "")));
+      el("notice-text").replaceChildren(item, ...(waiting > 0 ? [uiEl("span", "ol-notice-queued", ` +${waiting} more`)] : []));
+      box.dataset.level = cur.level;
+      const more = el("notice-more"),
+        list = el("note-details");
+      more.hidden = cur.details.length === 0;
+      if (scaleUi.noticeOpen !== cur.id) scaleUi.noticeOpen = "";
+      list.replaceChildren(...cur.details.map((line) => uiEl("li", "", line)));
+      list.hidden = more.hidden || scaleUi.noticeOpen !== cur.id;
+      more.setAttribute("aria-expanded", String(!list.hidden));
+      box.dataset.noticeId = cur.id;
+      box.hidden = false;
+    }
+    // The banner takes height from the chart: the drawer's limit follows
+    if (was !== box.hidden) applyPanels();
+  }
+  scaleHooks.notice = noticeShow;
+  function noticeHide(id) {
+    const box = el("notice"),
+      hadFocus = box.contains(document.activeElement);
+    scaleRt.notices.dismiss(id);
+    noticeShow();
+    if (hadFocus && box.hidden) canvas.focus();
+  }
+  // After a fault the page draws the legacy legend lines into the chip's text; the chip's own label would
+  // be stale, so it is dropped and the chip says it failed.
+  function uiFault() {
+    const chip = el("legend");
+    chip.removeAttribute("aria-label");
+    chip.dataset.state = "failed";
+    el("legend-marker").hidden = true;
+  }
+  // ---- binding ----
+  // The popover of a colour chip or the axis chip opened: built from the model, positioned, and the first
+  // control focused, so the keyboard lands inside the dialog it opened.
+  function uiOpenPop(channel) {
+    const panel = el(channel === "rows" ? "rows-legend-pop" : channel === "axis" ? "axis-pop" : "legend-pop");
+    if (channel === "axis") axisPop();
+    else legendPop(channel);
+    // The first control, without scrolling the dialog past its bar
+    (panel.querySelector("button:not(:disabled), input") ?? panel).focus({ preventScroll: true });
+  }
+  // The controls of the scale display, bound once at startup (registered as `bindUi`).
+  function bindScaleUi() {
+    bindPop("legend", "legend-pop", () => uiOpenPop("cells"));
+    bindPop("rows-legend", "rows-legend-pop", () => uiOpenPop("rows"));
+    bindPop("axis-chip", "axis-pop", () => uiOpenPop("axis"));
+    for (const id of ["legend-pop", "rows-legend-pop", "axis-pop"]) {
+      const panel = el(id);
+      panel.addEventListener("click", (e) => {
+        const button = e.target.closest?.("button[data-action]");
+        if (button) uiPopAction(button);
+      });
+      panel.addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (e.target.matches?.("form[data-part='manual']")) uiApplyManual(e.target);
+      });
+      // A number field keeps its keys, so Escape would never reach the page's own handler from inside one
+      // (TEXT_FIELDS): every input of the form closes the popover itself and returns the focus to its chip.
+      panel.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape" || !e.target.matches?.("input")) return;
+        e.preventDefault();
+        closePop(true);
+      });
+    }
+    el("lens-local").addEventListener("change", () => scaleSet({ type: "local", value: el("lens-local").checked }));
+    el("notice-dismiss").addEventListener("click", () => noticeHide(el("notice").dataset.noticeId));
+    el("notice-more").addEventListener("click", () => {
+      const list = el("note-details"),
+        open = list.hidden;
+      list.hidden = !open;
+      scaleUi.noticeOpen = open ? el("notice").dataset.noticeId : "";
+      el("notice-more").setAttribute("aria-expanded", String(open));
+    });
+    noticeShow();
+  }
+  scaleHooks.bindUi = bindScaleUi;
   function menuItem(role, children, onChoose) {
     const b = document.createElement("button");
     b.type = "button";
@@ -5186,6 +6272,8 @@
       }
       parts.push(group);
     }
+    // The Scale section: basis, transform, policy, lock, Local contrast and Fit, from what the measure offers
+    parts.push(...uiScaleSection("cells"));
     el("mode-menu").replaceChildren(...parts);
   }
   // The pane's measures, grouped as the encodings are, each with what it shows.
@@ -5256,6 +6344,8 @@
       }
       parts.push(group);
     }
+    // The matching Transform and policy groups of the Rows measure
+    parts.push(...uiScaleSection("rows"));
     el("rows-menu").replaceChildren(...parts);
   }
   // The Rows menu's button, and its period's, written only when they change:

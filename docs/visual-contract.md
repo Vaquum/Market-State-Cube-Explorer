@@ -234,6 +234,50 @@ N-01 to N-08 come from the S1 checklist. N-09 to N-22 pre-register, with status 
 | N-21 | Lens frame: Shared (the active Cells mapping) or Local contrast (its own descriptor) | src/explorer.js: `lensScaleFrame()` (new, INTEGRATION.md D.4; package L); uses `colors.*` | Does not exist at baseline (pre-registered so that no Wave-2 package edits this file) | `LENS`, read only: it never creates or touches a store entry | LENS | #46 | U24b, B12 | todo-S1 |
 | N-22 | Pattern fill of movement cells the motion read has not covered (`pending`) or failed | src/explorer.js: `motionPattern()` (new, INTEGRATION.md D.4; package C); uses `colors.*` | Does not exist at baseline (pre-registered so that no Wave-2 package edits this file) | `STATE` neutral keyed marks through `patternFor`; `motionMark` keeps its signature | CELL | #46 | B16, B17 | todo-S1 |
 
+### 3.7 Wave 2 additions (new helpers that read `colors.*` and are not pre-registered above)
+
+A Wave-2 package that adds a NEW top-level helper reading `colors.*` under a name that is not one of the pre-registered N-09..N-22 rows adds ONE row for it in its own subsection below and nowhere else in this file (DR-44). Use only the ID range of your subsection (two digits, no collisions between packages). Status `todo-S1` until package K sets it.
+
+#### 3.7.S Package S (the spine): IDs N-30 to N-39
+
+| ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
+|---|---|---|---|---|---|---|---|---|
+
+#### 3.7.C Package C (cells): IDs N-40 to N-49
+
+| ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
+|---|---|---|---|---|---|---|---|---|
+
+#### 3.7.R Package R (rows): IDs N-50 to N-59
+
+| ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
+|---|---|---|---|---|---|---|---|---|
+
+#### 3.7.X Package X (columns and model): IDs N-60 to N-69
+
+| ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
+|---|---|---|---|---|---|---|---|---|
+
+#### 3.7.L Package L (lens and tiles): IDs N-70 to N-79
+
+| ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
+|---|---|---|---|---|---|---|---|---|
+
+#### 3.7.T Package T (readout consumers): IDs N-80 to N-89
+
+| ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
+|---|---|---|---|---|---|---|---|---|
+
+#### 3.7.U Package U (DOM): IDs N-90 to N-99
+
+| ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
+|---|---|---|---|---|---|---|---|---|
+
+#### 3.7.P Package P (persistence): IDs N-23 to N-29
+
+| ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
+|---|---|---|---|---|---|---|---|---|
+
 ## 4. The retired-role ratchet
 
 `tests/unit/role-lint.test.js` (U35) flags retired rendering roles and never the substring buy or sell. It classifies by colour-token namespace: `colors.<key>`, `--ol-<name>` (including `var(--ol-<name>)` and `--ol-tier-${tier}-width`) and the prose "<role> colour". Taker-buy DATA names (`bv`, `bt`, `bpoc`, `buyShare`, `taker_buy_volume`, sort keys, ids such as `#ol-buypoc-value`, labels such as "Buy USDT") live in no colour namespace and can never be hit. The prefix hazard `--ol-line` versus `--ol-line-*` is handled by matching whole token names.

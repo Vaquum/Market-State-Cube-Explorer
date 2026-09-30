@@ -10497,30 +10497,48 @@
     if (frame.state === "wide") return { text: "zoom in" };
     if (frame.state !== "ready")
       return frame.state === "failed" ? { text: "unavailable", title: `The cube didn't answer: ${frame.error}` } : { text: "…" };
-    const last = frame.closes.length - 1,
-      fmt = (v) => (Number.isFinite(v) ? price(Math.round(v)) : "—");
+    // The 15- and 3.75-minute bars are read over the view: while it is before
+    // the latest data, the value at its right edge instead.
+    const span = spec.tf === "15m" || spec.tf === "3m" ? averageSpan(AVERAGE_STEPS[spec.tf]) : null,
+      past = span !== null && span.to < activeCutoff(),
+      last = past ? Math.min(frame.closes.length - 1, endAt(frame.ends, S.tB)) : frame.closes.length - 1,
+      fmt = (v) => (Number.isFinite(v) ? price(Math.round(v)) : "—"),
+      shown = (text) =>
+        past ? { text, title: `At the close of ${frameBar(frame, last)}, at the view's right edge: these bars are read over the view` } : { text };
     if (key === "gdcross") {
       const x = frameCrosses(frame).at(-1);
       return { text: x ? `${x.up ? "Golden" : "Death"} ${dayOf(date(frame.bars[x.i].t))}` : "none" };
     }
     if (spec.bands) {
       const bb = indicator(frame, "bb", 20);
-      return { text: Number.isFinite(bb.mid[last]) ? `${fmt(bb.mid[last])} ± ${fmt((bb.upper[last] - bb.lower[last]) / 2)}` : "—" };
+      return shown(Number.isFinite(bb.mid[last]) ? `${fmt(bb.mid[last])} ± ${fmt((bb.upper[last] - bb.lower[last]) / 2)}` : "—");
     }
-    return { text: spec.lines.map(([what, n]) => fmt(indicator(frame, what, n)[last])).join(" · ") };
+    return shown(spec.lines.map(([what, n]) => fmt(indicator(frame, what, n)[last])).join(" · "));
   }
   // What the moving averages on are waiting on, or where their bars end.
   function averageStatus() {
     const tfs = [...new Set(S.lines.filter((k) => AVERAGE_SPECS[k]).map((k) => AVERAGE_SPECS[k].tf))],
-      notes = [];
+      notes = [],
+      past = [],
+      edge = S.replay ? cutEdge() : Math.floor(CUT);
     for (const tf of tfs) {
       const frame = averageFrame(tf),
-        name = { "1d": "8-hour", "1w": "8-hour", "4h": "4-hour", "1h": "hourly", "15m": "15-minute", "3m": "3.75-minute" }[tf];
+        name = { "1d": "8-hour", "1w": "8-hour", "4h": "4-hour", "1h": "hourly", "15m": "15-minute", "3m": "3.75-minute" }[tf],
+        // The 15- and 3.75-minute bars are read to the end of the view's span.
+        span = tf === "15m" || tf === "3m" ? averageSpan(AVERAGE_STEPS[tf]) : null;
       if (frame.state === "wide") notes.push(`The ${TF_NAMES[tf]} lines draw once their bars are a quarter pixel wide: zoom in.`);
       else if (frame.state === "failed") notes.push(`The ${name} bars couldn't be read: ${frame.error}`);
       else if (frame.state === "pending") notes.push(`Reading ${name} bars…`);
-      else if (frame.end < (S.replay ? cutEdge() : Math.floor(CUT))) notes.push(`Measured to ${when(frame.end)} UTC: the cube's measures end there.`);
+      else {
+        if (frame.end < (span ? Math.min(edge, span.to) : edge)) notes.push(`Measured to ${when(frame.end)} UTC: the cube's measures end there.`);
+        if (span && span.to < activeCutoff()) past.push(name);
+      }
     }
+    // Before the latest data, their rows give the value at the view's right edge.
+    if (past.length)
+      notes.push(
+        `The ${past.length > 1 ? "15- and 3.75-minute" : past[0]} rows give their values at the view's right edge, as their bars are read over the view.`,
+      );
     return [...new Set(notes)].join(" ");
   }
   // The oscillators in the pane: RSI 14 on the days or the 4-hour bars, with

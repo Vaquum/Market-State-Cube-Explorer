@@ -253,6 +253,22 @@ test.describe("B03 readout agreement", () => {
     expect(row.fields.index.canonical).toBe("none");
   });
 
+  test("a Path cell seen through one base row of its 16 carries the Short exposure cue with both fractions", async ({ page, fakeFor, surface, probe }) => {
+    const fake = await fakeFor("micro:mixed");
+    // Rows of 2,000 USDT (m = 4) over a rectangle of one 125 USDT base row: 125 / 2,000 = 6.25 % of the price span, all of the time.
+    await page.goto(`${fake.url}/#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=25000~25125&r=0,4&mode=path`);
+    await atRest(page, fake, probe);
+    const canvas = await page.locator("#ol-canvas").boundingBox();
+    const box = await boxOf(page, canvas, "0:4:0:12");
+    await page.mouse.move(canvas.x + box.cx, canvas.y + box.cy);
+    const tip = await surface.tip();
+    expect(Number(canon(tip, "shortExposure")), "the smaller fraction, strictly below 10 %").toBeCloseTo(125 / 2000, 9);
+    expect(tip.text).toContain("Short exposure");
+    expect(tip.text).toContain("100.0% of the time span, 6.3% of the price span");
+    // The measured width the ratio divides by is the slice, not the cell.
+    expect(Number(canon(tip, "width"))).toBe(125);
+  });
+
   test("a view wider than one read lists the table at the level drawn, and a row outlines its cell", async ({ page, fakeFor, surface, probe }) => {
     const fake = await fakeFor("standard");
     // 7 days at the finest level is 10,752 columns: more than one read holds, so the chart draws a coarser level than requested.

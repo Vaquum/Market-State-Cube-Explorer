@@ -2965,9 +2965,10 @@
     hoverRow = null;
     // The rows are new: a row the pointer is on keeps its marker on the legend.
     if (tableHover) rowMarker();
-    el("table-caption").textContent = mq
-      ? `${integer(listed.cells.length)} occupied and ${integer(movedThrough.length)} moved-through cells in view · other zero cells omitted`
-      : `${integer(cells.length)} occupied cells in view · zero cells omitted`;
+    el("table-caption").textContent =
+      (mq
+        ? `${integer(listed.cells.length)} occupied and ${integer(movedThrough.length)} moved-through cells in view · other zero cells omitted`
+        : `${integer(cells.length)} occupied cells in view · zero cells omitted`) + scaleCaption();
     el("table-page").textContent = `${tablePage + 1} / ${pages}`;
     el("table-back").disabled = tablePage === 0;
     el("table-next").disabled = tablePage === pages - 1;
@@ -3045,12 +3046,18 @@
       ];
     // A cell the price never touched has a path and a dwell of zero, measured.
     const cell = z ?? { c, r, v: 0, bv: 0, ct: 0, bt: 0, p: 0, w: 0 },
-      seconds = (x) => (exact ? secondsExact(x) : dur(x)),
+      // A quantity the record could not hold (a non-finite number becomes null there) reads as a dash.
+      seconds = (x) => (x === null ? "—" : exact ? secondsExact(x) : dur(x)),
       share = (x) => (x * 100).toFixed(exact ? 2 : 1) + "%",
       spans = cellMeasure("path", cell, "amount", "spans"),
       moved = cellMeasure("path", cell, "amount", "usdt"),
       perMinute = cellMeasure("path", cell, "amount", "perMinute"),
-      dwell = cellMeasure("dwell", cell),
+      // Under Dwell the numerator, denominator and result are the readout's own record (the exposure the
+      // encoder used); beside another measure they are asked for, with the same inputs.
+      dwell =
+        readout?.measure.measure === "dwell" && readout.exposure
+          ? { numerator: readout.observed ? readout.observed.value : null, denominator: readout.exposure.seconds, result: readout.typed, exposure: readout.exposure }
+          : cellMeasure("dwell", cell),
       // The width and the seconds the ratios divide by: one exposure record (the per-minute basis uses both).
       ex = perMinute.exposure,
       spanText = (m, unit) =>
@@ -3084,7 +3091,7 @@
       [
         "Dwell",
         dwell.result.tag === "finite"
-          ? `${seconds(dwell.numerator)} of ${seconds(dwell.denominator)} covered · ${share(dwell.result.value)}`
+          ? `${seconds(dwell.numerator)} of ${seconds(dwell.denominator)} covered column time · ${share(dwell.result.value)}`
           : `${seconds(dwell.numerator)} · ${E.result.describe(dwell.result).short}`,
         "dwell",
         dwell.numerator,
@@ -3507,7 +3514,11 @@
       finite = typed.tag === "finite",
       rows = [
         [
-          `${MODE_NAMES[measure.measure] ?? measure.measure}${basis ? " · " + basis : ""}`,
+          // The Path bases already name Path ("Path / price span", "USDT moved"); the others name the measure
+          // first ("Volume · Intensity").
+          measure.measure === "path" && basis
+            ? basis
+            : `${MODE_NAMES[measure.measure] ?? measure.measure}${basis ? " · " + basis : ""}`,
           finite ? unitText(measure.unit, typed.value, Boolean(formula?.signed), f) : E.result.describe(typed).short,
           "value",
           finite ? typed.value : typed.tag,
@@ -3546,6 +3557,20 @@
       ]);
     if (exposure?.short) rows.push(exposureRow(exposure));
     return rows;
+  }
+  // The scale the table's cells were encoded with, as one caption phrase: the policy and id of the mapping,
+  // or the state that says there is none. Empty where nothing is measured (Geometry) or the frame cannot say.
+  function scaleCaption() {
+    const frame = last?.sc?.cells;
+    if (!frame || S.mode === "geometry") return "";
+    try {
+      const input = frame.legendInput();
+      if (!input) return "";
+      return ` · Scale: ${scaleText({ state: input.state, id: input.mappingId || null, policy: input.policy, external: input.external })}`;
+    } catch (error) {
+      scaleFault(error);
+      return "";
+    }
   }
   // The plain facts of a drawn cell, each with its canonical value: the amounts, and the ratios between
   // them as typed results (a cell without trades has no trade size: undefined, naming the denominator).
@@ -3739,11 +3764,9 @@
             ? mz.p > 0
               ? "The price moved through without a trade here"
               : "The price held here without a trade"
-            : readout?.typed && readout.typed.tag !== "finite" && !(readout.typed.tag === "pending" && readout.typed.reason === "reading")
-              ? E.result.describe(readout.typed).short
-              : open
-                ? "Still open: no trades yet"
-                : "No trades in this cell",
+            : open
+              ? "Still open: no trades yet"
+              : "No trades in this cell",
         );
       else
         tipRows(

@@ -155,13 +155,14 @@
   // value (the caller knows the unit); without it the plain JavaScript text is used. `short` is the
   // template filled with {value}, {reason} and {denominator}; `long` is the same text with the reason
   // appended in brackets when the template did not already show it. An entry of E.text.typed may also be
-  // an object {short, long} of two templates. A tag this part does not know is described as the
-  // invalid-input it is (reason "unknown-tag").
+  // an object {short, long} of two templates. A value that is not a Typed of a known tag is described
+  // as the invalid-input it is (reason "unknown-tag"). (The tag must be tested as a string: a missing tag
+  // would otherwise be looked up as the key "undefined", which is a real tag.)
   function resDescribe(typed, fmt) {
     const text = API.text;
     if (!text || !text.typed || typeof text.fill !== "function") throw new Error("E.result.describe needs part 04-text (E.text.typed and E.text.fill)");
     let t = typed;
-    if (t === null || typeof t !== "object" || !Object.prototype.hasOwnProperty.call(resTagIndex, t.tag)) t = { tag: "invalid-input", reason: "unknown-tag" };
+    if (t === null || typeof t !== "object" || typeof t.tag !== "string" || !Object.prototype.hasOwnProperty.call(resTagIndex, t.tag)) t = { tag: "invalid-input", reason: "unknown-tag" };
     const entry = text.typed[t.tag];
     if (entry === undefined) throw new Error("E.text.typed has no entry for " + t.tag);
     const params = {};

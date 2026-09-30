@@ -562,7 +562,6 @@
       bv: exactSum(cells.map((z) => z.bv)),
       ct,
       bt,
-      scales: {},
     };
   }
   // Path and dwell level by level (live only), summed like volume, each cell
@@ -663,7 +662,7 @@
         if (z.lo < col.lo) col.lo = z.lo;
       } else moved.push(z);
     }
-    return { n, m, cells, cols, map, moved, rows: null, p: null, w: null, scales: {} };
+    return { n, m, cells, cols, map, moved, rows: null, p: null, w: null };
   }
   // A motion summary's rows, path and dwell by price row summed exactly, and
   // its totals; the cube's own totals when it answered for the rectangle.
@@ -705,6 +704,9 @@
   // holds the latest trades (the cube's cutoff is a minute edge, not a base
   // one), or the replay's edge.
   const cutEdge = () => Math.ceil(activeCutoff());
+  // Anything kept with the colours (patterns, chip keys, per-row surfaces) is worked out again once the theme
+  // changes: this counts the themes the page has drawn in (themeChanged bumps it).
+  let colourEpoch = 0;
   function getColors() {
     const probe = document.createElement("span");
     root.append(probe);
@@ -756,7 +758,6 @@
         chroma: parseFloat(tokens.getPropertyValue(`--ol-tier-${tier}-chroma`)) || 1,
       };
     probe.remove();
-    buildRamp();
     themeChanged();
   }
   function requestDraw() {
@@ -2151,12 +2152,11 @@
     } catch (error) {
       sc = scaleFault(error);
     }
-    prepareMeasures(full, shown, query, b, moving);
+    prepareMeasures(query);
     // Cascade's parents: the level one coarser in both time and price.
     if (S.mode === "cascade") levelCascade(full, src, sum);
-    // The row underlay, while it shows, scaled to its rows in view.
+    // The row underlay, while it shows.
     const under = underlayFrame(meas);
-    if (under?.bands) under.peak = underlayPeak(under);
     // Rows' frame, from the package that owns it (none: no Rows frame). It resolves its mapping through
     // `scaleResolve`, which leaves what it found in `scaleRt.cur.rows`; the stamp then names that mapping too.
     if (sc !== INERT_SC) {
@@ -2353,8 +2353,8 @@
     activity(shown, cut, mv, full, sc);
     crosshair(ro);
     querySummary(meas, mv);
-    // The legends: the chips when the DOM package has registered them, the legacy lines until then (and
-    // after a fault, which turns the scale display off).
+    // The legends: the chips when the DOM package has registered them; none after a fault, which turns the
+    // scale display off.
     if (scaleHooks.legend && sc !== INERT_SC) {
       try {
         scaleHooks.legend(sc, under);
@@ -2362,12 +2362,10 @@
         scaleFault(error);
       }
     } else {
-      el("legend-text").textContent = legendText(full, mv);
-      el("legend-text").title =
-        LEGEND_TITLES[S.mode] +
-        (moving && !mv.src && motionIssue() ? ` They couldn't be read: ${motionIssue()}.` : "");
-      el("ramp").style.background = legendRamp();
-      underlayLegend(under);
+      // After a fault the scale display is off for the session and says so once (scaleFault's notice): the chip
+      // has nothing to map.
+      el("legend-text").textContent = "";
+      el("legend-text").title = "";
     }
     const marks = marksReadout(b);
     el("ray-count").textContent = marks.rayCount + " untested levels";
@@ -6946,28 +6944,7 @@
     if (now.level > 0) offerViewCode(now.level);
   }
 
-  let markState = {
-    metrics: new WeakMap(),
-    level: new WeakMap(),
-    deltaMax: 1,
-    va: null,
-    rays: [],
-  };
-  function signedCompact(value) {
-    return (value < 0 ? "−" : value > 0 ? "+" : "") + compact(Math.abs(value));
-  }
-  function cellExposure(z, b, ts = stepT(), ps = stepP()) {
-    const seconds =
-      Math.max(
-        0,
-        Math.min((z.c + 1) * ts, b[1], activeCutoff()) -
-          Math.max(z.c * ts, b[0]),
-      ) * BASE;
-    const width =
-      Math.max(0, Math.min((z.r + 1) * ps, b[3]) - Math.max(z.r * ps, b[2])) *
-      PR;
-    return { seconds, width, area: seconds * width };
-  }
+  let markState = { va: null, rays: [] };
   function contiguousArea(rows, poc, total) {
     if (poc === null || !(total > 0) || !rows.length) return null;
     const values = new Map(rows.map((r) => [r.r, r.v])),
@@ -6989,162 +6966,11 @@
     }
     return { r0: low, r1: high + 1, volume, share: volume / total };
   }
-  // The drawn level's metrics: each cell's exposure within its block, up to
-  // the cutoff, and the scale delta shades on. They change only with the
-  // level, the block or the cutoff, so the level keeps them, as it keeps its
-  // sorted amounts.
-  function levelMetrics(full) {
-    const src = displaySource(),
-      end = Math.min(src.b1, activeCutoff()),
-      key = src.b0 + "|" + end;
-    if (full.metrics?.key === key) return full.metrics;
-    const ts = stepT(),
-      ps = stepP(),
-      whole = ts * BASE * ps * PR,
-      sourceBounds = [src.b0, end, 0, Infinity],
-      cells = new WeakMap(),
-      deltas = [];
-    for (const z of full.cells) {
-      const delta = 2 * z.bv - z.v;
-      cells.set(z, { ...cellExposure(z, sourceBounds, ts, ps), whole, delta });
-      if (delta !== 0) deltas.push(Math.abs(delta));
-    }
-    deltas.sort((a, b) => a - b);
-    full.metrics = { key, cells, deltaMax: d3.quantileSorted(deltas, 0.995) || 1 };
-    return full.metrics;
-  }
-  // Only the rectangle's cells are measured every frame: its bounds cut them.
-  // Path and dwell shade by their own amounts: under them these go unread, and
-  // the level's cells (full) aren't summed.
-  function prepareMeasures(full, shown, query, b, moving = false) {
-    const level = moving ? null : levelMetrics(full),
-      ts = stepT(),
-      ps = stepP(),
-      whole = ts * BASE * ps * PR,
-      metrics = new WeakMap();
-    if (!moving)
-      for (const z of shown.cells)
-        metrics.set(z, { ...cellExposure(z, b, ts, ps), whole, delta: 2 * z.bv - z.v });
-    markState = {
-      metrics,
-      level: level ? level.cells : new WeakMap(),
-      deltaMax: level ? level.deltaMax : 1,
-      va: contiguousArea(query.rows, query.poc, query.v),
-      rays: [],
-    };
+  // What the marks layer keeps of a draw: the composite value area and the untested-level rays. Every cell's
+  // number and colour comes from the frame's one evaluation kernel, not from here.
+  function prepareMeasures(query) {
+    markState = { va: contiguousArea(query.rows, query.poc, query.v), rays: [] };
     return markState;
-  }
-  // A cell's amount for an encoding: USDT, trades or USDT a trade. Volume and
-  // trades grow with the cell, so an edge portion or the open column counts at
-  // its full-cell rate and compares with whole cells; the values shown stay
-  // the cell's own. The rectangle's and the lens's cells are measured within
-  // their own bounds, the level's other cells within its block.
-  function amount(z, mode = S.mode) {
-    const m = markState.metrics.get(z) || markState.level.get(z),
-      rate = m?.area > 0 ? m.whole / m.area : 1;
-    if (mode === "trades" || mode === "flowtrades") return z.ct * rate;
-    if (mode === "size") return z.ct > 0 ? z.v / z.ct : 0;
-    return z.v * rate;
-  }
-  // Amounts shade by rank among the drawn block's cells: each step of the ramp
-  // holds as many cells as any other, so the colour tells cells apart wherever
-  // they crowd. Sorted once per block, level and encoding.
-  function amountScale(full, mode = S.mode) {
-    const key =
-      mode === "flowtrades"
-        ? "trades"
-        : ["flow", "delta", "cascade", "geometry"].includes(mode)
-          ? "volume"
-          : mode;
-    if (!full.scales[key])
-      full.scales[key] = Float64Array.from(
-        full.cells.map((z) => amount(z, key)).filter((x) => x > 0),
-      ).sort();
-    return full.scales[key];
-  }
-  // A value's place in a sorted scale, from 0 to 1; ties share the middle of
-  // their run.
-  function rank(sorted, x) {
-    if (!sorted.length) return 0.5;
-    const lo = d3.bisectLeft(sorted, x),
-      hi = d3.bisectRight(sorted, x);
-    return clamp((lo + hi) / 2 / sorted.length, 0, 1);
-  }
-  // The ramp amounts shade on: from near the surface to deep in the light
-  // theme and to bright in the dark one, through yellow, green and blue, with
-  // lightness changing evenly (interpolated in Lab).
-  const RAMP = {
-    light: ["#f2f9c4", "#d6efb3", "#a9dcb6", "#73c6bd", "#41b0c3", "#2390bd", "#2a6aac", "#283f94", "#15205e"],
-    dark: ["#1b2c33", "#18405a", "#1a5b7d", "#1f7896", "#2c969c", "#4db493", "#86cd83", "#c6e27c", "#f4f1a6"],
-  };
-  // Colours kept with cells, as Cascade's are, are worked out again once the
-  // theme changes: this counts the themes the page has drawn in.
-  let rampColours = [],
-    colourEpoch = 0;
-  function buildRamp() {
-    const stops = d3.lab(colors.surface).l < 50 ? RAMP.dark : RAMP.light,
-      f = d3.piecewise(d3.interpolateLab, stops);
-    rampColours = Array.from({ length: 256 }, (_, i) => d3.rgb(f(i / 255)).formatHex());
-    colourEpoch++;
-  }
-  const ramp = (t) => rampColours[Math.round(clamp(t, 0, 1) * 255)];
-  const AMOUNT_UNITS = { volume: "USDT", trades: "trades", size: "USDT a trade" };
-  function legendText(full, mv) {
-    if (mv && movementMode()) {
-      if (!mv.src) return motionIssue() ? "Path and dwell unavailable" : "Reading path and dwell…";
-      return motionLegend(motionScale(mv.full, mv.fullBounds, mv.end, stepT(), stepP()));
-    }
-    if (S.mode === "geometry") return "Occupied cells";
-    if (S.mode === "flow") return "Taker buys 25% · 50% · 75% of USDT";
-    if (S.mode === "flowtrades") return "Taker buys 25% · 50% · 75% of trades";
-    if (S.mode === "delta")
-      return `Δ ${signedCompact(-markState.deltaMax)} · 0 · ${signedCompact(markState.deltaMax)} USDT`;
-    if (S.mode === "cascade")
-      return full.cascade?.parent ? "−2 · 0 · +2 vs an even share" : "No coarser level to compare with";
-    const sorted = amountScale(full),
-      unit = AMOUNT_UNITS[S.mode];
-    if (!sorted.length) return unit;
-    return `${compact(d3.quantileSorted(sorted, 0.05))} → ${compact(d3.quantileSorted(sorted, 0.95))} ${unit}`;
-  }
-  // The legend's precise meaning, one hover away.
-  const LEGEND_TITLES = {
-    volume:
-      "USDT traded per cell, shaded by rank: each step of the ramp holds as many of the drawn cells as any other, from the least traded to the most. An edge cell or the open column is shaded at its full-cell rate. The numbers are the 5th and 95th percentiles.",
-    trades:
-      "Trades per cell, shaded by rank like volume, at the full-cell rate. The numbers are the 5th and 95th percentiles.",
-    size: "Average USDT per trade in each cell, shaded by rank. The numbers are the 5th and 95th percentiles.",
-    flow: "The share of each cell's volume bought by takers: buy colour above half, sell colour below, full at 75% and 25%. Paler cells traded less.",
-    flowtrades:
-      "The share of each cell's trades that were taker buys: buy colour above half, sell colour below, full at 75% and 25%. Paler cells had fewer trades.",
-    delta: "Taker-buy minus taker-sell volume per cell, in USDT",
-    cascade:
-      "How each cell's USDT splits within its parent, the cell one level coarser in time and price that it shares with three others: log₂ of 4 × its share of the parent, so 0 is an even quarter, +1 twice that and −1 half. +2 is the whole parent: no other cell in it traded, so the price never got there. Buy colour above 0, where volume concentrated, sell colour below, where it thinned; full at ±2 and paler where less traded. The pane under the prices shows each column's share of its parent column the same way.",
-    path: "How far the price travelled in each cell: its path length, the sum of every move between consecutive trades split across the rows it passes, over the row's height, at its full-cell rate and shaded by rank. The numbers are the 5th and 95th percentiles. Outlined cells the price moved through or held in without a trade. The pane under the prices shows each column's path over its range, its highest trade less its lowest: 1 for a straight run, more the more it turned back. Read from the live cube up to the last complete base column.",
-    dwell: "Each cell's share of its column's time: how long the price, held from one trade to the next, sat in the cell's rows, shaded by rank. The numbers are the 5th and 95th percentiles. Outlined cells the price moved through or held in without a trade. The pane under the prices shows each column's USDT traded per USDT the price moved, its volume over its path. Read from the live cube up to the last complete base column.",
-    geometry: "The grid's occupied cells",
-  };
-  function legendRamp() {
-    if (S.mode === "flow" || S.mode === "flowtrades" || S.mode === "cascade")
-      return "linear-gradient(to right,var(--ol-sell),var(--ol-neutral),var(--ol-buy))";
-    if (S.mode === "delta")
-      return "linear-gradient(to right,var(--ol-sell),var(--ol-line),var(--ol-buy))";
-    if (S.mode === "geometry") return "var(--ol-line)";
-    return `linear-gradient(to right,${[0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1].map(ramp).join(",")})`;
-  }
-  // How much a cell traded among the block's cells, from 0 to 1: its amount at
-  // its full-cell rate on a log scale between their 2nd and 99.5th percentiles.
-  // Diverging colours are paler the less a cell traded.
-  function tradedLevel(z, full) {
-    const sorted = amountScale(full),
-      lo = Math.log(d3.quantileSorted(sorted, 0.02) || 1),
-      hi = Math.log(d3.quantileSorted(sorted, 0.995) || Math.E);
-    return clamp((Math.log(Math.max(amount(z), 1e-9)) - lo) / Math.max(0.1, hi - lo), 0, 1);
-  }
-  // From the neutral midpoint at 0 to buy at +1 and sell at −1, toward the
-  // surface as the level falls.
-  function divergingColour(t, level) {
-    const hue = d3.interpolateRgb(colors.neutral, t >= 0 ? colors.buy : colors.sell)(Math.abs(t));
-    return d3.interpolateRgb(colors.surface, hue)(0.3 + 0.7 * level);
   }
   // Cascade: how each cell's USDT splits within its parent, the cell one level
   // coarser in both time and price, (n + 1, m + 1), that it shares with three
@@ -7430,35 +7256,6 @@
     }
   }
   scaleHooks.cellsMarks = cellsMarks;
-  // A cell's colour. Amounts take the ramp by rank. Taker flow, by USDT or by
-  // trades, diverges from a neutral midpoint to buy and sell, full at 75% and
-  // 25%, paler where less traded; so does Cascade, full at ±2, and a cell it
-  // has no value for is drawn plain. Delta shades signed taker volume.
-  function cellColour(z, full, deltaMax = markState.deltaMax) {
-    if (S.mode === "flow" || S.mode === "flowtrades") {
-      const byTrades = S.mode === "flowtrades",
-        share = byTrades ? (z.ct ? z.bt / z.ct : 0.5) : z.v ? z.bv / z.v : 0.5;
-      return divergingColour(clamp((share - 0.5) / 0.25, -1, 1), tradedLevel(z, full));
-    }
-    if (S.mode === "cascade") {
-      const e = full.cascade && cascadeOf(full.cascade, z.c, z.r);
-      if (e?.state !== "ok") return colors.line;
-      // Kept with the cell for its level, until the theme changes.
-      if (e.epoch !== colourEpoch) {
-        e.colour = divergingColour(clamp(e.value / 2, -1, 1), tradedLevel(e.w, full));
-        e.epoch = colourEpoch;
-      }
-      return e.colour;
-    }
-    if (S.mode === "delta") {
-      const delta = 2 * z.bv - z.v;
-      return d3.interpolateRgb(
-        colors.surface,
-        delta >= 0 ? colors.buy : colors.sell,
-      )(clamp(Math.log1p(Math.abs(delta)) / Math.log1p(deltaMax), 0, 1));
-    }
-    return ramp(rank(amountScale(full), amount(z)));
-  }
   function marksReadout(b) {
     const va = markState.va,
       ps = stepP();
@@ -7680,36 +7477,6 @@
     }
     return [i, hi];
   }
-  // LEGACY(S1): removed at convergence. The period's peaks among its rows in view,
-  // which the bands and the second profile were scaled to: its most USDT, most
-  // signed USDT and most time in a row. Nothing in the Rows channel reads it any
-  // more (the bands go through the period-wide mapping, the lengths through the
-  // registered axes); only the legacy legend text and draw() still ask for it.
-  function underlayPeak(u) {
-    const b = u.bands,
-      rows = b.rows;
-    let [i, hi] = rowsInView(rows, 2 ** b.m),
-      v = 0,
-      d = 0,
-      w = 0;
-    for (; i < rows.length && rows[i].r <= hi; i++) {
-      const x = rows[i];
-      if (x.v > v) v = x.v;
-      if (Math.abs(2 * x.bv - x.v) > d) d = Math.abs(2 * x.bv - x.v);
-      if (x.w > w) w = x.w;
-    }
-    return { v: v || 1, d: d || 1, w: w || 1 };
-  }
-  // LEGACY(S1): removed at convergence. A band's strength, 0 to 1, and its
-  // colour, from the peak in view; the bands now encode through the Rows frame.
-  function bandTone(u, x, rel) {
-    const k = u.peak;
-    if (u.kind === "volume") return [Math.sqrt(x.v / k.v), colors.ink];
-    if (u.kind === "time") return [Math.sqrt(x.w / k.w), colors.time];
-    const v = u.kind === "delta" ? (2 * x.bv - x.v) / k.d : rel?.get(x.r) ? rel.get(x.r).value / 2 : 0,
-      t = u.kind === "delta" ? Math.sqrt(Math.abs(v)) : Math.min(1, Math.abs(v));
-    return [t, v >= 0 ? colors.buy : colors.sell];
-  }
   // The underlay's bands: one per price row at the drawn row size, across the
   // whole chart behind the cells, so they show where the view has no cells: the
   // heavy levels it never visited. Each is painted through the Rows frame (see
@@ -7852,41 +7619,6 @@
         : res.state === "unrecorded"
           ? "not recorded for this period"
           : "no time before the data's edge";
-  }
-  // The underlay's legend chip, after its menus, which name its choice and
-  // period: its ramp and scale, the peak in view, or why it has none yet. Its
-  // title names all three. Written only when its words change.
-  function underlayLegend(u) {
-    const chip = el("rows-legend");
-    if (!u) {
-      if (!chip.hidden) chip.hidden = true;
-      return;
-    }
-    if (chip.hidden) chip.hidden = false;
-    const k = u.peak,
-      { approx, from } = underlayBasis(u.res),
-      scale = !u.bands
-        ? underlayWhy(u.res)
-        : u.kind === "volume"
-          ? `${approx}0 → ${compact(k.v)} USDT`
-          : u.kind === "delta"
-            ? `${approx}Δ ${signedCompact(-k.d)} · 0 · ${signedCompact(k.d)} USDT`
-            : u.kind === "relvol"
-              ? `${approx}−2 · 0 · +2 vs the period`
-              : `0 → ${dur(k.w)}`,
-      title = `Rows: ${ROWS_INFO[u.kind].name} ${periodPhrase(u.period)}${from ? `, ${from}` : ""}: ${scale}`;
-    if (el("rows-legend-text").textContent !== scale) el("rows-legend-text").textContent = scale;
-    if (chip.title !== title) chip.title = title;
-    const ramp = el("rows-ramp");
-    if (ramp.dataset.kind !== u.kind) {
-      ramp.dataset.kind = u.kind;
-      ramp.style.background =
-        u.kind === "volume"
-          ? "linear-gradient(to right,var(--ol-surface),color-mix(in srgb,var(--ol-ink) 30%,var(--ol-surface)))"
-          : u.kind === "time"
-            ? "linear-gradient(to right,var(--ol-surface),color-mix(in srgb,var(--ol-time) 45%,var(--ol-surface)))"
-            : "linear-gradient(to right,color-mix(in srgb,var(--ol-sell) 45%,var(--ol-surface)),var(--ol-surface),color-mix(in srgb,var(--ol-buy) 45%,var(--ol-surface)))";
-    }
   }
   function markings(full, cut) {
     const ts = stepT(),
@@ -9399,167 +9131,6 @@
       }
     return out;
   }
-  // Moving averages, Bollinger bands and the oscillators (live), each on the
-  // closes of its own timeframe, by the standard definitions. SMA(n) is the
-  // mean of the last n closes. EMA(n) has α = 2 ÷ (n + 1) and is seeded with
-  // the SMA of its first n closes. RSI(14) smooths gains and losses as the
-  // ATR does, by Wilder's rule. Bollinger (20, 2σ) is the SMA(20) ± 2
-  // population standard deviations of the last 20 closes, and its bandwidth
-  // their spread over the middle. MACD is EMA(12) − EMA(26), its signal the
-  // EMA(9) of it and its histogram their difference. Each has a value from
-  // its first full window on (NaN before), drawn at the end of its bar, whose
-  // close it takes in.
-  // LEGACY(S1): the nine definitions from here to divergencesOf and the SQUEEZE_* constants are unused now
-  // (the call sites below read E.indicators); removed at convergence.
-  function smaOf(values, n) {
-    const out = new Float64Array(values.length).fill(NaN);
-    for (let i = n - 1; i < values.length; i++) {
-      let s = 0;
-      for (let k = i - n + 1; k <= i; k++) s += values[k];
-      out[i] = s / n;
-    }
-    return out;
-  }
-  function emaOf(values, n, from = 0) {
-    const out = new Float64Array(values.length).fill(NaN),
-      a = 2 / (n + 1);
-    if (values.length - from < n) return out;
-    let e = 0;
-    for (let k = from; k < from + n; k++) e += values[k];
-    e /= n;
-    out[from + n - 1] = e;
-    for (let i = from + n; i < values.length; i++) out[i] = e = a * values[i] + (1 - a) * e;
-    return out;
-  }
-  function rsiOf(closes, n = 14) {
-    const out = new Float64Array(closes.length).fill(NaN);
-    if (closes.length <= n) return out;
-    let up = 0,
-      down = 0;
-    for (let i = 1; i <= n; i++) {
-      const d = closes[i] - closes[i - 1];
-      if (d > 0) up += d;
-      else down -= d;
-    }
-    up /= n;
-    down /= n;
-    const value = () => (down === 0 ? 100 : up === 0 ? 0 : 100 - 100 / (1 + up / down));
-    out[n] = value();
-    for (let i = n + 1; i < closes.length; i++) {
-      const d = closes[i] - closes[i - 1];
-      up = ((n - 1) * up + (d > 0 ? d : 0)) / n;
-      down = ((n - 1) * down + (d < 0 ? -d : 0)) / n;
-      out[i] = value();
-    }
-    return out;
-  }
-  function bollingerOf(closes, n = 20, k = 2) {
-    const len = closes.length,
-      nan = () => new Float64Array(len).fill(NaN),
-      mid = nan(),
-      upper = nan(),
-      lower = nan(),
-      width = nan();
-    for (let i = n - 1; i < len; i++) {
-      let s = 0;
-      for (let j = i - n + 1; j <= i; j++) s += closes[j];
-      const m = s / n;
-      let q = 0;
-      for (let j = i - n + 1; j <= i; j++) q += (closes[j] - m) * (closes[j] - m);
-      const sd = Math.sqrt(q / n);
-      mid[i] = m;
-      upper[i] = m + k * sd;
-      lower[i] = m - k * sd;
-      width[i] = (upper[i] - lower[i]) / m;
-    }
-    return { mid, upper, lower, width };
-  }
-  function macdOf(closes) {
-    const fast = emaOf(closes, 12),
-      slow = emaOf(closes, 26),
-      macd = new Float64Array(closes.length).fill(NaN),
-      hist = new Float64Array(closes.length).fill(NaN);
-    for (let i = 25; i < closes.length; i++) macd[i] = fast[i] - slow[i];
-    const signal = emaOf(macd, 9, 25);
-    for (let i = 0; i < closes.length; i++) hist[i] = macd[i] - signal[i];
-    return { macd, signal, hist };
-  }
-  // Where one series crosses another: where their difference changes sign
-  // between bars where both have a value. A touch that turns back is none.
-  function crossesOf(a, b) {
-    const out = [];
-    let was = 0;
-    for (let i = 0; i < a.length; i++) {
-      const d = a[i] - b[i];
-      if (!(d > 0 || d < 0)) continue;
-      const s = d > 0 ? 1 : -1;
-      if (was && s !== was) out.push({ i, up: s > 0 });
-      was = s;
-    }
-    return out;
-  }
-  // A 4-hour squeeze: bandwidth below its 10th percentile over the last 500
-  // bars, this one included, the percentile 0.9 of the way from the 50th
-  // lowest to the 51st (the order statistics' linear rule, at 0.1 × 499). A
-  // daily squeeze: bandwidth at its lowest of the trailing 182 days, this one
-  // included.
-  const SQUEEZE_BARS = 500,
-    SQUEEZE_RANK = 0.1,
-    SQUEEZE_DAYS = 182;
-  function squeezeBelow(width, size = SQUEEZE_BARS, p = SQUEEZE_RANK) {
-    const out = new Uint8Array(width.length),
-      win = [],
-      at = (v) => {
-        let lo = 0,
-          hi = win.length;
-        while (lo < hi) {
-          const mid = (lo + hi) >> 1;
-          if (win[mid] < v) lo = mid + 1;
-          else hi = mid;
-        }
-        return lo;
-      },
-      pos = p * (size - 1),
-      k = Math.floor(pos),
-      f = pos - k;
-    for (let i = 0; i < width.length; i++) {
-      const v = width[i];
-      if (!Number.isFinite(v)) continue;
-      win.splice(at(v), 0, v);
-      if (win.length > size) win.splice(at(width[i - size]), 1);
-      if (win.length === size && v < win[k] + f * (win[k + 1] - win[k])) out[i] = 1;
-    }
-    return out;
-  }
-  function squeezeLowest(width, size = SQUEEZE_DAYS) {
-    const out = new Uint8Array(width.length);
-    for (let i = size - 1; i < width.length; i++) {
-      if (!Number.isFinite(width[i - size + 1])) continue;
-      let low = Infinity;
-      for (let k = i - size + 1; k <= i; k++) if (width[k] < low) low = width[k];
-      if (width[i] <= low) out[i] = 1;
-    }
-    return out;
-  }
-  // RSI divergences between consecutive swings of a kind on the RSI's own
-  // timeframe: bearish where price made a higher high and the RSI a lower
-  // one, bullish where price made a lower low and the RSI a higher one, each
-  // at the swings' bars and known once the later swing is confirmed.
-  function divergencesOf(swings, rsi) {
-    const out = [],
-      last = {};
-    for (const s of swings) {
-      const was = last[s.kind];
-      last[s.kind] = s;
-      if (!was) continue;
-      const r0 = rsi[was.i],
-        r1 = rsi[s.i];
-      if (!Number.isFinite(r0) || !Number.isFinite(r1)) continue;
-      if (s.kind === "high" ? s.price > was.price && r1 < r0 : s.price < was.price && r1 > r0)
-        out.push({ bearish: s.kind === "high", a: was, b: s, r0, r1 });
-    }
-    return out;
-  }
   // The bars an average is computed on, each with its close and the time its
   // value is drawn at: its bar's end, or where the bars end. The days and
   // weeks come from the 8-hour bars, and the 4-hour and hourly bars are read
@@ -10438,8 +10009,6 @@
     let v = 0,
       w = 0,
       vmax = 0,
-      dmax = 0,
-      wmax = 0,
       poc = null;
     for (const x of rows) {
       v += x.v;
@@ -10448,38 +10017,10 @@
         vmax = x.v;
         poc = x.r;
       }
-      dmax = Math.max(dmax, Math.abs(2 * x.bv - x.v));
-      wmax = Math.max(wmax, x.w);
     }
-    const bands = { m: bm, rows, map, v, w, vmax, dmax, wmax, poc, va: contiguousArea(rows, poc, v) };
+    const bands = { m: bm, rows, map, v, w, poc, va: contiguousArea(rows, poc, v) };
     byRows.set(bm, bands);
     return bands;
-  }
-  // LEGACY(S1): removed at convergence. Relative volume version 1, which the Rows frame below replaces
-  // (E.relvol.compute, over one price range for both sides): log2 of a row's share of the rectangle's USDT
-  // (the selection's, or the view's) over its share of the period's, at the bands' row size. A row the
-  // period traded but the rectangle didn't is −2; a row the period never traded has none. Kept for the
-  // last rectangle.
-  const relMemo = new WeakMap();
-  function relativeVolume(bands, query) {
-    const hit = relMemo.get(bands);
-    if (hit?.query === query) return hit.values;
-    const k = 2 ** Math.max(0, bands.m - (query.m ?? renderM())),
-      rect = new Map(),
-      values = new Map();
-    for (const x of query.rows) {
-      const r = Math.floor(x.r / k);
-      rect.set(r, (rect.get(r) || 0) + x.v);
-    }
-    if (query.v > 0 && bands.v > 0)
-      for (const x of bands.rows) {
-        if (!(x.v > 0)) continue;
-        const shareP = x.v / bands.v,
-          shareV = (rect.get(x.r) || 0) / query.v;
-        values.set(x.r, shareV > 0 ? { value: Math.log2(shareV / shareP), shareV, shareP } : { value: -2, shareV: 0, shareP, none: true });
-      }
-    relMemo.set(bands, { query, values });
-    return values;
   }
   // What the underlay shows this frame, or null while it is off: its rows (the
   // lines' for the period, or Time at price's dwell), their bands at the drawn
@@ -14392,25 +13933,6 @@
     pumpCube();
     pumpMotion();
   }
-  // A cell's path in row heights, at its full-cell rate as volume counts, or
-  // its dwell as a share of its column's time: the column's seconds inside the
-  // rectangle and before the measures end, which its cells' dwell sums to.
-  function motionAmount(z, b, end, ts, ps, mode = S.mode) {
-    const seconds =
-      Math.max(0, Math.min((z.c + 1) * ts, b[1], end) - Math.max(z.c * ts, b[0])) * BASE;
-    if (!(seconds > 0)) return 0;
-    if (mode === "dwell") return z.w / seconds;
-    const width = Math.max(0, Math.min((z.r + 1) * ps, b[3]) - Math.max(z.r * ps, b[2])) * PR;
-    return width > 0 ? (z.p / width) * ((ts * BASE) / seconds) : 0;
-  }
-  // Shaded by rank among the block's cells, like the other amounts.
-  function motionScale(q, b, end, ts, ps, mode = S.mode) {
-    if (!q.scales[mode])
-      q.scales[mode] = Float64Array.from(
-        q.cells.map((z) => motionAmount(z, b, end, ts, ps, mode)).filter((x) => x > 0),
-      ).sort();
-    return q.scales[mode];
-  }
   // Where a cell of the drawn level falls, mid-transition too; false when it
   // is off the plot. One box, reused, so a frame allocates nothing per cell.
   const BOX = { xa: 0, xb: 0, ya: 0, yb: 0 };
@@ -14503,14 +14025,6 @@
         motionPattern(kind, BOX.xa, BOX.ya, w, h, w > 4 && h > 4 ? design.gap : 0);
       }
     }
-  }
-  // The legend's quantiles, as each movement encoding reads.
-  const motionUnit = (x) =>
-    S.mode === "dwell" ? `${+(x * 100).toPrecision(2)}%` : compact(x);
-  function motionLegend(sorted) {
-    if (!sorted.length) return S.mode === "dwell" ? "Share of column time" : "Row heights";
-    const range = `${motionUnit(d3.quantileSorted(sorted, 0.05))} → ${motionUnit(d3.quantileSorted(sorted, 0.95))}`;
-    return S.mode === "dwell" ? `${range} of column time` : `${range} row heights`;
   }
   // Seconds to the microsecond, as the cube counts dwell, and to the
   // millisecond in the Cells table. The inspector writes them every frame, so

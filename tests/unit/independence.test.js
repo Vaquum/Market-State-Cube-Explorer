@@ -157,6 +157,7 @@ const MODULE_KNOWN_EXCEPTIONS = {
   "tests/unit/result.test.js": "builds a variant module from a temporary copy of the parts (a stub part 04-text) through assemble-encoding.js (W1-A)",
   "tests/unit/provenance.test.js": "builds a module with a stub text part through assemble-encoding.js (W1-A)",
   "tests/unit/text.test.js": "reads src/encoding.js as text to scan the string table (W1-F)",
+  "tests/browser/boot.spec.js": "compares the page's inline script byte for byte with the source file on disk (B01)",
 };
 
 describe("rule 1: the JavaScript reference files import nothing of the repository", () => {

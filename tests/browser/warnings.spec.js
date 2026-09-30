@@ -1,9 +1,10 @@
 "use strict";
 // warnings.spec.js (S, B09): "Scale range exceeded" and "Low discrimination" with their actual shares (TESTPLAN 3.4, DR-11, DD-76, DD-94, DD-95).
 //
-// Requirement ids covered: S1-120 (the two warnings, their thresholds and the shares shown), S1-121 (a warning never recolours,
-// refits or changes a mapping), S1-110/S1-112 (a manual domain and its clipping counts), DD-66 (a narrowed Taker-flow window is
-// symmetric about 0.5), DD-95 (a nonzero value under a zero-only calibration is out of domain and counted).
+// Requirement ids covered (API.md Appendix E): S1-120 (the two warnings, their thresholds and the shares shown; a warning never
+// recolours, refits or changes a mapping), S1-071 (clipping is counted, the raw value is kept), S1-074 (a zero-only calibration),
+// S1-056 (a manual window names its clipping counts), DD-66 (a narrowed Taker-flow window is symmetric about 0.5), DD-95 (a nonzero
+// value under a zero-only calibration is out of domain and counted), A-17 (a manual domain).
 //
 // Oracle: the exact-rational reference calculator (tests/reference) over the trades the `skew` fake serves: a low regime for three
 // days and a 200-fold regime for the next three. The level is pinned (#...&r=5,0, 30-minute columns) and every rectangle is

@@ -1,10 +1,11 @@
 "use strict";
 // replay.spec.js (S, B13): calibration in replay (TESTPLAN 3.4, DR-07, DR-16, DD-20, DD-47, D.14 walk-throughs 4 and 10).
 //
-// Requirement ids covered: S1-140..144 (replay has its own workspace, eligibility is decided against the edge, live is untouched),
-// S1-142 (no frame paints a mapping fitted on observations after the edge), S1-143 (an explicit lock is exempt from that rule and
-// is labelled an external comparison override when it reaches past the edge), S1-146 (forward Play pauses Auto and Explore
-// initialises once), S1-149 (the provenance statement: original vintages are not guaranteed).
+// Requirement ids covered (API.md Appendix E): S1-140 (replay has its own workspace, live is untouched), S1-141 (eligibility is
+// decided right after the cutoff is known), S1-142 (no frame paints a mapping fitted on observations after the edge; Play and
+// scrubbing), S1-143 (an explicit lock is exempt and is labelled an external comparison override past the edge), S1-144 (a
+// calendar period changes across its boundary), S1-117 (forward Play pauses Auto, Explore initialises once), S1-147 (the model
+// status follows the edge), S1-149 (the provenance statement: original vintages are not guaranteed).
 //
 // The invariant that carries this file is the FRAME LOG (D.18 "Frame invariants"): the probe records, for every draw frame, the chip
 // attributes written in that draw; the page writes the replay edge as text in the same update that precedes the draw (#ol-replay-at),

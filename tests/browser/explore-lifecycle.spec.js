@@ -1,9 +1,10 @@
 "use strict";
 // explore-lifecycle.spec.js (S, B05): the usefulness gate of Explore on the live path (TESTPLAN 3.4, DR-06, D4).
 //
-// Requirement ids covered: S1-101 (one calibration context per effective resolution), S1-107 (Explore initialises once per
-// context and then freezes), S1-118 (the 64-context cache and its eviction are disclosed), S1-081..083 (what the cohort is),
-// S1-013 (mapping identity survives navigation inside a context), DD-20/DD-21 (the lifecycle).
+// Requirement ids covered (API.md Appendix E): S1-101 and S1-102 (one calibration context per effective resolution), S1-107
+// (Explore initialises once per context and then freezes), S1-108 (a change of context is disclosed with the previous and the
+// current id and its cause), S1-118 (the 64-context cache and the disclosure of an eviction), S1-121 (the usefulness gate run
+// as a scenario), DD-20/DD-21 (the lifecycle).
 //
 // What it does: a fresh browser context, the `standard` fake, 24h -> 7d -> 30d -> 1y -> all and back again with the real
 // window keys. Every context is identified by the chip's data-context (the page's own key string), so the test never predicts

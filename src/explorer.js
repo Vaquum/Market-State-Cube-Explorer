@@ -965,8 +965,12 @@
       // "channel|workspace|cut|memoKey" -> what a fit found, so a view that was fitted before is not sorted
       // again; cleared on a whole pack, never on a delta; at most FIT_MEMO_MAX entries
       fitMemo: new Map(),
-      // {key, tally, report} per channel, computed by the settled tick only
-      warn: { cells: null, rows: null, lens: null },
+      // {key, tally, keys, report} per channel (the Columns pane is the channel "pane"), computed by the settled tick
+      // only; `keys` counts the marks of each generated key (a zero outline, a pattern) the hook reported
+      warn: { cells: null, rows: null, lens: null, pane: null },
+      // the last domain, policy and typed state of each axis a draw framed ("id" -> string): a change owes the
+      // Columns pane a count
+      axisSig: new Map(),
       // the last DOM write key of each legend, so an unchanged legend writes nothing
       legendKey: { cells: "", rows: "", lens: "" },
       // {causes, from, to}: what the last settle that changed a mapping changed, per channel, for the legend details;
@@ -1285,6 +1289,7 @@
                       ? "fixed"
                       : "ready",
       counts = warn?.report?.counts,
+      keyCounts = warn?.keys ?? {},
       attrs = {
         "data-state": state,
         "data-policy": resolved.policy ?? "",
@@ -1318,6 +1323,7 @@
         // what the settled pass counted, by the key ids the legend uses
         counts: counts
           ? {
+              ...keyCounts,
               "clip-low": counts.low,
               "clip-high": counts.high,
               "negative-infinite": counts.negInf,
@@ -1616,7 +1622,7 @@
     // A frozen domain the lock (or a restored address) carries reaches the workspace it is shown in.
     if (held && !scaleRt.axes.get(id, workspace))
       scaleRt.axes.freeze(id, { workspace, domain: [held.lo, held.hi] });
-    return scaleRt.axes.frame(id, {
+    const record = scaleRt.axes.frame(id, {
       sign: spec?.sign,
       workspace,
       cutMs: E.time.baseToMs(activeCutoff(), T0, BASE),
@@ -1631,6 +1637,15 @@
       generation: live.generation,
       token: PACK.state_token ?? null,
     });
+    // The bars are counted again when the axis they are drawn against changed (its domain, policy or state).
+    if (scaleHooks.paneMarks) {
+      const sig = (record.domain ? record.domain.join(",") : "") + "|" + record.policy + "|" + record.typed;
+      if (scaleRt.axisSig.get(id) !== sig) {
+        scaleRt.axisSig.set(id, sig);
+        scaleOwe();
+      }
+    }
+    return record;
   }
   // The id of the tile that would show the view, and whether a tile is the lens's alone: a lens tile is
   // never the display source before Pin. Pure predicates, no state change.
@@ -1814,8 +1829,11 @@
         continue;
       }
       const tally = held?.tally ?? E.warn.tally(),
-        b = vp.b;
+        b = vp.b,
+        keys = {};
       tally.reset();
+      // The hook may also count the marks of each generated key (zero outline, patterns) into `keys`: an addition
+      // after the last parameter, so a hook that does not know it is unchanged.
       hook(
         tally,
         {
@@ -1823,9 +1841,29 @@
           meas: { x0: G.X(b[0]), y0: G.Y(b[3]), x1: G.X(b[1]), y1: G.Y(b[2]) },
         },
         vp,
+        keys,
       );
-      scaleRt.warn[channel] = { key: cur.warnKey, tally, report: E.warn.evaluate(tally, { meaningful: cur.meaningful }) };
+      scaleRt.warn[channel] = {
+        key: cur.warnKey,
+        tally,
+        keys,
+        report: E.warn.evaluate(tally, { meaningful: cur.meaningful }),
+      };
       changed = true;
+    }
+    // The bars of the Columns pane, against the axes the last draw framed: counts only, an axis has no
+    // "range exceeded" of its own (its overflow is the triangle and the count of the axis record).
+    if (scaleHooks.paneMarks) {
+      const ids = [...scaleRt.shown].sort(),
+        key = [S.pane, S.tA, S.tB, live.generation, ...ids.map((id) => id + ":" + scaleRt.axisSig.get(id))].join("|");
+      if (scaleRt.warn.pane?.key !== key) {
+        const tally = scaleRt.warn.pane?.tally ?? E.warn.tally(),
+          keys = {};
+        tally.reset();
+        scaleHooks.paneMarks(tally, keys);
+        scaleRt.warn.pane = { key, tally, keys, report: E.warn.evaluate(tally, { meaningful: false }) };
+        changed = true;
+      }
     }
     return { changed, wait };
   }

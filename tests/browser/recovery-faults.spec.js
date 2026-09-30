@@ -2,10 +2,10 @@
 // recovery-faults.spec.js (S, B20): coherence and recovery under the fake cube's fault knobs (TESTPLAN 3.4, 4.3; DR-17, DD-47, DD-79,
 // DD-80, DD-91, D.14 walk-throughs 3 and 11).
 //
-// Requirement ids covered: S1-115 (a calibration is made only from coherent, complete data: never while a read is held, never
-// from a failed or empty one), S1-116 (the memo key follows the data, not the pack token), S1-118/S1-119 (a whole pack, a delta, a
-// revision and a retry leave mapping identity alone), S1-122/S1-123 (what changed under the data is said in the details, and
-// never as "revised"), S1-081 (partial and open columns are not in the cohort), DD-79 (a failed read is not outstanding), DD-91 (a
+// Requirement ids covered (API.md Appendix E): S1-115 (a calibration is made only from coherent, complete data: never while a
+// read is held, never from a failed or empty one), S1-116 (the memo key follows the data, not the pack token: a whole pack, a
+// delta, a revision and a retry leave mapping identity alone), S1-081 (partial and open columns are not in the cohort), S1-149
+// (what changed under the data is said in the details and never as "revised"), DD-79 (a failed read is not outstanding), DD-91 (a
 // corrupt stored record does not stop the chart).
 //
 // What each scenario does is in its title. The fake's knobs are the ones of TESTPLAN 4.3: expirePack/holdPacks + advance (a whole

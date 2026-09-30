@@ -1,10 +1,10 @@
 "use strict";
 // comparison-lock.spec.js (S, B07): the Comparison lock, one action (TESTPLAN 3.4, DR-07, DD-22, DD-65).
 //
-// Requirement ids covered: S1-101..106 (a held mapping and its compatibility class), S1-112 (the lock freezes each displayed
-// Auto axis at its domain), S1-113 (saturation is disclosed with its actual shares), S1-114 (Fit while locked replaces the held
-// mapping and stays locked), S1-105 (Cells and Rows hold their own mappings), A-17 (a manual domain), S1-168 (a locked address
-// restores with its frozen domains).
+// Requirement ids covered (API.md Appendix E): S1-105 and S1-110 (a held mapping has a compatibility class; Cells and Rows hold
+// their own mappings; an incompatible change falls back with a reason), S1-109 (the lock and Fit while locked), S1-114 (the lock
+// freezes each displayed Auto axis at its domain), S1-120 (saturation is disclosed with its actual shares), S1-168 (a locked
+// address restores in a fresh browser), A-17 (a manual domain).
 //
 // Oracle: for the shares, the exact-rational reference calculator (tests/reference) over the same trades the fake serves: the
 // rectangle is cell-aligned at a pinned level (#...&r=n,m) and ends before the open column, so every cell is fully measured and

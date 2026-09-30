@@ -1,9 +1,10 @@
 "use strict";
 // preset-context.spec.js (S, B06): presets, Fit and Auto against the calibration context (TESTPLAN 3.4, DR-06, DD-71, DD-74).
 //
-// Requirement ids covered: S1-101/S1-107 (a preset that keeps the context keeps the mapping), S1-108 (Fit replaces the mapping
-// only when activated), S1-109 (Auto refits), S1-111 (an uncached context is "No calibration / Updating" and never borrows the
-// mapping of the level it came from), DD-71 (Value log and Value linear are two contexts), S1-164 (the curve is in the address).
+// Requirement ids covered (API.md Appendix E): S1-107 (Explore keeps the mapping of a context), S1-109 (Fit replaces the mapping
+// only when activated), S1-111 (Auto refits the settled measurement; a same-context preset keeps the mapping and a
+// level-changing one selects its own context, never borrowing the previous level's mapping), DD-71 (Value log and Value
+// linear are two contexts), S1-163 (the curve is part of the address).
 //
 // Oracle: relations between observed values, as in B05: equality of context, id and counter across actions that must not
 // change them, an increment of the counter by exactly one for an action that must fit, and the probe's frame log for what the

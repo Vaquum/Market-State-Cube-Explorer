@@ -1,9 +1,9 @@
 "use strict";
 // auto-policy.spec.js (S, B08): the timing of Auto colour and of the Auto axis (TESTPLAN 3.4, DR-16, DR-17, DD-21, DD-64, DD-81).
 //
-// Requirement ids covered: S1-115..117 (when a calibration may run: coherent data, 200 ms after the last gesture, at most every
-// 500 ms for Auto), S1-112 (an Auto axis holds through a gesture and refits after it), S1-121 (Play pauses Auto), DD-64 and DD-81
-// (an axis cannot wake itself, so the spine's timer does: no further input is needed).
+// Requirement ids covered (API.md Appendix E): S1-115 (coherent data, 200 ms after the last gesture), S1-116 (the cadence: at
+// most every 500 ms for Auto, the memo key), S1-117 (Play pauses Auto, the pause or a scrub lets one update through), S1-112 (an
+// Auto axis holds through a gesture and refits after it), DD-64 and DD-81 (an axis cannot wake itself, so the spine's timer does).
 //
 // How time is controlled: the page's clock is installed BEFORE the page loads, so that performance.now() is one continuous
 // fake time from the first script (installed later it restarts near 0, and every stamp the page took before, the last gesture

@@ -223,7 +223,7 @@ test.describe("B26 the selection, a linked cell and the open column on the plot"
       colours = await tokens(page);
     const first = (list) => Math.min(...list.map((x) => x.seq));
     const band = first(frame.rects.filter((r) => Math.abs(r.alpha - 0.16) < 1e-9 && r.w > 0)),
-      cap = first(frame.strokes.filter((k) => k.width === 1.5 && k.stroke === colours.state && k.path.length === 2 && k.path[0][1] === k.path[1][1])),
+      cap = first(frame.rects.filter((r) => r.h === 1.5 && r.fill === colours.state && r.alpha === 1 && Math.abs(r.y - layout[1]) < 1e-9)),
       provisional = first(frame.strokes.filter((k) => k.stroke === colours.state && k.width === 1 && JSON.stringify(k.dash) === "[2,3]")),
       selection = first(frame.strokes.filter((k) => k.path.length === 4 && k.width === 3.5 && k.stroke === colours.surface)),
       linked = first(frame.strokes.filter((k) => k.path.length === 4 && k.width === 3 && k.stroke === colours.surface)),
@@ -256,15 +256,15 @@ test.describe("B26 the selection, a linked cell and the open column on the plot"
     expect(await selOf(), "the selection's edges are where they were (the view panned, nothing resized)").toBe(before);
   });
 
-  test("the open column's cap is one 1.5 px neutral line along the plot's top, and no state mark is gold", async ({ page, probe, fakeFor, pane }) => {
+  test("the open column's cap is one 1.5 px neutral bar along the plot's top, and no state mark is gold", async ({ page, probe, fakeFor, pane }) => {
     const fake = await fakeFor("standard");
     await page.goto(`${fake.url}/#w=24h&vis=2`);
     await ready(page, fake, probe);
     const frame = await pane.last(),
       colours = await tokens(page),
       layout = await page.locator("#ol-canvas").evaluate((el) => el.dataset.layout.split(",").map(Number));
-    const caps = frame.strokes.filter((k) => k.width === 1.5 && k.stroke === colours.state && k.path.length === 2 && k.path[0][1] === k.path[1][1] && Math.abs(k.path[0][1] - (layout[1] + 0.75)) < 1e-9);
-    expect(caps.length, "the open cap").toBeGreaterThanOrEqual(1);
+    const caps = frame.rects.filter((r) => r.h === 1.5 && r.fill === colours.state && r.alpha === 1 && Math.abs(r.y - layout[1]) < 1e-9);
+    expect(caps.length, "the open cap: a 1.5 px bar of the state ink along the plot's top").toBeGreaterThanOrEqual(1);
     expect(frame.texts.filter((t) => t.text === "Open").every((t) => t.fill === colours.state), "the word Open is in the state ink").toBe(true);
     // the old gold marks: a 3 px cap, 1 px corner ticks and hatching of the open column in the profile's gold
     expect(frame.strokes.filter((k) => k.stroke === colours.poc && k.width === 3).length, "no 3 px gold cap").toBe(0);

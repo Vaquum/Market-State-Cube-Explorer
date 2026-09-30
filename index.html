@@ -20156,6 +20156,8 @@
     // The Scale section and the legend chips (DOM package), and the calibration clock.
     renderScaleUi();
     scaleArm();
+    // What the loading line says follows what the view needs now.
+    renderLoading();
   }
   function bindRoot() {
     el("query-text").addEventListener("blur", () => {
@@ -22914,14 +22916,11 @@
       c.lineWidth = 1;
       c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     },
-    // Open (the data's edge moves as trades arrive): a 1.5 px neutral cap along the top edge; the value under it is drawn as it is.
+    // Open (the data's edge moves as trades arrive): a 1.5 px neutral cap along the top edge; the value under it is drawn as it is. A bar, not a
+    // stroke, so that it is never mistaken for the 1.5 px baseline tick of a zero column.
     open(c, x, y, w) {
-      c.strokeStyle = colors.state;
-      c.lineWidth = 1.5;
-      c.beginPath();
-      c.moveTo(x, y + 0.75);
-      c.lineTo(x + w, y + 0.75);
-      c.stroke();
+      c.fillStyle = colors.state;
+      c.fillRect(x, y, w, 1.5);
     },
     // Partial or coarser than asked for: the cell stands for more than its place, cued by a short tick across its corner.
     partial(c, x, y) {
@@ -28447,6 +28446,10 @@
         const xa = Math.max(G.x, G.X(at));
         STROKE.open(ctx, xa, top, Math.min(G.x + G.w, G.X(cut)) - xa);
       }
+    } else if (cut % ts !== 0 && cols.some((x) => x.c * ts < cut && (x.c + 1) * ts > cut)) {
+      // Open but already measured: the value stays as it is, with the same neutral cap across the open column's top.
+      const xa = Math.max(G.x, G.X(Math.floor(cut / ts) * ts));
+      STROKE.open(ctx, xa, top, Math.min(G.x + G.w, G.X(cut)) - xa);
     }
     ctx.restore();
     paneShown = { key, measure, cols, axis: rec, frame, model, ts, counts };
@@ -29512,6 +29515,9 @@
   function tileRead(t, label, lens = false) {
     return {
       key: ["tile", live.generation, t.id].join("|"),
+      // the tile this read is for: its range and level, which outlive the pack's generation (a failure belongs to THIS, see noted)
+      id: t.id,
+      label: lens ? "Lens tile" : "Cube tile",
       path: `/cube/tile?n=${t.n}&m=${t.m}&b0=${t.b0}&b1=${t.b1}`,
       loading: label,
       start: () => {
@@ -29532,11 +29538,20 @@
         tile.lens = lens;
         sources[t.id] = tile;
         loadState[t.id] = "ready";
+        // the only thing that resolves a failure of this tile is this tile arriving
+        noted.delete(t.id);
         trimTiles([t.id, S.dataset, lensSource]);
       },
     };
   }
   // The view's tile, when no loaded block can show the view at its level.
+  // The tile the view needs while no loaded block shows it (reading or not): its identity, whatever the state of its read.
+  function viewTileSpec() {
+    const [n, m] = viewLevel();
+    if (resolutionReadiness(n, m).status === "ready") return null;
+    const [a, b] = viewRange();
+    return tileSpec(n, m, a, b);
+  }
   function tileWant() {
     const [n, m] = viewLevel();
     if (resolutionReadiness(n, m).status !== "unavailable") return null;
@@ -29625,6 +29640,47 @@
   // cube's new data; one that fails is not asked again until new data arrives.
   const CUBE_KINDS = ["measure", "tile", "lens", "touched", "lines", "days", "history"],
     cube = { busy: null, stale: false, timer: 0, failed: new Map() };
+  // ---- The loading line (PRD-0002 S2, #29) ----
+  // One line under the toolbar says what the page is waiting for or which read it could not make. What it says is DERIVED from state each time,
+  // never written by whichever piece finished last, which is how the startup loop used to hide an alert that a failed read had just written.
+  //   * A failure belongs to the tile it was for (its range and level, not the pack's generation) and is kept in `noted`. It shows while that tile is
+  //     what the view (or the open lens) needs and nothing has replaced it: leaving for another tile that measures hides it, coming back shows it again
+  //     at once from what is noted (nothing is asked again), a pack that replaced the old one makes the page ask again and the failure stays up until
+  //     the tile arrives, and a retry that fails is a failure again. Startup progress, an unrelated success or a caption of a read in flight never clears
+  //     it or shows in its place.
+  //   * Startup blocks that could not be read show while the view cannot be drawn without them; a fatal start failure shows for good.
+  //   * Without a failure the line is the caption of a read in flight, else the startup caption, else the stopped-updates notice, else it is hidden.
+  const loadingLine = { startup: "Loading the last seven days…", reads: new Map(), blocks: new Map(), live: "", fatal: "" },
+    noted = new Map();
+  function activeFailures() {
+    if (loadingLine.fatal) return [loadingLine.fatal];
+    const out = [];
+    for (const [id, message] of loadingLine.blocks)
+      if (loadState[id] === "unavailable" && resolutionReadiness(renderN(), renderM()).status !== "ready") out.push(`${id} unavailable: ${message}`);
+    if (PACK.live && ready) {
+      const seen = new Set();
+      for (const t of [viewTileSpec(), lensTile()]) {
+        const failure = t && !seen.has(t.id) ? noted.get(t.id) : null;
+        if (failure) out.push(`${failure.label} unavailable: ${failure.message}`);
+        if (t) seen.add(t.id);
+      }
+    }
+    return out;
+  }
+  function renderLoading() {
+    const node = el("loading"),
+      failures = activeFailures(),
+      text = failures.length ? failures.join(" · ") : loadingLine.live || [...loadingLine.reads.values()][0] || loadingLine.startup;
+    if (!text) {
+      if (!node.hidden) node.hidden = true;
+      return;
+    }
+    if (node.textContent !== text) node.textContent = text;
+    if (failures.length) {
+      if (node.getAttribute("role") !== "alert") node.setAttribute("role", "alert");
+    } else if (node.hasAttribute("role")) node.removeAttribute("role");
+    if (node.hidden) node.hidden = false;
+  }
   function scheduleCube() {
     if (!PACK.live || !ready) return;
     clearTimeout(cube.timer);
@@ -29655,9 +29711,8 @@
     cube.busy = want;
     want.start?.();
     if (want.loading) {
-      el("loading").textContent = want.loading;
-      el("loading").removeAttribute("role");
-      el("loading").hidden = false;
+      loadingLine.reads.set(want.key, want.loading);
+      renderLoading();
     }
     requestDraw();
     try {
@@ -29689,7 +29744,6 @@
       const decoded = await want.decode(body);
       if (generation === live.generation) want.apply(decoded);
       else want.drop?.();
-      if (want.loading) el("loading").hidden = true;
     } catch (error) {
       want.drop?.();
       // The server's own words end a sentence the page continues.
@@ -29700,13 +29754,12 @@
             ? "the server can't be reached"
             : error.message
       ).replace(/\.+$/, "");
-      if (!cube.stale) cube.failed.set(want.key, message);
-      if (want.loading || want.kind === "tile") {
-        el("loading").textContent = `Cube tile unavailable: ${message}`;
-        el("loading").setAttribute("role", "alert");
-        el("loading").hidden = false;
+      if (!cube.stale) {
+        cube.failed.set(want.key, message);
+        if (want.id) noted.set(want.id, { label: want.label, message });
       }
     }
+    loadingLine.reads.delete(want.key);
     cube.busy = null;
     if (cube.stale) pollLive();
     update();
@@ -33152,15 +33205,14 @@
     live.state = state;
     title();
     // The loading line says it once, where assistive technology hears it.
-    const note = el("loading");
     if (state === "stopped") {
-      note.textContent = `Live updates stopped: ${live.error}. The page keeps asking.`;
-      note.hidden = false;
+      loadingLine.live = `Live updates stopped: ${live.error}. The page keeps asking.`;
       live.notice = true;
     } else if (live.notice) {
-      note.hidden = true;
+      loadingLine.live = "";
       live.notice = false;
     }
+    renderLoading();
   }
   function startLive() {
     if (!PACK.live) return;
@@ -33229,12 +33281,13 @@
       requestAnimationFrame(() => requestAnimationFrame(resolve)),
     );
     for (const id of ["overview", "reference"]) {
-      el("loading").textContent =
-        `Loading ${id === "overview" ? "the full history" : "the 30-day archive"}${PACK.live ? " from the cube" : ""}…`;
+      loadingLine.startup = `Loading ${id === "overview" ? "the full history" : "the 30-day archive"}${PACK.live ? " from the cube" : ""}…`;
+      renderLoading();
       try {
         sources[id] = await unpack(PACK.blocks[id], id);
         delete PACK.blocks[id].gzip_base64;
         loadState[id] = "ready";
+        loadingLine.blocks.delete(id);
         // Lines summed from coarser blocks are summed again from finer ones.
         lineResults.clear();
         lineLatest.clear();
@@ -33246,19 +33299,18 @@
         scaleArm();
       } catch (error) {
         loadState[id] = "unavailable";
-        el("loading").textContent = `${id} unavailable: ${error.message}`;
-        el("loading").setAttribute("role", "alert");
+        loadingLine.blocks.set(id, error.message);
+        renderLoading();
       }
       await new Promise(requestAnimationFrame);
     }
-    if (Object.values(loadState).every((x) => x === "ready"))
-      el("loading").hidden = true;
+    // Startup is over: its caption goes. What stays on the line is decided by the failures that still matter, not by this loop.
+    loadingLine.startup = "";
+    renderLoading();
     startLive();
   } catch (error) {
-    el("loading").textContent =
-      (PACK.live ? "Cube data unavailable: " : "Recorded data unavailable: ") +
-      error.message;
-    el("loading").setAttribute("role", "alert");
+    loadingLine.fatal = (PACK.live ? "Cube data unavailable: " : "Recorded data unavailable: ") + error.message;
+    renderLoading();
   }
 })();
 </script>

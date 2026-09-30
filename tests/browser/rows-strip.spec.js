@@ -193,6 +193,62 @@ test.describe("B28 the Rows strip", () => {
   });
 });
 
+test.describe("B28 the strip's readout names the numeric clipping", () => {
+  test("a manual Rows scale narrower than the data: the rows above it say they are clipped, the rows below it do not", async ({ page, probe, fakeFor, surface, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    await page.goto(`${fake.url}/${addressOf(sc)}`);
+    await S.atRest(page, fake, probe);
+    await expect.poll(async () => (await surface.chip("rows")).data.state).toMatch(/^(ready|fixed)$/);
+    const details = await surface.details("rows"),
+      U = Number(details.fields.U.value),
+      manualU = U / 3;
+    const opened = await surface.openLegendDetails("rows");
+    await opened.popover.getByLabel("U", { exact: true }).fill(String(manualU));
+    await opened.popover.getByLabel("k", { exact: true }).fill(String(manualU / 50));
+    await opened.popover.getByRole("button", { name: /^Apply/ }).click();
+    await opened.close().catch(() => {});
+    await S.atRest(page, fake, probe);
+    const frame = await pane.last(),
+      layout = await layoutOf(page),
+      y = priceAxis(frame),
+      box = await page.locator("#ol-canvas").boundingBox();
+    const tipAt = async (r) => {
+      await page.mouse.move(box.x + layout[4] + 6, box.y + (y((r + 1) * 125) + y(r * 125)) / 2);
+      await expect(page.locator("#ol-tip")).toBeVisible();
+      return page.locator("#ol-tip").innerText();
+    };
+    const above = sc.inView.filter((x) => x.v > manualU),
+      below = sc.inView.filter((x) => x.v > 0 && x.v < manualU * 0.9);
+    expect(above.length, "rows above the manual top").toBeGreaterThan(0);
+    expect(below.length, "rows below it").toBeGreaterThan(0);
+    expect(await tipAt(above[0].r), "a row above the top says it is clipped").toMatch(/Numeric clipping/);
+    expect(await tipAt(below[0].r), "a row below it does not").not.toMatch(/Numeric clipping/);
+  });
+});
+
+test.describe("B28 a Geometry interior shows the projection", () => {
+  test("the inside of an occupied Geometry cell is the band, not the bare surface", async ({ freshContext, fakeFor }) => {
+    const { addRecorder, openView, lastDraw, rectOf, boxOf, pageColours } = require("./cells-support.js");
+    const { probeTools } = require("./fixtures.js");
+    const view = { from: "2021-01-01T00:00Z", to: "2021-01-01T00:06Z", low: 24750, high: 25500 };
+    const fake = await fakeFor("micro:paths");
+    const context = await freshContext({ reducedMotion: "reduce" });
+    await addRecorder(context);
+    const page = await context.newPage();
+    await openView(page, fake, probeTools.forPage(page), `#t=${view.from}~${view.to}&p=${view.low}~${view.high}&r=0,0&mode=geometry&rows=volume&period=1d&vis=2`);
+    await fake.idle({ quietMs: 600, timeoutMs: 20000 });
+    const colours = await pageColours(page),
+      ground = await palette(page),
+      draw = await lastDraw(page),
+      cell = JSON.parse(require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "fixtures", "trades", "paths.json"), "utf8")).expected.cells["0:0"].find((z) => z.r === 202),
+      b = boxOf(draw.plot, rectOf(view), 0, 0, cell.c, cell.r);
+    const seen = [];
+    for (const [px, py] of [[b.x0 + 4, b.y0 + 4], [b.x1 - 4, b.y0 + 4], [b.x0 + 4, b.y1 - 4], [b.x1 - 4, b.y1 - 4]]) seen.push(await pixelAt(page, px, py));
+    expect(seen.some((p) => p !== colours.surface && ground.rows.some((entry) => over(entry, 0.16, ground.surface).every((c, i) => Math.abs(c - rgbOf(p)[i]) <= 1))), `one of ${seen} is the Rows role at 16% over the surface`).toBe(true);
+  });
+});
+
 test.describe("B28 the strip under Delta and Time at price", () => {
   test("Delta: each block is an entry of the positive arm above zero and of the negative arm below, by its row's taker-buy minus taker-sell", async ({ page, probe, fakeFor, pane, surface }) => {
     const sc = scenario();

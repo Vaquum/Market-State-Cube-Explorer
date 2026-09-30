@@ -55,8 +55,15 @@
   const ctxRowFixed = Object.freeze(["relvol"]);
   const ctxRowRank = Object.freeze(["volume", "time"]);
 
-  // formula id -> {family, signed}: what compatClass reads from a context.
+  // formula name WITHOUT its version -> {family, signed}: what compatClass reads from a context. The version
+  // is not part of the class (E.scale.compat compares it separately and names it), so a mapping persisted
+  // under an older formula version still has a class and is refused for its version, not for an unknown name.
   const ctxFormulaFacts = ctxIndexFormulas();
+
+  function ctxFormulaName(formula) {
+    const at = typeof formula === "string" ? formula.lastIndexOf("@") : -1;
+    return at < 0 ? formula : formula.slice(0, at);
+  }
 
   function ctxIndexFormulas() {
     const facts = {};
@@ -65,13 +72,13 @@
       const bases = Object.keys(ctxCellFormulas[measures[i]]);
       for (let j = 0; j < bases.length; j++) {
         const f = ctxCellFormulas[measures[i]][bases[j]];
-        facts[f.formula] = Object.freeze({ family: f.family, signed: f.signed });
+        facts[ctxFormulaName(f.formula)] = Object.freeze({ family: f.family, signed: f.signed });
       }
     }
     const rows = Object.keys(ctxRowFormulas);
     for (let i = 0; i < rows.length; i++) {
       const f = ctxRowFormulas[rows[i]];
-      facts[f.formula] = Object.freeze({ family: f.family, signed: f.signed });
+      facts[ctxFormulaName(f.formula)] = Object.freeze({ family: f.family, signed: f.signed });
     }
     return Object.freeze(facts);
   }
@@ -334,15 +341,19 @@
   function ctxCompatClass(x) {
     const ctx = ctxOf(x);
     if (ctx) {
-      const facts = ctxFormulaFacts[ctx.formula];
+      const facts = ctxFormulaFacts[ctxFormulaName(ctx.formula)];
       if (!facts) throw new RangeError("compatClass: unknown formula " + String(ctx.formula));
       const kind = ctx.transform === "value-log" ? "log1p" : ctx.transform === "value-linear" ? "linear" : ctx.transform === "rank" ? "rank" : ctx.transform === "fixed" ? "fixed" : null;
       if (kind === null) throw new RangeError("compatClass: unknown transform " + String(ctx.transform));
-      return facts.family + "|" + kind + "|" + (facts.signed ? "s" : "u") + "|" + (kind === "rank" ? "type7-257@1" : "-");
+      // The rank algorithm is the one this build writes unless a Calibration carries a descriptor that names
+      // another (a mapping imported from a later version): then the classes differ and the lock says why.
+      const alg = x.desc && x.desc.kind === "rank-type7-257" && typeof x.desc.algorithm === "string" ? x.desc.algorithm : "type7-257@1";
+      return facts.family + "|" + kind + "|" + (facts.signed ? "s" : "u") + "|" + (kind === "rank" ? alg : "-");
     }
     if (!ctxIsObject(x) || typeof x.kind !== "string") throw new TypeError("compatClass needs a context, a calibration or a descriptor");
     const kind = x.kind === "value-log1p" ? "log1p" : x.kind === "value-linear" ? "linear" : x.kind === "rank-type7-257" ? "rank" : x.kind === "zero-only" || x.kind === "none" ? "none" : "fixed";
-    return "-|" + kind + "|" + (x.signed ? "s" : "u") + "|" + (kind === "rank" ? "type7-257@1" : "-");
+    const alg = typeof x.algorithm === "string" ? x.algorithm : "type7-257@1";
+    return "-|" + kind + "|" + (x.signed ? "s" : "u") + "|" + (kind === "rank" ? alg : "-");
   }
 
   API.context = Object.freeze({

@@ -46,9 +46,12 @@
   // The record that is hashed (C.7): {v, kind, signed, params, clip}. It EXCLUDES units, measure, context,
   // cohort, provenance, appearance, theme, the LUT and the `algorithm` and `id` fields (DR-03), so two
   // measures with the same (U, k) share an id and compatibility is decided from the context (C.8), never
-  // from the id. `v` is the mapping version of the header, not a field of the caller's record.
+  // from the id. `v` is the record's own mapping version, which is the header's VERSION.mapping for every
+  // descriptor made here (and for a hand-built record that leaves it out); a record that says another
+  // version gets another id, so an id is always a function of the record it names (`validate` then refuses
+  // the record itself).
   function sclMappingInput(desc) {
-    return { v: VERSION.mapping, kind: desc.kind, signed: desc.signed, params: desc.params, clip: desc.clip };
+    return { v: desc.v === undefined ? VERSION.mapping : desc.v, kind: desc.kind, signed: desc.signed, params: desc.params, clip: desc.clip };
   }
 
   // E.scale.canonical (API.md A.3, C.7): the exact JSON text that the id hashes.

@@ -30,7 +30,7 @@ function install(canvasId) {
     },
     set(v) {
       if (this.id === canvasId) {
-        cur = { rects: [], strokeRects: [], strokes: [], fills: [], texts: [], patterns: 0 };
+        cur = { rects: [], strokeRects: [], strokes: [], fills: [], texts: [], patterns: 0, seq: 0 };
         frames.push(cur);
         if (frames.length > KEEP) frames.shift();
       }
@@ -60,19 +60,19 @@ function install(canvasId) {
     path.push([x, y], [x + w, y], [x + w, y + h], [x, y + h]);
   });
   wrap("fillRect", function ([x, y, w, h]) {
-    cur.rects.push({ x, y, w, h, fill: style(this.fillStyle), alpha: this.globalAlpha });
+    cur.rects.push({ x, y, w, h, fill: style(this.fillStyle), alpha: this.globalAlpha, seq: cur.seq++ });
   });
   wrap("strokeRect", function ([x, y, w, h]) {
-    cur.strokeRects.push({ x, y, w, h, stroke: style(this.strokeStyle), width: this.lineWidth, alpha: this.globalAlpha });
+    cur.strokeRects.push({ x, y, w, h, stroke: style(this.strokeStyle), width: this.lineWidth, alpha: this.globalAlpha, seq: cur.seq++ });
   });
   wrap("stroke", function () {
-    cur.strokes.push({ stroke: style(this.strokeStyle), width: this.lineWidth, dash: this.getLineDash(), alpha: this.globalAlpha, path: path.slice() });
+    cur.strokes.push({ stroke: style(this.strokeStyle), width: this.lineWidth, dash: this.getLineDash(), alpha: this.globalAlpha, path: path.slice(), seq: cur.seq++ });
   });
   wrap("fill", function () {
-    cur.fills.push({ fill: style(this.fillStyle), alpha: this.globalAlpha, path: path.slice() });
+    cur.fills.push({ fill: style(this.fillStyle), alpha: this.globalAlpha, path: path.slice(), seq: cur.seq++ });
   });
   wrap("fillText", function ([text, x, y]) {
-    cur.texts.push({ text: String(text), x, y, fill: style(this.fillStyle), align: this.textAlign });
+    cur.texts.push({ text: String(text), x, y, fill: style(this.fillStyle), align: this.textAlign, seq: cur.seq++ });
   });
   wrap("createPattern", () => {
     cur.patterns++;

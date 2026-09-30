@@ -90,7 +90,8 @@
     REFERENCE_STROKE_MAX = 2.5;
   const EVENT_LANE = 14,
     EVENT_GAP = 3,
-    EVENT_MIN_PLOT = 150;
+    EVENT_MIN_PLOT = 150,
+    EVENT_NAME_EXTRA = 10;
   // The Rows strip (PRD-0002 S2): 12 px, fixed, immediately right of the heatmap, while Rows is on; the profile
   // tracks start after it.
   const ROWS_STRIP = 12;
@@ -102,12 +103,14 @@
       eh = lanes === 0 ? 0 : collapsed ? EVENT_LANE : lanes * EVENT_LANE,
       eventStrip = lanes === 0 ? 0 : eh + EVENT_GAP,
       h = Math.max(1, free - ah - PANE_GAP - eventStrip);
-    const w = Math.max(1, width - PLOT_LEFT - profile - GUTTER - strip);
+    // The lanes' names (4h squeeze is 61 px of 11 px type) stand in the price labels' column: with lanes the plot starts EVENT_NAME_EXTRA px later.
+    const left = PLOT_LEFT + (lanes > 0 && !collapsed ? EVENT_NAME_EXTRA : 0),
+      w = Math.max(1, width - left - profile - GUTTER - strip);
     return {
-      x: PLOT_LEFT,
+      x: left,
       y: PLOT_TOP,
       w,
-      sx: PLOT_LEFT + w,
+      sx: left + w,
       sw: strip,
       h,
       ey: PLOT_TOP + h + EVENT_GAP,
@@ -119,7 +122,7 @@
       profile,
       // The bars of the current track and of the reference track start here; none is reserved when the tracks are collapsed.
       tracks: profile ? tracks : 0,
-      tx: [PLOT_LEFT + w + strip + PROFILE_PAD, PLOT_LEFT + w + strip + PROFILE_PAD + TRACK_BARS + TRACK_GUTTER + TRACK_GAP],
+      tx: [left + w + strip + PROFILE_PAD, left + w + strip + PROFILE_PAD + TRACK_BARS + TRACK_GUTTER + TRACK_GAP],
     };
   }
   const design = { gap: 1 },
@@ -827,9 +830,9 @@
       .scaleLinear()
       .domain([S.pA, S.pB])
       .range([G.y + G.h, G.y]);
-    // The layout as the page drew it (css px), for the observation surface: the heatmap, the Rows strip and the profile tracks. Written only
-    // when it changes.
-    const layoutText = [G.x, G.y, G.w, G.h, G.sx, G.sw, G.tracks, G.tx[0], G.tx[1]].map((n) => Math.round(n * 100) / 100).join(",");
+    // The layout as the page drew it (css px), for the observation surface: the heatmap (x, y, w, h), the Rows strip (x, w), the profile tracks
+    // (count, x of each), the event strip (y, h, collapsed) and the activity pane (y, h). Written only when it changes.
+    const layoutText = [G.x, G.y, G.w, G.h, G.sx, G.sw, G.tracks, G.tx[0], G.tx[1], G.ey, G.eh, G.ecollapsed ? 1 : 0, G.ay, G.ah].map((n) => Math.round(n * 100) / 100).join(",");
     if (canvas.dataset.layout !== layoutText) canvas.dataset.layout = layoutText;
   }
   const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
@@ -2311,19 +2314,6 @@
     // opaque fills or movement strokes, the bounded references and event boundaries, the state annotations (open,
     // partial, provisional), then the selection, and last the lens and the tooltips.
     paintUnfinished(shown);
-    if (S.selection) {
-      selectionFrame(G.X(b[0]), G.Y(b[3]), G.X(b[1]), G.Y(b[2]));
-      // While a selection is dragged the rectangle under the pointer shows
-      // too, dashed; the solid outline is the cells it takes in.
-      if (S.select && drag?.moved && !drag.lens) {
-        const [ta, tb, pa, pb] = S.selection;
-        ctx.strokeStyle = colors.ink;
-        ctx.setLineDash([4, 3]);
-        ctx.lineWidth = 1;
-        ctx.strokeRect(G.X(ta), G.Y(pb), G.X(tb) - G.X(ta), G.Y(pa) - G.Y(pb));
-        ctx.setLineDash([]);
-      }
-    }
     const xc = G.X(cut);
     if (xc >= G.x && xc <= G.x + G.w) {
       line(xc, G.y, xc, G.y + G.h, colors.muted, 1, 0.7);
@@ -2349,6 +2339,20 @@
       ctx.setLineDash([3, 4]);
       line(x, G.y, x, G.y + G.h, colors.evidence, 1, 0.65);
       ctx.setLineDash([]);
+    }
+    // The selection comes after every state mark (the cutoff, the provisional edge, the anchor) and before what the pointer links.
+    if (S.selection) {
+      selectionFrame(G.X(b[0]), G.Y(b[3]), G.X(b[1]), G.Y(b[2]));
+      // While a selection is dragged the rectangle under the pointer shows
+      // too, dashed; the solid outline is the cells it takes in.
+      if (S.select && drag?.moved && !drag.lens) {
+        const [ta, tb, pa, pb] = S.selection;
+        ctx.strokeStyle = colors.ink;
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(G.X(ta), G.Y(pb), G.X(tb) - G.X(ta), G.Y(pa) - G.Y(pb));
+        ctx.setLineDash([]);
+      }
     }
     // The crosshair's price line and the cell under the pointer; its time line
     // runs through both panes (see crosshair). The cell is a two-tone boundary inside it, farther in where it
@@ -11716,32 +11720,9 @@
     temporaryRegions.push({ kind, x, y, w, h });
   }
   function occlusionPlan(cut) {
-    const off = new Set(),
-      vertices = new Map();
-    occlusion = { off, vertices, shown: 0, eligible: 0, focusOver: false };
+    const vertices = new Map();
+    occlusion = { off: new Set(), vertices, shown: 0, eligible: 0, focusOver: false };
     if (!G.w || !G.h) return;
-    const cols = Math.ceil(G.w / OCC_CELL),
-      rows = Math.ceil(G.h / OCC_CELL),
-      grid = new Uint8Array(cols * rows),
-      limit = Math.floor(cols * rows * OCCLUSION_BUDGET);
-    let used = 0;
-    // The cells a rectangle covers, inside the pane, that are not yet taken; `take` marks them.
-    const cells = (x0, y0, x1, y1, take) => {
-      let n = 0;
-      const c0 = Math.max(0, Math.floor((x0 - G.x) / OCC_CELL)),
-        c1 = Math.min(cols - 1, Math.floor((x1 - G.x) / OCC_CELL)),
-        r0 = Math.max(0, Math.floor((y0 - G.y) / OCC_CELL)),
-        r1 = Math.min(rows - 1, Math.floor((y1 - G.y) / OCC_CELL));
-      for (let r = r0; r <= r1; r++)
-        for (let c = c0; c <= c1; c++) {
-          const k = r * cols + c;
-          if (!grid[k]) {
-            n++;
-            if (take) grid[k] = 1;
-          }
-        }
-      return n;
-    };
     const right = G.x + G.w,
       candidates = [];
     const items = S.lines.length ? lineItems(cut) : [];
@@ -11784,20 +11765,12 @@
         });
       if (rects.length) candidates.push({ id: "clock|" + kind, hot: false, rank: 7, rects });
     }
-    candidates.sort((a, b) => Number(b.hot) - Number(a.hot) || a.rank - b.rank);
-    for (const m of candidates) {
-      let cost = 0;
-      for (const r of m.rects) cost += cells(r[0], r[1], r[2], r[3], false);
-      occlusion.eligible++;
-      if (!m.hot && used + cost > limit) {
-        off.add(m.id);
-        continue;
-      }
-      if (m.hot && used + cost > limit) occlusion.focusOver = true;
-      for (const r of m.rects) cells(r[0], r[1], r[2], r[3], true);
-      used += cost;
-      occlusion.shown++;
-    }
+    // The planner is the module's (E.role.occlusion): the grid, the order, the focused mark that is never thinned.
+    const plan = E.role.occlusion(candidates, { x: G.x, y: G.y, w: G.w, h: G.h }, { budget: OCCLUSION_BUDGET, cell: OCC_CELL });
+    occlusion.off = plan.off;
+    occlusion.shown = plan.shown;
+    occlusion.eligible = plan.eligible;
+    occlusion.focusOver = plan.focusOver;
   }
   // What the budget left out, said where it happened: the canvas carries the counts (for a reader of the page and a
   // test) and a label at the pane's top right names them. The focused mark alone over the budget is said too,
@@ -11948,14 +11921,8 @@
       else gapLane.pending = true;
     }
     for (const l of lanes) {
+      l.spans = E.role.unionSpans(l.events);
       l.events.sort((a, b) => a.t0 - b.t0);
-      for (const e of l.events) {
-        const last = l.spans[l.spans.length - 1];
-        if (last && e.t0 <= last.t1) {
-          last.t1 = Math.max(last.t1, e.t1);
-          last.events.push(e);
-        } else l.spans.push({ t0: e.t0, t1: e.t1, events: [e] });
-      }
     }
     return lanes;
   }
@@ -11979,7 +11946,8 @@
       const y = G.ey + i * EVENT_LANE,
         yc = y + EVENT_LANE / 2;
       line(G.x, y + EVENT_LANE - 0.5, G.x + G.w, y + EVENT_LANE - 0.5, colors.line, 1);
-      text(EVENT_NAMES[l.id].name, G.x - 6, yc, colors.muted, "right");
+      // The lane's name in the price labels' column, right edge 2 px off the plot so the longest name (4h squeeze) stays on the canvas.
+      text(EVENT_NAMES[l.id].name, G.x - 2, yc, colors.muted, "right");
       ctx.save();
       ctx.beginPath();
       ctx.rect(G.x, y, G.w, EVENT_LANE);

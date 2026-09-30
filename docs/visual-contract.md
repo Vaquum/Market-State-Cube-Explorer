@@ -288,7 +288,7 @@ A Wave-2 package that adds a NEW top-level helper reading `colors.*` under a nam
 | ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
 |---|---|---|---|---|---|---|---|---|
 | N-30 | Two-tone boundary painter: a surface casing under an ink core for the selection frame, its corner ticks and the lens frame | src/explorer.js: `twoTone()`, `selectionFrame()` (new in S2) | Selection: `colors.accent` 1.5 px plus a 0.25 fade of everything outside; lens frame: `colors.accent` 1.5 px | `IX` interaction (ink core, surface casing) | - | #47 | U50 | todo-S2 |
-| N-31 | Event strip: one lane per enabled event kind (4h squeeze, 1D squeeze, CME gap), opaque marks in the state ink, the lane name in the price column | src/explorer.js: `paintEvents()`, `eventLanes()` (new in S2) | The squeezes and the CME gap were translucent areas over the cells (`drawFill` alpha 0.24, `drawClock` alpha 0.16) | `STATE` ink, fixed role | EVENT | #47 | U50 | todo-S2 |
+| N-31 | Event strip: one lane per enabled event kind (4h squeeze, 1D squeeze, CME gap), opaque marks in the state ink, the lane name in the price column | src/explorer.js: `paintEvents()`, `eventLanes()`; src/encoding.js `E.role.unionSpans` (new in S2) | The squeezes and the CME gap were translucent areas over the cells (`drawFill` alpha 0.24, `drawClock` alpha 0.16) | `STATE` ink, fixed role | EVENT | #47 | U52, B27 | done |
 | N-32 | Rows strip: the row values at full strength in a fixed 12 px column right of the heatmap, one block per effective row | src/explorer.js: `paintRowsStrip()` (new in S2) | Rows only drew a 16% projection over the cells and a second profile | the Rows mapping's unsigned or signed arms (`UM`, `+/-`) at alpha 1 | ROW | #47 | U50 | todo-S2 |
 | N-33 | Endpoint glyphs and gutter letters of a profile track: a filled triangle for the POC, a hollow diamond for the Buy POC, both gold, each with its letter a line of room apart | src/explorer.js: `pocGlyph()`, `gutterLabels()` (new in S2) | P and B letters on leader lines at the strip's edge, B in `colors.legacyBuy` | `REF:Profile` gold, the shape and the letter distinguish the two | PROF | #47 | B25 | todo-S2 |
 | N-34 | The current track: the view's or selection's Volume with the taker-buy subset as a neutral ink inset, POC and Buy POC lines, the 70% area as a neutral fill | src/explorer.js: `paintCurrentTrack()` (new in S2) | One overpainted strip; the subset was a thin bar in `colors.legacyBuy` | neutral length on an Independent or shared axis | PROF | #47 | B25, U51 | todo-S2 |
@@ -657,6 +657,8 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | U49 | `tests/unit/hot-path.test.js` | no allocation, sort or d3 call in the steady-frame encoder | W1-F |
 | U50 | `tests/unit/two-tone.test.js` | a two-tone boundary has a 3:1 component over every fill, empty and state backdrop | #47 |
 | U51 | `tests/unit/profile-tracks.test.js` | the shared partition, windows and shares of the profile tracks against exact rational sums | #47 |
+| U52 | `tests/unit/event-spans.test.js` | the merge of one event kind's intervals for the event strip, against brute-force connectivity | #47 |
+| U53 | `tests/unit/occlusion-budget.test.js` | the 20% union-area occlusion budget: overlaps once, priority, the focused mark, against a set-based replay | #47 |
 | B01 | `tests/browser/boot.spec.js` | boot in recorded and live mode, the 29 module keys, production globals | H7b |
 | B02 | `tests/browser/recorded-snapshot.spec.js` | real recorded blocks through the page | K |
 | B03 | `tests/browser/readout-agreement.spec.js` | tooltip, table row, legend marker and pixel agree for every measure | T |
@@ -683,6 +685,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B24 | `tests/browser/probe-selfcheck.spec.js` | the probe and the observation helpers themselves | H7a |
 | B25 | `tests/browser/profile-tracks.spec.js` | the adjacent profile tracks: geometry, independent and shared axes, disclosure, persistence | S2 |
 | B26 | `tests/browser/stroke-roles.spec.js` | the stroke-role table: marks on the plot, their footer keys, counts, geometry and colours | S2 |
+| B27 | `tests/browser/composition.spec.js` | the event strip lanes, reference stroke widths, the occlusion notice and the transient lens region | S2 |
 
 ## 10. Migration status per slice
 
@@ -695,8 +698,8 @@ Rendered from the Status column at S1's convergence: `done` is S1's own work shi
 | D | 21 | 7 | 0 | 4 | 8 | 2 |
 | F | 14 | 0 | 0 | 0 | 2 | 12 |
 | R | 15 | 0 | 0 | 2 | 5 | 8 |
-| N | 30 | 0 | 0 | 6 | 0 | 24 |
-| all | 162 | 26 | 0 | 31 | 31 | 74 |
+| N | 30 | 0 | 0 | 5 | 0 | 25 |
+| all | 162 | 26 | 0 | 30 | 31 | 75 |
 
 ## 11. Contributor checklist
 

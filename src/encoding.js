@@ -4446,6 +4446,76 @@
     return out;
   }
 
+  // E.role.occlusion(candidates, plot, opts) (PRD-0002 S2, the occlusion budget): persistent reference strokes, their backings and their label plates
+  // may cover at most `budget` (20%) of the measured heatmap rectangle `plot` {x, y, w, h}, the overlaps counted once. The cover is held on a bounded
+  // occupancy grid of `cell` css px squares (2), built from the marks' screen rectangles, so a frame never scans history or pixels. A candidate is
+  // {id, hot, rank, rects: [[x0, y0, x1, y1], ...]} (the rectangles its marks cover, backing and plate included). The focused ones (`hot`) come first,
+  // then by ascending `rank` (lower is kept longer), ties in the order given; a candidate that would take the cover past the budget is OFF unless it is
+  // focused: the focused mark is never thinned or widened, and when it alone needs more than the budget the answer says so (`focusOver`).
+  // -> {off: Set of ids, shown, eligible, used (grid cells), limit, cells, focusOver}
+  function rolOcclusion(candidates, plot, opts) {
+    const budget = opts && opts.budget !== undefined ? opts.budget : 0.2;
+    const size = opts && opts.cell !== undefined ? opts.cell : 2;
+    const off = new Set();
+    const out = { off, shown: 0, eligible: 0, used: 0, limit: 0, cells: 0, focusOver: false };
+    if (!(plot.w > 0) || !(plot.h > 0)) return out;
+    const cols = Math.ceil(plot.w / size);
+    const rows = Math.ceil(plot.h / size);
+    const grid = new Uint8Array(cols * rows);
+    out.cells = cols * rows;
+    out.limit = Math.floor(cols * rows * budget);
+    // A candidate's rectangles are claimed together: a cell already taken, or already claimed by an earlier rectangle of the same candidate, costs
+    // nothing (overlaps once, inside a mark and between marks); the claim stands if the mark is kept and is given back if it is not.
+    const claimed = [];
+    const claim = (x0, y0, x1, y1) => {
+      const c0 = Math.max(0, Math.floor((x0 - plot.x) / size));
+      const c1 = Math.min(cols - 1, Math.floor((x1 - plot.x) / size));
+      const r0 = Math.max(0, Math.floor((y0 - plot.y) / size));
+      const r1 = Math.min(rows - 1, Math.floor((y1 - plot.y) / size));
+      for (let r = r0; r <= r1; r++)
+        for (let c = c0; c <= c1; c++) {
+          const k = r * cols + c;
+          if (grid[k] === 0) {
+            grid[k] = 2;
+            claimed.push(k);
+          }
+        }
+    };
+    const order = candidates.slice().sort((a, b) => Number(b.hot) - Number(a.hot) || a.rank - b.rank);
+    for (const m of order) {
+      claimed.length = 0;
+      for (const r of m.rects) claim(r[0], r[1], r[2], r[3]);
+      const cost = claimed.length;
+      out.eligible++;
+      const refuse = !m.hot && out.used + cost > out.limit;
+      if (m.hot && out.used + cost > out.limit) out.focusOver = true;
+      for (let i = 0; i < claimed.length; i++) grid[claimed[i]] = refuse ? 0 : 1;
+      if (refuse) {
+        off.add(m.id);
+        continue;
+      }
+      out.used += cost;
+      out.shown++;
+    }
+    return out;
+  }
+
+  // E.role.unionSpans (PRD-0002 S2, event strip): the intervals of one event kind merged for drawing where they overlap or touch, each
+  // span keeping the events that make it up (in order of their start) so an inspection still reads every constituent. The marks of a lane are
+  // the union, never overlapping translucent marks, so nothing darker means more events. `events` are {t0, t1, ...}; input order is free.
+  function rolUnionSpans(events) {
+    const sorted = events.slice().sort((a, b) => a.t0 - b.t0 || a.t1 - b.t1),
+      spans = [];
+    for (const e of sorted) {
+      const last = spans.length ? spans[spans.length - 1] : null;
+      if (last !== null && e.t0 <= last.t1) {
+        if (e.t1 > last.t1) last.t1 = e.t1;
+        last.events.push(e);
+      } else spans.push({ t0: e.t0, t1: e.t1, events: [e] });
+    }
+    return spans;
+  }
+
   API.role = Object.freeze({
     ROLES: rolRoles,
     GLYPHS: rolGlyphs,
@@ -4453,6 +4523,8 @@
     tile: rolTile,
     glyphFor: rolGlyphFor,
     keyEntries: rolKeyEntries,
+    occlusion: rolOcclusion,
+    unionSpans: rolUnionSpans,
   });
 
   // == §13-store ==

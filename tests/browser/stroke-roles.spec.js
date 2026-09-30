@@ -194,6 +194,65 @@ test.describe("B26 the selection, a linked cell and the open column on the plot"
     expect(frame.strokes.some((k) => k.path.length === 4 && k.width === 3.5 && k.stroke === colours.surface), "the selection edge stays").toBe(true);
   });
 
+  test("the layers come in the order of the composition: Rows projection, state marks, selection, what the pointer links, then the external strip", async ({ page, probe, fakeFor, pane }) => {
+    const fake = await fakeFor("standard");
+    await page.goto(`${fake.url}/#w=24h&vis=2&rows=volume&period=7d`);
+    await ready(page, fake, probe);
+    const box = await page.locator("#ol-canvas").boundingBox();
+    const layout = await page.locator("#ol-canvas").evaluate((el) => el.dataset.layout.split(",").map(Number));
+    await page.keyboard.press("s");
+    const a = [box.x + layout[0] + layout[2] * 0.3, box.y + layout[1] + layout[3] * 0.25],
+      b = [box.x + layout[0] + layout[2] * 0.6, box.y + layout[1] + layout[3] * 0.6];
+    await page.mouse.move(...a);
+    await page.mouse.down();
+    await page.mouse.move(...b, { steps: 6 });
+    await page.mouse.up();
+    // a cell of the selection under the pointer
+    let found = false;
+    for (let fy = 0.3; fy < 0.6 && !found; fy += 0.02)
+      for (let fx = 0.32; fx < 0.6 && !found; fx += 0.04) {
+        await page.mouse.move(box.x + layout[0] + layout[2] * fx, box.y + layout[1] + layout[3] * fy);
+        await probe.waitForQuiet({ quietMs: 200 });
+        found = await page.locator("#ol-key-hover").isVisible();
+      }
+    expect(found).toBe(true);
+    const frame = await pane.last(),
+      colours = await tokens(page);
+    const first = (list) => Math.min(...list.map((x) => x.seq));
+    const band = first(frame.rects.filter((r) => Math.abs(r.alpha - 0.16) < 1e-9 && r.w > 0)),
+      cap = first(frame.strokes.filter((k) => k.width === 1.5 && k.stroke === colours.state && k.path.length === 2 && k.path[0][1] === k.path[1][1])),
+      provisional = first(frame.strokes.filter((k) => k.stroke === colours.state && k.width === 1 && JSON.stringify(k.dash) === "[2,3]")),
+      selection = first(frame.strokes.filter((k) => k.path.length === 4 && k.width === 3.5 && k.stroke === colours.surface)),
+      linked = first(frame.strokes.filter((k) => k.path.length === 4 && k.width === 3 && k.stroke === colours.surface)),
+      strip = first(frame.rects.filter((r) => r.w === 12 && r.x > layout[0] + layout[2] - 1 && r.fill === colours.surface));
+    for (const [name, v] of Object.entries({ band, cap, provisional, selection, linked, strip })) expect(Number.isFinite(v), `${name} was painted`).toBe(true);
+    expect(band, "the projection first").toBeLessThan(cap);
+    expect(cap, "then the state marks").toBeLessThan(selection);
+    expect(provisional).toBeLessThan(selection);
+    expect(selection, "the selection above them").toBeLessThan(linked);
+    expect(linked, "what the pointer links above that").toBeLessThan(strip);
+  });
+
+  test("the corner ticks are not handles: dragging from one moves no edge of the selection", async ({ page, probe, fakeFor, pane }) => {
+    const fake = await fakeFor("standard");
+    const { box, layout } = await selected(page, fake, probe, pane);
+    const selOf = async () => (await page.evaluate(() => location.hash)).match(/[#&]sel=([^&]*)/)?.[1] ?? null;
+    await expect.poll(selOf, { message: "the selection is in the address" }).not.toBeNull();
+    const before = await selOf();
+    const frame = await pane.last();
+    const colours = await tokens(page);
+    const casing = frame.strokes.find((k) => k.path.length === 4 && k.width === 3.5 && k.stroke === colours.surface);
+    // the top-left tick: 3 px out along the top edge from the corner, in the pan tool
+    const [cx, cy] = casing.path[0];
+    await page.locator("#ol-pan").click();
+    await page.mouse.move(box.x + cx - 3, box.y + cy);
+    await page.mouse.down();
+    await page.mouse.move(box.x + cx - 40, box.y + cy - 30, { steps: 5 });
+    await page.mouse.up();
+    await ready(page, fake, probe);
+    expect(await selOf(), "the selection's edges are where they were (the view panned, nothing resized)").toBe(before);
+  });
+
   test("the open column's cap is one 1.5 px neutral line along the plot's top, and no state mark is gold", async ({ page, probe, fakeFor, pane }) => {
     const fake = await fakeFor("standard");
     await page.goto(`${fake.url}/#w=24h&vis=2`);

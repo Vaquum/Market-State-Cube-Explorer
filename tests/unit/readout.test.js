@@ -285,7 +285,11 @@ test("T-readout: the observed amount of the readout is the aggregated amount the
   assert.equal(read(at("dwell")).observed.unit, "seconds");
 });
 
-test("T-readout: the legend marker of a record equals its coordinate and the tick the value would get (one record, four consumers)", () => {
+test("T-readout: the legend marker of a record equals its coordinate and the tick the value would get (one record, four consumers)", (t) => {
+  if (E.legend === undefined) {
+    t.skip("part 20-legend is not loaded (standalone form ENCODING_ONLY=readout); runs in every other form");
+    return;
+  }
   const frame = E.readout.cellsFrame(specOf(MODES[0], "light"));
   const legend = E.legend.build(frame, null, null, {});
   for (const z of FIXTURE.slice(0, 20)) {
@@ -582,7 +586,6 @@ test("T-readout: the level of the record is the level THIS frame describes (the 
   const at = (n, m) => E.readout.cellsFrame(specOf(MODES[0], "light", { level: { n, m } }));
   const drawn = at(6, 1);
   const table = at(4, 1);
-  const legend = E.legend.build(drawn, null, null, {});
   const z = { c: 50, r: 203, v: 1e5, bv: 0, ct: 1, bt: 0 };
   const rt = table.readout(z);
   const rd = drawn.readout(z);
@@ -590,6 +593,8 @@ test("T-readout: the level of the record is the level THIS frame describes (the 
   assert.deepEqual(plain(rd.level), { n: 6, m: 1 });
   assert.equal(rt.key, rd.key, "the numeric key is the same cell address");
   assert.notDeepEqual(plain(rt.support), plain(rd.support), "the support differs by level");
+  if (E.legend === undefined) return; // standalone form: the marker half needs part 20-legend
+  const legend = E.legend.build(drawn, null, null, {});
   assert.equal(E.legend.marker(legend, rd) !== null, true);
   assert.equal(E.legend.marker(legend, rt), null, "a record of another level draws no marker on this legend");
 });
@@ -815,4 +820,25 @@ test("T-readout: a pane frame draws the constant bar colour, the signed arms, a 
   cascade.encode({ v: 1 }, out, { ratio: { structure: "coarsest", childV: 1, parentV: 1, factor: 2 } });
   assert.equal(E.result.TAGS[out.tag], "no-coarser-parent");
   assert.equal(out.pattern, "pattern-slate");
+});
+
+test("T-readout: the Efficiency pane passes the recorded model's baseline explicitly (DR-39): the caller's ratio input needs none, and is not changed", () => {
+  const axis = { id: "pane.efficiency", channel: "columns", policy: "fixed", sign: "ratio", typed: "finite", domain: [-2, 2], natural: [-2, 2], unit: "log2-ratio", mappingId: "e", hold: null, provenance: null };
+  const pane = E.readout.paneFrame({ key: "efficiency", axis, lut: LUTS.light });
+  const ratio = { structure: "complete", child: { v: 4000, rows: 8 }, parent: { v: 9000, rows: 12 } };
+  const out = {};
+  pane.encode({ v: 1 }, out, { ratio });
+  // By hand: E(child) = 500, E(parent) = 750, baseline 2 ** (0.486 - 1) = 0.7002781604436024.
+  const want = Math.log2(4000 / 8 / (9000 / 12) / Math.pow(2, 0.486 - 1));
+  assert.equal(out.tag, 0);
+  assert.ok(Math.abs(out.value - want) < 1e-15, `${out.value} vs ${want}`);
+  assert.equal(ratio.baseline, undefined, "the caller's object is not extended");
+  // An explicit baseline of the caller is respected (a test of another model reference).
+  pane.encode({ v: 1 }, out, { ratio: Object.assign({ baseline: 1 }, ratio) });
+  assert.ok(Math.abs(out.value - Math.log2(4000 / 8 / (9000 / 12))) < 1e-15);
+  // The other structures are the ladder of D2, not numbers.
+  pane.encode({ v: 1 }, out, { ratio: { structure: "open", child: { v: 1, rows: 1 }, parent: { v: 1, rows: 1 } } });
+  assert.equal(E.result.TAGS[out.tag], "waiting-for-complete-parent");
+  pane.encode({ v: 1 }, out);
+  assert.equal(E.result.TAGS[out.tag], "pending", "no ratio input yet: reading, never a value");
 });

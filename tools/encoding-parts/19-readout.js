@@ -1,5 +1,5 @@
   // @part 19-readout
-  // @requires 01-util 03-result 05-measure 06-ratio 08-scale 10-context 11-lut 12-role
+  // @requires 01-util 03-result 05-measure 06-ratio 08-scale 10-context 11-lut 12-role 18-model
   // @prefix rdo
   // @provides readout
   // == §19 readout: one frame behind the encoder, the tooltip, the table and the legend marker (API.md B.10, C.16, DD-17, DD-85) ==
@@ -456,7 +456,6 @@
         formula: meta.formula,
         basis: meta.basis,
         unit: meta.unit,
-        fixed: info.kind === "fixed",
         transform: rdoTransformOf(map.desc, spec.transformId),
         desc: map.desc,
         mappingId,
@@ -687,7 +686,6 @@
         formula,
         basis: formulaRecord.basisKind,
         unit: formulaRecord.unit,
-        fixed: info.kind === "fixed",
         transform: rdoTransformOf(map.desc, spec.transformId),
         desc: map.desc,
         mappingId,
@@ -769,6 +767,15 @@
     return API.scale.plan(desc);
   }
 
+  // DR-39: E.ratio.efficiency REQUIRES an explicit baseline and has no fallback that depends on load order.
+  // A column context whose ratio input carries none gets the recorded model's own
+  // (E.model.PROVENANCE.baseline = 2 ** (ISO_B - 1)), in a copy: the caller's object is never changed. Only
+  // the Efficiency pane takes this path, and its ratio kernel allocates a small Typed anyway (part 06).
+  function rdoEfficiencyCtx(ctx, baseline) {
+    if (ctx === null || ctx === undefined || ctx.ratio === undefined || ctx.ratio === null || ctx.ratio.baseline !== undefined) return ctx;
+    return { read: ctx.read, hidden: ctx.hidden, ratio: Object.assign({ baseline }, ctx.ratio) };
+  }
+
   // E.readout.paneFrame (API.md C.16). `spec` = { key (volume, trades, delta, takertrades, size,
   // choppiness, perpath, cascade, efficiency), axis (an AxisRecord of E.axis: id, sign, typed, domain,
   // policy, mappingId, unit, hold, clipped, provenance, guides), lut, ctx (the default {read, hidden,
@@ -797,6 +804,8 @@
     const negativeTop = lut.negative.css[255];
     const stateInk = lut.stateInk.css;
     const defaultCtx = spec.ctx !== undefined ? spec.ctx : null;
+    const efficiency = key === "efficiency";
+    const baseline = efficiency ? API.model.PROVENANCE.baseline : 0;
     const axisId = axis !== null ? axis.id : null;
     const mappingId = axis !== null && typeof axis.mappingId === "string" ? axis.mappingId : "";
     const axisState = axis !== null ? axis.typed : "none";
@@ -811,7 +820,8 @@
       out.idx = -1;
       out.clip = 0;
       out.t = 0;
-      columnValue(key, col, ctx === undefined ? defaultCtx : ctx, out);
+      const c = ctx === undefined ? defaultCtx : ctx;
+      columnValue(key, col, efficiency ? rdoEfficiencyCtx(c, baseline) : c, out);
       if (out.tag !== rdoFinite) {
         const g = out.tag === rdoUndefined ? "diamond" : glyphs[out.tag];
         if (g !== null) {
@@ -906,7 +916,6 @@
         formula: formulaRecord !== null ? formula : null,
         basis: formulaRecord !== null ? formulaRecord.basisKind : null,
         unit: formulaRecord !== null ? formulaRecord.unit : axis !== null ? axis.unit : null,
-        fixed: false,
         transform: "axis",
         desc: null,
         mappingId,

@@ -677,3 +677,43 @@ test("T-legend: build takes a Frame or the object its legendInput() returns, and
   assert.equal(plainLegend.bar.ticks[2].label, "26790000");
   assert.equal(E.legend.build(cells("flow", SHARE), null, null, {}).bar.ticks[1].label, "50%");
 });
+
+test("T-legend: every channel, mode and state builds a JSON-safe legend with its bar, both themes, with and without a surface", () => {
+  const rowsDesc = E.scale.manual({ kind: "value-log1p", signed: false, U: 1e9, k: 1e6 }).descriptor;
+  const rowsSigned = E.scale.manual({ kind: "value-log1p", signed: true, U: 1e9, k: 1e6 }).descriptor;
+  const axis = { id: "pane.volume", channel: "columns", policy: "auto", sign: "unsigned", typed: "finite", domain: [0, 1e6], natural: null, unit: "usdt", mappingId: "m", hold: null, provenance: null };
+  for (const theme of ["light", "dark"]) {
+    const lut = LUTS[theme];
+    const frames = [
+      ...["volume", "trades", "size"].map((mode) => cells(mode, LOGU, theme)),
+      cells("delta", LOGS, theme),
+      cells("volume", LOGU, theme, { basis: "intensity" }),
+      cells("path", LOGU, theme, { pathBasis: "spans" }),
+      cells("path", LOGU, theme, { pathBasis: "usdt" }),
+      cells("flow", SHARE, theme),
+      cells("flowtrades", SHARE, theme),
+      cells("dwell", DWELL, theme),
+      cells("cascade", LOG2, theme),
+      cells("volume", E.scale.fitRank([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).descriptor, theme),
+      cells("volume", E.scale.zeroOnly(false), theme),
+      cells("delta", E.scale.zeroOnly(true), theme),
+      E.readout.cellsFrame({ mode: "geometry", level: LEVEL, bounds: [0, 1, 0, 1], geom: GEOM, mapping: null, lut }),
+      E.readout.rowsFrame({ kind: "volume", rowSize: 3, mapping: { state: "ok", desc: rowsDesc }, lut }),
+      E.readout.rowsFrame({ kind: "time", rowSize: 3, mapping: { state: "ok", desc: rowsDesc }, lut, surface: SURFACE[theme] }),
+      E.readout.rowsFrame({ kind: "delta", rowSize: 3, mapping: { state: "ok", desc: rowsSigned }, lut }),
+      E.readout.rowsFrame({ kind: "relvol", rowSize: 0, mapping: LOG2, lut, surface: SURFACE[theme], relvol: { at: () => ({ tag: "empty-both" }) } }),
+      E.readout.paneFrame({ key: "volume", axis, lut }),
+      E.readout.paneFrame({ key: "delta", axis: Object.assign({}, axis, { sign: "signed-symmetric", domain: [-5, 5] }), lut }),
+    ];
+    for (const frame of frames) {
+      const legend = E.legend.build(frame, null, compact, {});
+      E.result.assertJsonSafe(legend);
+      assert.equal(legend.bar.samples.length, 33, `${frame.kind} ${frame.mode}`);
+      assert.ok(Array.from(E.legend.barPixels(legend, 17)).every((b) => b >= 0 && b <= 255));
+      assert.equal(typeof E.legend.chip(legend).text, "string");
+      assert.ok(E.legend.chip(legend).text.length > 0, `${frame.kind} ${frame.mode} has a chip text`);
+      assert.ok(legend.keys.length > 0);
+      assert.equal(JSON.stringify(legend), JSON.stringify(E.legend.build(frame, null, compact, {})), "deterministic");
+    }
+  }
+});

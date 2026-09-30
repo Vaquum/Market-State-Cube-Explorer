@@ -212,8 +212,7 @@ describe("fixtures", () => {
 
 describe("tests/unit", () => {
   it("holds test files only, and at least one", () => {
-    // .gitkeep is the placeholder that keeps the directory in git before its first test exists.
-    const files = walk("tests/unit").filter((f) => !f.endsWith("/.gitkeep"));
+    const files = walk("tests/unit");
     assert.ok(files.length >= 1);
     for (const f of files) assert.ok(f.endsWith(".test.js"), `${f}: only *.test.js files run under the quoted glob`);
   });

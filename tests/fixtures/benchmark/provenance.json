@@ -1,0 +1,9 @@
+{
+  "kind": "hand-computed",
+  "expectationSource": "hand-computed",
+  "generator": null,
+  "seed": null,
+  "source": "sample-report.json: one tiny navigation-benchmark report that is NOT a measurement. One core case (recorded-24h), two pairs per phase, every draw duration and frame interval a dyadic fraction (2, 2.0625, 16.5, ...) so that all means, differences, floors, medians and bootstrap intervals are exact in binary floating point. The environment, commits and hashes in it are placeholders.",
+  "extractedOn": "2026-09-30",
+  "notes": "Derivation, written before the analysis was read back (U39 holds the same numbers as literals). Timer resolution 0.03125 ms. A/A pair 0 (AB): draw means 2.0 and 2.0625, frame means 16.5 and 16.75; pair 1 (BA): draw 2.0 and 2.125, frame 16.5 and 16.5. |B - A| draws [0.0625, 0.125], frames [0.25, 0]; nearest rank ceil(0.95 * 2) = 2 is the larger, so the floors are 0.125 ms (draw) and 0.25 ms (frame), both above the timer step, and the environment gate (0.2 ms) is open. Screening pair differences (B - A): draws 0.5 and 0.25 (median 0.375 > 0.125, a signal), frames 0.5 and 0 (median 0.25, not above 0.25). Confirmation: draws 0.5 in both pairs and frames 0.125 in both, so every resample mean equals the constant and the interval is [d, d]: 0.5 > 0.125 is blocking, 0.125 <= 0.25 is no regression detected at this resolution; the comparison is blocking. Family = 1 case x 2 metrics = 2, tails 0.01 / (2 * 2) = 0.0025, level 0.995. Preceding main and the original are the same commit, so the comparison against preceding coincides with the one against the original. The file was assembled once by a throwaway script from these rules; the test recomputes the analysis from the samples and compares it with the literals above."
+}

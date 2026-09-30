@@ -355,6 +355,75 @@
               <p class="ol-family-status" data-family-status="session" role="status"></p>
             </div>
           </section>
+          <section class="ol-family" data-family="structure">
+            <button
+              type="button"
+              class="ol-family-head cursor-interaction"
+              id="ol-family-structure-head"
+              aria-expanded="false"
+              aria-controls="ol-family-structure"
+            >
+              <i class="ol-family-dot" aria-hidden="true"></i
+              ><span class="ol-family-name">Structure</span
+              ><span class="ol-family-count ol-num"></span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
+            </button>
+            <div
+              class="ol-family-body"
+              id="ol-family-structure"
+              role="group"
+              aria-labelledby="ol-family-structure-head"
+              hidden
+            >
+              <div class="ol-lines-list" data-toggles="structure"></div>
+              <p class="ol-family-status" data-family-status="structure" role="status"></p>
+            </div>
+          </section>
+          <section class="ol-family" data-family="vwap">
+            <button
+              type="button"
+              class="ol-family-head cursor-interaction"
+              id="ol-family-vwap-head"
+              aria-expanded="false"
+              aria-controls="ol-family-vwap"
+            >
+              <i class="ol-family-dot" aria-hidden="true"></i
+              ><span class="ol-family-name">VWAP</span
+              ><span class="ol-family-count ol-num"></span>
+              <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+              </svg>
+            </button>
+            <div
+              class="ol-family-body"
+              id="ol-family-vwap"
+              role="group"
+              aria-labelledby="ol-family-vwap-head"
+              hidden
+            >
+              <div class="ol-lines-list" data-toggles="vwap"></div>
+              <div class="ol-list-head" id="ol-lines-vdays-head">From a day</div>
+              <div
+                class="ol-lines-list"
+                id="ol-lines-vdays"
+                role="group"
+                aria-labelledby="ol-lines-vdays-head"
+              ></div>
+              <form class="ol-lines-add" id="ol-lines-vadd">
+                <input
+                  type="date"
+                  id="ol-lines-vdate"
+                  aria-label="A day in UTC: its VWAP runs from that day's 00:00 to the latest data"
+                  required
+                /><button type="submit" class="ol-action ol-s cursor-interaction">
+                  Add day
+                </button>
+              </form>
+              <p class="ol-family-status" data-family-status="vwap" role="status"></p>
+            </div>
+          </section>
           <section class="ol-family" data-family="clock">
             <button
               type="button"

@@ -391,7 +391,7 @@
       legacy: true,
       defaults: { lines: [] },
       read: (text) => ({ lines: String(text === undefined ? "" : text).split(",").filter(Boolean) }),
-      check: (raw, env) => ({ lines: env.normalizeLines(raw.lines) }),
+      check: (raw, env) => ({ lines: env.normalizeLines(Array.isArray(raw.lines) ? raw.lines : []) }),
       write: (view) => (Array.isArray(view.lines) && view.lines.length ? view.lines.join(",") : null),
       // A page may drop a line it cannot offer; losing one is a drop, re-ordering is not.
       same: (raw, checked) => checked.lines.length >= raw.lines.length,
@@ -537,12 +537,12 @@
 
   // ---- classification ---------------------------------------------------------------------------------
   function cdcHasPlace(q) {
-    return Boolean((q.get("w") || "") !== "" || ((q.get("t") || "") !== "" && (q.get("p") || "") !== ""));
+    return cdcWindowKeyDefault(q.get("w")) !== "" || ((q.get("t") || "") !== "" && (q.get("p") || "") !== "");
   }
 
   // classify(x) (B.15): what kind of thing is this text or stored payload?
-  //   address text   vis absent + names a place -> legacy; vis=2 -> v2; vis present but not 2 -> reject
-  //                  (reason names the version seen); no place -> bare
+  //   address text   vis absent + names a place -> legacy; vis=2 + a place -> v2; vis present but not 2
+  //                  -> reject (reason names the version seen); no place -> bare
   //   code text      origo-cube:2. and origo-cube:2j. -> v2; origo-cube:%7B and origo-cube:{ and plain JSON
   //                  with a `query` or `view` -> legacy; a plain cube query -> query (not a view: no notice);
   //                  any other tag -> reject
@@ -589,7 +589,10 @@
       const i = part.indexOf("=");
       if (i > 0) q.set(part.slice(0, i), part.slice(i + 1));
     }
-    if (q.has("vis")) return q.get("vis") === "2" ? { kind: "v2", version: 2 } : { kind: "reject", version: q.get("vis"), reason: "the address names visual version \"" + q.get("vis") + "\"; this page reads 2" };
+    if (q.has("vis")) {
+      if (q.get("vis") !== "2") return { kind: "reject", version: q.get("vis"), reason: "the address names visual version \"" + q.get("vis") + "\"; this page reads 2" };
+      return cdcHasPlace(q) ? { kind: "v2", version: 2 } : { kind: "bare", version: 2 };
+    }
     return cdcHasPlace(q) ? { kind: "legacy", version: null } : { kind: "bare", version: null };
   }
 
@@ -785,6 +788,7 @@
       if (period === null) return { reason: "the Rows period is not well formed" };
       if (quality === null) return { reason: "the quality is not well formed" };
       if (!/^\d{1,2}$/.test(parts[2]) || !/^[lr]$/.test(parts[4])) return { reason: "the row size or workspace is not well formed" };
+      if (Number(parts[2]) > e.M_MAX) return { reason: "the row size is beyond this page's levels" };
       try {
         const fixed = cdcFixedMeasures.indexOf(parts[0]) >= 0;
         return {
@@ -808,6 +812,7 @@
     const quality = cdcQualityFromText(parts[5]);
     if (quality === null) return { reason: "the quality is not well formed" };
     if (!/^\d{1,2}$/.test(parts[2]) || !/^\d{1,2}$/.test(parts[3]) || !/^[lr]$/.test(parts[4])) return { reason: "the level or workspace is not well formed" };
+    if (Number(parts[2]) > e.N_MAX || Number(parts[3]) > e.M_MAX) return { reason: "the level is beyond this page's levels" };
     try {
       const fixed = cdcFixedMeasures.indexOf(parts[0]) >= 0;
       return {
@@ -830,19 +835,20 @@
 
   // The address segment of a record's context, or null (with no throw) when the context has no address form.
   function cdcFormatCtx(record) {
-    const ctx = record.ctx;
     if (record.channel.charAt(0) === "a") return "-";
+    const ctx = record.ctx;
     if (!cdcIsObject(ctx)) return null;
-    const ws = ctx.workspace === "live" ? "l" : ctx.workspace === "replay" ? "r" : null;
+    // The lens is written as the Cells context AT THE LENS LEVEL: its members are the base's, its n and m its own.
+    const cells = ctx.consumer === "lens" ? ctx.base : ctx;
+    if (!cdcIsObject(cells)) return null;
+    const ws = cells.workspace === "live" ? "l" : cells.workspace === "replay" ? "r" : null;
     if (ws === null) return null;
     if (record.channel === "r") {
-      const quality = cdcQualityToText(ctx.quality);
-      if (ctx.consumer !== "rows" || quality === null || !cdcIsInt(ctx.rowSize) || typeof ctx.period !== "string") return null;
-      return ctx.measure + "." + ctx.period.replace(/:/g, "-") + "." + ctx.rowSize + "." + quality + "." + ws;
+      const quality = cdcQualityToText(cells.quality);
+      if (cells.consumer !== "rows" || quality === null || !cdcIsInt(cells.rowSize) || typeof cells.period !== "string") return null;
+      return cells.measure + "." + cells.period.replace(/:/g, "-") + "." + cells.rowSize + "." + quality + "." + ws;
     }
-    // Cells, and the lens (written as the Cells context at the lens level).
-    const cells = ctx.consumer === "lens" ? ctx.base : ctx;
-    if (!cdcIsObject(cells) || cells.consumer !== "cells") return null;
+    if (cells.consumer !== "cells") return null;
     const n = ctx.consumer === "lens" ? ctx.n : cells.n;
     const m = ctx.consumer === "lens" ? ctx.m : cells.m;
     const quality = cdcQualityToText(cells.quality);
@@ -899,6 +905,8 @@
       const parsed = cdcParseCtx(channel, fields[3], desc ? desc.kind : "rank-type7-257", settings, e);
       if (parsed.reason) return { reason: parsed.reason };
       ctx = parsed.ctx;
+      const mismatch = desc ? cdcConsistency(desc, ctx) : null;
+      if (mismatch) return { reason: mismatch };
     } else if (fields[3] !== "-") return { reason: "an axis record has no context" };
     let obsEndMs = null;
     let cohort = null;
@@ -1347,7 +1355,7 @@
     else if (Object.prototype.hasOwnProperty.call(parsed, "visualVersion")) kind = seen.kind;
     else if (cdcIsObject(parsed.query) || cdcIsObject(parsed.view)) kind = "legacy";
     if (kind === "reject") throw reject("version", seen.reason, seen.version);
-    if (kind === "bare") throw reject("structure", "the code is empty");
+    if (kind === "bare" || Object.keys(parsed).length === 0) throw reject("structure", "the code is empty");
     const walked = cdcWalk(parsed, kind === "v2" ? cdcAllowed : null, "", 0);
     if (walked.reason) throw reject("structure", walked.reason);
     return { kind, version: kind === "v2" ? 2 : null, payload: walked.value, digest: cdcDigest(t) };
@@ -1393,6 +1401,20 @@
     fixed: ["fixed-linear", "fixed-diverging"],
   });
 
+  // A descriptor and the context it is for must agree: the kind is one the context's transform can be mapped
+  // with, and its signedness is the measure's (the class string of E.context says which). Returns a reason or null.
+  function cdcConsistency(desc, ctx) {
+    const cells = ctx.consumer === "lens" ? ctx.base : ctx;
+    if (cdcTransformKinds[cells.transform].indexOf(desc.kind) < 0) return "the descriptor kind does not match the context transform";
+    let klass;
+    try {
+      klass = API.context.compatClass({ ctx: cells, desc });
+    } catch (error) {
+      return "the context is not valid: " + error.message;
+    }
+    return (klass.split("|")[2] === "s") !== desc.signed ? "the descriptor signedness does not match the measure" : null;
+  }
+
   // checkRecord: one scale record of a portable payload. Returns {record} or {reason}.
   function cdcCheckScaleRecord(r, e) {
     if (!cdcIsObject(r)) return { reason: "a scale record is an object" };
@@ -1408,14 +1430,8 @@
     const problem = cdcCtxProblem(r.ctx, r.channel, e);
     if (problem) return { reason: problem };
     const cells = r.ctx.consumer === "lens" ? r.ctx.base : r.ctx;
-    if (cdcTransformKinds[cells.transform].indexOf(r.desc.kind) < 0) return { reason: "the descriptor kind does not match the context transform" };
-    let klass;
-    try {
-      klass = API.context.compatClass({ ctx: cells, desc: r.desc });
-    } catch (error) {
-      return { reason: "the context is not valid: " + error.message };
-    }
-    if ((klass.split("|")[2] === "s") !== r.desc.signed) return { reason: "the descriptor signedness does not match the measure" };
+    const mismatch = cdcConsistency(r.desc, r.ctx);
+    if (mismatch) return { reason: mismatch };
     const c = r.cohort;
     if (c !== null && c !== undefined && (!cdcIsObject(c) || !cdcIsInt(c.n) || c.n < 0)) return { reason: "the cohort needs a count n" };
     for (const name of ["obsEndMs", "cutMs", "canonicalThroughMs"]) if (r[name] !== null && r[name] !== undefined && (!cdcIsInt(r[name]) || r[name] < 0)) return { reason: name + " is an integer number of milliseconds" };

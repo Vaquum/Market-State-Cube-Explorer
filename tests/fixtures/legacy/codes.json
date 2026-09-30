@@ -1,0 +1,136 @@
+{
+  "cases": [
+    {
+      "id": "typical",
+      "text": "origo-cube:%7B%22query%22%3A%7B%22t1%22%3A3213840%2C%22t2%22%3A3213984%2C%22p1%22%3A516%2C%22p2%22%3A520%2C%22tR%22%3A6%2C%22pR%22%3A0%7D%2C%22view%22%3A%7B%22mode%22%3A%22delta%22%2C%22pane%22%3A%22volume%22%2C%22poc%22%3Atrue%2C%22area%22%3Afalse%2C%22untested%22%3Afalse%2C%22rows%22%3A%22off%22%2C%22period%22%3A%2290d%22%2C%22level%22%3Anull%2C%22lines%22%3A%5B%221d%22%2C%227d%22%5D%2C%22tab%22%3A%22context%22%2C%22replay%22%3Afalse%2C%22anchor%22%3Anull%2C%22horizon%22%3A1%2C%22evidenceKind%22%3A%22poc%22%2C%22barrier%22%3A1%2C%22viewport%22%3A%5B3213312%2C3214080%2C512%2C528%5D%7D%7D",
+      "decoded": {
+        "query": {
+          "t1": 3213840,
+          "t2": 3213984,
+          "p1": 516,
+          "p2": 520,
+          "tR": 6,
+          "pR": 0
+        },
+        "view": {
+          "mode": "delta",
+          "pane": "volume",
+          "poc": true,
+          "area": false,
+          "untested": false,
+          "rows": "off",
+          "period": "90d",
+          "level": null,
+          "lines": [
+            "1d",
+            "7d"
+          ],
+          "tab": "context",
+          "replay": false,
+          "anchor": null,
+          "horizon": 1,
+          "evidenceKind": "poc",
+          "barrier": 1,
+          "viewport": [
+            3213312,
+            3214080,
+            512,
+            528
+          ]
+        }
+      }
+    },
+    {
+      "id": "plain-json",
+      "text": "{\"query\":{\"t1\":3213840,\"t2\":3213984,\"p1\":516,\"p2\":520,\"tR\":6,\"pR\":0},\"view\":{\"mode\":\"delta\",\"pane\":\"volume\",\"poc\":true,\"area\":false,\"untested\":false,\"rows\":\"off\",\"period\":\"90d\",\"level\":null,\"lines\":[\"1d\",\"7d\"],\"tab\":\"context\",\"replay\":false,\"anchor\":null,\"horizon\":1,\"evidenceKind\":\"poc\",\"barrier\":1,\"viewport\":[3213312,3214080,512,528]}}",
+      "decoded": {
+        "query": {
+          "t1": 3213840,
+          "t2": 3213984,
+          "p1": 516,
+          "p2": 520,
+          "tR": 6,
+          "pR": 0
+        },
+        "view": {
+          "mode": "delta",
+          "pane": "volume",
+          "poc": true,
+          "area": false,
+          "untested": false,
+          "rows": "off",
+          "period": "90d",
+          "level": null,
+          "lines": [
+            "1d",
+            "7d"
+          ],
+          "tab": "context",
+          "replay": false,
+          "anchor": null,
+          "horizon": 1,
+          "evidenceKind": "poc",
+          "barrier": 1,
+          "viewport": [
+            3213312,
+            3214080,
+            512,
+            528
+          ]
+        }
+      }
+    },
+    {
+      "id": "bare-cube-query",
+      "text": "{\"t1\":3213840,\"t2\":3213984,\"p1\":516,\"p2\":520,\"tR\":6,\"pR\":0}",
+      "decoded": {
+        "t1": 3213840,
+        "t2": 3213984,
+        "p1": 516,
+        "p2": 520,
+        "tR": 6,
+        "pR": 0
+      }
+    },
+    {
+      "id": "brace-after-prefix",
+      "text": "origo-cube:{\"query\":{\"t1\":3213840,\"t2\":3213984,\"p1\":516,\"p2\":520,\"tR\":6,\"pR\":0},\"view\":{\"mode\":\"delta\",\"pane\":\"volume\",\"poc\":true,\"area\":false,\"untested\":false,\"rows\":\"off\",\"period\":\"90d\",\"level\":null,\"lines\":[\"1d\",\"7d\"],\"tab\":\"context\",\"replay\":false,\"anchor\":null,\"horizon\":1,\"evidenceKind\":\"poc\",\"barrier\":1,\"viewport\":[3213312,3214080,512,528]}}",
+      "decoded": {
+        "query": {
+          "t1": 3213840,
+          "t2": 3213984,
+          "p1": 516,
+          "p2": 520,
+          "tR": 6,
+          "pR": 0
+        },
+        "view": {
+          "mode": "delta",
+          "pane": "volume",
+          "poc": true,
+          "area": false,
+          "untested": false,
+          "rows": "off",
+          "period": "90d",
+          "level": null,
+          "lines": [
+            "1d",
+            "7d"
+          ],
+          "tab": "context",
+          "replay": false,
+          "anchor": null,
+          "horizon": 1,
+          "evidenceKind": "poc",
+          "barrier": 1,
+          "viewport": [
+            3213312,
+            3214080,
+            512,
+            528
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -156,8 +156,15 @@ function corrupt(body, how) {
 }
 
 // empty(): a valid answer with no cells: a block, bars or columns of count 0 (touched: empty arrays), the rest of the body unchanged.
+// A /cube/query answer also carries the cube's summary of the rectangle (its totals and its cell count): an empty rectangle
+// has none of those either, so a page that reads the summary as well as the block finds no data in either (DR-56, B20).
 function emptied(body) {
   const clone = JSON.parse(JSON.stringify(body));
+  if (clone.summary && typeof clone.summary === "object") {
+    const s = clone.summary;
+    for (const name of ["volume", "trade_count", "taker_buy_volume", "taker_buy_trade_count", "cell_count"]) if (name in s) s[name] = 0;
+    for (const name of ["poc", "taker_buy_poc"]) if (name in s) s[name] = null;
+  }
   const cut = (owner) => {
     const { n, m, col0, col1, layout } = owner;
     if (layout === "MSC2" || layout === "MSC3") owner[PAYLOAD_KEY] = wire.msc2(n, m, col0, col1, layout === "MSC3" ? { vol: [], tbvol: [], cnt: [], tbcnt: [], path: [], dwell: [], high: [], low: [], col: [], row: [] } : { vol: [], tbvol: [], cnt: [], tbcnt: [], col: [], row: [] }, 0, layout === "MSC3");

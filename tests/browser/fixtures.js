@@ -112,7 +112,8 @@ const test = base.extend({
   },
 
   // The default page: probe installed, console guarded. (The built-in context fixture owns the context.)
-  page: async ({ context, consoleGuard }, use) => {
+  // (It names `fakeFor` so that the page is torn down BEFORE the fakes: see fakeFor.)
+  page: async ({ context, consoleGuard, fakeFor: _fakes }, use) => {
     consoleGuard.attach(context);
     await probeModule.addProbe(context);
     const page = await context.newPage();
@@ -129,7 +130,7 @@ const test = base.extend({
     await use(probeModule.forPage(page));
   },
 
-  fakeFor: async ({ pageRoots, consoleGuard }, use) => {
+  fakeFor: async ({ pageRoots, consoleGuard, context }, use) => {
     const fakes = [];
     async function fakeFor(profile, opts = {}) {
       const options = { port: 0, host: "127.0.0.1", ...opts };
@@ -150,6 +151,10 @@ const test = base.extend({
       return fake;
     }
     await use(fakeFor);
+    // The live poll of a page that is still open would reach a closed port a moment after the fake closes, and the console guard
+    // would call that a defect of the page: a page that outlives its test is closed before its cube goes (S, stage 2b). The page
+    // fixture names this one, so its own checks (unhandled rejections) have already run.
+    await Promise.all(context.pages().map((open) => (open.isClosed() ? null : open.close().catch(() => {}))));
     const problems = [];
     for (const fake of fakes) {
       try {

@@ -87,7 +87,10 @@ for (const s of SCENARIOS) {
 }
 
 test("a theme flip asks the cube for nothing, and calibration adds no read kind", async ({ page, fakeFor, probe, surface }) => {
-  const fake = await fakeFor("standard");
+  // The live poll is pushed out to its longest wait, so that the clock steps below can never reach one (a poll is a read, and
+  // this test asserts there is none); the page clock is installed BEFORE the navigation, as every clock test does (DD-T31).
+  const fake = await fakeFor("standard", { next: 300 });
+  await page.clock.install({ time: Date.now() });
   await page.goto(`${fake.url}/#w=7d`);
   // The kinds the ORIGINAL page asks for (the route list of the bridge): the candidate's are a subset.
   const kinds = new Set(["/cube/pack", "/cube/tile", "/cube/query", "/cube/motion", "/cube/columns", "/cube/touched", "/cube/bars"]);
@@ -96,7 +99,6 @@ test("a theme flip asks the cube for nothing, and calibration adds no read kind"
   // Let the page settle completely, then flip the theme with the page's clock paused so the live poll (every few seconds of
   // page time) cannot fire: the clock is advanced by hand, far less than one poll interval (DD-T31).
   await probe.waitForQuiet({ quietMs: 500 });
-  await page.clock.install({ time: Date.now() });
   await page.clock.pauseAt(Date.now() + 1000);
   fake.clearLog();
   await probe.reset();

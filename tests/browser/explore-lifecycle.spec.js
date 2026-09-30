@@ -161,18 +161,24 @@ test("an evicted context is initialised again and says so", async ({ page, fakeF
         made++;
       }
   expect(made).toBe(64);
-  await page.addInitScript((json) => localStorage.setItem("scales:v1", json), JSON.stringify(store.toJSON("live")));
+  // the page's storage keys carry the prefix of state.js
+  await page.addInitScript((json) => {
+    try {
+      localStorage.setItem("market-state-cube-explorer:scales:v1", json);
+    } catch (error) {
+      /* a document with no storage (about:blank) has nothing to seed */
+    }
+  }, JSON.stringify(store.toJSON("live")));
 
-  await page.goto(`${fake.url}/#w=7d`);
+  // The page starts at 24h, a context the cache does not hold. Its calibration is the 65th context: the least recently used one
+  // (the 7d context, which this tab has not used, and which an entry merged from storage is older than anything the tab used) goes.
+  await page.goto(`${fake.url}/#w=24h`);
   const ctx = { page, fake, probe, surface };
   let data = await calm(ctx);
-  expect(field(await surface.details("cells"), "fitOrigin"), "the page read the pre-filled cache (package P): the 7d mapping is restored, not fitted").toBe("restored");
-  expect(data.fitSeq).toBe("0");
-  // A 65th context pushes the least recently used one out.
-  data = await gotoWindow(ctx, "24h");
-  expect(data.fitSeq).toBe("1");
+  expect(data.fitSeq, "the 24h context was calibrated").toBe("1");
   // The 7d context is found no more: it is initialised again and the details say so.
   data = await gotoWindow(ctx, "7d");
+  expect(data.mappingId, "the cache's 7d mapping (a stand-in) is gone, not shown").not.toBe(E.scale.fitValue([1, 2, 3, 4], {}).descriptor.id);
   expect(Number(data.fitSeq), "the evicted context is calibrated again").toBe(2);
   expect(field(await surface.details("cells"), "evicted")).toBe("true");
 });

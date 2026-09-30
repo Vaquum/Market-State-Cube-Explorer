@@ -22,7 +22,8 @@
 //
 // Not covered: the portable code's carrying of an override (B14), a rollover at the month or year (B10).
 const { test, expect } = require("./fixtures.js");
-const { calm, edgeLogger, framesWithEdge, popoverAction, field } = require("./scale-helpers.js");
+const { calm, edgeLogger, framesWithEdge, popoverAction, field, tradesOf, priceRowsOf } = require("./scale-helpers.js");
+const paneCanvas = require("./pane-canvas.js");
 
 const MINUTE = 60000;
 const edgeOf = (iso) => Date.parse(iso);
@@ -155,12 +156,25 @@ test("scrubbing across Monday changes the calendar identity of Rows", async ({ p
   expect(sunday.mappingId, "another period is another mapping").not.toBe(monday.mappingId);
 });
 
-// S1-147, S1-151: the model status follows the replay edge and is not a property of the scale's eligibility.
+// S1-147, S1-151: the model status follows the replay edge and is not a property of the scale's eligibility. The page puts the model's
+// label on the Efficiency pane's canvas text (package X), so it is read there, as B19 reads it; the view is a rectangle INSIDE the
+// history before the edge, so that a scale really is fitted in replay (a 24h window would sit after an edge on 2026-09-20).
 test("a scale fitted in replay before 2026-09-24 carries the retrospective model label", async ({ page, fakeFor, probe, surface }) => {
   const fake = await fakeFor("standard");
   const ctx = { page, fake, probe, surface };
-  await page.goto(`${fake.url}/#w=24h&replay=1&at=2026-09-20T06:00Z`);
-  await calm(ctx);
-  const details = await surface.details("cells");
-  expect(field(details, "modelStatus"), "the replay edge is before the model was estimated").toBe("retrospective");
+  await paneCanvas.addRecorder(page);
+  const pane = paneCanvas.forPage(page);
+  const from = "2026-09-19T06:00Z";
+  const to = "2026-09-20T06:00Z";
+  const rows = priceRowsOf(tradesOf("standard"), from, to);
+  await page.goto(`${fake.url}/#t=${from}~${to}&p=${rows[0] * 125}~${rows[1] * 125}&pane=efficiency&replay=1&at=${to}`);
+  const cells = await calm(ctx);
+  expect(cells.workspace, "the scale was fitted in replay").toBe("replay");
+  expect(cells.mappingId, "it calibrated").not.toBe("");
+  expect(Number(cells.fitThrough), "on observations up to the edge").toBeLessThanOrEqual(edgeOf(to));
+  const words = await page.evaluate(() => JSON.parse(JSON.stringify(window.explorerEncoding.text.model)));
+  const frame = await pane.last();
+  const label = frame.texts.filter((t) => t.align === "left" && t.text.startsWith("Efficiency"));
+  expect(label.length, "the Efficiency pane drew its label").toBe(1);
+  expect(label[0].text, "the replay edge is before the model was estimated").toContain(words.retrospective);
 });

@@ -227,8 +227,9 @@ test("a Taker-flow window must be symmetric about 50 %, names its clipping count
   await calm(ctx);
   const apply = async (lo, hi) => {
     const opened = await surface.openLegendDetails("cells");
-    await opened.popover.getByLabel("lo", { exact: true }).fill(String(lo));
-    await opened.popover.getByLabel("hi", { exact: true }).fill(String(hi));
+    // The two numbers are named "lo" and "hi" and labelled Low and High (INTEGRATION D.7, package U's words).
+    await opened.popover.getByLabel("Low", { exact: true }).fill(String(lo));
+    await opened.popover.getByLabel("High", { exact: true }).fill(String(hi));
     await opened.popover.getByRole("button", { name: /^Apply/ }).click();
     const text = await opened.popover.textContent();
     await opened.close().catch(() => {});

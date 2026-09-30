@@ -32,6 +32,21 @@ async function gotoWindow(ctx, name) {
   return calm(ctx);
 }
 
+// Move to another place (a hash of the navigation keys) WITHOUT leaving the scale: the address the page writes carries the scale
+// settings (vis, ap, lk, sc, tr, bs ...) beside the place, and a hash that names only the place is a link, which restores the
+// preferences it does not carry to their defaults (DR-14, D9). So the navigation keys of the target replace the current ones and
+// every other key stays, which is what dragging or zooming to that place would leave.
+async function go(page, hash) {
+  await page.evaluate((target) => {
+    const NAV = ["w", "t", "p", "r", "sel", "at", "replay"];
+    const now = new URLSearchParams(location.hash.slice(1));
+    const next = new URLSearchParams(String(target).replace(/^#/, ""));
+    for (const key of NAV) now.delete(key);
+    for (const key of NAV) if (next.has(key)) now.set(key, next.get(key));
+    location.hash = now.toString();
+  }, hash);
+}
+
 // The part of a chip that says WHICH scale and WHICH context (what an action must not change, or must).
 function identity(data) {
   return { context: data.context, mappingId: data.mappingId, fitSeq: data.fitSeq, n: data.effectiveN, m: data.effectiveM };
@@ -139,4 +154,4 @@ function priceRowsOf(trades, from, to) {
 }
 
 module.exports = {
-  tradesOf, baseOf, referenceShares, priceRowsOf, KEY_OF, calm, gotoWindow, identity, field, popoverAction, edgeLogger, framesWithEdge };
+  tradesOf, baseOf, referenceShares, priceRowsOf, KEY_OF, calm, gotoWindow, go, identity, field, popoverAction, edgeLogger, framesWithEdge };

@@ -38,12 +38,14 @@ test("a whole pack is taken without changing the mapping, and the details never 
   await page.goto(`${fake.url}/#w=7d`);
   const before = await calm(ctx);
   // The page's pack falls out of the bridge's window: the next poll answers with a whole pack (new generation).
+  // The log is cleared BEFORE the pack changes: the page reads what it measured again as soon as it has taken the pack, which can
+  // be before the test has seen the new cutoff.
+  fake.clearLog();
   fake.holdPacks(1);
   fake.advance({ minutes: 1 });
   fake.advance({ minutes: 1 });
   const cutoff = await text(page, "#ol-cutoff");
   await expect.poll(async () => text(page, "#ol-cutoff"), { timeout: 20000, message: "the page took the new pack" }).not.toBe(cutoff);
-  fake.clearLog();
   const after = await calm(ctx);
   expect(after.mappingId, "a whole pack keeps the mapping").toBe(before.mappingId);
   expect(after.fitSeq, "and fits nothing (Explore)").toBe(before.fitSeq);
@@ -183,7 +185,8 @@ test("equivalent reads keep the same mapping id under Auto colour", async ({ pag
   await expect.poll(async () => text(page, "#ol-cutoff"), { timeout: 20000 }).not.toBe(cutoff);
   const after = await calm({ page, fake, probe, surface });
   expect(after.mappingId, "no spurious new mapping for last-bit differences").toBe(auto.mappingId);
-  expect(field(await surface.details("cells"), "scaleChangeFrom"), "and no scale change is announced").toBe("");
+  // No change, no field: the list carries the scale-change fields only while the page has a change to announce.
+  expect((await surface.details("cells")).fields.scaleChangeFrom?.value ?? "", "and no scale change is announced").toBe("");
 });
 
 test("provisional minutes replaced by the archive are said so; empty answers calibrate nothing", async ({ page, fakeFor, probe, surface }) => {
@@ -207,7 +210,13 @@ test("provisional minutes replaced by the archive are said so; empty answers cal
 
 test("a corrupt stored calibration record does not stop the chart", async ({ page, fakeFor, probe, surface }) => {
   const fake = await fakeFor("standard");
-  await page.addInitScript(() => localStorage.setItem("scales:v1", '{"visualVersion":2,"contexts":[{"key":"x","ctx":{},"records":[{"broken":true}]}'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("market-state-cube-explorer:scales:v1", '{"visualVersion":2,"contexts":[{"key":"x","ctx":{},"records":[{"broken":true}]}');
+    } catch (error) {
+      /* a document with no storage (about:blank) has nothing to seed */
+    }
+  });
   await page.goto(`${fake.url}/#w=24h`);
   const data = await calm({ page, fake, probe, surface });
   expect(data.mappingId, "the page drew and calibrated").not.toBe("");

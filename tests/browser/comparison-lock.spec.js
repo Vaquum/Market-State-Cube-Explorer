@@ -17,7 +17,7 @@
 //
 // Not covered: replay (B13), Auto timing (B08), the lens (B12).
 const { test, expect } = require("./fixtures.js");
-const { calm, identity, field, popoverAction, tradesOf, priceRowsOf, referenceShares } = require("./scale-helpers.js");
+const { calm, go, identity, field, popoverAction, tradesOf, priceRowsOf, referenceShares } = require("./scale-helpers.js");
 
 // Two cell-aligned rectangles over the last days of the `standard` profile: a FINE one (2-hour columns) to calibrate on, and a
 // COARSE one (8-hour columns, four times the volume per cell) to look at under the lock.
@@ -30,12 +30,6 @@ const hashOf = (r, rows) => `#t=${r.from}~${r.to}&p=${rows[0] * 125}~${rows[1] *
 async function openFine({ page, fake, probe, surface }, rows) {
   await page.goto(`${fake.url}/${hashOf(FINE, rows)}`);
   return calm({ page, fake, probe, surface });
-}
-
-async function go(page, hash) {
-  await page.evaluate((h) => {
-    location.hash = h;
-  }, hash);
 }
 
 test("one action holds the mapping across levels and discloses the saturation with its actual shares", async ({ page, fakeFor, probe, surface }) => {

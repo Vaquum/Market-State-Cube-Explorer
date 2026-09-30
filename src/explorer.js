@@ -3597,9 +3597,14 @@
   function refreshTip() {
     const tip = el("tip");
     if (hover && !tip.hidden && last?.sc && scaleRt.tipStamp !== last.sc.stamp) tooltip(hover, { redraw: false });
+    // The readout key is named on the tip only while the tip shows (the pointer leaving, a pan or a tool hides
+    // it without going through tooltip()); the attribute stays, empty, so a reader can always find it.
+    if (tip.hidden && tip.dataset.readout) tip.dataset.readout = "";
     markerNow();
   }
   scaleHooks.refreshTip = refreshTip;
+  // The tip names its readout from the start (empty until a cell's tip shows), so a reader finds the attribute.
+  el("tip").dataset.readout = "";
   function tooltip(p, { redraw = true } = {}) {
     // The first statements, on EVERY path out of the function (the early return too): the pointer the tip
     // belongs to and the stamp it was derived under. A draw that finds the stamp changed derives the tip
@@ -3671,7 +3676,7 @@
       syncRowHover(null);
     } else if (!last || !inPlot(p)) {
       tip.hidden = true;
-      tip.removeAttribute("data-readout");
+      tip.dataset.readout = "";
       syncRowHover(null);
       tipMarker(null);
       if (redraw) requestDraw();
@@ -3773,8 +3778,7 @@
     // The readout the tip was built from (a cell's here; a pane's or a row's set by their own sections):
     // named on the tip so the same record can be found in the table, and located on the legend.
     if (readout) scaleRt.tipReadout = readout;
-    if (scaleRt.tipReadout) tip.dataset.readout = readoutId(scaleRt.tipReadout);
-    else tip.removeAttribute("data-readout");
+    tip.dataset.readout = readoutId(scaleRt.tipReadout);
     tipMarker(scaleRt.tipReadout);
     // A derivation inside a draw (refreshTip) asks for no frame: it is in one.
     if (redraw) requestDraw();

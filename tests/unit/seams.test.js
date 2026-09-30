@@ -56,7 +56,7 @@ const SPEC = {
   store: { create: F(0, 1) },
   policy: { DEFAULTS: "object", effective: F(2, 3), sanitize: F(1), reduce: F(3), resolve: F(1), offers: F(4, 5), persisted: F(1), restore: F(1) },
   lifecycle: { coherent: F(1), memoKey: F(1), controller: F(0, 1), settled: F(1) },
-  axis: { CATALOGUE: "object", domain: F(2), registry: F(0, 1), coordinate: F(2, 3), ticks: F(2) },
+  axis: { CATALOGUE: "object", domain: F(2), registry: F(0, 1), coordinate: F(2, 3), ticks: F(2), profile: F(1) },
   warn: { tally: F(0), evaluate: F(1, 2), bandOf: F(1) },
   model: { PROVENANCE: "object", status: F(1), fit: F(2), describe: F(3) },
   readout: { ROLE: "object", cellsFrame: F(1), rowsFrame: F(1), paneFrame: F(1) },
@@ -75,7 +75,7 @@ const SPEC = {
 const CONSTANTS = {
   VERSION: { schema: 1, visual: 2, mapping: 1, appearance: 2, readout: 1, legend: 1, codec: 1 },
   LIMITS: { ADDRESS_MAX: 8192, RANK_KNOTS: 257, PAYLOAD_MAX_BYTES: 1048576, DESCRIPTORS_MAX: 16, CONTEXTS_MAX: 64, RECORDS_PER_CONTEXT: 8, HISTORY_MAX: 50,
-    STRING_MAX: 256, DEPTH_MAX: 8, TOMBSTONES_MAX: 64, HELD_MAX: 8, AXES_MAX: 19, MODELS_MAX: 4 },
+    STRING_MAX: 256, DEPTH_MAX: 8, TOMBSTONES_MAX: 64, HELD_MAX: 8, AXES_MAX: 21, MODELS_MAX: 4 },
   TIMING: { SETTLE_MS: 200, AUTO_MS: 500, RETRY_MS: 200, PERSIST_DEBOUNCE_MS: 400, NOTICE_COALESCE_MS: 5000 },
   THRESHOLDS: { SHORT_EXPOSURE: 0.1, WARN_MARKS: 0.1, WARN_AREA: 0.25, LOW_DISC: 0.9, LUT_LOW_MAX: 12, LUT_HIGH_MIN: 243, TOL_REL: 1e-12, TOL_USDT: 1e-12, TOL_SECONDS: 1e-9, TOL_PATH: 1e-9 },
   LATTICE: { BASE: 56.25, PR: 125, T0: 1609459200 },

@@ -44,7 +44,7 @@
     DEPTH_MAX: 8,
     TOMBSTONES_MAX: 64,
     HELD_MAX: 8,
-    AXES_MAX: 19,
+    AXES_MAX: 21,
     MODELS_MAX: 4,
   });
   // Milliseconds. SETTLE_MS and AUTO_MS are D4's 200 ms and 500 ms; RETRY_MS is the safety-net poll a
@@ -5905,6 +5905,8 @@
     "profile.reference.time": axsEntry("profile.reference.time", "reference", "unsigned", "auto", null, "seconds", null),
     "profile.reference.delta": axsEntry("profile.reference.delta", "reference", "signed-symmetric", "auto", null, "usdt", null),
     "profile.reference.relvol": axsEntry("profile.reference.relvol", "reference", "ratio", "fixed", [-2, 2], "log2-ratio", null),
+    "profile.shared.absolute": axsEntry("profile.shared.absolute", "profile", "unsigned", "auto", null, "usdt", null),
+    "profile.shared.share": axsEntry("profile.shared.share", "profile", "unsigned", "auto", null, "share", null),
     "nav.time": axsEntry("nav.time", "navigation", "unsigned", "navigation", null, "time", null),
     "nav.price": axsEntry("nav.price", "navigation", "unsigned", "navigation", null, "usdt", null),
   });
@@ -6373,12 +6375,143 @@
     return Object.freeze({ frame, freeze: freezeAxis, unfreeze: unfreezeAxis, get, list, drop, nextWake, hasPending });
   }
 
+  // E.axis.profile (PRD-0002 S2 section 3): how the adjacent profile tracks are compared. The CURRENT track is the view's (or the
+  // selection's) Volume with its taker-buy subset; the REFERENCE track is the chosen Rows measure over its period. Rows are the page's
+  // price rows: row r of exponent m spans the base rows [r 2^m, (r + 1) 2^m), each list sorted by r.
+  //   independent  each track on an axis of its own (the default): this function has nothing to add.
+  //   absolute     one domain for both, the same pixels per unit. Needs the SAME measure and basis (Volume against Volume) and an exact
+  //                common partition: the finer side is coarsened by exact summation onto the coarser exponent, a coarse row is never split.
+  //   share        each row's share of the total of the same window W (the bins wholly inside the view and inside the reference's
+  //                support), both denominators reported. Needs two nonnegative distributions (Volume, Time at price); a signed Delta and a
+  //                ratio are not distributions. A zero total is "undefined", never a share of 0.
+  // A mode that is not offered is reported with its reason and the plan falls back to independent; the choice itself is the caller's
+  // to keep.
+  function axsBinsOf(rows, m, lo, hi, out) {
+    // The rows of a list at exponent `m` that overlap the base-row range [lo, hi), by binary search on the sorted list.
+    const size = Math.pow(2, m),
+      first = Math.floor(lo / size),
+      last = Math.ceil(hi / size) - 1;
+    let a = 0,
+      b = rows.length;
+    while (a < b) {
+      const mid = (a + b) >> 1;
+      if (rows[mid].r < first) a = mid + 1;
+      else b = mid;
+    }
+    for (let i = a; i < rows.length && rows[i].r <= last; i++) out.push(rows[i]);
+    return out;
+  }
+
+  // The rows coarsened by exact summation from exponent `from` onto the exponent `to` (to >= from): one bin per covering row of the
+  // coarser partition, the amounts `read` names summed in the order of the rows. Both names are carried: the total and the subset.
+  function axsCoarsen(rows, from, to, totalOf, subsetOf) {
+    const k = Math.pow(2, to - from),
+      out = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = Math.floor(rows[i].r / k),
+        at = out.length ? out[out.length - 1] : null;
+      if (at !== null && at.r === r) {
+        at.v += totalOf(rows[i]);
+        at.bv += subsetOf(rows[i]);
+      } else out.push({ r, v: totalOf(rows[i]), bv: subsetOf(rows[i]) });
+    }
+    return out;
+  }
+
+  const axsProfileTotal = { volume: (x) => x.v, time: (x) => x.w || 0 };
+
+  function axsProfileOffers(cur, ref) {
+    const why = (code) => ({ ok: false, reason: code });
+    let absolute, share;
+    if (!cur || cur.ready === false) absolute = share = why("current-not-ready");
+    else if (!ref) absolute = share = why("no-reference");
+    else if (ref.ready === false) absolute = share = why("reference-not-ready");
+    else if (!Number.isInteger(ref.m) || !Number.isInteger(cur.m)) absolute = share = why("not-aligned");
+    else {
+      absolute = ref.kind === "volume" ? { ok: true, reason: null } : why("unlike-measure");
+      share = ref.kind === "volume" || ref.kind === "time" ? { ok: true, reason: null } : why(ref.kind === "delta" ? "signed" : "unlike-measure");
+    }
+    return { independent: { ok: true, reason: null }, absolute, share };
+  }
+
+  // E.axis.profile(input) -> the plan of the two tracks: input {mode, cur: {rows, m, ready}, ref: {kind, rows, m, ready} | null, view: {lo, hi}}.
+  function axsProfile(input) {
+    if (!axsIsObject(input)) throw new TypeError("axis profile needs an input object");
+    const asked = input.mode === "absolute" || input.mode === "share" ? input.mode : "independent",
+      cur = input.cur ?? null,
+      ref = input.ref ?? null,
+      view = input.view;
+    if (!axsIsObject(view) || !axsFiniteNumber(view.lo) || !axsFiniteNumber(view.hi) || !(view.hi > view.lo)) throw new RangeError("axis profile needs a view range lo < hi (base rows)");
+    const offers = axsProfileOffers(cur, ref),
+      plan = { asked, mode: "independent", offers, m: null, state: "independent", reason: null, cur: null, ref: null, window: null, denominators: null, summary: null };
+    if (asked === "independent") return plan;
+    if (!offers[asked].ok) {
+      plan.reason = offers[asked].reason;
+      return plan;
+    }
+    const m = Math.max(cur.m, ref.m),
+      size = Math.pow(2, m),
+      total = axsProfileTotal[ref.kind],
+      overlapping = (rows, from, read, buy) => axsCoarsen(axsBinsOf(rows, from, view.lo, view.hi, []), from, m, read, buy),
+      curBins = overlapping(cur.rows, cur.m, axsProfileTotal.volume, (x) => x.bv || 0),
+      refBins = overlapping(ref.rows, ref.m, total, () => 0);
+    plan.mode = asked;
+    plan.m = m;
+    plan.state = "ok";
+    if (asked === "absolute") {
+      plan.cur = curBins.map((x) => ({ r: x.r, v: x.v, bv: x.bv, t: x.v, tb: x.bv }));
+      plan.ref = refBins.map((x) => ({ r: x.r, v: x.v, bv: 0, t: x.v, tb: 0 }));
+    } else {
+      // W: the bins wholly inside the view (every one has support on the current side, a row without trades being a known zero) and inside
+      // the reference's support, its first to its last row, in the partition's rows.
+      const refFirst = ref.rows.length ? Math.floor(ref.rows[0].r / Math.pow(2, m - ref.m)) : Infinity,
+        refLast = ref.rows.length ? Math.floor(ref.rows[ref.rows.length - 1].r / Math.pow(2, m - ref.m)) : -Infinity,
+        first = Math.max(Math.ceil(view.lo / size), refFirst),
+        last = Math.min(Math.floor(view.hi / size) - 1, refLast);
+      if (!(last >= first)) {
+        plan.state = "none";
+        plan.reason = "no-window";
+        plan.summary = { count: 0, max: -Infinity, min: Infinity };
+        return plan;
+      }
+      const inside = (x) => x.r >= first && x.r <= last,
+        curW = curBins.filter(inside),
+        refW = refBins.filter(inside);
+      let dc = 0,
+        dr = 0;
+      for (const x of curW) dc += x.v;
+      for (const x of refW) dr += x.v;
+      plan.window = { first, last, bins: last - first + 1 };
+      plan.denominators = { cur: dc, ref: dr };
+      if (!(dc > 0) || !(dr > 0)) {
+        plan.state = "undefined";
+        plan.reason = "zero-total";
+        plan.summary = { count: 0, max: -Infinity, min: Infinity };
+        return plan;
+      }
+      plan.cur = curW.map((x) => ({ r: x.r, v: x.v, bv: x.bv, t: x.v / dc, tb: x.bv / dc }));
+      plan.ref = refW.map((x) => ({ r: x.r, v: x.v, bv: 0, t: x.v / dr, tb: 0 }));
+    }
+    let count = 0,
+      max = -Infinity,
+      min = Infinity;
+    for (const side of [plan.cur, plan.ref])
+      for (const x of side) {
+        count++;
+        if (x.t > max) max = x.t;
+        if (x.t < min) min = x.t;
+      }
+    plan.summary = { count, max, min };
+    return plan;
+  }
+
   API.axis = Object.freeze({
     CATALOGUE: axsCatalogue,
     domain: axsDomain,
     registry: axsRegistry,
     coordinate: axsCoordinate,
     ticks: axsTicks,
+    profile: axsProfile,
   });
 
   // == §17-warn ==
@@ -9254,6 +9387,28 @@
       why: (raw, out) => cdcWindowProblem(cdcPathGet(raw, "scale.window"), out.mode) || "not a window",
     },
     cdcScaleFlag("lock", "lk"),
+    // The profile tracks (PRD-0002 S2): how the two are compared (independent is the default and is not written), and whether the tracks
+    // are shown on a chart too narrow for them (the disclosure; closed is the default). Top-level fields of the view, not scale preferences.
+    {
+      id: "profileCmp",
+      param: "pc",
+      fields: ["profileCmp"],
+      legacy: false,
+      defaults: { profileCmp: "independent" },
+      read: (text) => ({ profileCmp: text === undefined ? "independent" : text === "a" ? "absolute" : text === "s" ? "share" : "?" + text }),
+      check: (raw) => ({ profileCmp: raw.profileCmp === "absolute" || raw.profileCmp === "share" ? raw.profileCmp : "independent" }),
+      write: (view) => (view.profileCmp === "absolute" ? "a" : view.profileCmp === "share" ? "s" : null),
+    },
+    {
+      id: "profileOpen",
+      param: "po",
+      fields: ["profileOpen"],
+      legacy: false,
+      defaults: { profileOpen: false },
+      read: (text) => ({ profileOpen: text === undefined ? false : text === "1" ? true : "?" + text }),
+      check: (raw) => ({ profileOpen: raw.profileOpen === true }),
+      write: (view) => (view.profileOpen === true ? "1" : null),
+    },
   ];
   const cdcVisualKeys = Object.freeze(
     cdcKeys.map((entry) => {

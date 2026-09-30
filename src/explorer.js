@@ -7428,6 +7428,7 @@
           stroke(pts(o.rsi, y), colors.ink, 1.5);
           for (const d of o.divergences) {
             if (d.b.confirmed > cut || f.ends[d.b.i] < S.tA || f.ends[d.a.i] > S.tB) continue;
+            const colour = d.bearish ? colors.legacySell : colors.legacyBuy;
             line(G.X(f.ends[d.a.i]), y(d.r0), G.X(f.ends[d.b.i]), y(d.r1), colour, 2, 0.95);
             for (const [s, r] of [
               [d.a, d.r0],
@@ -7463,7 +7464,10 @@
     if (rec.typed === "finite" && Number.isFinite(value)) {
       const at = E.axis.coordinate(rec, value, { t: 0, clip: 0 }),
         beyond = at.clip === E.scale.CLIP.LOW || at.clip === E.scale.CLIP.HIGH;
-      rows.push(["Axis domain", `${rec.domain[0] === 0 ? "0" : signed(rec.domain[0], compact)} to ${signed(rec.domain[1], compact)}`]);
+      rows.push([
+        "Axis domain",
+        rec.sign === "unsigned" ? `${compact(rec.domain[0])} to ${compact(rec.domain[1])}` : `${signed(rec.domain[0], compact)} to ${signed(rec.domain[1], compact)}`,
+      ]);
       meta.push({ field: "axisHigh", canonical: rec.domain[1] });
       rows.push(["On the axis", `${(at.t * 100).toFixed(0)}%${beyond ? " · beyond the axis" : ""}`]);
       meta.push({ field: "axisPosition", canonical: at.t });
@@ -9453,7 +9457,8 @@
     if (rec.external) parts.push(T.state.external);
     if (rec.hold === "play") parts.push(T.axis.paused);
     else if (rec.hold === "gesture" || rec.hold === "cap" || rec.hold === "settling") parts.push(T.axis.updating);
-    if (rec.clipped?.count > 0) parts.push(T.fill(T.axis.clipped, { n: rec.clipped.count, total: rec.clipped.total }));
+    // Bars a HELD or frozen domain leaves out; a fixed axis's are the edge triangles and their key's count.
+    if (rec.policy !== "fixed" && rec.clipped?.count > 0) parts.push(T.fill(T.axis.clipped, { n: rec.clipped.count, total: rec.clipped.total }));
     return parts.join(" · ");
   }
   // How the recorded model stands for one use ("efficiency" or "diagonal") at level n and the effective
@@ -9567,9 +9572,11 @@
         const w = mark.xb - mark.xa,
           cx = (mark.xa + mark.xb) / 2;
         if (mark.id === "tick") paintGlyph("tick", cx, mark.y, 6, { width: Math.max(1, w) });
-        else if (mark.id === "diamond" || mark.id === "tri-up" || mark.id === "tri-down") {
+        else if (mark.id === "diamond") {
           // A glyph is drawn where its column is at least as wide as it; otherwise it is only counted.
           if (w >= 6) paintGlyph(mark.id, cx, mark.y, 6);
+        } else if (mark.id === "tri-up" || mark.id === "tri-down") {
+          // The edge triangles go over the label plate: they are painted after it (below).
         } else if (mark.id === "infinity") {
           if (w >= 10) paintGlyph("infinity", cx, mark.y, 10);
         } else if (w < 4) {
@@ -9606,6 +9613,16 @@
       else at((signed ? "±" : "") + compact(rec.domain[1]), top + 7);
     }
     paneLegend(measure, cols, mv, top, "", rec, model ? modelWords(model) : "");
+    // The triangles that say a value lies beyond the axis, over the pane and its label.
+    if (marks.some((mark) => mark.id === "tri-up" || mark.id === "tri-down")) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(G.x, top, G.w, h);
+      ctx.clip();
+      for (const mark of marks)
+        if ((mark.id === "tri-up" || mark.id === "tri-down") && mark.xb - mark.xa >= 6) paintGlyph(mark.id, (mark.xa + mark.xb) / 2, mark.y, 6);
+      ctx.restore();
+    }
     scaleHooks.axisChip?.(rec, paneShown);
   }
   // The pane's name and unit at its top left, what its axis is, and what it is still reading or couldn't

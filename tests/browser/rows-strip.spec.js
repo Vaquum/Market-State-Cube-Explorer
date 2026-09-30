@@ -193,6 +193,65 @@ test.describe("B28 the Rows strip", () => {
   });
 });
 
+test.describe("B28 the strip under Delta and Time at price", () => {
+  test("Delta: each block is an entry of the positive arm above zero and of the negative arm below, by its row's taker-buy minus taker-sell", async ({ page, probe, fakeFor, pane, surface }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    await page.goto(`${fake.url}/${S.address({ cols: sc.day, rows: sc.view, rowsKind: "delta", period: "7d", extra: "&vis=2" })}`);
+    await S.atRest(page, fake, probe);
+    await expect.poll(async () => (await surface.chip("rows")).data.state).toMatch(/^(ready|fixed)$/);
+    const details = await surface.details("rows"),
+      U = Number(details.fields.U.value),
+      k = Number(details.fields.k.value),
+      frame = await pane.last(),
+      layout = await layoutOf(page),
+      y = priceAxis(frame),
+      arms = await page.evaluate(() => {
+        const E = window.explorerEncoding,
+          scratch = document.createElement("canvas").getContext("2d"),
+          theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+          lut = E.lut.build(E.lut.DEFAULT_APPEARANCE, theme),
+          hex = (css) => {
+            scratch.fillStyle = "#000000";
+            scratch.fillStyle = css;
+            return scratch.fillStyle;
+          };
+        return { positive: Array.from({ length: 256 }, (_, i) => hex(lut.positive.css[i])), negative: Array.from({ length: 256 }, (_, i) => hex(lut.negative.css[i])) };
+      });
+    const blocks = blocksOf(frame, layout[4], layout[3]);
+    let checked = 0;
+    for (const x of sc.inView) {
+      const d = 2 * x.bv - x.v;
+      if (d === 0) continue;
+      const index = Math.min(255, Math.round(255 * (Math.log1p(Math.abs(d) / k) / Math.log1p(U / k)))),
+        block = blocks.find((b) => Math.abs(b.y - y((x.r + 1) * 125)) < 1.01);
+      expect(block, `a block for row ${x.r}`).toBeTruthy();
+      expect(block.fill, `row ${x.r}: delta ${d.toFixed(0)}`).toBe((d > 0 ? arms.positive : arms.negative)[index]);
+      checked++;
+    }
+    expect(checked, "rows with a delta were checked").toBeGreaterThan(3);
+  });
+
+  test("Time at price has a strip too, in entries of the unsigned table, and its readout says what it is", async ({ page, probe, fakeFor, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    await page.goto(`${fake.url}/${S.address({ cols: sc.day, rows: sc.view, rowsKind: "time", period: "7d", extra: "&vis=2" })}`);
+    await S.atRest(page, fake, probe);
+    await expect.poll(async () => (await pane.last()).rects.filter((r) => r.w === 12 && r.alpha === 1).length, { timeout: 15000 }).toBeGreaterThan(1);
+    const frame = await pane.last(),
+      layout = await layoutOf(page),
+      colours = await palette(page),
+      blocks = blocksOf(frame, layout[4], layout[3]);
+    expect(blocks.length).toBeGreaterThan(0);
+    for (const b of blocks) expect(colours.unsigned.includes(b.fill), `${b.fill} is an entry of the unsigned table`).toBe(true);
+    const y = priceAxis(frame),
+      box = await page.locator("#ol-canvas").boundingBox();
+    await page.mouse.move(box.x + layout[4] + 6, box.y + blocks[0].y + blocks[0].h / 2);
+    await expect(page.locator("#ol-tip")).toContainText(/Time at price · /);
+    expect(y).toBeTruthy();
+  });
+});
+
 test.describe("B28 the projection behind the cells", () => {
   test("a band is the strip's colour at 16% over what it lies on; cells do not tint it and it does not tint them", async ({ page, probe, fakeFor, pane }) => {
     const sc = scenario();

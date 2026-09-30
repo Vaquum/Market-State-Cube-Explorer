@@ -25,7 +25,6 @@
   --ol-muted: light-dark(#5c7263, #a1b5a7);
   --ol-line: light-dark(#d8e3db, #334a3c);
   /* Data: these colours encode the market and nothing else */
-  --ol-volume: light-dark(#39845d, #80cca1);
   --ol-poc: light-dark(#a87823, #dfb967);
   --ol-evidence: light-dark(#7664a9, #b4a1df);
   /* Roles (visual version 2): a signed measure colours by role, never by side. The hexes are those of the
@@ -896,7 +895,7 @@
 /* availability: a filled neutral tile when ready, dots while the read is under way, a slash where the level cannot be drawn */
 #origo-lens .ol-plane [data-avail="ready"],
 #origo-lens .ol-plane-key [data-avail="ready"] {
-  background-color: var(--ol-line);
+  background-color: color-mix(in srgb, var(--ol-state) 22%, var(--ol-surface));
 }
 #origo-lens .ol-plane [data-avail="pending"],
 #origo-lens .ol-plane-key [data-avail="pending"] {
@@ -1134,7 +1133,7 @@
   flex: none;
   width: 50px;
   height: 5px;
-  background: linear-gradient(to right, var(--ol-panel), var(--ol-volume));
+  background: var(--ol-panel);
   border-radius: var(--r-s);
 }
 /* The Rows legend: the underlay's choice, period and scale, beside its menus. */
@@ -2326,7 +2325,7 @@
           <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
         </svg>
       </button>
-      <div
+      <div data-temporary="popover"
         class="ol-pop ol-menu"
         id="ol-window-menu"
         role="menu"
@@ -2394,7 +2393,7 @@
               <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
             </svg>
           </button>
-          <div
+          <div data-temporary="popover"
             class="ol-pop ol-res-pop"
             id="ol-res-pop"
             role="dialog"
@@ -2508,7 +2507,7 @@
               <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
             </svg>
           </button>
-          <div
+          <div data-temporary="popover"
             class="ol-pop ol-menu ol-follow-menu"
             id="ol-follow-menu"
             role="menu"
@@ -2540,7 +2539,7 @@
             <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
           </svg>
         </button>
-        <div
+        <div data-temporary="popover"
           class="ol-pop ol-lines-pop"
           id="ol-lines-pop"
           role="dialog"
@@ -2915,7 +2914,7 @@
             <path d="M4.5 2.5h7v11L8 11l-3.5 2.5z" /></svg
           ><span class="ol-label">Views and history</span>
         </button>
-        <div
+        <div data-temporary="popover"
           class="ol-pop ol-pop-end ol-views-pop"
           id="ol-hist-pop"
           role="dialog"
@@ -3030,7 +3029,7 @@
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
               </svg>
             </button>
-            <div
+            <div data-temporary="popover"
               class="ol-pop ol-menu ol-mode-menu"
               id="ol-mode-menu"
               role="menu"
@@ -3060,7 +3059,7 @@
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
               </svg>
             </button>
-            <div
+            <div data-temporary="popover"
               class="ol-pop ol-menu ol-mode-menu"
               id="ol-pane-menu"
               role="menu"
@@ -3090,7 +3089,7 @@
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
               </svg>
             </button>
-            <div
+            <div data-temporary="popover"
               class="ol-pop ol-menu ol-mode-menu"
               id="ol-rows-menu"
               role="menu"
@@ -3119,7 +3118,7 @@
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
               </svg>
             </button>
-            <div
+            <div data-temporary="popover"
               class="ol-pop ol-lines-pop ol-period-pop"
               id="ol-period-pop"
               role="dialog"
@@ -3166,7 +3165,7 @@
             <canvas class="ol-ramp" id="ol-rows-ramp" width="36" height="8" aria-hidden="true"></canvas>
             <span id="ol-rows-legend-text" class="ol-num"></span>
           </button>
-          <div
+          <div data-temporary="popover"
             class="ol-pop ol-legend-pop"
             id="ol-rows-legend-pop"
             role="dialog"
@@ -3186,7 +3185,7 @@
           >
             <span id="ol-profile-chip-text" class="ol-num"></span>
           </button>
-          <div
+          <div data-temporary="popover"
             class="ol-pop ol-legend-pop"
             id="ol-profile-pop"
             role="dialog"
@@ -3222,7 +3221,7 @@
           <span id="ol-legend-text" class="ol-num">USDT per cell · log</span>
         </button>
         <span id="ol-legend-marker-text" class="ol-sr" hidden></span>
-        <div
+        <div data-temporary="popover"
           class="ol-pop ol-pop-end ol-legend-pop"
           id="ol-legend-pop"
           role="dialog"
@@ -3238,7 +3237,7 @@
           role="application"
           aria-label="Time by price grid with real traded volume, point of control and linked volume profile"
         ></canvas>
-        <div class="ol-tip" id="ol-tip" role="tooltip" hidden></div>
+        <div class="ol-tip" id="ol-tip" role="tooltip" data-temporary="tooltip" hidden></div>
         <button
           type="button"
           class="ol-legend ol-legend-chip ol-axis-chip cursor-interaction"
@@ -3252,7 +3251,7 @@
         >
           <span id="ol-axis-chip-text" class="ol-num"></span>
         </button>
-        <div
+        <div data-temporary="popover"
           class="ol-pop ol-pop-end ol-legend-pop ol-axis-pop"
           id="ol-axis-pop"
           role="dialog"
@@ -3263,6 +3262,7 @@
         <div
           class="ol-transport"
           id="ol-transport"
+          data-temporary="replay-controls"
           role="group"
           aria-label="Replay"
           hidden
@@ -3327,6 +3327,7 @@
         <div
           class="ol-lensbar"
           id="ol-lensbar"
+          data-temporary="lens-controls"
           role="group"
           aria-label="Lens"
           hidden
@@ -3680,6 +3681,9 @@
           ><span id="ol-key-hover" hidden
             ><i class="ol-data-key ol-glyph" data-stroke-role="hover" aria-hidden="true"></i
             >Linked cell</span
+          ><span id="ol-key-inspect" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="inspect" aria-hidden="true"></i
+            >Inspect focus</span
           ><span id="ol-keys-scale" class="ol-keys-scale"></span
           ><span id="ol-key-poc"
             ><i class="ol-data-key ol-glyph" data-stroke-role="poc" aria-hidden="true"></i>P · total POC</span
@@ -3947,7 +3951,7 @@
                 <path d="M8 7.3V11M8 5v.01" />
               </svg>
             </button>
-            <div
+            <div data-temporary="popover"
               class="ol-pop ol-pop-end ol-evidence-more"
               id="ol-evidence-more"
               role="dialog"
@@ -3970,7 +3974,7 @@
       </div>
     </aside>
   </div>
-  <dialog class="ol-keys" id="ol-keys" aria-labelledby="ol-keys-title">
+  <dialog class="ol-keys" id="ol-keys" data-temporary="modal" aria-labelledby="ol-keys-title">
     <div class="ol-keys-body">
       <div class="ol-keys-head">
         <h2 id="ol-keys-title">Keyboard shortcuts</h2>
@@ -16080,7 +16084,6 @@
       "ink",
       "muted",
       "line",
-      "volume",
       "poc",
       "evidence",
       "accent",
@@ -22984,6 +22987,25 @@
       const i = Math.min(inset, Math.max(0, (Math.min(w, h) - 2) / 2));
       twoToneOn(c, (k) => k.rect(x + i, y + i, w - 2 * i, h - 2 * i), 1, 3);
     },
+    // The Inspect focus of #48 (the API is here, nothing draws it yet): a 2 px ink core in 4 px of surface, as four corner brackets of 5 px, the
+    // strongest persistent interaction mark. Its position is an absolute record the Inspect cursor keeps, never a hover.
+    inspect(c, x, y, w, h) {
+      const k = Math.min(5, w / 2, h / 2),
+        x2 = x + w,
+        y2 = y + h;
+      twoToneOn(
+        c,
+        (p) => {
+          for (const [cx, dx, cy, dy] of [[x, 1, y, 1], [x2, -1, y, 1], [x, 1, y2, -1], [x2, -1, y2, -1]]) {
+            p.moveTo(cx + dx * k, cy);
+            p.lineTo(cx, cy);
+            p.lineTo(cx, cy + dy * k);
+          }
+        },
+        2,
+        4,
+      );
+    },
     // Not available or not shown (an unread region, the hidden future): a neutral hatch.
     unavailable(c, x, y, w, h) {
       markHatch(c, x, y, w, h, colors.state, 4, 0.7);
@@ -23054,6 +23076,7 @@
     pending: { body: false },
     poc: { body: false },
     bpoc: { body: false },
+    inspect: { body: true, box: [2.5, 2.5, 6, 6] },
   };
   const strokeKeys = { epoch: -1, dpr: 0 };
   function strokeSwatch(node, role) {
@@ -23374,7 +23397,8 @@
       lut = sc?.lut,
       // The constant bar colour of the active appearance and the two arms; the legacy ink if the scale display is off.
       bar = lut ? lut.bar.css : colors.ink,
-      arms = lut ? [lut.positive.css[255], lut.negative.css[255]] : [colors.legacyBuy, colors.legacySell],
+      // (the scale display off leaves two neutral arms: ink above the centre line, the state ink below)
+      arms = lut ? [lut.positive.css[255], lut.negative.css[255]] : [colors.ink, colors.state],
       at = { t: 0, clip: 0 },
       mid = x0 + TRACK_BARS / 2,
       bands = u.bands,

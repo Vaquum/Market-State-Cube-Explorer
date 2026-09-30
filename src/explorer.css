@@ -8,7 +8,6 @@
   --ol-muted: light-dark(#5c7263, #a1b5a7);
   --ol-line: light-dark(#d8e3db, #334a3c);
   /* Data: these colours encode the market and nothing else */
-  --ol-volume: light-dark(#39845d, #80cca1);
   --ol-poc: light-dark(#a87823, #dfb967);
   --ol-evidence: light-dark(#7664a9, #b4a1df);
   /* Roles (visual version 2): a signed measure colours by role, never by side. The hexes are those of the
@@ -879,7 +878,7 @@
 /* availability: a filled neutral tile when ready, dots while the read is under way, a slash where the level cannot be drawn */
 #origo-lens .ol-plane [data-avail="ready"],
 #origo-lens .ol-plane-key [data-avail="ready"] {
-  background-color: var(--ol-line);
+  background-color: color-mix(in srgb, var(--ol-state) 22%, var(--ol-surface));
 }
 #origo-lens .ol-plane [data-avail="pending"],
 #origo-lens .ol-plane-key [data-avail="pending"] {
@@ -1117,7 +1116,7 @@
   flex: none;
   width: 50px;
   height: 5px;
-  background: linear-gradient(to right, var(--ol-panel), var(--ol-volume));
+  background: var(--ol-panel);
   border-radius: var(--r-s);
 }
 /* The Rows legend: the underlay's choice, period and scale, beside its menus. */

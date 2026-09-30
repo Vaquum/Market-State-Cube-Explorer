@@ -759,7 +759,6 @@
       "ink",
       "muted",
       "line",
-      "volume",
       "poc",
       "evidence",
       "accent",
@@ -7663,6 +7662,25 @@
       const i = Math.min(inset, Math.max(0, (Math.min(w, h) - 2) / 2));
       twoToneOn(c, (k) => k.rect(x + i, y + i, w - 2 * i, h - 2 * i), 1, 3);
     },
+    // The Inspect focus of #48 (the API is here, nothing draws it yet): a 2 px ink core in 4 px of surface, as four corner brackets of 5 px, the
+    // strongest persistent interaction mark. Its position is an absolute record the Inspect cursor keeps, never a hover.
+    inspect(c, x, y, w, h) {
+      const k = Math.min(5, w / 2, h / 2),
+        x2 = x + w,
+        y2 = y + h;
+      twoToneOn(
+        c,
+        (p) => {
+          for (const [cx, dx, cy, dy] of [[x, 1, y, 1], [x2, -1, y, 1], [x, 1, y2, -1], [x2, -1, y2, -1]]) {
+            p.moveTo(cx + dx * k, cy);
+            p.lineTo(cx, cy);
+            p.lineTo(cx, cy + dy * k);
+          }
+        },
+        2,
+        4,
+      );
+    },
     // Not available or not shown (an unread region, the hidden future): a neutral hatch.
     unavailable(c, x, y, w, h) {
       markHatch(c, x, y, w, h, colors.state, 4, 0.7);
@@ -7733,6 +7751,7 @@
     pending: { body: false },
     poc: { body: false },
     bpoc: { body: false },
+    inspect: { body: true, box: [2.5, 2.5, 6, 6] },
   };
   const strokeKeys = { epoch: -1, dpr: 0 };
   function strokeSwatch(node, role) {
@@ -8053,7 +8072,8 @@
       lut = sc?.lut,
       // The constant bar colour of the active appearance and the two arms; the legacy ink if the scale display is off.
       bar = lut ? lut.bar.css : colors.ink,
-      arms = lut ? [lut.positive.css[255], lut.negative.css[255]] : [colors.legacyBuy, colors.legacySell],
+      // (the scale display off leaves two neutral arms: ink above the centre line, the state ink below)
+      arms = lut ? [lut.positive.css[255], lut.negative.css[255]] : [colors.ink, colors.state],
       at = { t: 0, clip: 0 },
       mid = x0 + TRACK_BARS / 2,
       bands = u.bands,

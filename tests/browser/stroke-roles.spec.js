@@ -89,6 +89,9 @@ test.describe("B26 the footer keys are painted by the stroke-role table", () => 
     // the selection's frame and a linked cell's boundary: ink cores in surface backing
     expect(await swatchPixel(page, "selection", 2, 5), "the selection's core").toBe(c.ink);
     expect(await swatchPixel(page, "hover", 1, 5), "the linked cell's core").toBe(c.ink);
+    // the Inspect focus of #48: corner brackets of a 2 px ink core in 4 px of surface, ready for its cursor
+    expect(await swatchPixel(page, "inspect", 2, 3), "the Inspect bracket's core").toBe(c.ink);
+    expect(await swatchPixel(page, "inspect", 5, 5), "and nothing inside it").not.toBe(c.ink);
     // the swatches of the detail mark (occupancy ink) and of Zero trades (a hairline in the line colour)
     expect(await swatchPixel(page, "detail", 5, 5), "detail unresolved is the occupancy ink").toBe(c.occupancy);
     expect(await swatchPixel(page, "empty", 0, 5), "an empty cell's hairline").toBe(c.line);

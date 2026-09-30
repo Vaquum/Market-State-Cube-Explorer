@@ -43,17 +43,19 @@ async function levels(page) {
   if (!match) throw new Error(`no levels in ${JSON.stringify(text)}`);
   return { requested: [Number(match[1]), Number(match[2])], displayed: match[3] === undefined ? [Number(match[1]), Number(match[2])] : [Number(match[3]), Number(match[4])] };
 }
-// Computed colours of the market tokens, as "rgb(r, g, b)"
+// The market hues the plane must not use, as computed colours: the gold and the Evidence violet are tokens; the Volume green is gone from the
+// page, so its baseline values (#39845d in the light scheme, #80cca1 in the dark) are named here.
 function marketColours(page) {
   return page.evaluate(() => {
     const probe = document.createElement("span");
     document.getElementById("origo-lens").append(probe);
     const out = {};
-    for (const name of ["volume", "poc", "evidence"]) {
+    for (const name of ["poc", "evidence"]) {
       probe.style.color = `var(--ol-${name})`;
       out[name] = getComputedStyle(probe).color;
     }
     probe.remove();
+    out.volume = matchMedia("(prefers-color-scheme: dark)").matches ? "rgb(128, 204, 161)" : "rgb(57, 132, 93)";
     return out;
   });
 }

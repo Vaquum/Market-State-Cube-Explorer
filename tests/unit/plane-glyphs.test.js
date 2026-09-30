@@ -3,7 +3,7 @@
 // no market hue.
 // Oracles (none is the code under test): tests/reference/contrast.js (WCAG 2.x contrast from its definition), the tokens PARSED from src/explorer.css
 // in both themes, and the pairs written out from the plane's rules: the ink of a size glyph, a corner badge, a frame and a ring is --ol-ink; the dots
-// and the slash are --ol-state; the tiles they sit on are the surface (pending, unavailable) and --ol-line (ready).
+// and the slash are --ol-state; the tiles they sit on are the surface (pending, unavailable) and, for ready, 22% of the state ink over the surface.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -14,8 +14,14 @@ const ROOT = path.resolve(__dirname, "../..");
 const CSS = fs.readFileSync(path.join(ROOT, "src/explorer.css"), "utf8");
 const TOKENS = ref.tokensFromCss(CSS);
 
+// A ready tile is 22% of the state ink over the surface (color-mix in sRGB: a straight interpolation of the channels).
+const mixed = (theme) => {
+  const a = TOKENS["--ol-state"][theme],
+    b = TOKENS["--ol-surface"][theme];
+  return [0, 1, 2].map((i) => Math.round(0.22 * a[i] + 0.78 * b[i]));
+};
 const PAIRS = [
-  ["the size glyph (ink) on a ready tile", "--ol-ink", "--ol-line"],
+  ["the size glyph (ink) on a ready tile", "--ol-ink", "ready"],
   ["the size glyph (ink) on a pending tile", "--ol-ink", "--ol-surface"],
   ["the size glyph (ink) on an unavailable tile", "--ol-ink", "--ol-surface"],
   ["the dots of a pending tile (state ink) on the surface", "--ol-state", "--ol-surface"],
@@ -27,7 +33,7 @@ const PAIRS = [
 for (const theme of ["light", "dark"])
   test(`${theme}: each glyph of the plane reaches 3:1 on its tile`, () => {
     for (const [what, fg, bg] of PAIRS) {
-      const ratio = ref.contrast(TOKENS[fg][theme], TOKENS[bg][theme]);
+      const ratio = ref.contrast(TOKENS[fg][theme], bg === "ready" ? mixed(theme) : TOKENS[bg][theme]);
       assert.ok(ratio >= 3, `${what}: ${ratio.toFixed(2)}:1`);
     }
   });

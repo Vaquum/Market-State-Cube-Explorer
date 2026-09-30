@@ -139,6 +139,21 @@ test.describe("B27 reference strokes and the occlusion budget", () => {
     expect(Math.max(...cores.map((k) => k.width)), "the focused core is at most 2.5").toBeLessThanOrEqual(2.5);
   });
 
+  test("calendar lines have no continuous backing, and a CME gap is a labelled outline", async ({ page, probe, fakeFor, pane }) => {
+    const fake = await fakeFor("standard");
+    await page.setViewportSize({ width: 1500, height: 950 });
+    await page.goto(`${fake.url}/#w=7d&vis=2&lines=cday,cme`);
+    await S.atRest(page, fake, probe);
+    const frame = await pane.last(),
+      colours = await tokens(page),
+      layout = await layoutOf(page);
+    const vertical = frame.strokes.filter((k) => k.path.length >= 2 && k.path.every((p) => p[0] === k.path[0][0]) && Math.abs(Math.max(...k.path.map((p) => p[1])) - Math.min(...k.path.map((p) => p[1])) - layout[3]) < 1);
+    expect(vertical.length, "calendar lines span the plot").toBeGreaterThan(2);
+    for (const k of vertical) expect(k.stroke, "no surface-coloured backing runs the length of a calendar line").not.toBe(colours.surface);
+    for (const k of vertical) expect(k.width, "a calendar line is at most 2.5 px").toBeLessThanOrEqual(2.5);
+    expect(frame.texts.some((t) => /^CME gap/.test(t.text)), "the gap is named on the plot").toBe(true);
+  });
+
   test("over the budget the lowest-priority marks are left out with a shown/eligible notice, and every mark stays in the list", async ({ page, probe, fakeFor, pane }) => {
     const fake = await fakeFor("standard");
     await page.setViewportSize({ width: 760, height: 520 });
@@ -150,10 +165,29 @@ test.describe("B27 reference strokes and the occlusion budget", () => {
     expect(shown, "some marks are held back").toBeLessThan(eligible);
     const frame = await pane.last();
     expect(frame.texts.some((t) => t.text === `${shown} of ${eligible} reference marks shown · 20% budget`), "the notice says so").toBe(true);
+    // full list access: the lines button's own name still lists every line that is on, shown or held back
+    const label = await page.locator("#ol-lines").getAttribute("aria-label");
+    for (const name of ["1 day", "This week", "7 days", "This month", "30 days", "90 days", "This year", "1 year", "3 years", "Day start", "Funding", "US equity open"]) expect(label, name).toContain(name);
   });
 });
 
 test.describe("B27 the transient lens is an identified region replacement", () => {
+  test("every temporary surface is identified: the tooltip, the popovers, the replay and lens controls and the modal carry data-temporary", async ({ page, probe, fakeFor }) => {
+    const fake = await fakeFor("standard");
+    await page.goto(`${fake.url}/#w=24h&vis=2`);
+    await S.atRest(page, fake, probe);
+    const kinds = await page.evaluate(() => {
+      const out = {};
+      for (const el of document.querySelectorAll("[data-temporary]")) out[el.dataset.temporary] = (out[el.dataset.temporary] ?? 0) + 1;
+      return out;
+    });
+    expect(Object.keys(kinds).sort()).toEqual(["lens-controls", "modal", "popover", "replay-controls", "tooltip"]);
+    expect(kinds.popover, "every popover and menu").toBeGreaterThan(10);
+    // and every popover of the page is among them: none is an unidentified overlay
+    const unmarked = await page.evaluate(() => [...document.querySelectorAll(".ol-pop")].filter((el) => !el.hasAttribute("data-temporary")).map((el) => el.id));
+    expect(unmarked, "no .ol-pop without the attribute").toEqual([]);
+  });
+
   test("the page names where the lens is, it stays inside the heatmap, and the Rows strip is untouched by it", async ({ page, probe, fakeFor, pane }) => {
     const fake = await fakeFor("standard");
     await page.setViewportSize({ width: 1500, height: 950 });

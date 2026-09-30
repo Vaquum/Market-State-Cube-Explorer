@@ -68,7 +68,7 @@ test("the CSS token parser resolves light-dark(), var() and 3-digit hex from the
   assert.deepEqual(TOKENS["--ol-occupancy"], TOKENS["--ol-border"], "var() resolves");
   assert.deepEqual(TOKENS["--ol-state"], TOKENS["--ol-muted"]);
   assert.equal(TOKENS["--sp-1"], undefined, "a size is not a colour");
-  assert.ok(Object.keys(TOKENS).length >= 26);
+  assert.ok(Object.keys(TOKENS).length >= 25, "the colour tokens (the Volume green is retired)");
 });
 
 // ---- the tokens the non-value marks are made of ----

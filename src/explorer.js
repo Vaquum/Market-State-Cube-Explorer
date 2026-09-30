@@ -3197,13 +3197,19 @@
     const vb = u.volBands;
     if (vb) {
       const rv = relvolFor(vb, u.vol, u.rect),
-        typed = rv.at(Math.floor(r / 2 ** (vb.m - renderM())));
+        bin = Math.floor(r / 2 ** (vb.m - renderM())),
+        typed = rv.at(bin),
+        period = vb.map.get(bin);
+      // The ratio compares shares; the period's own amount at the row stays in the inspection beside it.
+      if (u.kind === "relvol" && period?.v > 0)
+        out.push(["Period's USDT", `${approx}${money(period.v)} · ${share(vb.v > 0 ? period.v / vb.v : 0)} of the period`]);
       out.push([
         u.kind === "relvol" ? label : "Relative volume",
         u.rect.state === "pending" || u.rect.state === "failed"
           ? "measuring the rectangle…"
           : typed.tag === "finite"
-            ? approx + ratioText(typed.value, exact)
+            ? // A ratio that rounds to 0 at the digits shown is 0, not a signed zero (equal distributions differ in the last bit).
+              approx + ratioText(Math.abs(typed.value) < (exact ? 5e-4 : 5e-3) ? 0 : typed.value, exact)
             : E.result.describe(typed).short,
       ]);
     }
@@ -7942,8 +7948,8 @@
         ctx.globalAlpha = 1;
         ctx.fillStyle = colors.state;
         ctx.fillRect(G.x, ya, 2, h);
-        ctx.restore();
         if (h >= 8) paintGlyph("infinity", G.x + 9, (ya + yb) / 2, 10);
+        ctx.restore();
       } else if (out.tag === rowsTag["no-reference"]) {
         ctx.save();
         ctx.globalAlpha = 1;

@@ -3,48 +3,6 @@
   "entries": [
     {
       "file": "src/explorer.js",
-      "pattern": "--ol-buy",
-      "count": 3,
-      "rows": [
-        "D-01",
-        "D-02",
-        "T-08"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.js",
-      "pattern": "--ol-neutral",
-      "count": 1,
-      "rows": [
-        "D-01",
-        "T-13"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.js",
-      "pattern": "--ol-sell",
-      "count": 3,
-      "rows": [
-        "D-01",
-        "D-02",
-        "T-09"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.js",
-      "pattern": "--ol-time",
-      "count": 1,
-      "rows": [
-        "D-02",
-        "T-12"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.js",
       "pattern": "--ol-tier-*",
       "count": 2,
       "rows": [
@@ -65,81 +23,8 @@
     },
     {
       "file": "src/explorer.js",
-      "pattern": "colors-key",
-      "count": 4,
-      "rows": [
-        "T-34",
-        "T-08",
-        "T-09",
-        "T-12",
-        "T-13"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.js",
-      "pattern": "colors.buy",
-      "count": 10,
-      "rows": [
-        "C-02",
-        "C-03",
-        "C-04",
-        "C-09b",
-        "C-09c",
-        "C-10",
-        "C-11b",
-        "C-11d",
-        "C-12b",
-        "C-13a",
-        "C-13b",
-        "T-08"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.js",
-      "pattern": "colors.sell",
-      "count": 8,
-      "rows": [
-        "C-02",
-        "C-03",
-        "C-04",
-        "C-09b",
-        "C-09c",
-        "C-10",
-        "C-12b",
-        "C-13a",
-        "C-13b",
-        "T-09"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.js",
-      "pattern": "colors.neutral",
-      "count": 1,
-      "rows": [
-        "C-02",
-        "C-04",
-        "T-13"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.js",
-      "pattern": "colors.time",
-      "count": 2,
-      "rows": [
-        "C-09d",
-        "C-10",
-        "T-12"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.js",
       "pattern": "colors.volume",
-      "count": 4,
+      "count": 1,
       "rows": [
         "C-05",
         "C-11c",
@@ -173,7 +58,7 @@
     {
       "file": "src/explorer.js",
       "pattern": "colors.line@state",
-      "count": 6,
+      "count": 3,
       "rows": [
         "C-04",
         "C-08d",
@@ -194,51 +79,6 @@
         "T-10"
       ],
       "owner": "#47"
-    },
-    {
-      "file": "src/explorer.js",
-      "pattern": "prose:buy-sell-colour",
-      "count": 10,
-      "rows": [
-        "R-15"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.css",
-      "pattern": "--ol-buy",
-      "count": 1,
-      "rows": [
-        "T-08"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.css",
-      "pattern": "--ol-sell",
-      "count": 1,
-      "rows": [
-        "T-09"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.css",
-      "pattern": "--ol-neutral",
-      "count": 1,
-      "rows": [
-        "T-13"
-      ],
-      "owner": "#46"
-    },
-    {
-      "file": "src/explorer.css",
-      "pattern": "--ol-time",
-      "count": 1,
-      "rows": [
-        "T-12"
-      ],
-      "owner": "#46"
     },
     {
       "file": "src/explorer.css",
@@ -302,18 +142,9 @@
       "owner": "#47"
     },
     {
-      "file": "README.md",
-      "pattern": "prose:buy-sell-colour",
-      "count": 4,
-      "rows": [
-        "R-13"
-      ],
-      "owner": "#48"
-    },
-    {
       "file": "docs/data-and-semantics.md",
       "pattern": "prose:buy-sell-colour",
-      "count": 3,
+      "count": 1,
       "rows": [
         "R-14"
       ],

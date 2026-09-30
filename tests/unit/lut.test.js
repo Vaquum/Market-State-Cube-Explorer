@@ -162,12 +162,14 @@ test("the single roles are the token hexes (CSS parsed from src/explorer.css), i
     assert.equal(lut.stateInk.css, tok("--ol-state"), "stateInk = --ol-state = --ol-muted");
     assert.equal(lut.positive.css[255], tok("--ol-positive"), "the positive arm ends at --ol-positive");
     assert.equal(lut.negative.css[255], tok("--ol-negative"), "the negative arm ends at --ol-negative");
-    // The interim and the retired names carry the same hexes (DR-20: renamed by role, hex unchanged).
-    assert.equal(tok("--ol-positive"), tok("--ol-buy"));
-    assert.equal(tok("--ol-negative"), tok("--ol-sell"));
-    assert.equal(tok("--ol-midpoint"), tok("--ol-neutral"));
-    assert.equal(tok("--ol-legacy-buy"), tok("--ol-buy"));
-    assert.equal(tok("--ol-legacy-sell"), tok("--ol-sell"));
+    // The roles carry the hexes of the retired buy, sell and neutral tokens (DR-20: renamed by role, hex unchanged); the
+    // interim legacy names carry them too, until their consumers move.
+    const retired = { light: ["#2d769c", "#b3624b", "#b9c2bc"], dark: ["#73b8d4", "#d89777", "#5f6b64"] }[theme];
+    assert.equal(tok("--ol-positive"), retired[0]);
+    assert.equal(tok("--ol-negative"), retired[1]);
+    assert.equal(tok("--ol-midpoint"), retired[2]);
+    assert.equal(tok("--ol-legacy-buy"), tok("--ol-positive"));
+    assert.equal(tok("--ol-legacy-sell"), tok("--ol-negative"));
     assert.equal(tok("--ol-occupancy"), tok("--ol-border"));
     assert.equal(tok("--ol-state"), tok("--ol-muted"));
     assert.equal(hexOf(SURFACE[theme]), theme === "light" ? "#ffffff" : "#161f19");

@@ -5,7 +5,7 @@
 // 21:1; #767676 on white 4.54:1 and #949494 on white 3.03:1, the examples of the WCAG 2 documentation);
 // the colour tokens PARSED from src/explorer.css (both themes, light-dark()); the numbers hand-computed in
 // API.md B.9 and Appendix A.1 (--ol-border 3.57/3.88, --ol-muted 5.20/7.78, the bar 3.10/4.04 composited
-// and 7.10/7.65 solid, the retired entry 153 at 2.94, --ol-line 1.32/1.76, --ol-neutral 1.83/3.03); and
+// and 7.10/7.65 solid, the retired entry 153 at 2.94, --ol-line 1.32/1.76, --ol-midpoint 1.83/3.03); and
 // fixtures/contrast/new-controls.json (hand-authored thresholds: 4.5 for small text, 3 for an essential
 // boundary, from WCAG 2.x and D11).
 // What is checked, and over what, is exactly what the code draws (API.md B.9, FA-13): a state or occupancy
@@ -68,7 +68,7 @@ test("the CSS token parser resolves light-dark(), var() and 3-digit hex from the
   assert.deepEqual(TOKENS["--ol-occupancy"], TOKENS["--ol-border"], "var() resolves");
   assert.deepEqual(TOKENS["--ol-state"], TOKENS["--ol-muted"]);
   assert.equal(TOKENS["--sp-1"], undefined, "a size is not a colour");
-  assert.ok(Object.keys(TOKENS).length >= 30);
+  assert.ok(Object.keys(TOKENS).length >= 26);
 });
 
 // ---- the tokens the non-value marks are made of ----
@@ -86,21 +86,20 @@ test("--ol-border (occupancy) and --ol-muted (stateInk) over the empty surface, 
   for (const theme of THEMES) for (const bg of ["--ol-surface", "--ol-panel"]) assert.ok(ref.contrast(TOKENS["--ol-state"][theme], TOKENS[bg][theme]) >= 4.5, `${bg} ${theme}`);
 });
 
-test("--ol-line and --ol-neutral FAIL 3:1 on the surface and so must not colour a non-value mark", () => {
-  const want = { "--ol-line": [1.32, 1.76], "--ol-neutral": [1.83, 3.03] };
+test("--ol-line and --ol-midpoint FAIL 3:1 on the surface and so must not colour a non-value mark", () => {
+  const want = { "--ol-line": [1.32, 1.76], "--ol-midpoint": [1.83, 3.03] };
   for (const [name, [light, dark]] of Object.entries(want)) {
     assert.equal(r2(ref.contrast(TOKENS[name].light, TOKENS["--ol-surface"].light)), light, name + " light");
     assert.equal(r2(ref.contrast(TOKENS[name].dark, TOKENS["--ol-surface"].dark)), dark, name + " dark");
   }
-  // Light theme: both fail outright. Dark theme: --ol-line fails; --ol-neutral reaches 3.03 there but fails in light, so the role is unusable as a whole.
+  // Light theme: both fail outright. Dark theme: --ol-line fails; --ol-midpoint reaches 3.03 there but fails in light, so the role is unusable as a whole.
   assert.ok(ref.contrast(TOKENS["--ol-line"].light, TOKENS["--ol-surface"].light) < 3);
   assert.ok(ref.contrast(TOKENS["--ol-line"].dark, TOKENS["--ol-surface"].dark) < 3);
-  assert.ok(ref.contrast(TOKENS["--ol-neutral"].light, TOKENS["--ol-surface"].light) < 3);
-  // The role tokens are the same colours as the retired names, so the midpoint is a FILL colour, not an ink.
-  assert.deepEqual(TOKENS["--ol-midpoint"], TOKENS["--ol-neutral"]);
+  assert.ok(ref.contrast(TOKENS["--ol-midpoint"].light, TOKENS["--ol-surface"].light) < 3);
+  // The midpoint is a FILL colour (the retired neutral token's hexes), not an ink.
 });
 
-test("the glyph table never inks a mark with --ol-line or --ol-neutral (or the midpoint)", () => {
+test("the glyph table never inks a mark with --ol-line or the midpoint", () => {
   for (const g of Object.values(E.role.GLYPHS)) assert.ok(g.ink === "stateInk" || g.ink === "occupancy", `${g.id} inks with ${g.ink}`);
 });
 
@@ -179,7 +178,7 @@ test("new-controls.json: every row meets its threshold on the real tokens, in bo
 
 test("the row checker bites: a pair that fails is reported as failing", () => {
   assert.ok(ratio({ fg: "--ol-line", bg: "--ol-surface" }, "light") < 3);
-  assert.ok(ratio({ fg: "--ol-neutral", bg: "--ol-surface" }, "light") < 3);
+  assert.ok(ratio({ fg: "--ol-midpoint", bg: "--ol-surface" }, "light") < 3);
   assert.ok(ratio({ fg: "--ol-muted", bg: "--ol-surface" }, "light") >= 4.5);
   // The bar row checks the composite: at solid it would be 7.10, at 0.35 it would fail.
   assert.ok(ratio({ fg: "lut.bar", bg: "--ol-surface", alpha: 0.35 }, "light") < 3);

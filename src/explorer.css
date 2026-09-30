@@ -9,16 +9,10 @@
   --ol-line: light-dark(#d8e3db, #334a3c);
   /* Data: these colours encode the market and nothing else */
   --ol-volume: light-dark(#39845d, #80cca1);
-  --ol-buy: light-dark(#2d769c, #73b8d4);
-  --ol-sell: light-dark(#b3624b, #d89777);
   --ol-poc: light-dark(#a87823, #dfb967);
   --ol-evidence: light-dark(#7664a9, #b4a1df);
-  /* Time at price: the profile of where the price spent its time */
-  --ol-time: light-dark(#8f4f86, #d59bcc);
-  /* Taker flow's midpoint: an even share, distinct from gridlines and both sides */
-  --ol-neutral: light-dark(#b9c2bc, #5f6b64);
-  /* Roles (visual version 2): a signed measure colours by role, never by side. The hexes are the buy,
-     sell and neutral hexes renamed (DR-20); the old tokens stay until every consumer has moved. */
+  /* Roles (visual version 2): a signed measure colours by role, never by side. The hexes are those of the
+     retired buy, sell and neutral tokens, renamed by role (DR-20). */
   --ol-positive: light-dark(#2d769c, #73b8d4);
   --ol-negative: light-dark(#b3624b, #d89777);
   --ol-midpoint: light-dark(#b9c2bc, #5f6b64);

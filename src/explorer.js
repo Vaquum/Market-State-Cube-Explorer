@@ -718,13 +718,9 @@
       "muted",
       "line",
       "volume",
-      "buy",
-      "sell",
       "poc",
       "evidence",
-      "time",
       "accent",
-      "neutral",
     ]) {
       probe.style.color = `var(--ol-${key})`;
       colors[key] = getComputedStyle(probe).color;
@@ -942,9 +938,7 @@
   // ---- The scale spine (PRD-0002 S1) ----
   // The per-draw scale frame `sc` and the state behind it. Every consumer of a value's colour receives `sc`
   // as its last argument and encodes through it; the measurement module (E) owns the arithmetic and this
-  // block owns the page: when a mapping is resolved, what is held, when the timers wake. The consumer
-  // packages join through `scaleHooks` (an unregistered hook is a no-op, so every merge order runs), and the
-  // functions below are the ones a consumer may call without a hook.
+  // block owns the page: when a mapping is resolved, what is held, when the timers wake.
   //
   // Three clocks, kept apart. A DRAW resolves every channel's mapping by lookup only (one store read) and
   // asks for what is missing; it never fits. The SETTLED TICK (`scaleTick`, one timer) is where everything
@@ -1044,9 +1038,6 @@
       pattern: null,
       css: null,
     },
-    // The optional hooks the consumer packages register (see the hooks table of the design): one
-    // `scaleHooks.name = fn;` statement directly after the function it names.
-    scaleHooks = {},
     // What a fault leaves behind (scaleFault fills it): an occupancy-only chart and the legacy legend.
     INERT_SC = { cells: null, cellsFull: null, rows: null, lens: null, stamp: "inert", cutMs: 0, lut: null },
     SCALE_CHANNELS = ["cells", "rows", "lens"],
@@ -1082,10 +1073,10 @@
   // built before those hooks exist still works: an unregistered `cellMeasured` counts every cell as
   // measured, an unregistered `cascadeEntry` leaves a Cascade cell pending.
   function scaleMeasured(z) {
-    return scaleHooks.cellMeasured?.(z);
+    return cellsMeasured(z);
   }
   function scaleCascade(z, out) {
-    scaleHooks.cascadeEntry?.(z, out);
+    cascadeInto(z, out);
   }
   // The key that says whether anything a readout or a legend was built from has changed: every channel's
   // mapping id, the appearance, the theme epoch and the pack generation. Nothing in it is a timestamp.
@@ -1111,16 +1102,16 @@
   function scaleQuiet() {
     return heldCount() === 0 && performance.now() - scaleRt.lastGestureAt >= E.TIMING.SETTLE_MS;
   }
-  // The cohort extractor's hook for a channel (none registered: nothing to fit from, so nothing is asked).
+  // The cohort extractor for a channel (the lens has its own; nothing else is fitted from).
   function scaleCohortHook(channel) {
     return channel === "cells"
       ? movementMode()
-        ? scaleHooks.motionCohort
-        : scaleHooks.cellsCohort
+        ? motionCohortInputs
+        : cellsCohortInputs
       : channel === "rows"
-        ? scaleHooks.rowsCohort
+        ? rowsCohortInputs
         : channel === "lens"
-          ? scaleHooks.lensCohort
+          ? lensCohortInputs
           : undefined;
   }
   // The memo key of the Cells data a fit would read: generation, measured rectangle, effective level,
@@ -1229,7 +1220,7 @@
       warnKey: "",
     };
     if (resolved.desc !== null && resolved.state !== "no-calibration" && kind !== "occupancy") {
-      const hook = channel === "cells" ? scaleHooks.cellsMarks : scaleHooks.rowsMarks;
+      const hook = channel === "cells" ? cellsMarks : rowsMarks;
       // The warnings pass counts the drawn marks again when its key changed: a count is owed after a settle.
       if (hook) {
         cur.warnKey = [spec.memo?.() ?? "", S.tA, S.tB, S.pA, S.pB, G.w, G.h, resolved.id, resolved.state].join("|");
@@ -1633,7 +1624,7 @@
   // A notice for the banner: queued, coalesced by the queue, shown by the DOM package when it is there.
   function postNotice(input) {
     const row = scaleRt.notices.post(input);
-    scaleHooks.notice?.();
+    noticeShow();
     return row;
   }
   // The stamp of a gesture (a pointer, a wheel tick, a key, a resize, a replay step, Play): when it was,
@@ -1741,7 +1732,7 @@
     if (seen !== sig) {
       scaleRt.axisSig.set(id, sig);
       if (seen !== undefined && domain !== seen.split("|")[0]) scaleRt.fitSeq.axis++;
-      if (scaleHooks.paneMarks) scaleOwe();
+      scaleOwe();
     }
     // A draw that put an axis on hold behind a gesture, the settle time or the cap does not wake itself: the
     // tick that refits it is armed here, the same O(1) call as every other wake (it does nothing while anything
@@ -1915,7 +1906,7 @@
     scaleRt.ask[channel] = null;
     scaleRt.fitKey[channel] = memo;
     scaleRt.noFit[channel] = "";
-    scaleHooks.persist?.();
+    persistScale();
     return "committed";
   }
   // The warnings pass (DR-11): count the marks the viewer sees through the consumers' hooks, once the
@@ -1926,7 +1917,7 @@
       wait = null;
     for (const channel of ["cells", "rows"]) {
       const cur = scaleRt.cur[channel],
-        hook = channel === "cells" ? scaleHooks.cellsMarks : scaleHooks.rowsMarks,
+        hook = channel === "cells" ? cellsMarks : rowsMarks,
         held = scaleRt.warn[channel];
       if (!hook || !cur || cur.warnKey === "") {
         if (held) {
@@ -1971,7 +1962,7 @@
     }
     // The bars of the Columns pane, against the axes the last draw framed: counts only, an axis has no
     // "range exceeded" of its own (its overflow is the triangle and the count of the axis record).
-    if (scaleHooks.paneMarks) {
+    {
       const ids = [...scaleRt.shown].sort(),
         key = [S.pane, S.tA, S.tB, live.generation, ...ids.map((id) => id + ":" + scaleRt.axisSig.get(id))].join("|");
       if (scaleRt.warn.pane?.key !== key) {
@@ -1980,7 +1971,7 @@
         tally.reset();
         scaleRt.counting = true;
         try {
-          scaleHooks.paneMarks(tally, keyCounts);
+          paneTally(tally, keyCounts);
         } finally {
           scaleRt.counting = false;
         }
@@ -2123,7 +2114,7 @@
     scaleRt.hint = action.type === "lock" || action.type === "unlock" ? "lock" : action.type === "policy" ? "policy" : null;
     update();
     save();
-    scaleHooks.persist?.();
+    persistScale();
     return out;
   }
   // The Auto axes the last draw displayed, with their domains: what the Comparison lock freezes.
@@ -2162,7 +2153,7 @@
     if (sc !== INERT_SC) {
       try {
         scaleRt.cur.rows = null;
-        sc.rows = scaleHooks.rowsFrame?.(under, sc) ?? null;
+        sc.rows = rowsScaleFrame(under, sc) ?? null;
         if (sc.rows) {
           scaleRowsCur(under, sc);
           sc.map.rows = scaleRt.cur.rows?.resolved ?? null;
@@ -2177,7 +2168,7 @@
         const shownIds = sc.cells.mappingId + "|" + (sc.rows?.mappingId ?? "") + "|" + (sc.lens?.mappingId ?? "");
         if (shownIds !== persistRt.shown) {
           persistRt.shown = shownIds;
-          scaleHooks.persist?.();
+          persistScale();
         }
         // What this settled draw disclosed is told once.
         scaleSpendCauses();
@@ -2363,9 +2354,9 @@
     querySummary(meas, mv);
     // The legends: the chips when the DOM package has registered them; none after a fault, which turns the
     // scale display off.
-    if (scaleHooks.legend && sc !== INERT_SC) {
+    if (sc !== INERT_SC) {
       try {
-        scaleHooks.legend(sc, under);
+        legendWrite(sc, under);
       } catch (error) {
         scaleFault(error);
       }
@@ -2389,7 +2380,7 @@
     }
     // The tooltip and the legend marker follow a mapping, theme or pack that changed under them.
     try {
-      scaleHooks.refreshTip?.();
+      refreshTip();
     } catch (error) {
       scaleFault(error);
     }
@@ -4429,7 +4420,7 @@
   // shows, else the table row's. It follows the tip and the row, so it is cleared whenever either goes,
   // whatever hid it; the hook writes only on change.
   function markerNow() {
-    scaleHooks.legendMarker?.(hover && !el("tip").hidden ? scaleRt.tipReadout : tableHover ? scaleRt.rowReadout : null);
+    legendMarker(hover && !el("tip").hidden ? scaleRt.tipReadout : tableHover ? scaleRt.rowReadout : null);
   }
   // The tooltip's readout, stored and shown on the legend (null clears both).
   function tipMarker(readout) {
@@ -4464,7 +4455,6 @@
     if (tip.hidden && tip.dataset.readout) tip.dataset.readout = "";
     markerNow();
   }
-  scaleHooks.refreshTip = refreshTip;
   // The tip names its readout from the start (empty until a cell's tip shows), so a reader finds the attribute.
   el("tip").dataset.readout = "";
   function tooltip(p, { redraw = true } = {}) {
@@ -4572,7 +4562,7 @@
       // traded and it did not, or its parent is open), which only the Cascade entry can say.
       const read =
         measuredCell(c, r) ??
-        (S.mode === "cascade" && !z && !unavailable && scaleHooks.cascadeEntry ? { c, r, v: 0, bv: 0, ct: 0, bt: 0 } : null);
+        (S.mode === "cascade" && !z && !unavailable ? { c, r, v: 0, bv: 0, ct: 0, bt: 0 } : null);
       if (!unavailable) readout = cellReadout(read, "hover");
       // Path and dwell, while a movement view shows them; Cascade's share.
       const mz = last.mv?.shown?.map.get(cellKey(c, r)),
@@ -4757,7 +4747,7 @@
     requestDraw();
     scheduleCube();
     // The Scale section and the legend chips (DOM package), and the calibration clock.
-    scaleHooks.renderUi?.();
+    renderScaleUi();
     scaleArm();
   }
   function bindRoot() {
@@ -5496,7 +5486,6 @@
       el("keys-scale").replaceChildren(...uiKeyList([...merged.values()], inks, false));
     }
   }
-  scaleHooks.legend = legendWrite;
   // The lens's status element: a text mirror of the STABLE part of its caption (the measure, whether it
   // shares the Cells mapping or has its own, the mapping's short id and its state), so a screen reader
   // finds it once per change. The shares live in the Cells popover. Written only while the lens shows, and
@@ -5574,7 +5563,6 @@
     note.textContent = `Value under the pointer at ${Math.round(clamp(found.p, 0, 1) * 100)}% of the scale`;
     if (popMarker) popMarker.style.left = at;
   }
-  scaleHooks.legendMarker = legendMarker;
   // The popover of a colour chip: its bar and ticks, the details list, the keys with their counts, the
   // warnings with their actions, the scale change, and (built once, so typing is never disturbed) the
   // actions and the manual-domain form. One builder for both colour chips (each chip has its own panel,
@@ -5972,7 +5960,6 @@
       scaleUi.paneShown = shown ?? null;
     }
   }
-  scaleHooks.axisChip = axisChipWrite;
   // The end of the draw: the chip's place (re-set on every draw from the geometry, because the pane moves
   // with a resize and with the splitter), and its text and attributes from the pane's record, written when
   // the axes of the frame changed. The axes of the frame become the popover's list.
@@ -6264,7 +6251,6 @@
       else if (panel === el("axis-pop")) axisPop();
     }
   }
-  scaleHooks.renderUi = renderScaleUi;
   // ---- the notice banner ----
   // One notice at a time (the most serious, then the newest), its count when the same thing keeps happening,
   // how many more wait, a Details toggle for its lines and Dismiss. Not animated, and a status element that
@@ -6320,7 +6306,6 @@
     // The banner takes height from the chart: the drawer's limit follows
     if (was !== box.hidden) applyPanels();
   }
-  scaleHooks.notice = noticeShow;
   function noticeHide(id) {
     const box = el("notice"),
       hadFocus = box.contains(document.activeElement);
@@ -6380,7 +6365,6 @@
     });
     noticeShow();
   }
-  scaleHooks.bindUi = bindScaleUi;
   function menuItem(role, children, onChoose) {
     const b = document.createElement("button");
     b.type = "button";
@@ -7145,7 +7129,6 @@
     out.reason = entry.reason;
     out.denominator = entry.denominator;
   }
-  scaleHooks.cascadeEntry = cascadeInto;
   // Is the cell measured? Every cell of the block drawn for a volume measure is. Under Path and Dwell a cell
   // at or after the end of the motion read was never read: it is pending, not zero.
   function cellsMeasured(z) {
@@ -7153,7 +7136,6 @@
     if (mode !== "path" && mode !== "dwell") return true;
     return z.c * motionTs < motionEnd;
   }
-  scaleHooks.cellMeasured = cellsMeasured;
   // A new pass (a new frame or a new draw) knows nothing about the canvas state: what this pass remembers of
   // it is dropped.
   function cellPass(frame) {
@@ -7219,7 +7201,6 @@
     if (S.mode === "cascade") inputs.cascade = cascadeInto;
     return inputs;
   }
-  scaleHooks.cellsCohort = cellsCohortInputs;
   // Path and Dwell cells: the motion cells of the rectangle (movement-only cells included, they are
   // measured), up to the end of the read. No motion block yet is a read that has not answered, and a read
   // still under way (the tier reading the columns it gained, the rectangle's own) is not finished either.
@@ -7229,7 +7210,6 @@
     const pending = !mv.src ? { state: motionIssue() ? "failed" : "pending" } : motion.busy || motionWant() ? { state: "pending" } : null;
     return cohortCells(vp, mv.shown ? mv.shown.cells : [], mv.end, pending);
   }
-  scaleHooks.motionCohort = motionCohortInputs;
   // The warnings pass: every drawn mark of the Cells channel, encoded through the frame the settled mapping
   // gives now, into the tally with its box (css px, the plot's and the rectangle's clip come in `clip`). A
   // mark that is not a value is not counted; negative infinity is counted as a mark and as out of range.
@@ -7272,7 +7252,6 @@
       if (ENC.short) count("short-exposure");
     }
   }
-  scaleHooks.cellsMarks = cellsMarks;
   function marksReadout(b) {
     const va = markState.va,
       ps = stepP();
@@ -7395,7 +7374,7 @@
     axis.clipped.high = high;
     axis.clipped.count = low + high;
     axis.clipped.total = query.rows.length;
-    scaleHooks.axisChip?.(axis);
+    axisChipWrite(axis);
     if (S.level !== null) {
       const y = Math.round(G.Y(S.level)) + 0.5;
       ctx.setLineDash([6, 4]);
@@ -7594,7 +7573,7 @@
     axis.clipped.high = high;
     axis.clipped.count = low + high;
     axis.clipped.total = drawn;
-    scaleHooks.axisChip?.(axis);
+    axisChipWrite(axis);
     if (diverging) markLine(mid, G.y, mid, G.y + G.h, colors.line, 1, 0.9);
     const vb = u.volBands;
     if (vb?.va) {
@@ -9809,7 +9788,7 @@
     if (scale) text(scale, G.x - 8, top + 7, colors.muted, "right");
     for (const [label, gy] of guides) text(label, G.x - 8, gy, colors.muted, "right");
     paneLegend(measure, [], null, top, note, rec, "");
-    scaleHooks.axisChip?.(rec, paneShown);
+    axisChipWrite(rec, paneShown);
   }
   // The tooltip's pane rows that say where a value sits on the pane's axis: the axis in words, its domain
   // as numbers, the value's place on it and whether the axis leaves it out. `meta` is parallel to the rows
@@ -10120,7 +10099,6 @@
       instrument: INSTRUMENT,
     });
   }
-  scaleHooks.rowsContext = rowsContext;
   // What the cohort of Rows needs, from the state at the moment it is asked (the spine calls it when a fit
   // is due, never with a frame kept from an earlier draw). Every row of the period at the effective row size
   // is in it, in view or not; each measure reads only the result that carries it (Time at price the dwell's
@@ -10151,7 +10129,6 @@
       },
     };
   }
-  scaleHooks.rowsCohort = rowsCohortInputs;
   // Relative volume of the rectangle against the period, through the module, IN the draw path: it needs only
   // the rows inside the comparison range W (the rectangle's price bounds), a binary search and flat arrays,
   // so it costs O(rows in W) and runs again only when the period's rows, the rectangle, W or the row level
@@ -10318,7 +10295,6 @@
     if (scaleRt.ask.rows) scaleArm();
     return built.frame;
   }
-  scaleHooks.rowsFrame = rowsScaleFrame;
   // The row indices a frame draws: the period's rows in view for the amounts; for Relative volume every bin
   // of its comparison range in view, because rows only the rectangle traded (no reference) and rows only the
   // period traded (no current volume) are marks too, and a bin outside the range is not drawn at all.
@@ -10422,7 +10398,6 @@
       for (; i < rows.length && rows[i].r <= hi; i++) mark(rows[i]);
     }
   }
-  scaleHooks.rowsMarks = rowsMarks;
   // The horizontal lines on, as drawn this frame: each with its key and its
   // own id, the family and tier it is drawn in, its price (base rows), its
   // span, whether it goes on dashed to the right edge, and its tag. A
@@ -12326,7 +12301,7 @@
         if ((mark.id === "tri-up" || mark.id === "tri-down") && mark.xb - mark.xa >= 6) paintGlyph(mark.id, (mark.xa + mark.xb) / 2, mark.y, 6);
       ctx.restore();
     }
-    scaleHooks.axisChip?.(rec, paneShown);
+    axisChipWrite(rec, paneShown);
   }
   // The pane's name and unit at its top left, what its axis is, and what it is still reading or couldn't
   // read. Measured only when its words or the pane's width change.
@@ -12388,7 +12363,6 @@
       tally.add(E.scale.index(ENC.t), ENC.clip, true, ENC.role !== ROLE.ZERO);
     }
   }
-  scaleHooks.paneMarks = paneTally;
   // The pane's Legend model (E.legend.build over the pane frame), for the generated keys of the footer and the
   // axis popover's model and key fields (D.18). Built when what it is made of changed (the axis, the counts
   // of the drawn marks, the model's status, the palette) and never in a steady frame; null when this frame has
@@ -15090,14 +15064,13 @@
     }
   }
   // The address and the stored last view follow the descriptors after a commit, a policy action or a lock
-  // change (the spine calls this through `scaleHooks.persist`). Written once the change has settled, and the
+  // change (the spine calls it after a commit, a policy action or a lock change). Written once the change has settled, and the
   // browser-wide cache is updated with the live contexts (their newest record each: the cache is for the
   // next page load, and a context's older records would only fill storage).
   function persistScale() {
     clearTimeout(persistRt.timer);
     persistRt.timer = setTimeout(persistNow, PERSIST_MS);
   }
-  scaleHooks.persist = persistScale;
   function persistNow() {
     clearTimeout(persistRt.timer);
     persistRt.timer = 0;
@@ -15648,7 +15621,6 @@
       key: E.context.keyString(ctxLens),
     };
   }
-  scaleHooks.lensCohort = lensCohortInputs;
   // One mark of the lens, from what frame.encode left in ENC: a colour from the mapping is a fill; a typed
   // non-value is a pattern from the role table; an occupied cell with no magnitude (Geometry, No calibration,
   // an unsigned zero) is an outline in the occupancy ink. Marks under 4 css px are a flat low-alpha fill.
@@ -16995,7 +16967,7 @@
   bindRoot();
   bindEvidence();
   bindNavigation();
-  scaleHooks.bindUi?.();
+  bindScaleUi();
   try {
     qsa("button,input,select").forEach((control) => (control.disabled = true));
     el("market").textContent = PACK.live ? "LIVE" : "RECORDED";

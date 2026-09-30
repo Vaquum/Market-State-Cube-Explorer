@@ -2895,6 +2895,7 @@
       (tablePage + 1) * CELLS_PAGE,
     )) {
       const tr = document.createElement("tr"),
+        state = cellState(c, b, ts, ps),
         mz = mv ? moves(c) : null,
         reached = Boolean(mq) && c.c * ts < end,
         // What the chosen measure reads in this row: under Path and Dwell the motion cell (none where the
@@ -2934,7 +2935,7 @@
                   [secondsMilli(mz?.w ?? 0), "dwell", mz?.w ?? 0],
                 ]
           : []),
-        [cellState(c, b, ts, ps) + (c.ct === 0 ? " · no trades" : ""), "state", cellState(c, b, ts, ps)],
+        [state + (c.ct === 0 ? " · no trades" : ""), "state", state],
       ];
       for (const [text, field, canonical] of values) {
         const td = document.createElement("td");
@@ -3117,11 +3118,9 @@
       return {
         rows: [
           ["Of its parent", share(e.share), "cascadeShare", e.share],
-          typed
-            ? typed.tag === "finite"
-              ? ["Cascade", ratioText(typed.value, exact), "cascade", typed.value]
-              : ["Cascade", E.result.describe(typed).short, "cascade", typed.tag]
-            : ["Cascade", ratioText(e.value, exact), "cascade", e.value],
+          // With a readout the value (or the reason there is none) is its first row; this one stands in
+          // where there is no readout to read.
+          ...(typed ? [] : [["Cascade", ratioText(e.value, exact), "cascade", e.value]]),
           ...(part
             ? [
                 ["Whole cell", money(e.w.v), "cascadeCell", e.w.v],
@@ -3142,14 +3141,7 @@
       outside: "only part of its parent is loaded",
       none: "no value here",
     };
-    return {
-      rows: [
-        typed && typed.tag !== "finite"
-          ? ["Cascade", E.result.describe(typed).short, "cascade", typed.tag]
-          : ["Cascade", why[e.state]],
-      ],
-      note: "",
-    };
+    return { rows: typed ? [] : [["Cascade", why[e.state]]], note: "" };
   }
   // The pane's column under the pointer: its value and what it is made of,
   // or why it has none.

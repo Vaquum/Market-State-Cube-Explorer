@@ -1,0 +1,9 @@
+{
+  "kind": "grammar-derived",
+  "expectationSource": "python-stdlib",
+  "generator": "tests/reference/wire_golden.py",
+  "seed": null,
+  "source": "Payloads and tails outcomes written by a standard-library Python re-implementation of the MSC2, MSC3, MSCB and MSCC byte layouts and of the tails() rule, from the docstring and the msc2, mscb, block, history and tails functions of tools/cube_bridge.py. Not recorded from a running bridge.",
+  "extractedOn": "2026-09-30",
+  "notes": "vectors.json holds decompressed payload hex (gzip bytes are not comparable across zlib versions). tails-vectors.json states the delta or pack outcome of every case by hand next to its data, and the generator refuses to write when its plain-Python rule disagrees. tests/reference/bridge_crosscheck.py --require-numpy compares both files with the real tools/cube_bridge.py. Regenerate with python3 tests/reference/wire_golden.py --write."
+}

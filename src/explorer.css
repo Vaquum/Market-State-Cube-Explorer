@@ -17,6 +17,19 @@
   --ol-time: light-dark(#8f4f86, #d59bcc);
   /* Taker flow's midpoint: an even share, distinct from gridlines and both sides */
   --ol-neutral: light-dark(#b9c2bc, #5f6b64);
+  /* Roles (visual version 2): a signed measure colours by role, never by side. The hexes are the buy,
+     sell and neutral hexes renamed (DR-20); the old tokens stay until every consumer has moved. */
+  --ol-positive: light-dark(#2d769c, #73b8d4);
+  --ol-negative: light-dark(#b3624b, #d89777);
+  --ol-midpoint: light-dark(#b9c2bc, #5f6b64);
+  /* Non-value marks: the occupancy outline and the ink of patterns and glyphs, from tokens that pass 3:1
+     on the surface (--ol-line and --ol-neutral do not and must not colour them) */
+  --ol-occupancy: var(--ol-border);
+  --ol-state: var(--ol-muted);
+  /* Interim names for the unsigned and reference marks that still use the taker sides (taker-buy subset
+     bar, Buy POC, RSI divergences), so that positive never appears in an unsigned context */
+  --ol-legacy-buy: light-dark(#2d769c, #73b8d4);
+  --ol-legacy-sell: light-dark(#b3624b, #d89777);
   /* Lines: one colour per family, apart from the data's colours and from
      each other in every colour vision; a line's timeframe shows in its
      weight and saturation, in three tiers. Clock lines are neutral. */

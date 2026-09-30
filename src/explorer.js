@@ -4974,7 +4974,7 @@
   const scaleUi = {
       // The Legend model of each colour channel, built when its key changed: the popover, the marker and the
       // footer keys read it, so nothing is built twice for one state.
-      models: { cells: null, rows: null },
+      models: { cells: null, rows: null, pane: null },
       // What the marker drew last, and the footer keys' last write key
       markerKey: "",
       keysKey: "",
@@ -4982,6 +4982,7 @@
       // own, which the axis chip shows; the last write key of the chip and its last place
       axes: new Map(),
       pane: null,
+      paneShown: null,
       axisKey: "",
       lensKey: "",
       lensId: "",
@@ -5027,7 +5028,8 @@
   // What the settled warnings pass said about a channel, as a short string: the legend is rebuilt when the
   // shares, the clip counts or the warning set moved, and not when the pass re-ran to the same answer.
   function uiWarnStamp(channel) {
-    const report = scaleRt.warn[channel]?.report;
+    const entry = scaleRt.warn[channel],
+      report = entry?.report;
     if (!report) return "";
     const c = report.counts ?? {};
     return [
@@ -5042,15 +5044,36 @@
       c.exactLow,
       c.exactHigh,
       Math.round((report.shares?.area ?? 0) * 1000),
-      scaleRt.fitSeq?.[channel] ?? 0,
+      // the per-key counts the consumers' marks hooks kept beside the tally
+      Object.entries(entry.keys ?? {})
+        .map(([id, n]) => id + "=" + n)
+        .join("+"),
     ].join(",");
   }
-  // Marks per key id for the generated keys: the clip counts of the settled pass, and whatever per-role
-  // counts that pass kept beside them.
+  // What the spine's chip of a frame says beyond its ids (the attributes, the options the Legend is built
+  // with): anything in it that moved is a reason to write the chip again, since a context change, a fit
+  // number, a note or a count can leave the mapping id as it was.
+  function uiChipStamp(chip) {
+    if (!chip) return "";
+    const o = chip.opts ?? {},
+      n = o.note;
+    return [
+      Object.values(chip.attrs).join("~"),
+      n ? [n.causes?.join("/"), n.from, n.to].join(">") : "",
+      o.evicted ? "e" : "",
+      o.afterEdge ? "a" : "",
+      o.paused || "",
+      o.revisionStatus ?? "",
+      Object.entries(o.counts ?? {})
+        .map(([id, count]) => id + "=" + count)
+        .join("+"),
+    ].join("|");
+  }
+  // Marks per key id for a channel the spine made no chip for (the lens): whatever its own tally counted.
   function legendCounts(channel) {
     const entry = scaleRt.warn[channel],
       c = entry?.report?.counts,
-      out = { ...(entry?.keyCounts ?? null) };
+      out = { ...(entry?.keys ?? null) };
     if (c) {
       out["clip-low"] = c.low;
       out["clip-high"] = c.high;
@@ -5061,63 +5084,53 @@
     }
     return out;
   }
-  // The last settle's scale change as the legend reads it: the cause words and the ids before and after.
-  function legendNote(channel) {
-    const note = scaleRt.note;
-    if (!note) return null;
-    const causes = [].concat(note.causes ?? note.cause ?? []).filter(Boolean),
-      pick = (ids) => (typeof ids === "string" ? ids : Array.isArray(ids) ? ids.join(", ") : (ids?.[channel] ?? undefined));
-    if (!causes.length) return null;
-    return { causes, from: pick(note.oldIds), to: pick(note.newIds) };
-  }
   // The Legend of a channel's frame (a model, allocated; only when the chip's key changed or a popover opens).
-  function legendOf(channel, frame) {
+  // The spine's chip of the frame carries the options and the warnings report it was made with (its note of a
+  // scale change, the counts of its settled pass, the paused and evicted states); a channel with no chip of
+  // its own (the lens) is built from its own tally.
+  function legendOf(channel, frame, chip) {
     const input = frame.legendInput();
     if (!input) return null;
     const auto = S.scale[channel === "lens" ? "cells" : channel] === "auto",
-      paused = auto && S.scale.lock ? "lock" : auto && scaleRt.playing ? "play" : false;
+      paused = auto && S.scale.lock ? "lock" : auto && scaleRt.playing ? "play" : false,
+      base = chip
+        ? chip.opts
+        : { channel, counts: legendCounts(channel), paused, updating: frame.mappingState === "updating" };
     return {
       input,
-      legend: E.legend.build(input, scaleRt.warn[channel]?.report ?? null, uiFmt, {
+      chip,
+      legend: E.legend.build(input, chip ? chip.warn : (scaleRt.warn[channel]?.report ?? null), uiFmt, {
+        ...base,
         channel,
-        counts: legendCounts(channel),
         measureLabel: channel === "rows" ? (ROWS_INFO[S.rows]?.name ?? S.rows) : MODE_NAMES[S.mode],
-        note: legendNote(channel),
-        paused,
         shortExposure: scaleRt.warn[channel]?.shortExposure,
-        revisionStatus: nav.revision?.kind === "none" ? "none" : undefined,
       }),
     };
   }
   // The observation attributes of a chip (INTEGRATION D.18), from the same frame that painted: a frame log
-  // can assert them per draw. The spine may hand over its own values in `sc.chips[channel]` (camel-cased
-  // dataset names); they replace the ones derived here.
-  function legendAttrs(node, channel, built, sc) {
+  // can assert them per draw. The spine's chip hands them over (attribute names and strings); a channel it
+  // made no chip for (the lens) gets them derived from its Legend input here.
+  function legendAttrs(node, channel, built) {
     const { input, legend } = built,
-      rows = channel === "rows",
-      attrs = {
-        state: legend.state === "ok" ? "ready" : legend.state,
-        policy: channel === "lens" && S.scale.local ? "local" : (input.policy ?? ""),
-        mappingId: input.desc?.id ?? input.mappingId ?? "",
-        appearance: input.lut.id,
-        workspace: scaleWorkspace(),
-        transform: input.transform ?? "",
-        basis: input.basis ?? "",
-        context: input.contextKey ?? "",
-        fitThrough: String(input.calibration?.obsEndMs ?? ""),
-        fitSeq: String(scaleRt.fitSeq?.[channel] ?? 0),
-        override: input.external ? "external" : "",
-        updating: String(legend.state === "updating"),
-        ...sc.chips?.[channel],
-      };
-    if (rows) {
-      attrs.rowSize ??= String(input.level?.m ?? "");
-      attrs.quality ??= String(input.info?.quality ?? "");
-    } else {
-      attrs.effectiveN ??= String(input.level?.n ?? "");
-      attrs.effectiveM ??= String(input.level?.m ?? "");
-    }
-    for (const [name, value] of Object.entries(attrs)) if (node.dataset[name] !== String(value)) node.dataset[name] = String(value);
+      attrs = built.chip
+        ? built.chip.attrs
+        : {
+            "data-state": legend.state === "ok" ? "ready" : legend.state,
+            "data-policy": S.scale.local ? "local" : (input.policy ?? ""),
+            "data-mapping-id": input.desc?.id ?? input.mappingId ?? "",
+            "data-appearance": input.lut.id,
+            "data-workspace": scaleWorkspace(),
+            "data-transform": input.transform ?? "",
+            "data-basis": input.basis ?? "",
+            "data-context": input.contextKey ?? "",
+            "data-effective-n": String(input.level?.n ?? ""),
+            "data-effective-m": String(input.level?.m ?? ""),
+            "data-fit-through": String(input.calibration?.obsEndMs ?? ""),
+            "data-fit-seq": String(scaleRt.seq.lens),
+            "data-override": input.external ? "external" : "",
+            "data-updating": String(legend.state === "updating"),
+          };
+    for (const [name, value] of Object.entries(attrs)) if (node.getAttribute(name) !== value) node.setAttribute(name, value);
     return attrs;
   }
   // A legend bar: the exact colour row of the Lut through the transform (E.legend.barPixels), blitted one
@@ -5184,23 +5197,24 @@
   // One colour channel's chip, written when the key computed from its ids changed; in a steady frame that
   // is one object and a few string joins, and no Legend model is built (DD-90).
   function legendChannel(channel, frame, sc, node, textId, barId, barWidth) {
-    const key = E.legend.keyOf({
-      mappingId: frame.mappingId,
-      appearanceId: sc.lut.id,
-      themeEpoch: colourEpoch,
-      policy: legendPolicy(channel),
-      state: frame.mappingState,
-      warnStamp: uiWarnStamp(channel),
-      marker: null,
-      level: frame.level,
-    });
+    const chip = sc.chip[channel],
+      key = E.legend.keyOf({
+        mappingId: frame.mappingId,
+        appearanceId: sc.lut.id,
+        themeEpoch: colourEpoch,
+        policy: legendPolicy(channel) + "|" + uiChipStamp(chip),
+        state: frame.mappingState,
+        warnStamp: uiWarnStamp(channel),
+        marker: null,
+        level: frame.level,
+      });
     if (scaleRt.legendKey[channel] === key) return;
     scaleRt.legendKey[channel] = key;
-    const built = legendOf(channel, frame);
+    const built = legendOf(channel, frame, chip);
     if (!built) return;
     scaleUi.models[channel] = built.legend;
     legendChip(node, textId, built.legend);
-    legendAttrs(node, channel, built, sc);
+    legendAttrs(node, channel, built);
     // A warning shows on the chip's border too, for the moment its text is cut short
     node.dataset.warn = String(built.legend.warnings.some((w) => w.id === "range-exceeded" || w.id === "low-discrimination"));
     el(barId).hidden = false;
@@ -5238,8 +5252,10 @@
       }
     }
     lensStatusWrite(sc);
+    // The axis chip first: it builds the Columns pane's Legend, whose marks the footer keys count too
+    axisChipCommit();
     // The footer keys: those of the channels in view that have marks, each id once, counts added
-    const legends = [scaleUi.models.cells, scaleUi.models.rows].filter(Boolean),
+    const legends = [scaleUi.models.cells, scaleUi.models.rows, scaleUi.models.pane].filter(Boolean),
       keysKey =
         legends.map((l) => l.keys.map((k) => k.id + ":" + k.count).join(",")).join("|") + "|" + colourEpoch + "|" + (devicePixelRatio || 1);
     if (scaleUi.keysKey !== keysKey) {
@@ -5253,7 +5269,6 @@
         }
       el("keys-scale").replaceChildren(...uiKeyList([...merged.values()], inks, false));
     }
-    axisChipCommit();
   }
   scaleHooks.legend = legendWrite;
   // The lens's status element: a text mirror of the STABLE part of its caption (the measure, whether it
@@ -5275,7 +5290,7 @@
       });
     if (scaleUi.lensKey === key) return;
     scaleUi.lensKey = key;
-    const built = legendOf("lens", frame);
+    const built = legendOf("lens", frame, null);
     if (!built) return;
     const { legend } = built,
       node = el("lens-status"),
@@ -5293,7 +5308,7 @@
         .filter(Boolean)
         .join(" · ");
     scaleUi.lensId = built.input.desc?.id ?? built.input.mappingId ?? "";
-    legendAttrs(node, "lens", built, sc);
+    legendAttrs(node, "lens", built);
     if (!transient && node.textContent !== words) node.textContent = words;
   }
   // The marker on the legend bar: where the value under the pointer (or of the table row) sits, written
@@ -5313,9 +5328,10 @@
     note.hidden = !found;
     if (popMarker) popMarker.hidden = !found;
     if (!found) {
-      delete marker.dataset.coordinate;
-      delete marker.dataset.readout;
-      delete marker.dataset.clip;
+      // The attributes stay (empty) so the observation surface always finds the element; `hidden` says it is off
+      marker.dataset.coordinate = "";
+      marker.dataset.readout = "";
+      marker.dataset.clip = "";
       note.textContent = "";
       return;
     }
@@ -5684,10 +5700,14 @@
   // An axis the draw in progress has just scaled (registered as `axisChip`; called by the pane, the
   // oscillators and the profiles). Only the pane's record becomes the chip; all of them are listed in the
   // popover. A null record says nothing: the chip is hidden when no pane axis was handed over this frame.
-  function axisChipWrite(rec) {
+  function axisChipWrite(rec, shown) {
     if (!rec) return;
     scaleUi.axes.set(rec.id, rec);
-    if (String(rec.id).startsWith("pane.")) scaleUi.pane = rec;
+    if (String(rec.id).startsWith("pane.")) {
+      scaleUi.pane = rec;
+      // what the pane drew this frame: its frame (the Legend input), its model and its per-key counts
+      scaleUi.paneShown = shown ?? null;
+    }
   }
   scaleHooks.axisChip = axisChipWrite;
   // The end of the draw: the chip's place (re-set on every draw from the geometry, because the pane moves
@@ -5696,13 +5716,19 @@
   function axisChipCommit() {
     const chip = el("axis-chip"),
       rec = scaleUi.pane,
+      shown = scaleUi.paneShown,
       records = [...scaleUi.axes.values()];
-    scaleUi.pane = null;
+    scaleUi.pane = scaleUi.paneShown = null;
     scaleUi.axes.clear();
     if (!rec) {
       if (!chip.hidden) {
         chip.hidden = true;
         if (pop.open?.button === chip) closePop();
+      }
+      if (scaleUi.models.pane) {
+        scaleUi.models.pane = null;
+        scaleUi.axisKey = "";
+        scaleUi.keysKey = "";
       }
       return;
     }
@@ -5712,14 +5738,27 @@
       right = Math.round(G.width - (G.x + G.w) + 4) + "px";
     if (chip.style.top !== top) chip.style.top = top;
     if (chip.style.right !== right) chip.style.right = right;
-    const key =
-      records
-        .map((a) => [a.id, a.policy, a.typed, a.hold, a.mappingId, a.domain?.join("~"), a.clipped?.count, a.provenance?.through].join(":"))
-        .join("|") +
-      "|" + S.scale.lock + "|" + scaleWorkspace() + "|" + colourEpoch;
+    const counts = shown?.counts ?? {},
+      key =
+        records
+          .map((a) => [a.id, a.policy, a.typed, a.hold, a.mappingId, a.domain?.join("~"), a.clipped?.count, a.provenance?.through].join(":"))
+          .join("|") +
+        "|" + S.scale.lock + "|" + scaleWorkspace() + "|" + colourEpoch + "|" + (shown?.key ?? "") + "|" + (shown?.model?.status ?? "") +
+        "|" + Object.entries(counts).join(",");
     if (scaleUi.axisKey === key) return;
     scaleUi.axisKey = key;
     scaleUi.axisRecords = records;
+    // The pane's Legend: its details (the model's provenance for Efficiency), and the generated keys its marks
+    // need (a zero tick, a column with no value, a value beyond the axis). An oscillator has no frame to ask.
+    scaleUi.models.pane = shown?.frame
+      ? E.legend.build(shown.frame, scaleRt.warn.pane?.report ?? null, uiFmt, {
+          channel: "pane",
+          counts: { ...counts, "zero-tick": counts.zero ?? 0 },
+          measureLabel: shown.measure?.label,
+          paused: rec.hold === "play" ? "play" : false,
+        })
+      : null;
+    scaleUi.keysKey = "";
     const text = uiAxisText(rec);
     if (el("axis-chip-text").textContent !== text) el("axis-chip-text").textContent = text;
     const label = `${E.text.ui.scale}: ${text}`;
@@ -5734,7 +5773,7 @@
       basis: "",
       context: rec.id,
       fitThrough: String(rec.provenance?.through ?? ""),
-      fitSeq: String(scaleRt.fitSeq?.axis ?? 0),
+      fitSeq: String(scaleRt.seq.axis ?? 0),
       override: "",
       updating: String(Boolean(rec.hold) && rec.hold !== "play"),
       axisId: rec.id,
@@ -5788,6 +5827,23 @@
         if (rec.clipped?.count > 0) box.append(uiEl("p", "ol-legend-note", E.text.fill(E.text.axis.clipped, { n: rec.clipped.count, total: rec.clipped.total })));
         return box;
       });
+    // The pane's own details (measure, unit, the model's provenance for Efficiency) and its keys with counts
+    const legend = scaleUi.models.pane;
+    if (legend) {
+      const list = uiEl("dl", "ol-legend-details"),
+        inks = { state: colors.state, occupancy: colors.occupancy, surface: colors.surface };
+      for (const d of E.legend.details(legend)) {
+        const dd = uiEl("dd", "ol-num", uiUtcText(d));
+        dd.dataset.field = d.field;
+        if (d.canonical !== null && d.canonical !== undefined) dd.dataset.value = typeof d.canonical === "string" ? d.canonical : JSON.stringify(d.canonical);
+        list.append(uiEl("dt", "", d.label), dd);
+      }
+      const keys = uiEl("div", "ol-legend-keys");
+      keys.append(...uiKeyList(legend.keys, inks, true));
+      const detail = uiEl("section", "ol-legend-axis");
+      detail.append(list, keys);
+      sections.push(detail);
+    }
     panel.querySelector('[data-part="axes"]').replaceChildren(...sections);
     const lock = panel.querySelector('[data-action="lock"]');
     lock.setAttribute("aria-pressed", String(S.scale.lock));

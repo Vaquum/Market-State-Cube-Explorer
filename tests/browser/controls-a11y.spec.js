@@ -28,63 +28,13 @@
 // rejection texts is copied from INTEGRATION.md D.11 (never read back from the module); the colours the page computes are
 // read with getComputedStyle, so this checks what is painted.
 //
-// A STAND-IN for the spine. At the base of this package the spine resolves no mapping (every frame says "No
-// calibration"), so a chip would show nothing to open. `STAND_IN` wraps the module's own frame builders and gives a
-// frame that has no mapping a Value calibration made by the module's own E.scale.fitValue. It touches only frames that
-// say "No calibration", so it is inert wherever the spine has resolved a real mapping. It feeds nothing else.
-//
-// What this does NOT prove: that the warnings, the axis chip or the marker show correct numbers (they need the marks
-// hooks of C, R and X and the readouts of T, which are not merged at this base; the page is checked by hand with a
-// scratch build for those), the bar of a SIGNED scale in the page (legend.test.js compares E.legend.barPixels with the Lut for
-// every shape), or how a screen reader speaks any of it (no screen reader was run).
+// The page is the merged one: the spine resolves the mappings, the consumers' marks hooks feed the warnings, so the
+// chips show what the page really has (no stand-in for a missing spine any more).
 const { test, expect, probeTools } = require("./fixtures.js");
 const reference = require("../reference/contrast.js");
 
-// Serialised into the page before its scripts run: no outer variable may be used inside.
-function STAND_IN() {
-  let real = null;
-  const wrap = (E) => {
-    const resolved = (spec, channel) => {
-      // Delta (and Rows Delta) is signed: its mapping must be too, or the module refuses the pair
-      const signed = spec.mode === "delta" || spec.kind === "delta";
-      const values = [1200, 4000, 9000, 30000, 120000, 480000, 26800000];
-      const fit = E.scale.fitValue(signed ? values.concat(values.map((v) => -v / 2)) : values, { signed });
-      const record = {
-        v: 1,
-        key: spec.contextKey || "k",
-        ctx: null,
-        desc: fit.descriptor,
-        policy: "explore",
-        origin: "fit",
-        workspace: "live",
-        cohort: { kind: channel, n: 152, zeros: 0, nonzero: 152, excluded: { partial: 4, open: 1 }, calibratedOn: "visible cells" },
-        obsEndMs: 1790251368750,
-        cutMs: 1790251368750,
-        algorithm: "value-fit@1",
-      };
-      return {
-        state: "ok", desc: fit.descriptor, record, policy: "explore", origin: "fit", id: fit.descriptor.id,
-        channel: channel === "cells" ? "c" : "r", key: record.key, workspace: "live", external: false, fallback: null,
-        reason: null, detail: null, ineligibleNewer: false, obsEndMs: record.obsEndMs,
-      };
-    };
-    const cellsFrame = E.readout.cellsFrame;
-    const rowsFrame = E.readout.rowsFrame;
-    const fixedModes = ["flow", "flowtrades", "cascade", "dwell", "geometry"];
-    return {
-      ...E,
-      readout: {
-        ...E.readout,
-        cellsFrame: (spec) => (spec.mapping && spec.mapping.state === "no-calibration" && !fixedModes.includes(spec.mode) ? cellsFrame({ ...spec, mapping: resolved(spec, "cells") }) : cellsFrame(spec)),
-        rowsFrame: (spec) => (spec.mapping && spec.mapping.state === "no-calibration" && spec.kind !== "relvol" ? rowsFrame({ ...spec, mapping: resolved(spec, "rows") }) : rowsFrame(spec)),
-      },
-    };
-  };
-  Object.defineProperty(window, "explorerEncoding", { configurable: true, get: () => real, set: (v) => { real = wrap(v); } });
-}
-
-// A fault in the module's frame builder: the page turns the scale display off and says so in the notice banner (the one
-// real way to a notice that this base has; the notice queue itself is unit-tested).
+// A fault in the module's frame builder: the page turns the scale display off and says so in the notice banner (a
+// dependable way to a notice with the page in its normal state; the notice queue itself is unit-tested).
 function FAULT() {
   let real = null;
   Object.defineProperty(window, "explorerEncoding", {
@@ -103,8 +53,8 @@ const REJECT_MANUAL = "A manual domain needs finite positive U and k with k <= U
 const REJECT_SYMMETRIC = "The window must be symmetric about 50% for taker shares";
 
 // Open the page on a fake `mini` cube and wait until it is at rest.
-async function load(page, fake, probe, hash, script = STAND_IN) {
-  await page.context().addInitScript(script);
+async function load(page, fake, probe, hash, script = null) {
+  if (script) await page.context().addInitScript(script);
   await page.goto(`${fake.url}/${hash}`);
   await page.locator("#ol-loading").waitFor({ state: "hidden" });
   await fake.idle({ quietMs: 600, timeoutMs: 20000 });
@@ -471,8 +421,13 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     await page.keyboard.press("Enter");
     await expect(more).toHaveAttribute("aria-expanded", "true");
     await expect(page.locator("#ol-note-details li")).toContainText("injected fault for the notice banner");
-    await page.locator("#ol-notice-dismiss").focus();
-    await page.keyboard.press("Enter");
+    // The address has no visual version, so the persistence package also posts its one-time notice: the queue shows one
+    // notice at a time, the next one appears when this one is dismissed, and the banner is gone when the queue is empty.
+    const queued = Number((await page.locator("#ol-notice-text .ol-notice-queued").count()) > 0);
+    for (let i = 0; i <= queued && (await banner.isVisible()); i++) {
+      await page.locator("#ol-notice-dismiss").focus();
+      await page.keyboard.press("Enter");
+    }
     await expect(banner).toBeHidden();
     expect(await page.evaluate(() => document.activeElement?.id), "the focus returns to the chart").toBe("ol-canvas");
     const limitWithout = Number(await grip.getAttribute("aria-valuemax"));

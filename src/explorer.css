@@ -2090,12 +2090,15 @@
 }
 #origo-lens .ol-legend-details {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
+  /* the label column never takes more than half the popover, whatever a label says */
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
   gap: 2px var(--sp-3);
   margin: var(--sp-2) 0;
 }
 #origo-lens .ol-legend-details dt {
   color: var(--ol-muted);
+  max-width: 11em;
+  overflow-wrap: anywhere;
 }
 #origo-lens .ol-legend-details dd {
   margin: 0;

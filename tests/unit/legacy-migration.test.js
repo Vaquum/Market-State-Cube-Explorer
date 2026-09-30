@@ -165,7 +165,7 @@ test("the legacy fixtures: stored view:v4, view:v5, named views and history entr
 
 // ---- once per payload, per tab ---------------------------------------------------------------------------------------
 
-test("the notice is once per payload digest per tab: E.codec.digest identifies the payload, E.notice seen/mark remembers it", () => {
+test("the notice is once per payload digest per tab: E.codec.digest identifies the payload, E.notice seen/mark remembers it", { todo: E.notice ? false : "part 21-notice (package W1-F) is not in this build" }, () => {
   const a = "#w=24h&mode=delta";
   const b = "#w=24h&mode=trades";
   assert.match(C.digest(a), /^[0-9a-f]{16}$/);

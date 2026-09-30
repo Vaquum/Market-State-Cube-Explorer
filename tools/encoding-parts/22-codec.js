@@ -660,6 +660,20 @@
     return cdcDeepFreeze(desc);
   }
 
+  // The text of a rank body, per descriptor OBJECT: a descriptor is immutable, its 257 knots are 2742
+  // characters, and viewHash() runs several times per action, so the encoding is made once. This is the one
+  // memo of the module and, like E.scale's plan cache, it is unobservable (a WeakMap keyed by the object).
+  const cdcRankText = new WeakMap();
+
+  function cdcRankBody(desc) {
+    let text = cdcRankText.get(desc);
+    if (text === undefined) {
+      text = "q" + API.hash.f64ToB64(desc.params.knots);
+      cdcRankText.set(desc, text);
+    }
+    return text;
+  }
+
   // The body of a record (B.15), from a descriptor. Returns null for a kind that has no address form.
   function cdcFormatBody(desc, idsOnly) {
     const p = desc.params;
@@ -669,7 +683,7 @@
       case "value-linear":
         return (desc.signed ? "N" : "n") + cdcNum(p.U);
       case "rank-type7-257":
-        return idsOnly ? "q~" + desc.id : "q" + API.hash.f64ToB64(p.knots);
+        return idsOnly ? "q~" + desc.id : cdcRankBody(desc);
       case "fixed-linear":
         return "f" + cdcNum(p.lo) + "," + cdcNum(p.hi);
       case "axis-linear":
@@ -737,7 +751,7 @@
 
   // The context a record's descriptor implies when the address does not say: the transform of the context
   // follows the descriptor kind; a zero-only mapping does not reveal whether it was fitted as Value (log or
-  // linear) or as Rank, so the settings written in the same address decide (see the report, amendment 2).
+  // linear) or as Rank, so the settings written in the same address decide. That is a gap in the grammar of B.15 (a record would need one more letter to say it), kept as it is until the design owner rules.
   function cdcCtxTransform(kind, fixedMeasure, settings, rankOk) {
     if (fixedMeasure) return "fixed";
     if (kind === "value-log1p") return "value-log";
@@ -989,14 +1003,23 @@
     if (axes.length > LIMITS.AXES_MAX) throw cdcError("LimitError", "more than " + LIMITS.AXES_MAX + " frozen axes (" + axes.length + ")", { code: "limit", limit: LIMITS.AXES_MAX });
     const dropped = [];
     const helpers = { env: e, drop: (key, reason) => dropped.push({ key, reason }) };
-    const add = (out, k, v) => out.push(k + "=" + v);
+    // The writer emits only [A-Za-z0-9_.:,;~!@-] inside a value (B.15): no "%", "+", "=" or "&", so an address
+    // never needs escaping and never splits wrongly. A value outside that set is a caller's bug: refuse it here,
+    // where it is made, instead of writing an address that reads back as something else.
+    const add = (out, k, v) => {
+      if (!/^[A-Za-z0-9_.:,;~!@-]*$/.test(v)) throw new TypeError("formatAddress: the value of " + k + " is not address-safe");
+      out.push(k + "=" + v);
+    };
     const head = [];
     if (state.window) add(head, "w", state.window);
     else {
       add(head, "t", cdcStamp(state.tA, e) + "~" + cdcStamp(state.tB, e));
       add(head, "p", cdcUsd(state.pA, e) + "~" + cdcUsd(state.pB, e));
     }
-    if (state.auto === false) add(head, "r", state.n + "," + state.m);
+    if (state.auto === false) {
+      if (cdcIsInt(state.n) && cdcIsInt(state.m) && state.n >= 0 && state.m >= 0) add(head, "r", state.n + "," + state.m);
+      else dropped.push({ key: "r", reason: "a locked level needs integer n and m" });
+    }
     add(head, "vis", String(VERSION.visual));
     add(head, "ap", state.appearance);
     // The settings of the table, with the three navigation keys that sit among them written in place.
@@ -1005,12 +1028,17 @@
       const value = entry.write(state, helpers);
       if (value !== null && value !== undefined) add(body, entry.param, value);
       if (entry.id === "lines") {
+        // A selection or an anchor that is not finite cannot be written; the view stands and the drop is listed.
         if (Array.isArray(state.selection) && state.selection.length === 4) {
           const s = state.selection;
-          add(body, "sel", cdcStamp(s[0], e) + "~" + cdcStamp(s[1], e) + "," + cdcUsd(s[2], e) + "~" + cdcUsd(s[3], e));
+          if (s.every(cdcIsFinite)) add(body, "sel", cdcStamp(s[0], e) + "~" + cdcStamp(s[1], e) + "," + cdcUsd(s[2], e) + "~" + cdcUsd(s[3], e));
+          else dropped.push({ key: "sel", reason: "the selection is not four finite numbers" });
         }
-        if (state.anchor !== null && state.anchor !== undefined) add(body, "at", cdcStamp(state.anchor, e));
-        if (state.replay === true) add(body, "replay", "1");
+        if (state.anchor !== null && state.anchor !== undefined) {
+          if (cdcIsFinite(state.anchor)) add(body, "at", cdcStamp(state.anchor, e));
+          else dropped.push({ key: "at", reason: "the anchor is not a finite number" });
+        }
+        if (state.replay === true && cdcIsFinite(state.anchor)) add(body, "replay", "1");
       }
     }
     // The records, in a deterministic order: by channel, then by text.
@@ -1401,6 +1429,30 @@
     fixed: ["fixed-linear", "fixed-diverging"],
   });
 
+  // The cohort of a portable record is provenance shown in the details: its tags come from enumerations and
+  // its counts are integers. Returns a reason or null.
+  function cdcCohortProblem(c) {
+    if (c === null || c === undefined) return null;
+    if (!cdcIsObject(c) || !cdcIsInt(c.n) || c.n < 0) return "the cohort needs a count n";
+    for (const name of ["zeros", "nonzero"]) if (c[name] !== undefined && (!cdcIsInt(c[name]) || c[name] < 0)) return "cohort." + name + " is a count";
+    if (c.kind !== undefined && ["cells", "motion", "rows", "columns", "lens"].indexOf(c.kind) < 0) return "unknown cohort kind";
+    if (c.calibratedOn !== undefined && ["view", "selection", "period", "lens"].indexOf(c.calibratedOn) < 0) return "unknown cohort support";
+    if (c.quality !== undefined && !/^(exact|approx-start|approx-rows:[1-9]\d*)$/.test(c.quality)) return "unknown cohort quality";
+    if (c.excluded !== undefined) {
+      if (cdcIsObject(c.excluded)) {
+        for (const name of Object.keys(c.excluded)) if (!cdcIsInt(c.excluded[name]) || c.excluded[name] < 0) return "cohort.excluded." + name + " is a count";
+      } else if (!cdcIsInt(c.excluded) || c.excluded < 0) return "cohort.excluded is a count";
+    }
+    if (c.level !== undefined && c.level !== null && (!cdcIsObject(c.level) || !cdcIsInt(c.level.n) || !cdcIsInt(c.level.m))) return "cohort.level is {n, m}";
+    if (c.bounds !== undefined && c.bounds !== null && (!Array.isArray(c.bounds) || c.bounds.length !== 4 || !c.bounds.every(cdcIsFinite))) return "cohort.bounds is four numbers";
+    if (c.obsEndBase !== undefined && !cdcIsFinite(c.obsEndBase)) return "cohort.obsEndBase is a number";
+    if (c.support !== undefined && c.support !== null) {
+      const pair = (x) => Array.isArray(x) && x.length === 2 && x.every(cdcIsFinite);
+      if (!cdcIsObject(c.support) || (c.support.timeBase !== undefined && !pair(c.support.timeBase)) || (c.support.priceRows !== undefined && !pair(c.support.priceRows))) return "cohort.support is two base ranges";
+    }
+    return null;
+  }
+
   // A descriptor and the context it is for must agree: the kind is one the context's transform can be mapped
   // with, and its signedness is the measure's (the class string of E.context says which). Returns a reason or null.
   function cdcConsistency(desc, ctx) {
@@ -1433,7 +1485,8 @@
     const mismatch = cdcConsistency(r.desc, r.ctx);
     if (mismatch) return { reason: mismatch };
     const c = r.cohort;
-    if (c !== null && c !== undefined && (!cdcIsObject(c) || !cdcIsInt(c.n) || c.n < 0)) return { reason: "the cohort needs a count n" };
+    const cohortProblem = cdcCohortProblem(c);
+    if (cohortProblem) return { reason: cohortProblem };
     for (const name of ["obsEndMs", "cutMs", "canonicalThroughMs"]) if (r[name] !== null && r[name] !== undefined && (!cdcIsInt(r[name]) || r[name] < 0)) return { reason: name + " is an integer number of milliseconds" };
     if (r.token !== null && r.token !== undefined && (typeof r.token !== "string" || !/^[0-9a-f]{1,32}$/.test(r.token))) return { reason: "the token is hex text" };
     const ctx = r.ctx.consumer === "lens" ? { consumer: "lens", base: cells, bounds: r.ctx.bounds, n: r.ctx.n, m: r.ctx.m } : cells;

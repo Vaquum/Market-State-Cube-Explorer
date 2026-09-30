@@ -124,6 +124,20 @@ test("the exported constants of the limits: 8192 characters, 257 knots, 1 MiB, 1
   assert.equal(E.LIMITS.DESCRIPTORS_MAX, 16);
 });
 
+test("the writer emits only [A-Za-z0-9_.:,;~!@-] in a value: anything else is refused where it is made; a selection that is not finite is dropped, not thrown", () => {
+  for (const patch of [{ mode: "a&b" }, { mode: "a=b" }, { pane: "a b" }, { lines: ["x%20"] }, { period: "a+b" }]) assert.throws(() => C.formatAddress(base(patch), ENV), isError("TypeError"), JSON.stringify(patch));
+  const r = C.formatAddress(base({ selection: [1, NaN, 3, 4], anchor: Infinity, replay: true }), ENV);
+  assert.equal(r.hash, HEAD);
+  assert.deepEqual(plain(r.dropped.map((d) => d.key).sort()), ["at", "sel"]);
+  const lockedNoLevel = C.formatAddress(base({ auto: false, n: null, m: null }), ENV);
+  assert.equal(lockedNoLevel.hash, HEAD);
+  assert.deepEqual(plain(lockedNoLevel.dropped.map((d) => d.key)), ["r"]);
+  // every address the writer makes matches the alphabet of B.15 outside its structure
+  const all = C.formatAddress(withScale({ window: [0.25, 0.75] }, { mode: "flow", level: 520.004, lines: ["vwap:2026-09-01", "1d"], period: "2026-09-01" }), ENV).hash;
+  assert.match(all, /^#[A-Za-z0-9_.:,;~!@=&-]+$/);
+  assert.equal(all.includes("%") || all.includes("+"), false);
+});
+
 // ---- formatAddress: what is written ------------------------------------------------------------------------
 
 test("a default view is #w=24h&vis=2&ap=<id>: vis and ap are always written, every other default is omitted", () => {
@@ -537,7 +551,7 @@ test("Rows and lens records: the context is rebuilt with its period identity; th
     const back = C.parseAddress(C.formatAddress(base({ scales: [x] }), ENV).hash, ENV);
     assert.equal(back.scales[0].ctx.period, period);
   }
-  // the zero-only transform is not in the body: the settings of the same address decide (amendment request 2)
+  // the zero-only transform is not in the body: the settings of the same address decide (a gap in the B.15 grammar, see cdcCtxTransform)
   const zero = C.formatAddress(withScale({ curve: "linear" }, { scales: [record("c", E.scale.zeroOnly(false), cellsCtx("volume", 4, 0, { curve: "linear" }))] }), ENV).hash;
   assert.equal(C.parseAddress(zero, ENV).scales[0].ctx.transform, "value-linear");
 });

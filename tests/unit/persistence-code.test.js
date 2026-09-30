@@ -117,6 +117,23 @@ const rejects = async (promise, code, pattern) => {
 
 // ---- a payload the way the page assembles one -----------------------------------------------------------------
 
+// The model record of API.md B.13, typed in by hand (not read from E.model, so this file needs only the codec).
+const MODEL = {
+  id: "efficiency-diagonal@1",
+  formula: "log2((Echild/Eparent)/2**(ISO_B-1))",
+  ISO_A: -1.06,
+  ISO_B: 0.486,
+  baseline: 0.7002781604436024,
+  fit: { method: "least squares of log2(median column price range / 125) against n", exponentText: "0.49", nMin: 6, nMax: 13, historyStart: "2021-01-01T00:00:00Z", extraction: "2026-09-24" },
+  estimatedAt: null,
+  precision: null,
+  methodVersion: null,
+  latestTrainingObservation: null,
+  eligibilityUpperBound: "2026-09-25T00:00:00Z",
+  appliesTo: ["efficiency", "diagonal"],
+  applicability: "range-derived model applied to touched rows; not proven neutral at every level",
+};
+
 const cellsCtx = (measure, n, m, extra) => E.context.cellsKey({ measure, basis: "amount", transform: "value", curve: "log", n, m, ...(extra || {}) });
 const valueDesc = (U, k, signed) => E.scale.manual({ kind: "value-log1p", signed: Boolean(signed), U, k }).descriptor;
 function record(channel, desc, ctx, extra) {
@@ -144,7 +161,7 @@ function payload(extra) {
       record("c", E.scale.manual({ kind: "fixed-linear", signed: false, lo: 0.2, hi: 0.8 }).descriptor, cellsCtx("dwell", 8, 1), { origin: "manual", policy: "k", external: true }),
     ],
     axes: [{ id: "pane.volume", domain: [0, 1920000000], policy: "frozen", through: 1790251320000 }],
-    models: [{ ...E.model.PROVENANCE, status: "timing-unverified" }],
+    models: [{ ...MODEL, status: "timing-unverified" }],
     observation: { source: "SYNTHETIC fixture standard seed 1 - not market data", instrument: "BTC/USDT", cutoffMs: 1790251368750, canonicalThroughMs: null, token: null, note: "Replay on currently available history; original vintages not guaranteed" },
     ...(extra || {}),
   });
@@ -526,6 +543,14 @@ test("descriptor validation, every branch: channel, policy, transform, formula a
   bad((p) => { p.scales[0].obsEndMs = 1.5; }, /obsEndMs is an integer number of milliseconds/, "obsEndMs");
   bad((p) => { p.scales[0].token = "NOT HEX"; }, /token is hex text/, "token");
   bad((p) => { p.scales[0].cohort = { n: -1 }; }, /cohort needs a count n/, "cohort");
+  bad((p) => { p.scales[0].cohort = { n: 5, calibratedOn: "anywhere" }; }, /unknown cohort support/, "cohort support tag");
+  bad((p) => { p.scales[0].cohort = { n: 5, quality: "approximate" }; }, /unknown cohort quality/, "cohort quality tag");
+  bad((p) => { p.scales[0].cohort = { n: 5, excluded: { partial: "41" } }; }, /cohort\.excluded\.partial is a count/, "excluded count");
+  bad((p) => { p.scales[0].cohort = { n: 5, kind: "everything" }; }, /unknown cohort kind/, "cohort kind");
+  bad((p) => { p.scales[0].cohort = { n: 5, level: { n: 4 } }; }, /cohort\.level is \{n, m\}/, "cohort level");
+  const rich = payload();
+  rich.scales[0].cohort = { kind: "cells", n: 1523, zeros: 0, nonzero: 1523, excluded: { partial: 41, open: 2, unread: 0, nonFinite: 0, negative: 0, stale: 0, placeholder: 0 }, calibratedOn: "view", bounds: [3213312, 3214083, 656, 688], level: { n: 4, m: 0 }, quality: "exact", obsEndBase: 3214082.1333, support: { timeBase: [3213312, 3214083], priceRows: [656, 688] } };
+  assert.equal(C.validatePortable(seal(rich), {}).ok, true, "the full cohort record of B.6 is accepted");
   bad((p) => { p.scales[0].desc.kind = "value-cubic"; }, /unknown kind|invalid descriptor/, "kind");
   bad((p) => { p.scales[0].desc.v = 2; }, /unknown mapping version/, "mapping version");
   bad((p) => { p.scales[0].desc.clip = "wrap"; }, /unknown clip policy/, "clip");
@@ -542,7 +567,7 @@ test("descriptor validation, every branch: channel, policy, transform, formula a
 test("limits on read: 16 scales are accepted, 17 rejected; 19 axes accepted, 20 rejected; 4 models accepted, 5 rejected", () => {
   const scalesOf = (n) => Array.from({ length: n }, (_, i) => plain(record("c", valueDesc(1000 + i, 10 + i, false), cellsCtx("volume", i % 16, Math.floor(i / 16)))));
   const axesOf = (n) => Array.from({ length: n }, (_, i) => ({ id: "pane.a" + i, domain: [0, 10 + i], policy: "frozen", through: null }));
-  const modelsOf = (n) => Array.from({ length: n }, (_, i) => plain({ ...E.model.PROVENANCE, id: "model" + i }));
+  const modelsOf = (n) => Array.from({ length: n }, (_, i) => plain({ ...MODEL, id: "model" + i }));
   const ok = (extra) => C.validatePortable(seal({ ...payload({ scales: [], axes: [], models: [] }), ...extra }), {});
   assert.equal(ok({ scales: scalesOf(16) }).ok, true);
   assert.match(ok({ scales: scalesOf(17) }).reasons[0], /more than 16 active scales \(17\)/);
@@ -621,10 +646,13 @@ test("the model block is display only: well-formed or refused, never applied to 
   const foreign = C.validatePortable(mutate((p) => { p.models[0].ISO_B = 0.9; p.models[0].baseline = 2 ** (0.9 - 1); }), {});
   assert.equal(foreign.ok, true);
   assert.equal(foreign.value.models[0].ISO_B, 0.9);
-  assert.equal(E.model.PROVENANCE.ISO_B, 0.486, "the page's model is not touched");
-  assert.equal(E.model.PROVENANCE.baseline, 2 ** (0.486 - 1));
-  assert.notEqual(foreign.value.models[0], E.model.PROVENANCE);
-  assert.equal(E.model.status(1790251368750), "timing-unverified", "the status of this page is still its own");
+  assert.equal(MODEL.ISO_B, 0.486, "the input record is not modified by validation");
+  if (E.model) {
+    assert.equal(E.model.PROVENANCE.ISO_B, 0.486, "the page's model is not touched");
+    assert.equal(E.model.PROVENANCE.baseline, 2 ** (0.486 - 1));
+    assert.notEqual(foreign.value.models[0], E.model.PROVENANCE);
+    assert.equal(E.model.status(1790251368750), "timing-unverified", "the status of this page is still its own");
+  }
 });
 
 // ---- two serialisations, one canonical object ----------------------------------------------------------------------

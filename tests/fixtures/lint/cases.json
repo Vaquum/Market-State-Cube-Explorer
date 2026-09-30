@@ -1,0 +1,469 @@
+{
+  "note": "Truth table of the role lint (TESTPLAN U35). 'allowed' texts must produce no hit; 'flagged' texts must produce exactly the listed patterns (order ignored). 'scopes' pins the line and scope of each hit. 'lexer' pins the comment blanking, which keeps every other character and every newline.",
+  "allowed": [
+    {
+      "name": "taker-buy data fields",
+      "kind": "js",
+      "text": "const bv = c.bv, bt = c.bt, share = z.buyShare;",
+      "expect": [],
+      "why": "data names never live in a colour namespace"
+    },
+    {
+      "name": "taker-buy poc field and element id",
+      "kind": "js",
+      "text": "const bpoc = q.taker_buy_poc; el(\"key-bpoc\").hidden = !bpoc;",
+      "expect": []
+    },
+    {
+      "name": "wire field taker_buy_volume",
+      "kind": "js",
+      "text": "const wire = { taker_buy_volume: 1, taker_buy_trade_count: 2 };",
+      "expect": []
+    },
+    {
+      "name": "sort key and visible label",
+      "kind": "html",
+      "text": "<th data-sort=\"buyvol\">Buy USDT</th><span id=\"ol-buypoc-value\"></span>",
+      "expect": []
+    },
+    {
+      "name": "label string in code",
+      "kind": "js",
+      "text": "const label = \"Buy USDT\", also = \"Buy POC centre\";",
+      "expect": []
+    },
+    {
+      "name": "new role token",
+      "kind": "css",
+      "text": "#origo-lens {\n  --ol-positive: light-dark(#2d769c, #73b8d4);\n  --ol-negative: light-dark(#b3624b, #d89777);\n  --ol-midpoint: light-dark(#b9c2bc, #5f6b64);\n}",
+      "expect": []
+    },
+    {
+      "name": "interim legacy names are rows of the contract, not retired names",
+      "kind": "css",
+      "text": "#origo-lens {\n  --ol-legacy-buy: light-dark(#2d769c, #73b8d4);\n  --ol-legacy-sell: light-dark(#b3624b, #d89777);\n}",
+      "expect": []
+    },
+    {
+      "name": "prefix hazard --ol-line versus --ol-line-*",
+      "kind": "css",
+      "text": "#origo-lens {\n  --ol-line-tier: 1;\n  --ol-line-poc: var(--ol-poc);\n}\n.ol-menu { border: 1px solid var(--ol-line); }",
+      "expect": [],
+      "why": "whole token names, so a prefix match cannot confuse the hairline with the family tokens or the tier names"
+    },
+    {
+      "name": "hairline as chrome outside a state rule",
+      "kind": "css",
+      "text": ".ol-tooltip { border: 1px solid var(--ol-line); }",
+      "expect": []
+    },
+    {
+      "name": "dynamic token names are not classified",
+      "kind": "js",
+      "text": "probe.style.color = `var(--ol-${key})`;\nprobe.style.color = `var(--ol-line-${key})`;",
+      "expect": []
+    },
+    {
+      "name": "family colours are references",
+      "kind": "js",
+      "text": "function lineStyle() {\n  return colors.family.poc;\n}",
+      "expect": []
+    },
+    {
+      "name": "a comment paints nothing",
+      "kind": "js",
+      "text": "// was colors.buy and var(--ol-buy) before the rename\n/* colors.sell */\nconst x = 1;",
+      "expect": []
+    },
+    {
+      "name": "Profile gold as a reference outside the state functions",
+      "kind": "js",
+      "text": "function profile() {\n  ctx.strokeStyle = colors.poc;\n}",
+      "expect": []
+    },
+    {
+      "name": "Profile gold family alias",
+      "kind": "css",
+      "text": "#origo-lens {\n  --ol-line-poc: var(--ol-poc);\n}",
+      "expect": []
+    },
+    {
+      "name": "hairline colour of a grid",
+      "kind": "js",
+      "text": "function grid() {\n  ctx.strokeStyle = colors.line;\n}",
+      "expect": []
+    },
+    {
+      "name": "colors.<key> with a longer key is not a retired key",
+      "kind": "js",
+      "text": "const a = colors.timeGrid, b = colors.volumeShare, c = colors.buyer, d = colors.legacyBuy, e = colors.positive;",
+      "expect": []
+    },
+    {
+      "name": "role words of the new vocabulary",
+      "kind": "md",
+      "text": "Delta diverges in the positive and negative colours about the midpoint colour.",
+      "expect": []
+    },
+    {
+      "name": "taker buy prose",
+      "kind": "md",
+      "text": "The buy share is the taker-buy share of the USDT; the buying pressure is not a colour.",
+      "expect": []
+    },
+    {
+      "name": "occupancy and state tokens",
+      "kind": "css",
+      "text": ".ol-glyph { border-color: var(--ol-occupancy); color: var(--ol-state); }",
+      "expect": []
+    },
+    {
+      "name": "Cascade non-value drawn with the state ink",
+      "kind": "js",
+      "text": "function cellColour() {\n  return colors.state;\n}",
+      "expect": []
+    },
+    {
+      "name": "the word colour without a role before it",
+      "kind": "md",
+      "text": "Each colour is chosen from a LUT; the colour of a cell is not its role.",
+      "expect": []
+    }
+  ],
+  "flagged": [
+    {
+      "name": "colors.buy",
+      "kind": "js",
+      "text": "ctx.fillStyle = colors.buy;",
+      "expect": [
+        "colors.buy"
+      ]
+    },
+    {
+      "name": "colors.sell and colors.buy in one line",
+      "kind": "js",
+      "text": "ctx.fillStyle = v >= 0 ? colors.buy : colors.sell;",
+      "expect": [
+        "colors.buy",
+        "colors.sell"
+      ]
+    },
+    {
+      "name": "bracket access",
+      "kind": "js",
+      "text": "ctx.fillStyle = colors[\"sell\"];",
+      "expect": [
+        "colors.sell"
+      ]
+    },
+    {
+      "name": "colors.neutral, colors.time, colors.volume, colors.evidence, colors.tiers",
+      "kind": "js",
+      "text": "const a = colors.neutral, b = colors.time, c = colors.volume, d = colors.evidence, e = colors.tiers.long;",
+      "expect": [
+        "colors.neutral",
+        "colors.time",
+        "colors.volume",
+        "colors.evidence",
+        "colors.tiers"
+      ]
+    },
+    {
+      "name": "--ol-buy definition",
+      "kind": "css",
+      "text": "#origo-lens {\n  --ol-buy: light-dark(#2d769c, #73b8d4);\n}",
+      "expect": [
+        "--ol-buy"
+      ]
+    },
+    {
+      "name": "--ol-sell in a var()",
+      "kind": "css",
+      "text": ".x { color: var(--ol-sell); }",
+      "expect": [
+        "--ol-sell"
+      ]
+    },
+    {
+      "name": "var(--ol-neutral) as the midpoint of a legend gradient",
+      "kind": "js",
+      "text": "return \"linear-gradient(to right,var(--ol-sell),var(--ol-neutral),var(--ol-buy))\";",
+      "expect": [
+        "--ol-sell",
+        "--ol-neutral",
+        "--ol-buy"
+      ]
+    },
+    {
+      "name": "--ol-time and --ol-volume and --ol-evidence in css",
+      "kind": "css",
+      "text": ".a { color: var(--ol-time); }\n.ol-ramp { background: linear-gradient(to right, var(--ol-panel), var(--ol-volume)); }\n.ol-track span { background: var(--ol-evidence); }",
+      "expect": [
+        "--ol-time",
+        "--ol-volume",
+        "--ol-evidence"
+      ]
+    },
+    {
+      "name": "inline style in html",
+      "kind": "html",
+      "text": "<i style=\"background: var(--ol-buy)\"></i>",
+      "expect": [
+        "--ol-buy"
+      ]
+    },
+    {
+      "name": "timeframe tier tokens",
+      "kind": "css",
+      "text": "#origo-lens {\n  --ol-tier-short-width: 1.25;\n  --ol-tier-long-chroma: 1;\n}",
+      "expect": [
+        "--ol-tier-*",
+        "--ol-tier-*"
+      ]
+    },
+    {
+      "name": "timeframe tier token built from a template",
+      "kind": "js",
+      "text": "const w = tokens.getPropertyValue(`--ol-tier-${tier}-width`);",
+      "expect": [
+        "--ol-tier-*"
+      ]
+    },
+    {
+      "name": "PERIOD_TIERS",
+      "kind": "js",
+      "text": "const t = PERIOD_TIERS[key];",
+      "expect": [
+        "PERIOD_TIERS"
+      ]
+    },
+    {
+      "name": "retired keys in the probe list of getColors",
+      "kind": "js",
+      "text": "  function getColors() {\n    for (const key of [\"bg\", \"buy\", \"sell\", \"neutral\", \"time\"]) {\n    }\n  }",
+      "expect": [
+        "colors-key",
+        "colors-key",
+        "colors-key",
+        "colors-key"
+      ]
+    },
+    {
+      "name": "the same strings outside getColors are data",
+      "kind": "js",
+      "text": "  function other() {\n    const modes = [\"buy\", \"sell\"];\n  }",
+      "expect": []
+    },
+    {
+      "name": "buy colour prose",
+      "kind": "md",
+      "text": "The cells go from the buy colour above half to the sell colour below.",
+      "expect": [
+        "prose:buy-sell-colour",
+        "prose:buy-sell-colour"
+      ]
+    },
+    {
+      "name": "buy and sell colours prose",
+      "kind": "md",
+      "text": "Delta and relative volume diverge in the buy and sell colours.",
+      "expect": [
+        "prose:buy-sell-colour"
+      ]
+    },
+    {
+      "name": "buy/sell colour prose and capitals",
+      "kind": "md",
+      "text": "The Buy/Sell Colour pair; also BUY COLOURS.",
+      "expect": [
+        "prose:buy-sell-colour",
+        "prose:buy-sell-colour"
+      ]
+    },
+    {
+      "name": "prose in a wrapped comment",
+      "kind": "js",
+      "text": "// delta in the buy and\n  // sell colours, relative volume\nconst x = 1;",
+      "expect": [
+        "prose:buy-sell-colour"
+      ]
+    },
+    {
+      "name": "prose in a string",
+      "kind": "js",
+      "text": "const t = \"buy colour above half, sell colour below\";",
+      "expect": [
+        "prose:buy-sell-colour",
+        "prose:buy-sell-colour"
+      ]
+    },
+    {
+      "name": "Profile gold painting coverage state",
+      "kind": "js",
+      "text": "  function paintCoverage() {\n    ctx.fillStyle = colors.poc;\n  }",
+      "expect": [
+        "colors.poc@state"
+      ]
+    },
+    {
+      "name": "Profile gold painting the open column",
+      "kind": "js",
+      "text": "  function paintUnfinished() {\n    ctx.strokeStyle = colors.poc;\n  }",
+      "expect": [
+        "colors.poc@state"
+      ]
+    },
+    {
+      "name": "Profile gold painting the open-parent hatch of the pane",
+      "kind": "js",
+      "text": "  function activity() {\n    hatchRect(colors.poc);\n  }",
+      "expect": [
+        "colors.poc@state"
+      ]
+    },
+    {
+      "name": "hairline as a Cascade non-value fill",
+      "kind": "js",
+      "text": "  function cellColour() {\n    return colors.line;\n  }",
+      "expect": [
+        "colors.line@state"
+      ]
+    },
+    {
+      "name": "hairline as the unmeasured movement fill",
+      "kind": "js",
+      "text": "  function paintMotion() {\n    ctx.fillStyle = colors.line;\n  }",
+      "expect": [
+        "colors.line@state"
+      ]
+    },
+    {
+      "name": "gold as a coarse dot and a footer chip",
+      "kind": "css",
+      "text": ".ol-res-coarse {\n  background: var(--ol-poc);\n}\n.ol-data-key.unfinished {\n  background: repeating-linear-gradient(45deg, var(--ol-poc) 0 1px, transparent 1px 4px);\n}",
+      "expect": [
+        "--ol-poc@state",
+        "--ol-poc@state"
+      ]
+    },
+    {
+      "name": "hairline as the plain footer chip and the plane base",
+      "kind": "css",
+      "text": ".ol-data-key.plain {\n  background: var(--ol-line);\n}\n.ol-plane button {\n  background: var(--ol-line);\n}",
+      "expect": [
+        "--ol-line@state",
+        "--ol-line@state"
+      ]
+    },
+    {
+      "name": "a state rule nested in a media query",
+      "kind": "css",
+      "text": "@media (max-width: 600px) {\n  .ol-plane button {\n    background: var(--ol-line);\n  }\n}",
+      "expect": [
+        "--ol-line@state"
+      ]
+    },
+    {
+      "name": "evidence violet as the plane loading state",
+      "kind": "css",
+      "text": ".ol-plane button.ol-plane-loading {\n  background: var(--ol-evidence);\n}",
+      "expect": [
+        "--ol-evidence"
+      ]
+    }
+  ],
+  "scopes": [
+    {
+      "name": "scope of a hit is the enclosing top-level function",
+      "kind": "js",
+      "text": "  function bandTone() {\n    return colors.sell;\n  }\n  function next() {\n    return 1;\n  }",
+      "hits": [
+        {
+          "pattern": "colors.sell",
+          "line": 2,
+          "scope": "bandTone"
+        }
+      ]
+    },
+    {
+      "name": "a comment block at declaration level belongs to the declaration that follows",
+      "kind": "js",
+      "text": "  const A = 1;\n  // delta in the buy and sell colours\n  function bandTone() {\n    return 1;\n  }",
+      "hits": [
+        {
+          "pattern": "prose:buy-sell-colour",
+          "line": 2,
+          "scope": "bandTone"
+        }
+      ]
+    },
+    {
+      "name": "a comment inside a body keeps the enclosing function",
+      "kind": "js",
+      "text": "  function first() {\n    // the buy colour\n    return 1;\n  }\n  function second() {}",
+      "hits": [
+        {
+          "pattern": "prose:buy-sell-colour",
+          "line": 2,
+          "scope": "first"
+        }
+      ]
+    },
+    {
+      "name": "a top-level const is a scope",
+      "kind": "js",
+      "text": "  const LEGEND_TITLES = {\n    flow: \"buy colour above half\",\n  };",
+      "hits": [
+        {
+          "pattern": "prose:buy-sell-colour",
+          "line": 2,
+          "scope": "LEGEND_TITLES"
+        }
+      ]
+    },
+    {
+      "name": "the scope of a css hit is its innermost selector; a definition is its own token",
+      "kind": "css",
+      "text": "#origo-lens {\n  --ol-buy: red;\n}\n@media (x) {\n  #origo-lens .ol-plane button { background: var(--ol-line); }\n}",
+      "hits": [
+        {
+          "pattern": "--ol-buy",
+          "line": 2,
+          "scope": "--ol-buy"
+        },
+        {
+          "pattern": "--ol-line@state",
+          "line": 5,
+          "scope": "#origo-lens .ol-plane button"
+        }
+      ]
+    }
+  ],
+  "lexer": [
+    {
+      "name": "line and block comments",
+      "input": "a(); // x colors.buy\n/* y\n z */ b();",
+      "output": "a();                \n    \n      b();"
+    },
+    {
+      "name": "comment markers inside strings stay",
+      "input": "const u = \"http://x\"; // c",
+      "output": "const u = \"http://x\";     "
+    },
+    {
+      "name": "comment markers inside a template and its substitution",
+      "input": "const t = `a // b ${ x /* c */ + 1 } // d`; // e",
+      "output": "const t = `a // b ${ x         + 1 } // d`;     "
+    },
+    {
+      "name": "regular expression literals and divisions",
+      "input": "const r = /[/]\\//g; const d = a / b; // c",
+      "output": "const r = /[/]\\//g; const d = a / b;     "
+    },
+    {
+      "name": "a regex after return and a division after a paren",
+      "input": "return /re/.test(q); x = (a) / 2; // c",
+      "output": "return /re/.test(q); x = (a) / 2;     "
+    }
+  ]
+}

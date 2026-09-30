@@ -13,12 +13,24 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const zlib = require("node:zlib");
+const { execFileSync } = require("node:child_process");
 const { startFake } = require("../support/cube-fake.js");
 const model = require("../support/bridge-model.js");
 const wire = require("../support/wire.js");
+const { resolvePageRoot, buildPageRoot } = require("../support/pageroot.js");
+const { materialise } = require("../support/builds.js");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const PINS = path.join(ROOT, "tests", "fixtures", "profiles", "pins.json");
+// Temporary directories made by these tests, removed when the file is done.
+const made = [];
+const tmpdir = (prefix) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  made.push(dir);
+  return dir;
+};
+after(() => made.forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));
+
 const OUTDATED = "the explorer was updated; reload the page to see the latest data";
 
 // ---- helpers ----
@@ -273,7 +285,7 @@ describe("the pack, the tiers and the page", () => {
   });
 
   it("the page: the pack is injected with the bridge's regex, timing included, and everything else is byte-preserved", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-page-"));
+    const dir = tmpdir("fake-page-");
     fs.mkdirSync(path.join(dir, "vendor"));
     fs.writeFileSync(path.join(dir, "vendor", "d3.min.js"), "//d3");
     const head = "<!doctype html><title>t</title>";
@@ -314,7 +326,7 @@ describe("the pack, the tiers and the page", () => {
   });
 
   it("a page without the block is a 502 with the bridge's message, logged as unanswerable", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-page-"));
+    const dir = tmpdir("fake-page-");
     fs.writeFileSync(path.join(dir, "index.html"), "<html>no data block here</html>");
     const f = await startFake({ profile: "mini", pageRoot: dir });
     try {
@@ -328,7 +340,7 @@ describe("the pack, the tiers and the page", () => {
   });
 
   it("recorded mode serves the file unmodified and treats every /cube/ request as unexpected", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-page-"));
+    const dir = tmpdir("fake-page-");
     fs.mkdirSync(path.join(dir, "vendor"));
     fs.writeFileSync(path.join(dir, "vendor", "d3.min.js"), "//d3");
     const html = '<script type="application/json" id="origo-lens-data">{"snapshot":true}</script>';
@@ -799,5 +811,77 @@ describe("determinism pins of the generated profiles (self-pin, tests/fixtures/p
     assert.ok(Math.abs(pins.profiles.deep.trades - 407000) < 3000);
     assert.ok(Math.abs(pins.profiles.mini.trades - 11000) < 1000);
     assert.equal(pins.profiles.uniform.trades, 138247, "one trade every 1.25 s for two days, to the cutoff");
+  });
+});
+
+describe("the page root and materialised builds", () => {
+  const D3_SHA256 = "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539"; // vendor/d3.min.js, pinned in THIRD_PARTY_NOTICES.md and by U01
+  const sha256 = (buffer) => crypto.createHash("sha256").update(buffer).digest("hex");
+  const tmp = () => tmpdir("fake-root-");
+  const page = (dir) => {
+    fs.mkdirSync(path.join(dir, "vendor"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "index.html"), "<html></html>");
+    fs.writeFileSync(path.join(dir, "vendor", "d3.min.js"), "//d3");
+    return dir;
+  };
+
+  it("EXPLORER_PAGE_ROOT wins, absolute or relative to the repository root, and a directory without a page is refused by name", () => {
+    const dir = page(tmp());
+    assert.equal(resolvePageRoot({ env: { EXPLORER_PAGE_ROOT: dir, CONVERGENCE: "1" } }), dir);
+    const repo = tmp();
+    page(path.join(repo, "reports", "page"));
+    assert.equal(resolvePageRoot({ env: { EXPLORER_PAGE_ROOT: "reports/page" }, repoRoot: repo }), path.join(repo, "reports", "page"));
+    assert.throws(() => resolvePageRoot({ env: { EXPLORER_PAGE_ROOT: tmp() } }), /EXPLORER_PAGE_ROOT: .*index\.html does not exist/);
+  });
+
+  it("CONVERGENCE=1 serves the repository root: the committed index.html", () => {
+    assert.equal(resolvePageRoot({ env: { CONVERGENCE: "1" } }), ROOT);
+    assert.throws(() => resolvePageRoot({ env: { CONVERGENCE: "1" }, repoRoot: tmp() }), /committed page/);
+  });
+
+  it("otherwise the working tree is built into a temporary directory and the committed index.html is left alone", { skip: !fs.existsSync(path.join(ROOT, "src", "encoding.js")) && "src/encoding.js does not exist yet (gate A0)" }, () => {
+    const committed = sha256(fs.readFileSync(path.join(ROOT, "index.html")));
+    const dir = buildPageRoot(tmp());
+    assert.ok(/id="origo-lens-data"/.test(fs.readFileSync(path.join(dir, "index.html"), "utf8")));
+    assert.equal(sha256(fs.readFileSync(path.join(dir, "vendor", "d3.min.js"))), D3_SHA256);
+    assert.equal(sha256(fs.readFileSync(path.join(ROOT, "index.html"))), committed);
+  });
+
+  it("a failing build says why instead of serving nothing", () => {
+    const repo = tmp();
+    fs.mkdirSync(path.join(repo, "tools"));
+    fs.writeFileSync(path.join(repo, "tools", "build.py"), "import sys\nsys.exit('cannot build: nothing here')\n");
+    assert.throws(() => buildPageRoot(path.join(repo, "out"), { repoRoot: repo }), /building the working tree failed: cannot build: nothing here/);
+  });
+
+  const haveBaseline = (() => { try { execFileSync("git", ["-C", ROOT, "cat-file", "-e", "8c82ca1^{commit}"], { stdio: "ignore" }); return true; } catch { return false; } })();
+
+  it("materialise() writes the committed page and d3 of a SHA byte for byte and the fake serves it", { skip: !haveBaseline && "commit 8c82ca1 is not in this clone" }, async () => {
+    const out = tmp();
+    const built = materialise("8c82ca1", "baseline", { outRoot: out });
+    assert.equal(path.basename(built.dir), "baseline-8c82ca1");
+    assert.equal(built.sha.length, 40);
+    // The oracle is git itself: the same bytes through `git show`, hashed here.
+    const viaGit = execFileSync("git", ["-C", ROOT, "show", "8c82ca1:index.html"], { maxBuffer: 64 * 1024 * 1024 });
+    assert.equal(built.indexSha256, sha256(viaGit));
+    assert.equal(built.vendorSha256, D3_SHA256);
+    assert.ok(fs.existsSync(path.join(built.dir, "vendor", "D3-LICENSE")));
+    const f = await startFake({ profile: "mini", pageRoot: built.dir });
+    try {
+      const r = await get(f, "/");
+      assert.equal(r.status, 200);
+      assert.ok(r.text.includes('<script src="vendor/d3.min.js">'));
+      assert.equal(JSON.parse(/id="origo-lens-data">(.*?)<\/script>/s.exec(r.text)[1]).source, "SYNTHETIC fixture mini seed 20260924 - not market data");
+      const served = Buffer.from(await (await fetch(`${f.url}/vendor/d3.min.js`)).arrayBuffer());
+      assert.equal(sha256(served), D3_SHA256, "the fake serves d3 from the build's own vendor/");
+    } finally {
+      await f.close();
+    }
+  });
+
+  it("materialise() refuses an unknown commit with the fetch hint, a non-hex id and a label that is not a file name", () => {
+    assert.throws(() => materialise("deadbeefdeadbeef", "old"), /git fetch --no-tags --depth=1 origin deadbeefdeadbeef/);
+    assert.throws(() => materialise("not-a-sha", "old"), /not a commit id/);
+    assert.throws(() => materialise("8c82ca1", "../x"), /plain file name/);
   });
 });

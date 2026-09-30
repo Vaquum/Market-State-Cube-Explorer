@@ -42,11 +42,18 @@ async function rowsChip(page, surface, testInfo) {
 
 const fieldOf = (details, name) => details.fields[name]?.value;
 
+// The newest edge (base column) any period read of the page has asked the cube for: the cube's request log is an observation of
+// the period's endpoint that does not depend on what a popover last rendered. The page re-reads a rolling period that the pack does
+// not hold when the data moves on, so a larger edge here is the period's endpoint moving. A period inside the recorded pack (the
+// week) is not read at all: for it the page's own pill says how far the data goes ("Data through ...").
+const dataThrough = (page) => page.locator("#ol-state-pill").getAttribute("title").then((t) => /Data through ([^;.]*) UTC/.exec(t ?? "")?.[1] ?? "");
+const periodEdge = (fake) => Math.max(0, ...fake.log().filter((e) => e.path === "/cube/query").map((e) => Number(e.query.b1) || 0));
+
 // One reading of the Rows channel: the chip's dataset and the details that matter.
 async function reading(surface) {
   const chip = await surface.chip("rows");
   const details = await surface.details("rows");
-  return { ...chip.data, U: Number(fieldOf(details, "U")), k: Number(fieldOf(details, "k")), cohortCount: Number(fieldOf(details, "cohortCount")), obsCutoff: fieldOf(details, "obsCutoff"), cause: fieldOf(details, "scaleChangeCause") ?? "", from: fieldOf(details, "scaleChangeFrom") ?? "", to: fieldOf(details, "scaleChangeTo") ?? "" };
+  return { ...chip.data, U: Number(fieldOf(details, "U")), obsCutoff: fieldOf(details, "obsCutoff"), k: Number(fieldOf(details, "k")), cohortCount: Number(fieldOf(details, "cohortCount")), cause: fieldOf(details, "scaleChangeCause") ?? "", from: fieldOf(details, "scaleChangeFrom") ?? "", to: fieldOf(details, "scaleChangeTo") ?? "" };
 }
 
 // The price range of the address the page wrote, in USDT.
@@ -138,43 +145,70 @@ test.describe("Rows period identity", () => {
     await expect.poll(async () => (await surface.chip("rows")).data.state).toBe("ready");
     const before = await reading(surface);
     expect(before.context).toMatch(/\|roll:90\|m[0-9]+$/);
+    const edge0 = periodEdge(fake);
 
     fake.advance({ minutes: 60 });
-    await expect.poll(async () => (await reading(surface)).obsCutoff, { timeout: 40000, message: "the period's endpoint moved with the new data" }).not.toBe(before.obsCutoff);
+    await expect.poll(() => periodEdge(fake), { timeout: 40000, message: "the period was read again to its new endpoint" }).toBeGreaterThan(edge0);
     await S.atRest(page, fake, probe);
     const after = await reading(surface);
     expect(after.context, "the same identity").toBe(before.context);
     expect(after.mappingId, "Explore does not refit on new data").toBe(before.mappingId);
     expect(after.fitSeq).toBe(before.fitSeq);
+    // The provenance of the observation moves on with the data while the mapping does not (TESTPLAN B10: "endpoint provenance
+    // changes"): the details' observation cutoff is the page's cutoff now, not the one of the last time the chip was rewritten.
+    expect(after.obsCutoff, "the details say the data now goes further").not.toBe(before.obsCutoff);
+    expect(Math.abs(Number(after.obsCutoff) - Number(before.obsCutoff) - 60 * 60 * 1000), "by the hour the cube advanced (to a base column)").toBeLessThanOrEqual(S.BASE_MS);
   });
 
-  test("a calendar week is one identity until it rolls over; then the new key has no record until the new week is read, and nothing is fitted from the old rows", async ({ page, probe, fakeFor, surface }, testInfo) => {
-    const fake = await fakeFor("standard", { cutoff: "2026-09-27T23:50:00Z" });
-    await page.goto(`${fake.url}/#w=24h&rows=volume&period=wk`);
-    await S.atRest(page, fake, probe);
-    await rowsChip(page, surface, testInfo);
-    await expect.poll(async () => (await surface.chip("rows")).data.state).toBe("ready");
-    const sunday = await reading(surface);
-    expect(sunday.context, "the week that began Monday 21 September").toMatch(/\|cal:wk:2026-09-21\|m[0-9]+$/);
+  // The calendar periods roll over at an instant the test knows by the calendar, not by the page: Monday 2026-09-28T00:00Z (a week),
+  // 2026-10-01T00:00Z (a month) and 2027-01-01T00:00Z (a year). The fake starts ten minutes before it.
+  const rollovers = [
+    { period: "wk", cutoff: "2026-09-27T23:50:00Z", before: /\|cal:wk:2026-09-21\|m[0-9]+$/, after: /\|cal:wk:2026-09-28\|/, at: "2026-09-28T00:00:00Z" },
+    { period: "mo", cutoff: "2026-09-30T23:50:00Z", before: /\|cal:mo:2026-09-01\|m[0-9]+$/, after: /\|cal:mo:2026-10-01\|/, at: "2026-10-01T00:00:00Z" },
+    { period: "yr", cutoff: "2026-12-31T23:50:00Z", before: /\|cal:yr:2026-01-01\|m[0-9]+$/, after: /\|cal:yr:2027-01-01\|/, at: "2027-01-01T00:00:00Z" },
+  ];
+  for (const roll of rollovers) {
+    test(`a calendar ${roll.period} is one identity until it rolls over; then the new key has no record until the new period is read, and nothing is fitted from the old rows`, async ({ page, probe, fakeFor, surface }, testInfo) => {
+      const fake = await fakeFor("standard", { cutoff: roll.cutoff });
+      await page.goto(`${fake.url}/#w=24h&rows=volume&period=${roll.period}`);
+      await S.atRest(page, fake, probe);
+      await rowsChip(page, surface, testInfo);
+      await expect.poll(async () => (await surface.chip("rows")).data.state).toBe("ready");
+      const old = await reading(surface);
+      expect(old.context, "the period that has not ended").toMatch(roll.before);
 
-    // Five minutes later the week has grown and is still the same week.
-    fake.advance({ minutes: 5 });
-    await expect.poll(async () => (await reading(surface)).obsCutoff, { timeout: 40000 }).not.toBe(sunday.obsCutoff);
-    const grown = await reading(surface);
-    expect(grown.context).toBe(sunday.context);
-    expect(grown.mappingId).toBe(sunday.mappingId);
+      // Five minutes later the period has grown and is still the same one. (A period the pack holds is not read again, so the page's
+      // own pill says how far the data goes.)
+      const through0 = await dataThrough(page);
+      fake.advance({ minutes: 5 });
+      await expect.poll(() => dataThrough(page), { timeout: 40000, message: "the page took the new data" }).not.toBe(through0);
+      await S.atRest(page, fake, probe);
+      const grown = await reading(surface);
+      expect(grown.context).toBe(old.context);
+      expect(grown.mappingId).toBe(old.mappingId);
 
-    // Fifteen more: it is Monday 28 September 00:10 UTC, a new week.
-    fake.advance({ minutes: 15 });
-    await expect.poll(async () => (await reading(surface)).context, { timeout: 40000 }).toMatch(/\|cal:wk:2026-09-28\|/);
-    await S.atRest(page, fake, probe);
-    await expect.poll(async () => (await surface.chip("rows")).data.state, { timeout: 40000 }).toBe("ready");
-    const monday = await reading(surface);
-    expect(monday.mappingId, "a new identity").not.toBe(sunday.mappingId);
-    expect(monday.cause, "with its cause named").toMatch(/period/);
-    // Fitted on the new week's rows, never on the old week's: what it observed ends after the new week began.
-    expect(Number(monday.fitThrough), "its observations end after Monday 00:00Z").toBeGreaterThanOrEqual(Date.parse("2026-09-28T00:00:00Z"));
-  });
+      // Fifteen more: ten minutes into the new period. Every frame from here on is logged with the Rows chip it wrote.
+      await probe.reset();
+      fake.advance({ minutes: 15 });
+      await expect.poll(async () => (await reading(surface)).context, { timeout: 40000 }).toMatch(roll.after);
+      await S.atRest(page, fake, probe);
+      await expect.poll(async () => (await surface.chip("rows")).data.state, { timeout: 40000 }).toBe("ready");
+      const fresh = await reading(surface);
+      expect(fresh.mappingId, "a new identity").not.toBe(old.mappingId);
+      // The frames between: the new key never drew the old period's mapping, and a mapping it drew "ready" was fitted after the
+      // rollover (before the new rows came in, the chip said it had no calibration, or that one was on its way).
+      const newKey = (attrs) => roll.after.test(attrs.context ?? "");
+      const frames = (await probe.frames()).map((f) => f.attrs.rows).filter((attrs) => attrs && newKey(attrs));
+      expect(frames.length, "frames of the new period were logged").toBeGreaterThan(0);
+      for (const attrs of frames) {
+        expect(attrs.mappingId, "no mapping of the old period under the new key").not.toBe(old.mappingId);
+        if (attrs.state === "ready") expect(Number(attrs.fitThrough), "a ready mapping of the new key was fitted on the new period").toBeGreaterThanOrEqual(Date.parse(roll.at));
+      }
+      expect(fresh.cause, "with its cause named").toMatch(/period/);
+      // Fitted on the new period's rows, never on the old one's: what it observed ends after the new period began.
+      expect(Number(fresh.fitThrough), "its observations end after the rollover").toBeGreaterThanOrEqual(Date.parse(roll.at));
+    });
+  }
 
   test("the recorded snapshot's coarse rows are a labelled approximation with their row size in the context", async ({ page, probe, fakeFor, surface }, testInfo) => {
     const fake = await fakeFor("recorded");

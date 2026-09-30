@@ -42,7 +42,8 @@ async function rowReading(page, g, r, label) {
   return tip.evaluate((el, name) => {
     const labels = [...el.querySelectorAll("dt")];
     const at = labels.find((dt) => dt.textContent.startsWith(name));
-    return { value: at ? at.nextElementSibling.textContent : null, text: el.textContent };
+    // the canonical number (or tag) the words were made from travels beside them (INTEGRATION D.18)
+    return { value: at ? at.nextElementSibling.textContent : null, canonical: at ? (at.nextElementSibling.dataset.canonical ?? null) : null, text: el.textContent };
   }, label);
 }
 
@@ -79,7 +80,12 @@ test.describe("Relative volume v2 on the canvas: identical conditional distribut
       // The inspection: every row of W reads 0, every other row of the period reads outside support.
       for (let r = 200; r <= 205; r++) {
         const reading = await rowReading(page, g, r, "Relative volume");
-        if (r >= W[0] && r < W[1]) expect(reading.value, `row ${r} in W`).toBe("0.00");
+        if (r >= W[0] && r < W[1]) {
+          expect(reading.value, `row ${r} in W`).toBe("0.00");
+          // Not merely a number that rounds to 0: equal distributions built from float sums differ in the last bit, and the
+          // module snaps that to exactly 0 (WX2, E.measure.close.log2), so the value the words were made from is 0.
+          expect(Number(reading.canonical), `row ${r} in W: the readout's own value is exactly 0`).toBe(0);
+        }
         else expect(reading.value, `row ${r} outside W`).toBe("Outside comparison support");
       }
     });

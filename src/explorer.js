@@ -3901,13 +3901,23 @@
     if (unit === "seconds") return dur(value);
     return compact(value);
   }
-  // The preference part of a legend's write key. The mapping id alone does not name a policy: Explore and
-  // Auto can hold the same mapping, and the lock and Local contrast change what the popover offers.
+  // The preference part of a legend's write key. The mapping id alone does not name what a chip says: Explore
+  // and Auto can hold the same mapping, the lock and Local contrast change what the popover offers, and a
+  // change of measure, basis or transform moves the context even when two fits happen to give one mapping.
   function legendPolicy(channel) {
     const sc = S.scale;
-    return (
-      (sc.lock ? "L" : "") + ":" + (sc[channel] ?? "") + ":" + (sc.local ? "l" : "") + ":" + (scaleRt.playing ? "p" : "")
-    );
+    return [
+      sc.lock ? "L" : "",
+      sc[channel] ?? "",
+      sc.local ? "l" : "",
+      scaleRt.playing ? "p" : "",
+      channel === "rows" ? S.rows + S.period : S.mode,
+      sc.basis,
+      sc.pathBasis,
+      sc.transform,
+      sc.curve,
+      sc.rowsTransform,
+    ].join(":");
   }
   // What the settled warnings pass said about a channel, as a short string: the legend is rebuilt when the
   // shares, the clip counts or the warning set moved, and not when the pass re-ran to the same answer.
@@ -4160,6 +4170,9 @@
     if (!built) return;
     const { legend } = built,
       node = el("lens-status"),
+      // A read or a refit in progress is a moment, not a fact to announce: the attributes show it, the text
+      // (the one status element a reader hears) waits for the settled state
+      transient = legend.state === "updating" || legend.state === "pending",
       state = legend.state === "no-calibration" ? E.text.state.noCalibration : legend.state === "updating" ? E.text.state.updating : "",
       words = [
         MODE_NAMES[S.mode],
@@ -4172,7 +4185,7 @@
         .join(" · ");
     scaleUi.lensId = built.input.desc?.id ?? built.input.mappingId ?? "";
     legendAttrs(node, "lens", built, sc);
-    if (node.textContent !== words) node.textContent = words;
+    if (!transient && node.textContent !== words) node.textContent = words;
   }
   // The marker on the legend bar: where the value under the pointer (or of the table row) sits, written
   // only when it moved (registered as `legendMarker`, called from the tooltip, the table hover and

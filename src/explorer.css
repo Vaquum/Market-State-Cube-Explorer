@@ -2042,6 +2042,7 @@
 }
 /* The popovers: a dialog under the chip, at most 360px, scrolling inside itself. */
 #origo-lens .ol-legend-pop {
+  border-color: var(--ol-border);
   width: min(360px, calc(100vw - 2 * var(--gutter)));
   max-height: min(70vh, 560px);
   overflow: auto;
@@ -2187,10 +2188,17 @@
 #origo-lens .ol-item-desc:empty {
   display: none;
 }
+/* A reason or a note under a checked or hovered Scale item is ink: the muted token is below 4.5:1 on those grounds */
+#origo-lens [data-scale-item][aria-checked="true"] .ol-item-desc,
+#origo-lens [data-scale-item]:hover .ol-item-desc {
+  color: var(--ol-ink);
+}
 /* The notice banner, modelled on the update banner: a border on the side says it is more than information. */
 #origo-lens .ol-notice {
   flex-wrap: wrap;
   border-left: 3px solid transparent;
+  /* The surface, so that the buttons' border token (3:1 on the surface) is a boundary against what they sit on */
+  background: var(--ol-surface);
 }
 #origo-lens .ol-notice[data-level="warning"],
 #origo-lens .ol-notice[data-level="error"] {

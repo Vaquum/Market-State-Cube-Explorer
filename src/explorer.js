@@ -68,7 +68,16 @@
     PLOT_TOP = 12,
     PANE_GAP = 8,
     AXIS = 24,
-    profileWidth = (width) => (width > 470 ? 79 : 52);
+    // The profile tracks (PRD-0002 S2): the bars of a track are 48 px, then a 14 px gutter for its endpoint glyphs and letters, and the
+    // tracks stand 4 px apart. Under 600 px the tracks are a disclosure instead of a crushed chart.
+    TRACK_BARS = 48,
+    TRACK_GUTTER = 14,
+    TRACK_GAP = 4,
+    PROFILE_PAD = 9,
+    PROFILE_END = 8,
+    PROFILE_NARROW = 600,
+    profileWidth = (width, tracks = 1, open = false) =>
+      width < PROFILE_NARROW && !open ? 0 : PROFILE_PAD + tracks * (TRACK_BARS + TRACK_GUTTER) + (tracks - 1) * TRACK_GAP + PROFILE_END;
   // The chart's panes: prices on top, activity under them sharing the time
   // axis, about 15% of the height, and the time labels along the bottom.
   // The event strip (PRD-0002 S2): one lane of EVENT_LANE px for each event kind that is switched on, between the
@@ -83,8 +92,8 @@
   // The Rows strip (PRD-0002 S2): 12 px, fixed, immediately right of the heatmap, while Rows is on; the profile
   // tracks start after it.
   const ROWS_STRIP = 12;
-  function layout(width, height, lanes = 0, strip = 0) {
-    const profile = profileWidth(width),
+  function layout(width, height, lanes = 0, strip = 0, tracks = 1, open = false) {
+    const profile = profileWidth(width, tracks, open),
       free = Math.max(1, height - PLOT_TOP - AXIS),
       ah = clamp(Math.round(free * 0.15), 36, 120),
       collapsed = lanes > 0 && free - ah - PANE_GAP - lanes * EVENT_LANE - EVENT_GAP < EVENT_MIN_PLOT,
@@ -106,6 +115,9 @@
       ah,
       axis: height - AXIS / 2,
       profile,
+      // The bars of the current track and of the reference track start here; none is reserved when the tracks are collapsed.
+      tracks: profile ? tracks : 0,
+      tx: [PLOT_LEFT + w + strip + PROFILE_PAD, PLOT_LEFT + w + strip + PROFILE_PAD + TRACK_BARS + TRACK_GUTTER + TRACK_GAP],
     };
   }
   const design = { gap: 1 },
@@ -125,6 +137,10 @@
       period: "90d",
       // The level line (X): one price, in base rows, or none.
       level: null,
+      // The profile tracks (PRD-0002 S2): how the current and the reference track are compared (independent, absolute, share), and whether
+      // a chart narrower than PROFILE_NARROW shows them anyway.
+      profileCmp: "independent",
+      profileOpen: false,
       // POC lines: the periods and days chosen, in list order.
       lines: [],
       tab: "context",
@@ -784,6 +800,14 @@
         draw();
       });
   }
+  // The layout for this size from the state: the lanes of the event strip that are on, the Rows strip while Rows is on, and the profile's
+  // tracks (the current one, and the reference one while Rows is on).
+  function profileTrackCount() {
+    return S.rows !== "off" ? 2 : 1;
+  }
+  function layoutNow(width, height) {
+    return layout(width, height, eventKinds().length, S.rows !== "off" ? ROWS_STRIP : 0, profileTrackCount(), S.profileOpen);
+  }
   function geometry() {
     const rect = canvas.getBoundingClientRect(),
       width = rect.width,
@@ -792,7 +816,7 @@
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    G = { width, height, ...layout(width, height, eventKinds().length, S.rows !== "off" ? ROWS_STRIP : 0) };
+    G = { width, height, ...layoutNow(width, height) };
     G.X = d3
       .scaleLinear()
       .domain([S.tA, S.tB])
@@ -4193,8 +4217,7 @@
         : "";
   }
   function onProfile(p) {
-    const px = G.x + G.w + G.sw + 9;
-    return p.x >= G.x + G.w && p.x <= px + G.profile - 8 && p.y >= G.y && p.y <= G.y + G.h;
+    return p.x >= G.x + G.w && p.x <= G.x + G.w + G.sw + G.profile && p.y >= G.y && p.y <= G.y + G.h;
   }
   // ---- The readout consumers (PRD-0002 S1) ----
   // The tooltip, the Cells table and the inspector say what a cell measures by reading the ONE readout of
@@ -4771,7 +4794,7 @@
     // Latest appears when the cutoff is out of view, beside the price profile.
     el("latest").hidden = S.replay || (S.tA < CUT && S.tB >= CUT);
     el("latest").style.right =
-      GUTTER + profileWidth(canvas.clientWidth) + 8 + "px";
+      GUTTER + profileWidth(canvas.clientWidth, profileTrackCount(), S.profileOpen) + (S.rows !== "off" ? ROWS_STRIP : 0) + 8 + "px";
     applyPanels();
     updateNavigation();
     requestDraw();
@@ -5142,6 +5165,8 @@
   // Nothing here is an aria-live region: a state is visible text in a chip that a person can open, never a
   // polite announcement on every zoom step (the banner and the lens status are the two status elements, and
   // both change only on an event).
+  // What the profile tracks of the last frame drew (the plan, the two axes, the underlay), for the chip that summarises them.
+  const profileUi = { plan: null, cur: null, ref: null, under: null, state: "", tracks: 0, key: "" };
   const scaleUi = {
       // The Legend model of each colour channel, built when its key changed: the popover, the marker and the
       // footer keys read it, so nothing is built twice for one state.
@@ -5500,6 +5525,7 @@
     lensStatusWrite(sc);
     // The axis chip first: it builds the Columns pane's Legend, whose marks the footer keys count too
     axisChipCommit();
+    profileChipCommit();
     // The footer keys: those of the channels in view that have marks, each id once, counts added
     const legends = [scaleUi.models.cells, scaleUi.models.rows, scaleUi.models.pane].filter(Boolean),
       keysKey =
@@ -5934,7 +5960,10 @@
   function uiPopAction(button) {
     const name = button.dataset.action,
       channel = button.dataset.channel === "rows" ? "rows" : "cells";
-    if (name === "warn-open-lens") {
+    if (name === "profile-cmp") {
+      if (button.getAttribute("aria-disabled") !== "true") profileSet("profileCmp", button.dataset.value);
+    } else if (name === "profile-open") profileSet("profileOpen", !S.profileOpen);
+    else if (name === "warn-open-lens") {
       closePop();
       if (PHONE.matches && root.dataset.sheet !== "open") setSheet(true);
       el("lens").focus();
@@ -5961,7 +5990,7 @@
   // The words of an axis unit id (an id with no string of its own reads as itself)
   function uiAxisUnit(unit) {
     const u = E.text.unit;
-    return { usdt: u.usdt, trades: u.trades, "usdt-per-trade": u.usdtPerTrade, "log2-ratio": u.log2, seconds: u.seconds }[unit] ?? unit ?? "";
+    return { usdt: u.usdt, trades: u.trades, "usdt-per-trade": u.usdtPerTrade, "log2-ratio": u.log2, seconds: u.seconds, share: u.share }[unit] ?? unit ?? "";
   }
   // "±1.92 B USDT", "0 – 100", "−2 – 2 log2 ratio": the domain as the chart's own numbers read it
   function uiAxisDomain(rec) {
@@ -6129,6 +6158,130 @@
     lock.setAttribute("aria-pressed", String(S.scale.lock));
     if (focused && !focused.isConnected) lock.focus();
     uiPopPlace(panel, chip, "end");
+  }
+  // ---- the profile chip (PRD-0002 S2) ----
+  // The chip says how the two tracks are compared and what each one's domain is; its popover names both tracks, offers the three comparisons
+  // (a disabled one says why) and, on a chart narrower than PROFILE_NARROW, is the disclosure that shows the tracks. On a narrow chart the
+  // chip's own text is the visible summary of the active measures and domains.
+  function profileSummary() {
+    const { plan, cur, ref, under } = profileUi,
+      domain = (rec) => profileDomainText(rec),
+      narrow = canvas.clientWidth < PROFILE_NARROW,
+      policy = cur?.policy === "frozen" ? "Frozen" : "Auto",
+      refName = under ? ROWS_INFO[under.kind].name.replace("Relative volume", "Rel. vol.").replace("Time at price", "Time") : "";
+    if (!under) return `Profile · Volume ${domain(cur)}`;
+    if (plan.mode === "absolute") return `Profile · ${PROFILE_TEXT.names.absolute} · ${domain(cur)}`;
+    if (plan.mode === "share") return `Profile · ${PROFILE_TEXT.names.share} · ${plan.state === "ok" ? domain(cur) : plan.reason === "zero-total" ? "undefined" : "no window"}`;
+    return narrow && !S.profileOpen
+      ? `Profile · Volume ${domain(cur)} · ${refName} ${domain(ref)}`
+      : `Profile · ${PROFILE_TEXT.names.independent} · ${policy}`;
+  }
+  function profileChipCommit() {
+    const { plan, cur, ref, under } = profileUi;
+    if (!plan) return;
+    const chip = el("profile-chip"),
+      narrow = canvas.clientWidth < PROFILE_NARROW,
+      offers = plan.offers,
+      key = [
+        plan.mode, plan.asked, plan.state, plan.reason, profileDomainText(cur), ref ? profileDomainText(ref) : "", narrow, S.profileOpen, profileUi.tracks,
+        under ? under.kind + under.period : "", plan.denominators ? plan.denominators.cur + "/" + plan.denominators.ref : "", plan.window ? plan.window.bins : "",
+        offers.absolute.reason ?? "", offers.share.reason ?? "", cur?.policy ?? "", colourEpoch,
+      ].join("|");
+    if (profileUi.key === key) return;
+    profileUi.key = key;
+    const text = profileSummary();
+    if (el("profile-chip-text").textContent !== text) el("profile-chip-text").textContent = text;
+    const label = `Profile tracks: ${text}`;
+    if (chip.getAttribute("aria-label") !== label) chip.setAttribute("aria-label", label);
+    const attrs = {
+      comparison: plan.mode,
+      asked: plan.asked,
+      state: plan.state,
+      reason: plan.reason ?? "",
+      tracks: String(profileUi.tracks),
+      collapsed: String(narrow && !S.profileOpen),
+      currentDomain: profileDomainText(cur),
+      referenceDomain: ref ? profileDomainText(ref) : "",
+      reference: under ? `${under.kind}:${under.period}` : "",
+    };
+    for (const [name, value] of Object.entries(attrs)) if (chip.dataset[name] !== value) chip.dataset[name] = value;
+    if (pop.open?.panel === el("profile-pop")) profilePop();
+  }
+  function profilePop() {
+    const panel = el("profile-pop"),
+      chip = el("profile-chip"),
+      { plan, cur, ref, under } = profileUi,
+      narrow = canvas.clientWidth < PROFILE_NARROW,
+      list = uiEl("dl", "ol-legend-details"),
+      add = (label, value, field, canonical) => {
+        const dd = uiEl("dd", "ol-num", value);
+        dd.dataset.field = field;
+        if (canonical !== undefined) dd.dataset.value = typeof canonical === "string" ? canonical : JSON.stringify(canonical);
+        list.append(uiEl("dt", "", label), dd);
+      };
+    if (!plan) return;
+    const focused = panel.contains(document.activeElement) ? document.activeElement : null,
+      sel = Boolean(S.selection),
+      where = `${sel ? PROFILE_TEXT.currentSelected : PROFILE_TEXT.current}`;
+    add("Current track", where, "currentTrack", sel ? "selection" : "view");
+    add("Current axis", cur ? `${uiAxisText(cur)}` : E.text.axis.none, "currentAxis", cur?.domain ?? null);
+    add("Buy subset", PROFILE_TEXT.buy, "buySubset", "inset");
+    if (under) {
+      add("Reference track", `${ROWS_INFO[under.kind].name} ${periodPhrase(under.period)}`, "referenceTrack", `${under.kind}:${under.period}`);
+      add("Reference axis", ref ? uiAxisText(ref) : E.text.axis.none, "referenceAxis", ref?.domain ?? null);
+      add("Point of control", PROFILE_TEXT.pocs, "pocSource", "volume");
+    } else add("Reference track", "Off: turn Rows on to add one", "referenceTrack", "");
+    if (plan.mode !== "independent") {
+      if (plan.m !== null) add("Price rows", `${price(2 ** plan.m * PR)} USDT, the coarser of the two`, "partition", plan.m);
+      if (plan.window) add("Window W", `${plan.window.bins} rows`, "window", plan.window);
+      if (plan.denominators) {
+        const unit = under?.kind === "time" ? "seconds" : "usdt";
+        add("Total over W, current", `${uiFmt(plan.denominators.cur, unit)} ${uiAxisUnit(unit)}`, "denominatorCurrent", plan.denominators.cur);
+        add("Total over W, reference", `${uiFmt(plan.denominators.ref, unit)} ${uiAxisUnit(unit)}`, "denominatorReference", plan.denominators.ref);
+      }
+      if (plan.state !== "ok" && plan.reason) add("Result", PROFILE_TEXT.why[plan.reason], "result", plan.reason);
+    }
+    const group = uiEl("div", "ol-legend-actions"),
+      notes = uiEl("div", "ol-legend-part");
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", "Comparison");
+    group.dataset.part = "comparison";
+    for (const mode of ["independent", "absolute", "share"]) {
+      const offer = plan.offers[mode],
+        b = uiEl("button", "ol-action ol-s cursor-interaction", PROFILE_TEXT.names[mode] + (mode === "independent" ? " · Auto" : ""));
+      b.type = "button";
+      b.dataset.action = "profile-cmp";
+      b.dataset.value = mode;
+      b.setAttribute("aria-pressed", String(S.profileCmp === mode));
+      const reason = uiEl("p", "ol-legend-note", offer.ok ? PROFILE_TEXT.descs[mode] : PROFILE_TEXT.why[offer.reason]);
+      reason.id = `ol-profile-${mode}-note`;
+      b.setAttribute("aria-describedby", reason.id);
+      if (!offer.ok) {
+        b.setAttribute("aria-disabled", "true");
+        b.dataset.reason = offer.reason;
+      }
+      group.append(b);
+      notes.append(reason);
+    }
+    const parts = [list, group, notes];
+    if (S.profileCmp !== plan.mode) parts.push(uiEl("p", "ol-legend-note", `${PROFILE_TEXT.names[S.profileCmp]} is chosen and is not offered now: ${PROFILE_TEXT.why[plan.reason] ?? ""} The tracks are independent until it is.`));
+    if (narrow) {
+      const open = uiEl("button", "ol-action ol-s cursor-interaction", "Show the tracks on the chart");
+      open.type = "button";
+      open.dataset.action = "profile-open";
+      open.setAttribute("aria-pressed", String(S.profileOpen));
+      parts.push(open);
+    }
+    panel.replaceChildren(uiEl("div", "ol-pop-head", "Profile tracks"), ...parts);
+    if (focused?.dataset?.action) panel.querySelector(`[data-action="${focused.dataset.action}"][data-value="${focused.dataset.value ?? ""}"]`)?.focus();
+    uiPopPlace(panel, chip, "start");
+  }
+  function profileSet(field, value) {
+    if (S[field] === value) return;
+    S[field] = value;
+    // the layout moved (the tracks appear or go), so the next draw measures it afresh
+    update();
+    save();
   }
   // ---- the Scale sections of the Cells and Rows menus ----
   // One item of the Scale section: a native button with an accessible name and, when there is one, a
@@ -6366,7 +6519,11 @@
     bindPop("legend", "legend-pop", () => uiOpenPop("cells"));
     bindPop("rows-legend", "rows-legend-pop", () => uiOpenPop("rows"));
     bindPop("axis-chip", "axis-pop", () => uiOpenPop("axis"));
-    for (const id of ["legend-pop", "rows-legend-pop", "axis-pop"]) {
+    bindPop("profile-chip", "profile-pop", () => {
+      profilePop();
+      (el("profile-pop").querySelector("button:not(:disabled)") ?? el("profile-pop")).focus({ preventScroll: true });
+    });
+    for (const id of ["legend-pop", "rows-legend-pop", "axis-pop", "profile-pop"]) {
       const panel = el(id);
       panel.addEventListener("click", (e) => {
         const button = e.target.closest?.("button[data-action]");
@@ -7382,140 +7539,375 @@
       }
     });
   }
+  // ---- The profile tracks (PRD-0002 S2, section 3) ----
+  // Two tracks side by side, right of the Rows strip, each with a heading of its own and its numeric domain under it. The CURRENT track is the
+  // view's (or the selection's) Volume with its taker-buy subset, whatever the Cells measure; the REFERENCE track is the Rows measure over its
+  // period. They used to be one overpainted strip, on which two lengths on two axes could not be told apart. The default is Independent axes,
+  // each on an Auto domain that is printed; Shared absolute and Shared row share come from E.axis.profile and are offered only where they are
+  // exact (a disabled choice says why).
+  const PROFILE_TEXT = {
+    names: { independent: "Independent axes", absolute: "Shared absolute", share: "Shared row share" },
+    descs: {
+      independent: "Each track on its own Auto domain, shown under it.",
+      absolute: "One domain for both tracks, the same pixels per unit. The same measure and basis on an exact common price partition.",
+      share: "Each row's share of its track's total over the same price window, both totals shown. Two nonnegative distributions only.",
+    },
+    why: {
+      "current-not-ready": "The view is not measured yet.",
+      "no-reference": "Turn Rows on to have a reference track.",
+      "reference-not-ready": "The reference period is not read yet.",
+      "not-aligned": "The two row sizes have no exact common partition.",
+      "unlike-measure": "Needs the same measure on both tracks: Volume against Volume.",
+      signed: "A signed Delta is not a row-share distribution.",
+      "no-window": "The view and the period share no price rows.",
+      "zero-total": "A total of zero has no shares.",
+    },
+    // The reference track's own reasons when the mode asked is not offered for its measure
+    shareWhy: "Row share needs Volume or Time at price as the reference; a ratio is not a distribution.",
+    current: "Volume in the view",
+    currentSelected: "Volume in the selection",
+    buy: "Taker-buy volume, a subset of each row",
+    pocs: "POC and Buy POC are Volume-derived",
+  };
+  // The plan of the two tracks for this frame: what E.axis.profile says of the rows the page holds.
+  function profilePlan(query, b, state, under) {
+    const m = renderM(),
+      cur = { rows: query.rows, m, ready: state === "exact" || state === "recorded" || state === "cube" },
+      ref = under
+        ? {
+            kind: under.kind,
+            rows: under.bands?.rows ?? [],
+            m: under.bands?.m ?? m,
+            ready: Boolean(under.bands) && under.res.state === "ready" && !under.stale,
+          }
+        : null;
+    return E.axis.profile({ mode: S.profileCmp, cur, ref, view: { lo: b[2], hi: b[3] } });
+  }
+  // The axis of the reference track in independent mode: the exact maximum of the rows in view, or the fixed -2 to +2 of Relative volume.
+  const referenceRead = (kind) => (kind === "volume" ? rowsV : kind === "delta" ? rowsDelta : rowsW);
+  function referenceAxis(u) {
+    const b = u.bands,
+      kind = u.kind,
+      id = "profile.reference." + kind;
+    if (!b) return null;
+    const rows = b.rows,
+      ps = 2 ** b.m,
+      read = referenceRead(kind),
+      [first, hi] = rowsInView(rows, ps);
+    return axisFrame(
+      id,
+      kind === "relvol"
+        ? { sign: "ratio", eligible: true, sig: "fixed" }
+        : {
+            sign: kind === "delta" ? "signed-symmetric" : "unsigned",
+            eligible: u.res.state === "ready" && !u.stale,
+            sig: [scaleWorkspace(), id, objId(rows), b.m, first, hi].join("|"),
+            summary: () => rowsScan(rows, first, hi, read),
+          },
+    );
+  }
+  // The number a domain shows under its track: "0–12.3k", "±3.2k", "0", "No data".
+  function profileDomainText(rec) {
+    if (!rec || rec.typed === "none") return E.text.axis.none;
+    if (rec.typed === "zero-only" || !Array.isArray(rec.domain)) return E.text.axis.zero;
+    const [lo, hi] = rec.domain;
+    return rec.sign === "signed-symmetric" ? "±" + uiFmt(hi, rec.unit) : rec.sign === "ratio" ? `${lo}–${hi}` : `${lo === 0 ? "0" : uiFmt(lo, rec.unit)}–${uiFmt(hi, rec.unit)}`;
+  }
+  // The endpoint glyphs: a filled triangle for the POC, a hollow diamond for the Buy POC, both in the gold profile role.
+  function pocGlyph(x, y, buy) {
+    ctx.save();
+    ctx.strokeStyle = colors.poc;
+    ctx.fillStyle = colors.poc;
+    ctx.lineWidth = 1.25;
+    ctx.beginPath();
+    if (buy) {
+      ctx.moveTo(x + 2.5, y - 3.5);
+      ctx.lineTo(x + 6, y);
+      ctx.lineTo(x + 2.5, y + 3.5);
+      ctx.lineTo(x - 1, y);
+      ctx.closePath();
+      ctx.stroke();
+    } else {
+      ctx.moveTo(x, y - 3.5);
+      ctx.lineTo(x + 5, y);
+      ctx.lineTo(x, y + 3.5);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  // The letters of a track's gutter, a line of room apart, each joined to its row by a short leader.
+  function gutterLabels(labels, x, top, bottom) {
+    const visible = labels.filter((l) => l.y >= top && l.y <= bottom).sort((a, c) => a.y - c.y);
+    for (let i = 0; i < visible.length; i++) visible[i].ly = Math.max(top + 7, visible[i].y, i ? visible[i - 1].ly + 14 : top + 7);
+    if (visible.length && visible.at(-1).ly > bottom - 7) {
+      visible.at(-1).ly = bottom - 7;
+      for (let i = visible.length - 2; i >= 0; i--) visible[i].ly = Math.min(visible[i].ly, visible[i + 1].ly - 14);
+    }
+    for (const l of visible) {
+      if (l.glyph) pocGlyph(x, l.y, l.glyph === "buy");
+      else markLine(x, l.y, x + 5, l.y, l.color, 1, 0.7);
+      if (Math.abs(l.ly - l.y) > 1) markLine(x + 6, l.y, x + 8, l.ly, l.color, 1, 0.7);
+      text(l.symbol, x + 8, l.ly, colors.ink, "left", 11);
+    }
+  }
   function profile(query, b, state, under, sc) {
-    if (!G.profile) return;
-    // The length of every bar: the registered axis of the current profile, over the rows it shows. It is the
-    // exact maximum of them, "0" for rows that are all zero, and "No data" for none (never a maximum of 1
-    // made up for an empty view); it waits for a measured rectangle and keeps its domain through a gesture.
-    const axis = axisFrame("profile.current", {
+    const plan = profilePlan(query, b, state, under),
+      shared = plan.mode !== "independent",
+      sharedId = "profile.shared." + plan.mode,
+      curReady = state === "exact" || state === "recorded" || state === "cube",
+      refReady = Boolean(under?.bands) && under.res.state === "ready" && !under.stale;
+    // The axes, through the one registry. Independent: the current track's own (the exact maximum of the rows it shows, "0" for rows that
+    // are all zero, "No data" for none, never a maximum of 1 made up for an empty view; it waits for a measured rectangle and keeps its
+    // domain through a gesture) and the reference's. Shared: ONE, over the displayed rows of both.
+    let curAxis, refAxis;
+    if (shared) {
+      const rows = [...(plan.cur ?? []), ...(plan.ref ?? [])],
+        span = rows.length ? [Math.min(...rows.map((x) => x.r)), Math.max(...rows.map((x) => x.r))] : ["", ""];
+      curAxis = refAxis = axisFrame(sharedId, {
         sign: "unsigned",
-        eligible: state === "exact" || state === "recorded" || state === "cube",
+        eligible: curReady && refReady,
+        sig: [scaleWorkspace(), sharedId, objId(query.rows), under?.bands ? objId(under.bands.rows) : "", plan.m, plan.state, span[0], span[1]].join("|"),
+        summary: () => plan.summary,
+      });
+    } else {
+      curAxis = axisFrame("profile.current", {
+        sign: "unsigned",
+        eligible: curReady,
         sig: [scaleWorkspace(), "profile.current", objId(query), state].join("|"),
         summary: () => rowsScan(query.rows, 0, Infinity, rowsV),
-      }),
-      at = { t: 0, clip: 0 },
-      px = G.x + G.w + G.sw + 9,
-      pw = G.profile - 29,
+      });
+      refAxis = under ? referenceAxis(under) : null;
+    }
+    const counts = { cur: { low: 0, high: 0, drawn: 0 }, ref: { low: 0, high: 0, drawn: 0 } };
+    if (G.profile) {
+      const unit = TRACK_BARS;
+      paintCurrentTrack(query, b, state, plan, curAxis, unit, counts.cur);
+      if (G.tracks === 2 && under) paintReferenceTrack(under, b, plan, refAxis, unit, sc, counts.ref);
+      paintProfileDomains(plan, curAxis, refAxis, state, under);
+      // The level line and the pointer's row across the tracks
+      const right = G.tx[G.tracks - 1] + TRACK_BARS + 3;
+      if (S.level !== null) {
+        const y = Math.round(G.Y(S.level)) + 0.5;
+        ctx.setLineDash([6, 4]);
+        line(G.tx[0], y, right, y, colors.ink, 1.3, 0.9);
+        ctx.setLineDash([]);
+      }
+      const hr = pointerRow();
+      if (hr !== null) {
+        const ps = stepP(),
+          ya = G.Y((hr + 1) * ps),
+          yb = G.Y(hr * ps);
+        ctx.strokeStyle = colors.ink;
+        ctx.lineWidth = 1;
+        for (let k = 0; k < G.tracks; k++) ctx.strokeRect(G.tx[k] + 0.5, ya + 0.5, TRACK_BARS + 2, Math.max(1, yb - ya - 1));
+      }
+    }
+    // What the axes say about their bars: counted again each frame (a bar past a held domain is clamped at the track's edge and counted).
+    for (const [rec, n] of shared ? [[curAxis, null]] : [[curAxis, counts.cur], [refAxis, counts.ref]]) {
+      if (!rec) continue;
+      const c = n ?? { low: counts.cur.low + counts.ref.low, high: counts.cur.high + counts.ref.high, drawn: counts.cur.drawn + counts.ref.drawn };
+      rec.clipped.low = c.low;
+      rec.clipped.high = c.high;
+      rec.clipped.count = c.low + c.high;
+      rec.clipped.total = c.drawn;
+      axisChipWrite(rec);
+    }
+    profileUi.plan = plan;
+    profileUi.cur = curAxis;
+    profileUi.ref = refAxis;
+    profileUi.under = under;
+    profileUi.state = state;
+    profileUi.tracks = G.profile ? G.tracks : 0;
+  }
+  // The current track: rows of the view's (or selection's) Volume with the taker-buy subset as a neutral inset on the same axis.
+  function paintCurrentTrack(query, b, state, plan, axis, unit, count) {
+    const x0 = G.tx[0],
+      shared = plan.mode !== "independent",
       ps = stepP(),
+      size = shared && plan.m !== null ? 2 ** plan.m : ps,
       va = markState.va,
-      labels = [];
-    let low = 0,
-      high = 0;
+      labels = [],
+      at = { t: 0, clip: 0 },
+      drawable = axis && axis.typed !== "none" && (!shared || plan.state === "ok"),
+      rows = drawable ? (shared ? plan.cur : query.rows) : [],
+      pocBin = query.poc === null ? null : shared && plan.m !== null ? Math.floor(query.poc / 2 ** (plan.m - renderM())) : query.poc;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(px, G.y, G.profile - 8, G.h);
+    ctx.rect(x0, G.y, TRACK_BARS + TRACK_GUTTER + 2, G.h);
     ctx.clip();
     if (S.area && va) {
       const ya = G.Y(Math.min(va.r1 * ps, b[3])),
         yb = G.Y(Math.max(va.r0 * ps, b[2]));
       ctx.fillStyle = colors.volume;
       ctx.globalAlpha = 0.08;
-      ctx.fillRect(px, ya, pw, yb - ya);
+      ctx.fillRect(x0, ya, TRACK_BARS, yb - ya);
       ctx.globalAlpha = 1;
     }
-    // The underlay's second profile, behind the view's.
-    if (under?.bands) underProfile(under, px, pw, sc);
-    for (const row of axis.typed === "none" ? [] : query.rows) {
-      const ya = G.Y(Math.min((row.r + 1) * ps, b[3])),
-        yb = G.Y(Math.max(row.r * ps, b[2]));
+    for (const row of rows) {
+      const ya = G.Y(Math.min((row.r + 1) * size, b[3])),
+        yb = G.Y(Math.max(row.r * size, b[2]));
       if (yb <= ya) continue;
-      // A bar past a held domain (a gesture or Play keeps it) is clamped at the strip's edge and counted.
-      E.axis.coordinate(axis, row.v, at);
-      if (at.clip === E.scale.CLIP.LOW) low++;
-      else if (at.clip === E.scale.CLIP.HIGH) high++;
-      ctx.fillStyle = S.poc && row.r === query.poc ? colors.poc : colors.muted;
-      ctx.globalAlpha = S.poc && row.r === query.poc ? 0.75 : 0.32;
-      ctx.fillRect(px, ya, pw * at.t, Math.max(0.1, yb - ya - 0.7));
-      E.axis.coordinate(axis, row.bv, at);
-      // The taker-buy subset of the row is an amount like the row: its interim colour, not a signed arm.
-      ctx.fillStyle = colors.legacyBuy;
-      ctx.globalAlpha = 0.85;
-      ctx.fillRect(px, ya, pw * at.t, Math.max(0.7, Math.min(2, (yb - ya) * 0.3)));
+      const value = shared ? row.t : row.v,
+        buy = shared ? row.tb : row.bv,
+        h = Math.max(0.1, yb - ya - 0.7);
+      E.axis.coordinate(axis, value, at);
+      count.drawn++;
+      if (at.clip === E.scale.CLIP.LOW) count.low++;
+      else if (at.clip === E.scale.CLIP.HIGH) count.high++;
+      const poc = S.poc && row.r === pocBin;
+      ctx.fillStyle = poc ? colors.poc : colors.muted;
+      ctx.globalAlpha = poc ? 0.75 : 0.32;
+      ctx.fillRect(x0, ya, unit * at.t, h);
+      E.axis.coordinate(axis, buy, at);
+      // The taker-buy subset: a neutral inset inside the row's bar, on the same axis (not a signed arm, not a second colour).
+      const inset = Math.max(1, Math.min(3, h * 0.36));
+      ctx.fillStyle = colors.ink;
+      ctx.globalAlpha = 0.6;
+      ctx.fillRect(x0, ya + (h - inset) / 2, unit * at.t, inset);
     }
     ctx.globalAlpha = 1;
-    axis.clipped.low = low;
-    axis.clipped.high = high;
-    axis.clipped.count = low + high;
-    axis.clipped.total = query.rows.length;
-    axisChipWrite(axis);
-    if (S.level !== null) {
-      const y = Math.round(G.Y(S.level)) + 0.5;
-      ctx.setLineDash([6, 4]);
-      line(px, y, px + pw + 3, y, colors.ink, 1.3, 0.9);
-      ctx.setLineDash([]);
-    }
-    const hr = pointerRow();
-    if (hr !== null) {
-      const ya = G.Y((hr + 1) * ps),
-        yb = G.Y(hr * ps);
-      ctx.strokeStyle = colors.ink;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(px + 0.5, ya + 0.5, pw + 2, Math.max(1, yb - ya - 1));
-    }
     if (S.area && va) {
       const high = G.Y(Math.min(va.r1 * ps, b[3])),
         low = G.Y(Math.max(va.r0 * ps, b[2]));
-      markLine(px + pw + 2, high, px + pw + 2, low, colors.muted, 1, 0.6);
-      markLine(px, high, px + pw + 3, high, colors.muted, 1, 0.6);
-      markLine(px, low, px + pw + 3, low, colors.muted, 1, 0.6);
-      labels.push(
-        { symbol: "H", y: high, color: colors.muted },
-        { symbol: "L", y: low, color: colors.muted },
-      );
+      markLine(x0 + TRACK_BARS + 2, high, x0 + TRACK_BARS + 2, low, colors.muted, 1, 0.6);
+      markLine(x0, high, x0 + TRACK_BARS + 3, high, colors.muted, 1, 0.6);
+      markLine(x0, low, x0 + TRACK_BARS + 3, low, colors.muted, 1, 0.6);
+      labels.push({ symbol: "H", y: high, color: colors.muted }, { symbol: "L", y: low, color: colors.muted });
     }
     if (S.poc) {
-      for (const [row, symbol, color] of [
-        [query.poc, "P", colors.poc],
-        [query.bpoc, "B", colors.legacyBuy],
-      ]) {
+      for (const [row, symbol, buy] of [[query.poc, "P", false], [query.bpoc, "B", true]]) {
         if (row === null) continue;
         const y = G.Y((row + 0.5) * ps);
-        markLine(px, y, px + pw + 3, y, color, 1.5, 0.95);
-        labels.push({ symbol, y, color });
+        ctx.setLineDash(buy ? [3, 2] : []);
+        markLine(x0, y, x0 + TRACK_BARS + 1, y, colors.poc, 1.5, 0.95);
+        ctx.setLineDash([]);
+        labels.push({ symbol, y, color: colors.poc, glyph: buy ? "buy" : "poc" });
       }
     }
-    const visible = labels
-      .filter((x) => x.y >= G.y && x.y <= G.y + G.h)
-      .sort((a, b) => a.y - b.y);
-    // A line of room between labels, as on the chart.
-    for (let i = 0; i < visible.length; i++)
-      visible[i].ly = Math.max(
-        G.y + 7,
-        visible[i].y,
-        i ? visible[i - 1].ly + 15 : G.y + 7,
-      );
-    if (visible.length && visible.at(-1).ly > G.y + G.h - 7) {
-      visible.at(-1).ly = G.y + G.h - 7;
-      for (let i = visible.length - 2; i >= 0; i--)
-        visible[i].ly = Math.min(visible[i].ly, visible[i + 1].ly - 15);
-    }
-    for (const label of visible) {
-      markLine(
-        px + pw + 3,
-        label.y,
-        px + pw + 7,
-        label.ly,
-        label.color,
-        1,
-        0.7,
-      );
-      text(label.symbol, px + pw + 9, label.ly, colors.ink, "left", 11);
-    }
+    if (shared && plan.state !== "ok") text(plan.state === "undefined" ? "Undefined" : "No window", x0, G.y + 10, colors.muted, "left");
+    else if (axis && axis.typed === "none" && state !== "pending" && state !== "failed") text(E.text.axis.none, x0, G.y + 10, colors.muted, "left");
+    gutterLabels(labels, x0 + TRACK_BARS + 1, G.y, G.y + G.h);
     ctx.restore();
-    // While the cube measures the rectangle, the profile waits for it.
+    // The heading: what the track is, and while the cube measures the rectangle, that it waits.
+    ctx.font = `${TYPE.s}px ${FONT}`;
     text(
-      state === "pending"
-        ? "Measuring…"
-        : state === "failed"
-          ? "Not measured"
-          : S.selection
-            ? "Selected"
-            : "Profile",
-      px,
+      state === "pending" ? "Measuring…" : state === "failed" ? "Not measured" : fitText(S.selection ? "Sel. volume" : "Volume", TRACK_BARS + TRACK_GUTTER),
+      x0,
       G.y - 5,
       colors.muted,
       "left",
     );
+  }
+  // The reference track: the Rows measure over its period on its own axis (or the shared one), with the period's POC and 70% area, which stay
+  // Volume-derived under Delta and Time at price.
+  function paintReferenceTrack(u, b, plan, axis, unit, sc, count) {
+    const x0 = G.tx[1],
+      shared = plan.mode !== "independent",
+      kind = u.kind,
+      diverging = kind === "delta" || kind === "relvol",
+      relvol = kind === "relvol" ? u.relvol : null,
+      read = referenceRead(kind),
+      lut = sc?.lut,
+      // The constant bar colour of the active appearance and the two arms; the legacy ink if the scale display is off.
+      bar = lut ? lut.bar.css : colors.ink,
+      arms = lut ? [lut.positive.css[255], lut.negative.css[255]] : [colors.legacyBuy, colors.legacySell],
+      at = { t: 0, clip: 0 },
+      mid = x0 + TRACK_BARS / 2,
+      bands = u.bands,
+      labels = [];
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, G.y, TRACK_BARS + TRACK_GUTTER + 2, G.h);
+    ctx.clip();
+    if (bands && axis) {
+      const ps = 2 ** (shared && plan.m !== null ? plan.m : bands.m),
+        drawable = axis.typed !== "none" && (kind !== "relvol" || relvol?.state === "ok") && (!shared || plan.state === "ok");
+      if (drawable) {
+        if (shared) {
+          for (const x of plan.ref) {
+            const ya = G.Y((x.r + 1) * ps),
+              h = Math.max(0.1, G.Y(x.r * ps) - ya - 0.7);
+            E.axis.coordinate(axis, x.t, at);
+            count.drawn++;
+            if (at.clip === E.scale.CLIP.LOW) count.low++;
+            else if (at.clip === E.scale.CLIP.HIGH) count.high++;
+            if (!(at.t > 0)) continue;
+            ctx.fillStyle = bar;
+            ctx.globalAlpha = 0.55;
+            ctx.fillRect(x0, ya, unit * at.t, h);
+          }
+        } else {
+          let [i, hi] = rowsInView(bands.rows, ps);
+          for (; i < bands.rows.length && bands.rows[i].r <= hi; i++) {
+            const x = bands.rows[i],
+              ya = G.Y((x.r + 1) * ps),
+              h = Math.max(0.1, G.Y(x.r * ps) - ya - 0.7);
+            let value;
+            if (kind === "relvol") {
+              const typed = relvol.at(x.r);
+              if (typed.tag !== "finite") continue;
+              value = typed.value;
+            } else value = read(x);
+            E.axis.coordinate(axis, value, at);
+            count.drawn++;
+            if (at.clip === E.scale.CLIP.LOW) count.low++;
+            else if (at.clip === E.scale.CLIP.HIGH) count.high++;
+            if (!diverging) {
+              if (!(at.t > 0)) continue;
+              ctx.fillStyle = bar;
+              ctx.globalAlpha = 0.55;
+              ctx.fillRect(x0, ya, unit * at.t, h);
+              continue;
+            }
+            if (!at.t) continue;
+            const w = (unit / 2) * Math.abs(at.t);
+            ctx.fillStyle = at.t > 0 ? arms[0] : arms[1];
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(at.t > 0 ? mid : mid - w, ya, w, h);
+          }
+        }
+        ctx.globalAlpha = 1;
+      } else if (shared && plan.state !== "ok") text(plan.state === "undefined" ? "Undefined" : "No window", x0, G.y + 10, colors.muted, "left");
+      else if (axis.typed === "none") text(kind === "relvol" && relvol?.state !== "ok" ? "No ratio" : E.text.axis.none, x0, G.y + 10, colors.muted, "left");
+      if (diverging && !shared) markLine(mid, G.y, mid, G.y + G.h, colors.line, 1, 0.9);
+      // The period's own POC and 70% area: Volume-derived whatever the track shows
+      const vb = u.volBands;
+      if (vb?.va) {
+        const vps = 2 ** vb.m,
+          ya = G.Y(vb.va.r1 * vps),
+          yb = G.Y(vb.va.r0 * vps);
+        ctx.fillStyle = colors.ink;
+        ctx.globalAlpha = 0.4;
+        ctx.fillRect(x0, ya, 2, yb - ya);
+        ctx.globalAlpha = 1;
+      }
+      if (vb?.poc != null) {
+        const y = G.Y((vb.poc + 0.5) * 2 ** vb.m);
+        markLine(x0, y, x0 + TRACK_BARS + 1, y, colors.poc, 1.5, 0.95);
+        labels.push({ symbol: "P", y, color: colors.poc, glyph: "poc" });
+      }
+    } else {
+      text(u.res.state === "failed" ? "Not read" : "Reading…", x0, G.y + 10, colors.muted, "left");
+    }
+    gutterLabels(labels, x0 + TRACK_BARS + 1, G.y, G.y + G.h);
+    ctx.restore();
+    ctx.font = `${TYPE.s}px ${FONT}`;
+    text(fitText(`${ROWS_INFO[kind].name.replace("Relative volume", "Rel. vol.").replace("Time at price", "Time")} · ${u.period}`, TRACK_BARS + TRACK_GUTTER), x0, G.y - 5, colors.muted, "left");
+  }
+  // The domain of each track under it (one shared label across both when they share). A heading names the track; the domain is the number that
+  // the length of its bars is read against.
+  function paintProfileDomains(plan, curAxis, refAxis, state, under) {
+    const y = G.y + G.h + 11,
+      label = (rec) => profileDomainText(rec);
+    if (plan.mode !== "independent") {
+      if (G.tracks !== 2) return;
+      const x = G.tx[0] + (G.tx[1] + TRACK_BARS - G.tx[0]) / 2;
+      text(`${label(curAxis)} · shared`, x, y, colors.muted, "center");
+      return;
+    }
+    text(label(curAxis), G.tx[0], y, colors.muted, "left");
+    if (G.tracks === 2 && refAxis && under) text(label(refAxis), G.tx[1], y, colors.muted, "left");
   }
   // The price row under the pointer, over the prices or the profile, at the
   // drawn row size: outlined across both.
@@ -7617,100 +8009,6 @@
       for (; i < rows.length && rows[i].r <= hi; i++) bandPaint(u, rows[i], frame, ENC);
     }
     ctx.globalAlpha = 1;
-  }
-  // The underlay's second profile, behind the view's: each row's value over
-  // its period, on the length axis of its own (registered as
-  // profile.reference.<measure>: the exact maximum of the rows in view, or the
-  // fixed -2 to +2 of Relative volume), apart from the current profile's.
-  // Volume and time at price run from the strip's edge in the constant bar
-  // colour; delta and relative volume diverge from a centre line in the two
-  // arms. The period's POC is a dashed line across the strip, and its 70% value
-  // area a bar down the strip's edge.
-  function underProfile(u, px, pw, sc) {
-    const b = u.bands,
-      ps = 2 ** b.m,
-      mid = px + pw / 2,
-      rows = b.rows,
-      kind = u.kind,
-      diverging = kind === "delta" || kind === "relvol",
-      relvol = kind === "relvol" ? u.relvol : null,
-      id = "profile.reference." + kind,
-      read = kind === "volume" ? rowsV : kind === "delta" ? rowsDelta : rowsW,
-      lut = sc?.lut,
-      // The constant bar colour of the active appearance and the two arms; the legacy ink if the scale display is off.
-      bar = lut ? lut.bar.css : colors.ink,
-      arms = lut ? [lut.positive.css[255], lut.negative.css[255]] : [colors.legacyBuy, colors.legacySell],
-      at = { t: 0, clip: 0 };
-    let [i, hi] = rowsInView(rows, ps);
-    const first = i,
-      axis = axisFrame(
-        id,
-        kind === "relvol"
-          ? { sign: "ratio", eligible: true, sig: "fixed" }
-          : {
-              sign: diverging ? "signed-symmetric" : "unsigned",
-              eligible: u.res.state === "ready" && !u.stale,
-              sig: [scaleWorkspace(), id, objId(rows), b.m, first, hi].join("|"),
-              summary: () => rowsScan(rows, first, hi, read),
-            },
-      );
-    let low = 0,
-      high = 0,
-      drawn = 0;
-    // "No data" draws no bar, and a whole-result status of Relative volume has none to draw.
-    if (axis.typed !== "none" && (kind !== "relvol" || relvol?.state === "ok"))
-      for (; i < rows.length && rows[i].r <= hi; i++) {
-        const x = rows[i],
-          ya = G.Y((x.r + 1) * ps),
-          h = Math.max(0.1, G.Y(x.r * ps) - ya - 0.7);
-        let value;
-        if (kind === "relvol") {
-          const typed = relvol.at(x.r);
-          if (typed.tag !== "finite") continue;
-          value = typed.value;
-        } else value = read(x);
-        E.axis.coordinate(axis, value, at);
-        drawn++;
-        if (at.clip === E.scale.CLIP.LOW) low++;
-        else if (at.clip === E.scale.CLIP.HIGH) high++;
-        if (!diverging) {
-          if (!(at.t > 0)) continue;
-          ctx.fillStyle = bar;
-          ctx.globalAlpha = kind === "volume" ? 0.16 : 0.28;
-          ctx.fillRect(px, ya, pw * at.t, h);
-          ctx.globalAlpha = 0.6;
-          ctx.fillRect(px + pw * at.t - 1, ya, 1, h);
-          continue;
-        }
-        if (!at.t) continue;
-        const w = (pw / 2) * Math.abs(at.t);
-        ctx.fillStyle = at.t > 0 ? arms[0] : arms[1];
-        ctx.globalAlpha = 0.35;
-        ctx.fillRect(at.t > 0 ? mid : mid - w, ya, w, h);
-      }
-    ctx.globalAlpha = 1;
-    axis.clipped.low = low;
-    axis.clipped.high = high;
-    axis.clipped.count = low + high;
-    axis.clipped.total = drawn;
-    axisChipWrite(axis);
-    if (diverging) markLine(mid, G.y, mid, G.y + G.h, colors.line, 1, 0.9);
-    const vb = u.volBands;
-    if (vb?.va) {
-      const vps = 2 ** vb.m,
-        ya = G.Y(vb.va.r1 * vps),
-        yb = G.Y(vb.va.r0 * vps);
-      ctx.fillStyle = colors.ink;
-      ctx.globalAlpha = 0.4;
-      ctx.fillRect(px, ya, 2, yb - ya);
-      ctx.globalAlpha = 1;
-    }
-    if (vb?.poc != null) {
-      const y = G.Y((vb.poc + 0.5) * 2 ** vb.m);
-      ctx.setLineDash([3, 2]);
-      markLine(px, y, px + pw, y, colors.ink, 1, 0.6);
-      ctx.setLineDash([]);
-    }
   }
   // How the underlay's rows stand for its period where they aren't its own
   // exactly (the recorded snapshot): from coarser rows, its 1,000 USDT ones,
@@ -13574,7 +13872,7 @@
   }
   function navGeometry() {
     const r = canvas.getBoundingClientRect();
-    return layout(r.width, r.height, eventKinds().length, S.rows !== "off" ? ROWS_STRIP : 0);
+    return layoutNow(r.width, r.height);
   }
   function autoLevel() {
     if (!S.auto || !(S.tB > S.tA) || !(S.pB > S.pA)) return false;

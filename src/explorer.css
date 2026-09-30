@@ -1087,6 +1087,16 @@
 #origo-lens .ol-rows-legend .ol-ramp {
   width: 36px;
 }
+/* The profile chip: how the two profile tracks are compared, and their domains; it gives way to the row's width with an ellipsis. */
+#origo-lens .ol-profile-chip {
+  margin-left: var(--sp-1);
+  max-width: 34ch;
+}
+#origo-lens .ol-profile-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 #origo-lens .ol-plot {
   position: relative;
   flex: 1 1 0;

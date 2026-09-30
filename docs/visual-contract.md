@@ -680,24 +680,45 @@ Rendered from the Status column; K updates it with the statuses at convergence (
 
 ## 11. Contributor checklist
 
-<!-- PACKAGE-D-PLACEHOLDER: this section is written by package D (docs) in Wave 2; the marker is removed with the text. -->
-
-Package D writes one heading per concern below (S1-211).
+A new visual feature states each of the following before it merges, in its PR and in this file.
 
 ### 11.1 Measurement, support, model and scale
 
+- Which measurement is encoded: its formula and version, basis and canonical unit, numerator and denominator, the exposure it divides by, and what it is when the exposure is zero or unknown (a non-value, never 0).
+- The support the number describes (time and price, at the effective resolution), whether it is partial or open, and whether an empirical model stands behind it (its provenance and status belong in the measurement, not in a legend footnote).
+- The scale: fixed (shares, log₂ ratios, RSI) or fitted (Value, Relative rank), its transform and parameters, its identity (mapping id), and what happens with no calibration, a zero-only cohort and an all-equal cohort.
+
 ### 11.2 Channel and policy
+
+- The channel (Cells, Rows, lens, a pane or profile axis), its context (effective n and m for Cells; period identity, row size and quality, and never n, for Rows), and which policies it offers: Explore, Comparison lock, Auto color or Auto axis, Local contrast, Fit.
+- How it behaves in a gesture, during Play and in replay (frozen, paused, invalidated when fitted after the edge), and that its fit runs on the settled schedule and never in a paint or a read.
 
 ### 11.3 Role, state and geometry
 
+- The role of every mark (quantitative fill or outline, positive or negative arm, midpoint, occupancy, state, reference, interaction) from the role table, never a market hue chosen locally; the retired rendering roles (buy, sell, neutral, time as colours) must not come back.
+- The glyph or pattern for each state the measurement can be in (zero, undefined, no reference, negative-infinite, finite under or overflow, pending, failed, unsupported, open, outside support) and that a number is never drawn for a missing value.
+- Contrast: text at least 4.5:1, essential boundaries at least 3:1 against the actual backdrop.
+
 ### 11.4 Generated legend
+
+- The legend is generated from the same transform, clipping and geometry the encoder uses (samples and ticks at their true positions), names measure, basis, unit, transform, policy, support and clipping, and offers the same detail without a pointer. The value marker comes from the readout record.
+- The footer keys come from the role table, with counts.
 
 ### 11.5 Persistence
 
+- Each new setting is part of the version-2 schema, survives a portable code and an address (within 8,192 characters, degrading as documented), is validated on import, and has a default that may be omitted. A legacy payload without it reads as the default.
+- Nothing is stored that cannot be read back, nothing is executed from a payload, and a failed write is shown.
+
 ### 11.6 Tests
+
+- Unit tests with independent expected values (hand vectors, exact-rational arithmetic, `d3`, `node:crypto`), the typed-result cases, and adversarial cases (zero, tied, all-equal, both sides of a clipping or lookup boundary).
+- A browser test that reads the canvas (probe counts and pixels), the legend, the tooltip and the table as one record, in both themes; a round trip through a fresh browser; and, for anything that can fail, a failure test on the fake cube.
+- This file: one row per new consumer, with its role, channel and test, and the README and `docs/data-and-semantics.md` updated with the behaviour.
 
 ## 12. Glossary
 
-<!-- PACKAGE-D-PLACEHOLDER: this section is written by package D (docs) in Wave 2; the marker is removed with the text. -->
-
-Package D defines here both meanings of `activity` (the Columns pane painter and, separately, the removed paleness multiplier of DR-01), each `reference` separately (family role, reference profile, model reference, S1 reference token), Auto resolution level versus Auto color, and the Lock padlock versus Comparison lock (A-11, A-46, R-17).
+- **activity** has two meanings here. In `src/explorer.js` it names the painter of the **Columns** pane (`activity()`), which stays. Separately, the hidden *activity multiplier* (the paleness that made taker-flow and cascade cells paler where less traded) is removed (DR-01): denominators and exposure appear in readouts, never in a colour.
+- **reference** names four different things. A *family reference* is a role of a Lines family (POC gold, session violet, VWAP rust and so on). The *reference profile* is the second, adjacent profile of a Rows period beside the view's current profile. The *model reference* is the declared expectation an Efficiency value is measured against, 2^(ISO_B − 1). The *S1 reference token* is the colour token kept as a reference for a pending later slice (for example `--ol-legacy-buy`).
+- **Auto resolution level** (the padlock beside the resolution button, key A) follows the cell size on screen. **Auto color** is a scale policy that refits a colour mapping after each settled change. They are unrelated; **Auto axis** is the same idea for a length axis.
+- **Comparison lock** is the scale policy that holds the mappings and Auto axes across resolutions and periods. The **padlock** is the resolution button's indicator of the locked level (Auto resolution level off). They are unrelated.
+- **Explore**, **Fit**, **Local contrast**: see section 11.2; **appearance** is the palette version (`slate2` here), separate from a **mapping id**.

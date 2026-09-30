@@ -385,6 +385,9 @@
   // last q to the upper group's first q; outside the support it maps to 0 or 1 WITH an indication (LOW or
   // HIGH). An all-equal cohort (every knot the same) maps its value to 0.5 through the same first rule
   // (first q 0, last q 256) and everything else to an end with an indication.
+  // A measured ZERO is not below the support: the knots are of the positive values only (zeros are
+  // separately keyed, DD-09), so a zero maps to 0 WITHOUT an indication, exactly as under Value. Otherwise
+  // every sparse view would count its empty cells as "out of range" and raise Scale range exceeded.
   function sclRankEvaluator(knots) {
     const lowerBound = API.util.lowerBound;
     const upperBound = API.util.upperBound;
@@ -392,6 +395,11 @@
     const hi = knots[knots.length - 1];
     return function (x, out) {
       out.state = null;
+      if (x === 0) {
+        out.t = 0;
+        out.clip = sclNone;
+        return out;
+      }
       if (x < lo) {
         out.t = 0;
         out.clip = sclLow;

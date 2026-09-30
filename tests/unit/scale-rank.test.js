@@ -155,6 +155,17 @@ test("hand vector [1,1,1,2,3,5,5,8,13,21]: knots and the apply table of API.md A
   near(30, 1, CLIP.HIGH);
 });
 
+test("a measured zero maps to 0 without an indication (zeros are separately keyed; they must not count as out of range)", () => {
+  for (const values of [HAND, [7, 7, 7], TWO_GROUP, [0, 0, 0, 2, 4, 8]]) {
+    const d = fitRank(values).descriptor;
+    assert.deepEqual(at(d, 0), { t: 0, clip: CLIP.NONE });
+    assert.deepEqual(at(d, -0), { t: 0, clip: CLIP.NONE });
+  }
+  // Any other value below the support still carries the indication.
+  assert.deepEqual(at(fitRank(HAND).descriptor, 0.5), { t: 0, clip: CLIP.LOW });
+  assert.deepEqual(at(fitRank(HAND).descriptor, 1e-300), { t: 0, clip: CLIP.LOW });
+});
+
 test("n = 1 and an all-equal cohort: every knot equal, the value maps to 0.5, below and above map to 0 and 1 with an indication", () => {
   for (const values of [[7], [7, 7, 7], Array(1000).fill(7)]) {
     const f = fitRank(values);

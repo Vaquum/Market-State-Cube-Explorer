@@ -1,0 +1,61 @@
+{
+  "trades": [
+    {"t_ms": 1000, "price": 2500000, "qty": 400000, "takerBuy": true},
+    {"t_ms": 1000, "price": 2537500, "qty": 400000, "takerBuy": false},
+    {"t_ms": 100000, "price": 2487500, "qty": 400000, "takerBuy": true},
+    {"t_ms": 224999, "price": 2512500, "qty": 400000, "takerBuy": false},
+    {"t_ms": 225000, "price": 2525000, "qty": 400000, "takerBuy": false, "count": 2},
+    {"t_ms": 300000, "price": 2525000, "qty": 400000, "takerBuy": true},
+    {"t_ms": 700000, "price": 2500000, "qty": 400000, "takerBuy": true},
+    {"t_ms": 800000, "price": 2512500, "qty": 400000, "takerBuy": false},
+    {"t_ms": 800000, "price": 2487500, "qty": 400000, "takerBuy": false},
+    {"t_ms": 1130000, "price": 2500000, "qty": 400000, "takerBuy": true},
+    {"t_ms": 1190000, "price": 2525000, "qty": 400000, "takerBuy": false}
+  ],
+  "gaps": [],
+  "cutoffIso": "2021-01-01T00:20:00Z",
+  "expected": {
+    "notes": "OHLC by trade ID. Cutoff 1,200 s = base 21.33: closed 21, the open column 21 holds the last trade (t = 1,190,000), which a bars read [0, 21) must not see. A level-2 bar is 4 base columns = 225 s: bar 0 = t in [0, 225,000), bar 1 = [225,000, 450,000), bar 3 = [675,000, 900,000), bar 5 = [1,125,000, 1,350,000). Bars 2 and 4 have no trade and so no bar. Trades 1 and 2 share t = 1,000 ms and trades 8 and 9 share t = 800,000 ms: open and close follow the printing order (id), not the timestamp: bar 0 opens with trade 1 (25,000) although trade 2 is at the same millisecond and closes with trade 4 (25,125, t = 224,999 = the last millisecond of the bar); trade 5 at exactly 225,000 opens bar 1. Bar 3 closes with trade 9 (24,875). Volumes: bar 0 100 + 101.5 + 99.5 + 100.5 = 401.5 (taker buy 100 + 99.5), bar 1 101 (count 2) + 101 = 202 (taker buy 101) with 3 trades, bar 3 100 + 100.5 + 99.5 = 300 (taker buy 100), bar 5 100. Level 4 (16 base columns = 900 s): bar 0 = trades 1..9 (volume 903.5, taker buy 400.5, 10 trades), bar 1 = trade 10 only (read to 21). Base volume in BTC = qty / 1e8 (0.004 per trade). POC rows over [0, 22): r199 199, r200 300, r201 201, r202 303, r203 101.5 -> row 202; taker-buy: r199 99.5, r200 300, r202 101 -> row 200.",
+    "rect": {"b0": 0, "cellsB1": 22, "motionB1": 21, "cutMs": 1200000},
+    "cells": {
+      "0:0": [
+        {"c": 0, "r": 200, "v": 100, "bv": 100, "ct": 1, "bt": 1, "d": 100},
+        {"c": 0, "r": 203, "v": 101.5, "bv": 0, "ct": 1, "bt": 0, "d": -101.5},
+        {"c": 1, "r": 199, "v": 99.5, "bv": 99.5, "ct": 1, "bt": 1, "d": 99.5},
+        {"c": 3, "r": 201, "v": 100.5, "bv": 0, "ct": 1, "bt": 0, "d": -100.5},
+        {"c": 4, "r": 202, "v": 101, "bv": 0, "ct": 2, "bt": 0, "d": -101},
+        {"c": 5, "r": 202, "v": 101, "bv": 101, "ct": 1, "bt": 1, "d": 101},
+        {"c": 12, "r": 200, "v": 100, "bv": 100, "ct": 1, "bt": 1, "d": 100},
+        {"c": 14, "r": 199, "v": 99.5, "bv": 0, "ct": 1, "bt": 0, "d": -99.5},
+        {"c": 14, "r": 201, "v": 100.5, "bv": 0, "ct": 1, "bt": 0, "d": -100.5},
+        {"c": 20, "r": 200, "v": 100, "bv": 100, "ct": 1, "bt": 1, "d": 100},
+        {"c": 21, "r": 202, "v": 101, "bv": 0, "ct": 1, "bt": 0, "d": -101}
+      ]
+    },
+    "bars": {
+      "2": [
+        {"col": 0, "open": 25000, "high": 25375, "low": 24875, "close": 25125, "volume": 401.5, "takerBuyVolume": 199.5, "baseVolume": 0.016, "trades": 4},
+        {"col": 1, "open": 25250, "high": 25250, "low": 25250, "close": 25250, "volume": 202, "takerBuyVolume": 101, "baseVolume": 0.008, "trades": 3},
+        {"col": 3, "open": 25000, "high": 25125, "low": 24875, "close": 24875, "volume": 300, "takerBuyVolume": 100, "baseVolume": 0.012, "trades": 3},
+        {"col": 5, "open": 25000, "high": 25000, "low": 25000, "close": 25000, "volume": 100, "takerBuyVolume": 100, "baseVolume": 0.004, "trades": 1}
+      ],
+      "4": [
+        {"col": 0, "open": 25000, "high": 25375, "low": 24875, "close": 24875, "volume": 903.5, "takerBuyVolume": 400.5, "baseVolume": 0.036, "trades": 10},
+        {"col": 1, "open": 25000, "high": 25000, "low": 25000, "close": 25000, "volume": 100, "takerBuyVolume": 100, "baseVolume": 0.004, "trades": 1}
+      ]
+    },
+    "summary": [
+      {
+        "rect": {"b0": 0, "b1": 22, "m": 0},
+        "volume": 1104.5,
+        "takerBuyVolume": 500.5,
+        "trades": 12,
+        "takerBuyTrades": 5,
+        "pocRow": 202,
+        "poc": 25312.5,
+        "takerBuyPocRow": 200,
+        "takerBuyPoc": 25062.5
+      }
+    ]
+  }
+}

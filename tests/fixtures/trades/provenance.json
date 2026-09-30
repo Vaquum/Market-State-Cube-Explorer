@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "expectationSource": "hand-computed",
+  "generator": null,
+  "seed": null,
+  "source": "Hand-authored micro-sequences of 2 to 11 trades each (the fake cube serves them as profile micro:<name>). The trades are invented, not market history; nothing here was recorded or generated from a seed.",
+  "extractedOn": "2026-09-30",
+  "notes": "Every `expected` block was derived on paper from the trade list and the stated rules (base column = 56,250 ms, base row = 12,500 cents, notional = price * qty / 1e10, the fake's own motion semantics of TESTPLAN 4.5); the derivation is in expected.notes of each file. The blocks are then checked against the exact-rational reference calculator (tests/unit/reference.test.js), and only after that used to check the fake cube (tests/unit/fake-vs-reference.test.js). Two slips of the hand derivation (a dwell interval that crosses a column edge) were found by that check and corrected on paper, not by copying the calculator's output."
+}

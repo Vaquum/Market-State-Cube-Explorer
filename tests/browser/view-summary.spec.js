@@ -40,7 +40,9 @@ test.describe("B53 the view summary", () => {
     // the popovers' own details, read first (opening one is not what is under test)
     const cellsPopover = (await surface.details("cells")).fields;
     const rowsPopover = (await surface.details("rows")).fields;
-    const requests = fake.log().length;
+    // the page's own pack poll (the liveness check on its timer, slot "poll") is not a read the summary asked for: a read of the measurement or the tiles would be
+    const reads = () => fake.log().filter((entry) => entry.slot !== "poll").length;
+    const requests = reads();
     // open the drawer and its Query tab (the drawer's own preference is saved by that, as it always was)
     await page.locator("#ol-canvas").focus();
     await page.keyboard.press("t");
@@ -91,7 +93,7 @@ test.describe("B53 the view summary", () => {
     expect(vintage.limit.text).toContain("No hosted export and no immutable data snapshot");
     // 3. opening it reads nothing from the cube and writes nothing
     await page.waitForTimeout(600);
-    expect(fake.log().length, "no request was made to build the summary").toBe(requests);
+    expect(reads(), "no request was made to build the summary").toBe(requests);
     expect(await page.evaluate(() => JSON.stringify({ ...localStorage })), "and building the summary stored nothing").toBe(storedBefore);
     // the copy is the same words, section by section
     await page.locator("#ol-copy-summary").click();

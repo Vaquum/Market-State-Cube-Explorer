@@ -72,7 +72,9 @@ async function dailyFake(fakeFor, closes) {
   return fake;
 }
 const wholeHistory = (closes) => `#t=2021-01-01T00:00Z~${new Date(EPOCH_MS + closes.length * DAY_MS).toISOString().slice(0, 16)}Z&p=24000~26000&r=12,3`;
-const hashOf = (page) => page.evaluate(() => location.hash);
+// the address without the scale record `sc`, which the page writes when a fit lands (on a slow runner that can be between two readings); the view, the selection and the
+// replay edge are what these tests hold still
+const hashOf = (page) => page.evaluate(() => location.hash.replace(/&sc=[^&]*/, ""));
 const cell = (page) => page.locator("#ol-inspect").evaluate((n) => ({ c: Number(n.dataset.c), r: Number(n.dataset.r), ts: Number(n.dataset.ts), ps: Number(n.dataset.ps), inside: n.dataset.inside, surface: n.dataset.surface }));
 const position = (page) => page.locator("#ol-inspect-position").textContent();
 const boundary = (page) => page.locator("#ol-inspect-boundary").textContent();

@@ -185,12 +185,15 @@ test.describe("B49 each holder of the focus consumes its own keys", () => {
     await page.keyboard.press(" ");
     await expect(page.locator("#ol-inspect-detail")).toBeVisible();
     await expect(page.locator("#ol-play"), "Space did not play").toHaveAttribute("aria-pressed", "false");
-    const h1 = (await snapshot(page)).hash;
+    // the state the address holds (the view, the replay edge), not the scale record `sc`: the replay workspace's scale is fitted on the page's own time and is written to
+    // the address when the fit lands, which on a slow runner can be between the two readings and has nothing to do with the key
+    await probe.waitForQuiet({ quietMs: 600, timeout: 30000 });
+    const h1 = normal((await snapshot(page)).hash);
     await page.keyboard.press("Escape");
     await page.locator("#ol-inspect").focus();
     await page.keyboard.press("Enter");
     await expect(page.locator("#ol-inspect-detail")).toBeVisible();
-    expect((await snapshot(page)).hash, "Enter pinned nothing and moved no replay edge").toBe(h1);
+    expect(normal((await snapshot(page)).hash), "Enter pinned nothing and moved no replay edge").toBe(h1);
   });
 
   test("the Cells table does not say one thing for every empty state: pending and failed have their own words and their own state", async ({ page, probe, fakeFor, allowConsole }) => {

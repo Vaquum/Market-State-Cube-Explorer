@@ -11979,7 +11979,7 @@
       tip,
       h.events.map((x) => x.what).join(" · "),
       `${d3.utcFormat("%a")(date(e.t))} ${when(e.t)} UTC`,
-      knownRows(E.readout.events.clock({ scheduled: e.t })).slice(0, 2),
+      knownRowsOf(E.readout.events.clock({ scheduled: e.t }), tip).slice(0, 2),
       h.events.map(clockNote).filter(Boolean),
     );
   }
@@ -12244,7 +12244,8 @@
         periodEnd = Math.min(r.span[1], activeCutoff()),
         key = l.kind === "poc" ? l.key : l.period,
         area = l.kind === "va" ? l.va : null,
-        period = E.readout.events.period({ span: r.span, cutoff: activeCutoff(), granularity: "the period's rows" });
+        // a period line runs from its start to the edge that closes the data (lineSpan), so as defined it ends at the cutoff
+        period = E.readout.events.period({ span: [r.span[0], periodEnd], cutoff: activeCutoff(), granularity: "the period's rows" });
       tipRows(
         tip,
         l.kind === "poc"
@@ -12263,7 +12264,7 @@
               ]
             : [["In the row", `${compact(r.volume)} USDT · ${r.total ? ((100 * r.volume) / r.total).toFixed(1) : "0"}%`]]),
           ["Period volume", `${compact(r.total)} USDT`],
-          ...(period ? knownRows(period) : []),
+          ...knownRowsOf(period, tip),
         ],
         r.stale
           ? "Updating to the latest data…"
@@ -12287,7 +12288,7 @@
           ["POC", `${usdtAt(p.poc + 0.5)} · ${compact(top?.v || 0)} USDT`],
           ...(p.va ? [["Value area", `${price(p.va.r0 * PR)}–${price(p.va.r1 * PR)} USDT · ${(100 * p.va.share).toFixed(1)}%`]] : []),
           ["Day volume", `${compact(p.v)} USDT`],
-          ...knownRowsOf(E.readout.events.period({ span: [l.d * DAYS, (l.d + 1) * DAYS], cutoff: activeCutoff(), granularity: "the day's rows" })),
+          ...knownRowsOf(E.readout.events.period({ span: [l.d * DAYS, (l.d + 1) * DAYS], cutoff: activeCutoff(), granularity: "the day's rows" }), tip),
         ],
         "The day's POC and 70% value area, per 125 USDT row",
       );
@@ -12307,7 +12308,7 @@
           ["Distance", `${signed(u.atrs, (x) => x.toFixed(2))} daily ATRs · ${signed(u.usd, (x) => price(Math.round(x)))} USDT`],
           ["Latest price", `${price(l.list.latest)} USDT`],
           ["Daily ATR", `${price(Math.round(l.list.atr))} USDT, 14 days, Wilder's`],
-          ...knownRowsOf(E.readout.events.untested({ origin: [u.from, u.to], asOf: l.list.end, granularity: "8-hour bars' highs and lows" })),
+          ...knownRowsOf(E.readout.events.untested({ origin: [u.from, u.to], asOf: l.list.end, granularity: "8-hour bars' highs and lows" }), tip),
         ],
         `No trade since has come within 125 USDT of it${S.replay ? " before the replay's edge" : ""}`,
       );
@@ -12376,8 +12377,12 @@
       ...(rec.source.granularity ? [["Source", rec.source.granularity + waiting]] : []),
     ];
   }
-  // The same for a record that may not exist (its source has not begun at the edge).
-  const knownRowsOf = (rec) => (rec === null ? [] : knownRows(rec));
+  // The same for a record that may not exist (its source has not begun at the edge). `tip` is named after the record (data-event) when there is one.
+  function knownRowsOf(rec, tip = null) {
+    if (rec === null) return [];
+    if (tip) tip.dataset.event = `${rec.kind}|${rec.label}`;
+    return knownRows(rec);
+  }
   // A swing's record on its timeframe: the daily swings are of the days built from the 8-hour bars (the extreme placed in its 8-hour bar), the
   // 4-hour swings of the 4-hour bars; the edge is that series' own.
   function swingRecord(s, daily) {

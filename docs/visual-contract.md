@@ -695,6 +695,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B31 | `tests/browser/cvd-plane.spec.js` | the plane and the toolbar's coarse mark in composed fixtures under the published colour-vision simulations and grayscale (`tests/fixtures/cvd/simulations.json`) | S2 |
 | B32 | `tests/browser/failure-relevance.spec.js` | issue #29: the loading line keeps a failed read's alert while its tile is needed, through startup, view changes, the lens, a replaced pack and retries; the original build is the control | S2 |
 | B33 | `tests/browser/events-known-at.spec.js` | a 4-hour swing, an RSI divergence with its equal pair, a CME gap, golden and MACD crossings and a 4-hour squeeze run replayed on the page before, while forming, at and after the bar that completes them, against the reference bars, zigzag and indicators | S2 |
+| B34 | `tests/browser/events-readouts.spec.js` | the readouts of a period's POC, a day's POC and value area, an untested POC, a clock line and a continuation (known at its anchor, the 30-case floor kept on both sides) | S2 |
 
 ## 10. Migration status per slice
 

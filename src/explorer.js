@@ -250,7 +250,8 @@
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-  const integer = (x) => Math.round(x).toLocaleString("en-US"),
+  const integerFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 }),
+    integer = (x) => integerFormat.format(Math.round(x)),
     price = (x) => priceFormat.format(x),
     usdt = (x) => usdtFormat.format(x),
     // To the nearest millisecond, so a time read back from the address is the same time.
@@ -823,7 +824,8 @@
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    G = { width, height, ...layoutNow(width, height) };
+    // the canvas's width as the layout has it, read here, where the draw starts and nothing has been written yet: a read later in the draw would make the browser lay out the page for it
+    G = { width, height, client: canvas.clientWidth, ...layoutNow(width, height) };
     G.X = d3
       .scaleLinear()
       .domain([S.tA, S.tB])
@@ -6755,6 +6757,8 @@
   // sits at the bottom of the plot), within the host it is positioned in, kept inside the viewport, and no
   // taller than the room it has.
   function uiPopPlace(panel, chip, align) {
+    // a popover that is not open is not placed (it has no offset parent, and asking for it makes the browser lay out the page first)
+    if (panel.hidden) return;
     const host = panel.offsetParent;
     if (!host) return;
     const at = chip.getBoundingClientRect(),
@@ -7112,10 +7116,14 @@
   // The chip says how the two tracks are compared and what each one's domain is; its popover names both tracks, offers the three comparisons
   // (a disabled one says why) and, on a chart narrower than PROFILE_NARROW, is the disclosure that shows the tracks. On a narrow chart the
   // chip's own text is the visible summary of the active measures and domains.
+  // Whether the chart is narrower than the profile tracks need: from the width the draw read at its start, or the canvas's where no draw has run yet.
+  function profileNarrow() {
+    return (G?.client ?? canvas.clientWidth) < PROFILE_NARROW;
+  }
   function profileSummary() {
     const { plan, cur, ref, under } = profileUi,
       domain = (rec) => profileDomainText(rec),
-      narrow = canvas.clientWidth < PROFILE_NARROW,
+      narrow = profileNarrow(),
       policy = cur?.policy === "frozen" ? "Frozen" : "Auto",
       refName = under ? ROWS_INFO[under.kind].name.replace("Relative volume", "Rel. vol.").replace("Time at price", "Time") : "";
     if (!under) return `Profile · Volume ${domain(cur)}`;
@@ -7129,7 +7137,7 @@
     const { plan, cur, ref, under } = profileUi;
     if (!plan) return;
     const chip = el("profile-chip"),
-      narrow = canvas.clientWidth < PROFILE_NARROW,
+      narrow = profileNarrow(),
       offers = plan.offers,
       key = [
         plan.mode, plan.asked, plan.state, plan.reason, profileDomainText(cur), ref ? profileDomainText(ref) : "", narrow, S.profileOpen, profileUi.tracks,
@@ -7160,7 +7168,7 @@
     const panel = el("profile-pop"),
       chip = el("profile-chip"),
       { plan, cur, ref, under } = profileUi,
-      narrow = canvas.clientWidth < PROFILE_NARROW,
+      narrow = profileNarrow(),
       list = uiEl("dl", "ol-legend-details"),
       add = (label, value, field, canonical) => {
         const dd = uiEl("dd", "ol-num", value);

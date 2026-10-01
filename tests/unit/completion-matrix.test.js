@@ -29,7 +29,10 @@ test("what needs a person, a designated machine or the host is OUTSTANDING and t
   assert.ok(!/\b(all|the) (operator|human|production) [a-z ]*passed\b/i.test(MATRIX));
   // a row whose status is "Implemented and tested" names no outstanding item
   for (const row of MATRIX.split("\n").filter((l) => /^\| \*\*D\d+\*\*.*\| Implemented and tested \|$/.test(l))) assert.ok(!/OUTSTANDING/.test(row), row.slice(0, 40));
-  assert.match(MATRIX, /Nothing has been merged or deployed/);
+  // the three slices are on main and deployed; the file says so, and says that no scoped acceptance of what is outstanding is recorded
+  assert.match(MATRIX, /All three slices are on `main` and were deployed/);
+  assert.match(MATRIX, /no operator's scoped acceptance of them is recorded/);
+  assert.ok(!/Nothing has been merged or deployed/.test(MATRIX), "the file no longer says that nothing is merged");
 });
 
 test("the tests the matrix names as files exist, and the contract's row count is the one it states", () => {
@@ -41,3 +44,21 @@ test("the tests the matrix names as files exist, and the contract's row count is
   assert.ok(MATRIX.includes(`${total} rows, none left \`todo\``), `the matrix says ${total} rows`);
   assert.match(CONTRACT, /\| all \| \d+ \| \d+ \| 0 \| 0 \| 0 \| \d+ \|/, "no row is left todo in any slice");
 });
+
+test("every review item R1 to R34 has a row with an owner, tests that exist and a status, and an outstanding one is said to be", () => {
+  const section = MATRIX.slice(MATRIX.indexOf("## Review items R1 to R34"), MATRIX.indexOf("## Historical issues"));
+  const rows = section.split("\n").filter((l) => /^\| \*\*R\d+\*\*/.test(l));
+  assert.equal(rows.length, 34);
+  rows.forEach((row, i) => {
+    assert.ok(row.startsWith(`| **R${i + 1}**`), row.slice(0, 30));
+    const cells = row.trim().replace(/^\||\|$/g, "").split(" | ");
+    assert.equal(cells.length, 4, `R${i + 1}: item, owner, evidence, status`);
+    for (const c of cells) assert.ok(c.trim().length > 2, `R${i + 1}: a cell is empty`);
+    assert.match(cells[3], /^(Implemented and tested|Implemented, evidence limited: \*\*OUTSTANDING\*\*|Done on the issues)/, `R${i + 1}: a status in the vocabulary`);
+    // the tests it names are files (the check of the whole file above covers the names; here each row names at least one, or is the issue-only item)
+    assert.ok(/`[a-z0-9-]+\.(?:test|spec)\.js`/.test(cells[2]) || /^Done on the issues/.test(cells[3]), `R${i + 1}: names a test`);
+  });
+  // the items that need a person, a machine or the host say OUTSTANDING and are not "Implemented and tested"
+  for (const n of [24, 31, 32]) assert.ok(/OUTSTANDING/.test(rows[n - 1]) && !/\| Implemented and tested \|$/.test(rows[n - 1]), `R${n}`);
+});
+

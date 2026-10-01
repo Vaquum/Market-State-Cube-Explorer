@@ -85,6 +85,69 @@ function install(surface) {
   const state = { seq: 0, cbSeq: 0, frames: [], callbacks: [], mutations: [], dropped: { frames: 0, callbacks: 0, mutations: 0 }, widthSets: 0, heightSets: 0, rejections: [], outside: bucket() };
   let cur = null; // the callback being run: {b: bucket, drew: bool}
 
+  // Readiness observes browser scheduling APIs, never the explorer's private state. Fetch completion alone is insufficient:
+  // response bodies include both JSON parsing and the Response(stream).arrayBuffer() used by gzip unpacking. A completed
+  // required read/decode must be followed by a draw; short timers include read debounce, calibration, navigation and persistence.
+  // Completion order uses counters: performance.now() can give the same timestamp to a read and an earlier draw.
+  // Longer timers (hover hints, live polling) are future observations, not work owed by the current view.
+  const work = { seq: 0, next: 0, async: new Map(), timers: new Map(), rafs: new Set(), decodedSeq: 0, lastFrame: null, clock: false };
+  const responses = new WeakMap();
+  const changed = () => { work.seq++; };
+  function watching(result, label, drawAfter = false) {
+    const id = ++work.next;
+    work.async.set(id, label);
+    changed();
+    const ended = () => {
+      work.async.delete(id);
+      if (drawAfter) work.decodedSeq++;
+      changed();
+    };
+    return result.then((value) => { ended(); return value; }, (error) => { ended(); throw error; });
+  }
+  const fetch = window.fetch;
+  window.fetch = function (...args) {
+    const url = new URL(args[0] instanceof Request ? args[0].url : args[0], location.href);
+    const required = url.pathname.startsWith("/cube/") && url.pathname !== "/cube/pack";
+    return watching(fetch.apply(this, args).then((response) => {
+      responses.set(response, { label: url.pathname, required });
+      return response;
+    }), `fetch ${url.pathname}`, required);
+  };
+  for (const name of ["arrayBuffer", "blob", "formData", "json", "text"]) {
+    const original = Response.prototype[name];
+    Response.prototype[name] = function (...args) {
+      const response = responses.get(this);
+      return watching(original.apply(this, args), `${name} ${response?.label || "stream"}`, response?.required ?? name === "arrayBuffer");
+    };
+  }
+  const clone = Response.prototype.clone;
+  Response.prototype.clone = function (...args) {
+    const copy = clone.apply(this, args);
+    if (responses.has(this)) responses.set(copy, responses.get(this));
+    return copy;
+  };
+  let timeout = window.setTimeout, clear = window.clearTimeout;
+  function timed(callback, delay = 0, ...args) {
+    // 500 ms is the longest settle/cadence timer of the visible view; a suspended page clock is handled by the legacy
+    // quiet helper instead. The bound is tested below and intentionally excludes the >=3-second live poll.
+    const relevant = Number(delay) <= 500;
+    let id;
+    const run = typeof callback !== "function" ? callback : function (...values) {
+      if (relevant) { work.timers.delete(id); changed(); }
+      return callback.apply(this, values);
+    };
+    id = timeout.call(window, run, delay, ...args);
+    if (relevant) { work.timers.set(id, { name: callback.name || "anonymous", delay: Number(delay) }); changed(); }
+    return id;
+  }
+  function untimed(id) {
+    if (work.timers.delete(id)) changed();
+    return clear.call(window, id);
+  }
+  // Data properties let page.clock preserve native timer references without recursing through a mutable accessor.
+  window.setTimeout = timed;
+  window.clearTimeout = untimed;
+
   const push = (list, item, which) => {
     if (list.length >= CAP) {
       list.shift();
@@ -266,7 +329,10 @@ function install(surface) {
   let underlying = window.requestAnimationFrame;
   function wrapped(callback) {
     if (typeof callback !== "function") return underlying.call(window, callback);
-    return underlying.call(window, function probed(timestamp) {
+    let id;
+    id = underlying.call(window, function probed(timestamp) {
+      work.rafs.delete(id);
+      changed();
       const callbackSeq = ++state.cbSeq;
       const mine = { b: bucket(), drew: false, mainOps: 0 };
       const t0 = now();
@@ -278,16 +344,43 @@ function install(surface) {
         cur = null;
         push(state.callbacks, { seq: callbackSeq, t: t0, dur, draw: mine.drew, mainOps: mine.mainOps }, "callbacks");
         if (mine.drew) {
-          const b = mine.b;
+          const b = mine.b, attrs = snapshot();
           push(state.frames, {
             seq: ++state.seq, callbackSeq, t: t0, dur, ops: b.ops, styles: [...b.styles.values()], stylesOverflow: b.stylesOverflow, glyphs: b.glyphs, unclassified: b.unclassified,
-            widthSets: b.widthSets, heightSets: b.heightSets, other: { ops: b.other, glyphs: b.otherGlyphs, unclassified: b.otherUnclassified }, attrs: snapshot(),
+            widthSets: b.widthSets, heightSets: b.heightSets, other: { ops: b.other, glyphs: b.otherGlyphs, unclassified: b.otherUnclassified }, attrs,
           }, "frames");
+          work.lastFrame = { decodedSeq: work.decodedSeq, attrs };
         }
       }
     });
+    work.rafs.add(id);
+    changed();
+    return id;
   }
-  Object.defineProperty(window, "requestAnimationFrame", { configurable: true, enumerable: true, get: () => wrapped, set: (fn) => { underlying = fn; } });
+  Object.defineProperty(window, "requestAnimationFrame", { configurable: true, enumerable: true, get: () => wrapped, set: (fn) => { underlying = fn; work.clock = true; } });
+
+  let cancel = window.cancelAnimationFrame;
+  function cancelled(id) {
+    if (work.rafs.delete(id)) changed();
+    return cancel.call(window, id);
+  }
+  window.cancelAnimationFrame = cancelled;
+
+  function readiness(channels = ["cells"]) {
+    const attrs = snapshot(), frame = work.lastFrame;
+    const loading = document.getElementById("ol-loading");
+    const unsettled = channels.filter((channel) => {
+      const chip = attrs[channel];
+      return chip && (chip.updating === "true" || ["updating", "reading", "pending"].includes(chip.state));
+    });
+    const loadingVisible = Boolean(loading && !loading.hidden && loading.getClientRects().length);
+    const painted = Boolean(frame && frame.decodedSeq === work.decodedSeq && JSON.stringify(frame.attrs) === JSON.stringify(attrs));
+    return {
+      ready: Boolean(painted && !loadingVisible && !unsettled.length && !work.async.size && !work.timers.size && !work.rafs.size),
+      seq: work.seq, clock: work.clock || window.setTimeout !== timed, painted, loading: loadingVisible, unsettled,
+      async: [...work.async.values()], timers: [...work.timers.values()], rafs: work.rafs.size,
+    };
+  }
 
   // ---- the chip mutation log ----
   // Records are delivered after the callback that made them returns, so frameSeq (the last committed draw frame) is the
@@ -323,6 +416,7 @@ function install(surface) {
     callbacks: () => state.callbacks.slice(),
     mutations: () => state.mutations.slice(),
     rejections: () => state.rejections.slice(),
+    readiness,
     stats: () => ({ drawFrames: state.frames.length, callbacks: state.callbacks.length, widthSets: state.widthSets, heightSets: state.heightSets, dropped: { ...state.dropped }, outside: { ops: { ...state.outside.ops }, other: { ...state.outside.other }, widthSets: state.outside.widthSets, heightSets: state.outside.heightSets } }),
   };
   Object.defineProperty(window, "__probe", { value: Object.freeze(api), configurable: false, enumerable: false });
@@ -348,6 +442,20 @@ function forPage(page) {
     rejections: () => call("rejections"),
     stats: () => call("stats"),
     present: () => page.evaluate(() => typeof window.__probe !== "undefined"),
+    readiness: (channels = ["cells"]) => page.evaluate((names) => window.__probe.readiness(names), channels),
+    // Two browser-task observations with no work between them establish completion, without a quiet-time guess. Timeouts
+    // report the held reads, timers, frames and chips. Caller-owned absence and cadence windows still use waitForQuiet.
+    async waitForReady({ channels = ["cells"], timeout = 10000 } = {}) {
+      const deadline = Date.now() + timeout;
+      let previous = null, status;
+      for (;;) {
+        status = await api.readiness(channels);
+        if (status.ready && previous === status.seq) return status;
+        previous = status.ready ? status.seq : null;
+        if (Date.now() >= deadline) throw new Error(`view did not become ready within ${timeout} ms: ${JSON.stringify(status)}`);
+        await new Promise((resolve) => setTimeout(resolve, 16));
+      }
+    },
     // Resolves when at least `count` draw frames were logged (since the last reset).
     async waitForDrawFrames(count, { timeout = 10000 } = {}) {
       await expect.poll(async () => (await api.stats()).drawFrames, { timeout, message: `waiting for ${count} draw frames` }).toBeGreaterThanOrEqual(count);

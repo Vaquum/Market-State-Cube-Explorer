@@ -9,7 +9,6 @@
 //      clock kinds: those are the rows' numbers.
 // Oracles: the original build itself, served from git behind its own fake (a control, not a copy of the code under test).
 const { test, expect } = require("./fixtures.js");
-const S = require("./rows-support.js");
 
 // Every key of the original's Lines menu that the standard live profile can draw, as an address.
 const LINES = [
@@ -24,10 +23,7 @@ const LINES = [
 
 // The rows of the Lines menu: key, family and value text, from the page's own DOM.
 async function rows(page, fake, probe) {
-  if (probe) await S.atRest(page, fake, probe);
-  await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 120000 }).toBe(true);
-  // the bars the averages, swings and VWAPs need are read after the view's own reads
-  await page.waitForTimeout(6000);
+  await probe.waitForReady({ timeout: 120000 });
   await page.locator("#ol-lines").click();
   const out = await page.evaluate(() => {
     const map = {};
@@ -46,8 +42,8 @@ const bare = (v) => v.replace(/\s*·\s*(so far|candidate)[^·]*$/i, "").replace(
 test.describe("B45 the lines are the same lines with the same values", () => {
   test("the original's Lines menu and this one offer the same keys in the same families, and give each the same value", async ({ page, probe, fakeFor, baselinePage }) => {
     test.setTimeout(240000);
-    const old = await baselinePage({ mode: "live", profile: "standard", probe: false, contextOptions: { reducedMotion: "reduce" }, url: `/#w=7d&lines=${LINES}` });
-    const before = await rows(old.page, old.fake, null);
+    const old = await baselinePage({ mode: "live", profile: "standard", contextOptions: { reducedMotion: "reduce" }, url: `/#w=7d&lines=${LINES}` });
+    const before = await rows(old.page, old.fake, old.probe);
     const fake = await fakeFor("standard");
     await page.setViewportSize({ width: 1500, height: 950 });
     await page.goto(`${fake.url}/#w=7d&vis=2&lines=${LINES}`);

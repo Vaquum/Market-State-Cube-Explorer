@@ -31,10 +31,12 @@
 // What this does NOT prove: anything at device pixel ratio other than 1, the tooltip in a dark theme, touch taps, keyboard inspection
 // (not in the baseline and owned by #48), the exact Intensity numbers without the basis control.
 const { test, expect } = require("./fixtures.js");
+const { addRecorder, lastDraw, rectOf, boxOf: projectedBoxOf } = require("./cells-support.js");
 
 const VIEW = "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24800~25500";
 // The cell every measure is read at: column 0, row 200 of the level 0:0 (25,000 to 25,125 USDT, the first 56.25 s).
 const KEY = "0:0:0:200";
+const RECT = rectOf({ from: "2021-01-01T00:00Z", to: "2021-01-01T00:06Z", low: 24800, high: 25500 });
 const MODES = ["volume", "trades", "size", "delta", "flow", "flowtrades", "cascade", "path", "dwell"];
 // Hand-computed from mixed.json for the cell 0,200 (see the notes of the fixture): amounts, ratios and the motion of the cell.
 const EXPECT = {
@@ -53,9 +55,7 @@ const MOTION_FIELDS = { path: 250, dwell: 41.25, pathSpans: 2, width: 125, secon
 const SIGNED = new Set(["delta", "flow", "flowtrades", "cascade"]);
 
 async function atRest(page, fake, probe) {
-  await page.locator("#ol-loading").waitFor({ state: "hidden" });
-  await fake.idle({ quietMs: 600, timeoutMs: 30000 });
-  await probe.waitForQuiet({ quietMs: 400, timeout: 30000 });
+  await probe.waitForReady({ timeout: 30000 });
 }
 
 // The readout key under the pointer at canvas point (x, y), or null (no tooltip, or a tooltip with no cell readout). This reads the
@@ -78,7 +78,7 @@ async function cellAt(page, canvas, x, y) {
 // The box of the cell `key` on the canvas, found by looking: a coarse scan for a point that reads the key, then a bisection to each
 // of its four edges (the readout changes exactly at the cell's edge). The page does not say where a cell is (D.18), so a spec
 // measures it; the expected NUMBERS never come from here.
-async function boxOf(page, canvas, key) {
+async function scannedBoxOf(page, canvas, key) {
   let seed = null;
   for (let y = 40; y < canvas.height - 40 && !seed; y += 30)
     for (let x = 40; x < canvas.width - 40 && !seed; x += 30) if ((await readoutAt(page, canvas, x, y)) === key) seed = { x, y };
@@ -98,6 +98,26 @@ async function boxOf(page, canvas, key) {
   return { x0, x1, y0, y1, cx: Math.round((x0 + x1) / 2), cy: Math.round((y0 + y1) / 2) };
 }
 
+// Candidate coordinates come from the recorded plot clip and the fixture's address and base-cell dimensions, independently
+// of the tooltip. Verify the candidate with the real pointer; every mode still gets its own fresh page and readout assertion.
+async function fixtureBoxOf(page, canvas, key, rect = RECT) {
+  const draw = await lastDraw(page);
+  expect(draw?.plot, "the recorder saw the plot clip").not.toBeNull();
+  const [px, py, pw, ph] = draw.plot;
+  const [n, m, c, r] = key.split(":").map(Number);
+  const projected = projectedBoxOf(draw.plot, rect, n, m, c, r);
+  const box = {
+    x0: Math.max(projected.x0, px), x1: Math.min(projected.x1, px + pw),
+    y0: Math.max(projected.y0, py), y1: Math.min(projected.y1, py + ph),
+  };
+  expect(box.x1 - box.x0, "the fixture cell has a visible interior in time").toBeGreaterThan(2);
+  expect(box.y1 - box.y0, "the fixture cell has a visible interior in price").toBeGreaterThan(2);
+  box.cx = Math.round((box.x0 + box.x1) / 2);
+  box.cy = Math.round((box.y0 + box.y1) / 2);
+  expect(await readoutAt(page, canvas, box.cx, box.cy), "the real pointer names the independently located cell").toBe(key);
+  return box;
+}
+
 // The LUT entry a pixel must equal: the pinned table of the page's appearance in the light theme, read through the public module.
 function lutEntry(page, role, idx) {
   return page.evaluate(({ role, idx }) => {
@@ -110,13 +130,23 @@ function lutEntry(page, role, idx) {
 
 // The colour most of a 3 x 3 grid of pixels inside the cell has, at DPR 1. The price path and the rule lines cross cells, so the
 // centre alone could be a line; the mode of nine interior samples is the fill.
-async function fillOf(surface, box) {
+async function fillOf(page, box) {
+  // One browser round trip samples the same nine pixels; rounding and the DPR guard match surface.pixelAt().
+  const pixels = await page.locator("#ol-canvas").evaluate((canvas, box) => {
+    if (window.devicePixelRatio !== 1) throw new Error(`fillOf needs DPR 1, the page has ${window.devicePixelRatio}`);
+    const ctx = canvas.getContext("2d"), samples = [];
+    for (const fx of [0.25, 0.5, 0.75])
+      for (const fy of [0.25, 0.5, 0.75]) {
+        const x = Math.round(box.x0 + (box.x1 - box.x0) * fx), y = Math.round(box.y0 + (box.y1 - box.y0) * fy);
+        samples.push([...ctx.getImageData(x, y, 1, 1).data]);
+      }
+    return samples;
+  }, box);
   const seen = new Map();
-  for (const fx of [0.25, 0.5, 0.75])
-    for (const fy of [0.25, 0.5, 0.75]) {
-      const p = await surface.pixelAt({ x: box.x0 + (box.x1 - box.x0) * fx, y: box.y0 + (box.y1 - box.y0) * fy });
-      seen.set(p.slice(0, 3).join(","), (seen.get(p.slice(0, 3).join(",")) ?? 0) + 1);
-    }
+  for (const p of pixels) {
+    const rgb = p.slice(0, 3).join(",");
+    seen.set(rgb, (seen.get(rgb) ?? 0) + 1);
+  }
   const [top] = [...seen.entries()].sort((a, b) => b[1] - a[1]);
   return top[0].split(",").map(Number);
 }
@@ -147,6 +177,8 @@ function note(testInfo, text) {
 }
 
 test.describe("B03 readout agreement", () => {
+  test.beforeEach(async ({ context }) => { await addRecorder(context); });
+
   for (const mode of MODES) {
     test(`${mode}: tooltip, table row, legend marker and pixel are one record`, async ({ page, fakeFor, surface, probe }, testInfo) => {
       const fake = await fakeFor("micro:mixed");
@@ -155,7 +187,7 @@ test.describe("B03 readout agreement", () => {
       // The table is listed when the drawer shows it.
       await page.locator('[data-drawer="cells"]').click();
       const canvas = await page.locator("#ol-canvas").boundingBox();
-      const box = await boxOf(page, canvas, KEY);
+      const box = await fixtureBoxOf(page, canvas, KEY);
 
       // --- the tooltip ---
       await page.mouse.move(canvas.x + box.cx, canvas.y + box.cy);
@@ -183,7 +215,7 @@ test.describe("B03 readout agreement", () => {
         const idx = Number(tipIndex), t = Number(tipCoordinate);
         if (idx >= 0) {
           const role = SIGNED.has(mode) ? (t > 0 ? "positive" : t < 0 ? "negative" : "midpoint") : "unsigned";
-          expect(await fillOf(surface, box), "the pixel is the LUT entry at the readout's index").toEqual(await lutEntry(page, role, idx));
+          expect(await fillOf(page, box), "the pixel is the LUT entry at the readout's index").toEqual(await lutEntry(page, role, idx));
         }
       } else note(testInfo, `marker and pixel: ${shown.why}`);
 
@@ -208,6 +240,27 @@ test.describe("B03 readout agreement", () => {
       }
     });
   }
+
+  test("the pointer's cell boundaries agree with the independent fixture geometry", async ({ page, fakeFor, probe }) => {
+    const fake = await fakeFor("micro:mixed");
+    await page.goto(`${fake.url}/${VIEW}`);
+    await atRest(page, fake, probe);
+    const canvas = await page.locator("#ol-canvas").boundingBox();
+    const expected = await fixtureBoxOf(page, canvas, KEY);
+    // Keep one independent pointer scan and four edge bisections, rather than repeating them for every measure.
+    const measured = await scannedBoxOf(page, canvas, KEY);
+    for (const edge of ["x0", "x1", "y0", "y1"])
+      expect(Math.abs(measured[edge] - expected[edge]), `${edge}: pointer boundary agrees within one pixel`).toBeLessThanOrEqual(1);
+    for (const [inside, outside] of [
+      [[expected.x0 + 2, expected.cy], [expected.x0 - 2, expected.cy]],
+      [[expected.x1 - 2, expected.cy], [expected.x1 + 2, expected.cy]],
+      [[expected.cx, expected.y0 + 2], [expected.cx, expected.y0 - 2]],
+      [[expected.cx, expected.y1 - 2], [expected.cx, expected.y1 + 2]],
+    ]) {
+      expect(await readoutAt(page, canvas, ...inside), "two pixels inside the boundary names the fixture cell").toBe(KEY);
+      expect(await readoutAt(page, canvas, ...outside), "two pixels outside the boundary leaves the fixture cell").not.toBe(KEY);
+    }
+  });
 
   // The tooltip names the readout it was built from and only that one (INTEGRATION.md D.18): a pane column or an oscillator bar names
   // its own ("pane:<axis id>:<column>"), and a tip of any other kind (a cell, a rectangle of no trades, a profile row) does not carry
@@ -248,7 +301,7 @@ test.describe("B03 readout agreement", () => {
     await item.click();
     await page.locator('[data-drawer="cells"]').click();
     const canvas = await page.locator("#ol-canvas").boundingBox();
-    const box = await boxOf(page, canvas, KEY);
+    const box = await fixtureBoxOf(page, canvas, KEY);
     await page.mouse.move(canvas.x + box.cx, canvas.y + box.cy);
     const tip = await surface.tip();
     // 300 USDT over 56.25 s x 125 USDT = 300 * 60 * 125 / (56.25 * 125) = 320 USDT per minute per 125 USDT band
@@ -266,7 +319,7 @@ test.describe("B03 readout agreement", () => {
     await page.goto(`${fake.url}/#t=2021-01-01T00:00Z~2021-01-01T00:03Z&p=24800~25500&mode=delta`);
     await atRest(page, fake, probe);
     const canvas = await page.locator("#ol-canvas").boundingBox();
-    const box = await boxOf(page, canvas, KEY);
+    const box = await fixtureBoxOf(page, canvas, KEY, rectOf({ from: "2021-01-01T00:00Z", to: "2021-01-01T00:03Z", low: 24800, high: 25500 }));
     await page.mouse.move(canvas.x + box.cx, canvas.y + box.cy);
     const tip = await surface.tip();
     expect(Number(canon(tip, "buyVolume"))).toBe(100);
@@ -280,7 +333,7 @@ test.describe("B03 readout agreement", () => {
     const shown = await scaleShown(surface, page);
     if (!shown.ok) return note(testInfo, `the midpoint pixel: ${shown.why}`);
     expect(Number(canon(tip, "coordinate"))).toBe(0);
-    const pixel = await fillOf(surface, box);
+    const pixel = await fillOf(page, box);
     expect(pixel, "the midpoint entry of the LUT").toEqual(await lutEntry(page, "midpoint", 0));
     const empty = await surface.pixelAt({ x: box.x1 + 40, y: box.cy });
     expect(pixel, "and not the empty surface").not.toEqual(empty.slice(0, 3));
@@ -304,7 +357,7 @@ test.describe("B03 readout agreement", () => {
     await page.goto(`${fake.url}/#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=25000~25125&r=0,4&mode=path`);
     await atRest(page, fake, probe);
     const canvas = await page.locator("#ol-canvas").boundingBox();
-    const box = await boxOf(page, canvas, "0:4:0:12");
+    const box = await fixtureBoxOf(page, canvas, "0:4:0:12", rectOf({ from: "2021-01-01T00:00Z", to: "2021-01-01T00:06Z", low: 25000, high: 25125 }));
     await page.mouse.move(canvas.x + box.cx, canvas.y + box.cy);
     const tip = await surface.tip();
     expect(Number(canon(tip, "shortExposure")), "the smaller fraction, strictly below 10 %").toBeCloseTo(125 / 2000, 9);
@@ -347,7 +400,7 @@ test.describe("B03 readout agreement", () => {
     await page.goto(`${fake.url}/${VIEW}`);
     await atRest(page, fake, probe);
     const canvas = await page.locator("#ol-canvas").boundingBox();
-    const box = await boxOf(page, canvas, KEY);
+    const box = await fixtureBoxOf(page, canvas, KEY);
     // A tip is showing; then the pointer goes to the price labels, where the tip is hidden at once while the hover stays.
     await page.mouse.move(canvas.x + box.cx, canvas.y + box.cy);
     await surface.tip();

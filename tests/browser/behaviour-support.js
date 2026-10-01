@@ -40,11 +40,10 @@ const ACTIONS = Object.freeze([
   { name: "window-4h-after-back", how: "key 4", run: (page) => page.keyboard.press("4") },
 ]);
 
-// How the page settles after an action: the fake has no request in flight or recent and the canvas has not been drawn for a moment.
+// How the page settles after an action: required reads/decodes and short scheduled work finish, then their frame is drawn.
 // `probe` is the probe of the page (probe.js forPage).
-async function settle(fake, probe, { quietMs = 450 } = {}) {
-  await fake.idle({ quietMs: 300, timeoutMs: 20000 });
-  await probe.waitForQuiet({ quietMs, timeout: 20000 });
+async function settle(fake, probe) {
+  await probe.waitForReady({ timeout: 20000 });
 }
 
 const historyLength = (page) => page.evaluate(() => history.length);

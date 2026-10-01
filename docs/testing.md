@@ -17,6 +17,8 @@ Node 22 or newer and `python3` on the path (the build test calls `tools/build.py
 | install the dev tools | `npm ci --ignore-scripts --no-audit --no-fund` | once; Playwright is the only dev dependency and is pinned exactly |
 | unit tests | `npm test` | `node --test` over the quoted glob `"tests/unit/**/*.test.js"`; never pass the directory, which fails on Node 22, and a glob that matches nothing exits 0, so CI also checks that test files exist |
 | one unit file | `node --test tests/unit/workflows.test.js` | |
+| local feedback | `npm run test:dev -- tests/browser/boot.spec.js` | all unit tests, then the exact browser files named; an invalid file fails; without files, runs the full browser suite |
+| browser runtime profile | `npm run test:profile`; `npm run test:profile -- <report.json>` | elapsed time and aggregate test time are reported separately, with the ten most expensive files |
 | a page of the working tree | `npm run build:tmp` | writes `reports/page/`; never touches the committed `index.html` |
 | browser tests | `npx playwright install chromium` (once), then `npm run test:browser` | against `reports/page/` built just before; `-- <spec-name>` picks specs |
 | browser tests on the committed page | `CONVERGENCE=1 npm run test:browser` | what CI runs; serves the committed `index.html` |
@@ -29,6 +31,14 @@ Node 22 or newer and `python3` on the path (the build test calls `tools/build.py
 Never run `python3 tools/build.py` without `--out` while working on a branch: it rewrites the tracked `index.html`, which only the merger regenerates. Reports, builds and screenshots go to `reports/`, `test-results/`, `playwright-report/` or `.playwright-mcp/`, all ignored; none of them is committed.
 
 Which page the browser tests serve is decided in one place, `tests/support/pageroot.js`: `EXPLORER_PAGE_ROOT` if set, else with `CONVERGENCE=1` the repository root, else a temporary build of the working tree.
+
+### Local feedback and full assurance
+
+During development, run all unit tests and the browser specs covering the changed behavior with `test:dev`. Include the dependent rendering and interaction specs when a shared module changes; use the full browser suite when the affected surface is uncertain. Selection is explicit and is only a local feedback command. CI always enumerates and runs the whole browser suite before deployment, so a full local run need not precede the same full CI run.
+
+The test-only probe's readiness barrier observes pending reads and body decoding, short scheduled work, and animation frames, then checks that loading has ended and the settled chip state belongs to the last completed draw. This replaces repeated network/draw quiet windows and waiting for the first live poll as a proxy for startup. Tests proving the absence of extra frames, debounce timing or polling cadence retain their observation intervals. Controlled-clock tests retain their existing settling path. Every browser case still uses fresh contexts, independent expected values, fault controls and console/request guards.
+
+Readout agreement locates fixture cells from the recorded plot rectangle and independently known fixture coordinates, verifies the actual pointer's cell identity in each mode, and samples the same nine pixels in one browser call. A separate pointer scan still checks all four boundaries independently.
 
 ## Fixtures and provenance
 
@@ -58,7 +68,7 @@ What the fake and the reference cannot validate is listed under the first sectio
 Two kinds of browser spec read what the page painted rather than what it computed.
 
 - **Composed pixels.** `tests/browser/pane-canvas.js` records every canvas operation of a frame (rectangles, strokes with their paths and dash, fills, texts, arcs, and the clip each was drawn under); `tests/browser/masks.js` turns those operations into masks and checks each against the geometry the visual contract allows (a reference stroke and its backing at most 4.5 px, a label plate one line of text, a cap or hairline at most 2 px thick, a marker no larger than a glyph). A test that says "these pixels are the same with and without an overlay" can be excused only where a recorded, validated mark covers them; a halo larger than the contract does not pass by being called a mask, it is reported. Skia samples a path stroke four times per pixel vertically but takes exact area coverage for `strokeRect`, so the coverage arithmetic in `movement-cores.spec.js` and `two-tone-pixels.spec.js` uses each rule where it applies and states its tolerance (4 and 2 of 255) in the spec. A selection repaints inside itself, clipped to its rectangle, so a cut cell shows only its own partial amount there.
-- **Known-at replay.** `tests/reference/swings.js` and `tests/reference/indicators.js` derive the confirmed swings, the SMA and EMA, MACD and its crossings, the Bollinger width and the 4-hour squeeze from the definitions in `docs/data-and-semantics.md`, importing nothing from `src/`. `events-known-at.spec.js` replays the page before, at and after the bar that completes each event and compares what is drawn and read with those references. Two details matter when writing one: the replay's edge is floored to the rendered level's time step, so such a test pins the level with `r=` and keeps the view inside the fine recent seven days; and `S.atRest` can pass before startup has finished, so a test waits for the cube's reads it needs, not for rest.
+- **Known-at replay.** `tests/reference/swings.js` and `tests/reference/indicators.js` derive the confirmed swings, the SMA and EMA, MACD and its crossings, the Bollinger width and the 4-hour squeeze from the definitions in `docs/data-and-semantics.md`, importing nothing from `src/`. `events-known-at.spec.js` replays the page before, at and after the bar that completes each event and compares what is drawn and read with those references. Two details matter when writing one: the replay's edge is floored to the rendered level's time step, so such a test pins the level with `r=` and keeps the view inside the fine recent seven days; and `S.atRest` now waits for startup decoding, required reads and the settled frame through the readiness barrier.
 
 ### Colour without hue, the palette record and the operator protocol
 
@@ -99,15 +109,18 @@ The navigation benchmark implements the method of the performance requirement as
 
 ### The checks
 
-`.github/workflows/check.yml` has three jobs on `ubuntu-24.04`, each with a time bound, each checking out `${{ github.sha }}` and proving `HEAD` equals `GITHUB_SHA`:
+`.github/workflows/check.yml` uses bounded jobs on `ubuntu-24.04`. Every job reading repository contents checks out `${{ github.sha }}` and proves `HEAD` equals `GITHUB_SHA`:
 
 | Job | What it runs |
 |---|---|
+| `select` | runs full checks for PRs, tags and main deployment commits; skips a duplicate branch push only after fetching a same-repository PR confirmed mergeable on that exact head SHA; conflicting, unknown or outdated PRs and lookup errors run full branch checks |
 | `static` | `python3 tools/build.py --check`; `node --check` over the tracked JavaScript; `py_compile` of the Python tools; `npm run golden:check`; `docker compose config` |
 | `unit` | fails on an empty suite, then `npm run test:ci` (spec output and a JUnit report in `reports/`, uploaded) |
-| `browser` | full-history checkout, `npm ci`, the headless shell of the pinned Playwright, `npm run test:browser` with `CONVERGENCE=1` (the committed page), reports uploaded |
+| `browser` | four independent shards, two workers per runner, zero retries; full-history checkout, pinned headless shell, `CONVERGENCE=1` (the committed page); unique reports and blob artifacts per shard; a failing shard does not cancel the others |
+| `reports` | merges every shard's blob report, generates an unfiltered inventory from the same checkout and verifies every listed case passed exactly once, with no missing, extra, duplicated, skipped or retried cases; publishes JSON, JUnit and HTML |
+| `gate` | requires successful selection and every required static, unit, browser and report job; refuses failures, cancellations and missing/skipped required jobs |
 
-It runs on every push and pull request, and through `workflow_call` from the deploy workflow. It has no `concurrency` of its own: a group derived from the caller's would deadlock or cancel the caller. Pull-request runs are the evidence before a merge and do not gate anything. A push to `main` therefore gets two check runs, a standalone one and the one inside the Deploy run; that is accepted so that every commit on `main` keeps a visible check even when its deploy run is replaced by a newer one.
+It runs on pull requests, non-main branch/tag pushes and through `workflow_call` from Deploy. A confirmed mergeable open PR on the same head SHA receives merge-commit checks instead of duplicate checks on its branch push. Conflicting PRs cannot receive GitHub merge-commit checks, so they retain branch checks; unknown mergeability, changed heads and API errors also retain them. A push to `main` receives the full checks once inside Deploy, on the exact commit about to deploy; an older waiting Deploy run may be replaced before it starts. It has no `concurrency` of its own: a group derived from the caller's would deadlock or cancel the caller. PR evidence does not replace the checks on the final main commit.
 
 ### The gate
 
@@ -124,7 +137,7 @@ The gate makes everything it depends on a production dependency: a flaky browser
 
 ### What the repository does not certify
 
-**GitHub-side runtime semantics of this gate are not certified by the repository.** `tests/unit/workflows.test.js` reads the two workflow files line by line and compares them with `package.json` and the file system, and it is shown to fail on mutated copies of the real text. That proves the files say what the design says. It does not prove that GitHub behaves as they assume: that a failed check skips the deploy, that a newer waiting run replaces an older one, that `[skip ci]` skips both, that the called workflow sees the caller's `github` context, that path filters do not apply to a called workflow, or the state of any branch protection or ruleset. None of this was executed from the repository, and `actionlint` checks syntax and expressions, not these semantics.
+**GitHub-side runtime semantics of this gate are not certified by the repository.** `tests/unit/workflows.test.js` checks the workflow text, rejects mutated guards, and executes the real selection script and final gate shell against successful, failed, cancelled and skipped outcomes. The report verifier is checked with incomplete, duplicated, skipped, flaky and retried reports. These checks do not prove GitHub's event routing, matrix aggregation, replacement of waiting runs, called-workflow context or branch protection. `actionlint` checks syntax and expressions. A successful PR run additionally demonstrates the actual four-shard execution, merge and inventory verification for that commit.
 
 To try the negative path (the operator or a reviewer, never against the real deploy job), in a throwaway private repository copy both workflows and set dummy `DEPLOY_*` variables. Add a deliberately failing unit test on a branch whose push trigger is temporarily `push: branches: [main]`, push it, and look for: `check` red, `deploy` skipped, no rsync step executed. Then fix the test and look for `deploy` reaching the dummy configuration check. Keep the two run links. Until that is done the statement for a pull request is: "Workflow dependency implemented; admin settings and negative path not verified."
 

@@ -438,8 +438,7 @@ async function holdLens(page, probe, fakeFor, pane, lines = "") {
   const a = CUT - 10 * HOUR_MS,
     b = CUT + 2 * HOUR_MS;
   await page.goto(`${fake.url}/#t=${iso(a)}~${iso(b)}&p=24600~25400&r=6,3&vis=2${lines}`);
-  await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 120000 }).toBe(true);
-  await S.atRest(page, fake, probe);
+  await probe.waitForReady({ timeout: 120000 });
   await probe.waitForQuiet({ quietMs: 800, timeout: 60000 });
   const layout = (await page.locator("#ol-canvas").getAttribute("data-layout")).split(",").map(Number),
     box = await page.locator("#ol-canvas").boundingBox();

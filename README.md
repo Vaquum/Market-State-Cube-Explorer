@@ -109,6 +109,7 @@ python3 -m py_compile tools/cube_bridge.py tools/market_state_reader.py tools/bu
 
 npm ci --ignore-scripts --no-audit --no-fund   # dev tools only: the page has no dependency
 npm test                                        # Node 22 unit tests
+npm run test:dev -- tests/browser/boot.spec.js    # all unit tests + selected browser specs
 npx playwright install chromium                 # the pinned browser, once
 npm run test:browser                            # the built page against a fake cube
 npm run benchmark                               # the navigation benchmark (see docs/testing.md)

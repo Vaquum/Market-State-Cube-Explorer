@@ -28,11 +28,9 @@ const test = base.extend({
   },
 });
 
-// Startup is over when the page has begun to poll the cube (its live poll is the last thing startup starts); `atRest` alone can pass before the page has
-// written its first loading caption, so a view with many days of bars to unpack was read while its first tiers were still coming in.
+// The probe observes the startup decodes, required reads and owed frames, including work before the first loading caption.
 async function ready(page, fake, probe) {
-  await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 30000 }).toBe(true);
-  await S.atRest(page, fake, probe);
+  await probe.waitForReady({ timeout: 30000 });
 }
 
 const EPOCH_MS = Date.parse("2021-01-01T00:00:00Z");
@@ -121,7 +119,7 @@ test.describe("B33 a 4-hour swing is known at the end of the bar that reversed f
       // the same record at the swing's own line: hover its dotted lead-in
       await page.keyboard.press("Escape");
       await expect(page.locator("#ol-lines-pop")).toBeHidden();
-      await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
+      await probe.waitForReady({ timeout: 20000 });
       const frame = await pane.last();
       // every dotted lead-in of the frame is a segment [from, to] of a batched stroke; the swing in question is the latest one, the one that ends last
       const leads = [],
@@ -432,7 +430,7 @@ test.describe("B33 a crossing is known at the end of its day and a candidate whi
           await expect
             .poll(async () => (await rec.last()).strokes.some((k) => k.width === 1.5 && k.stroke !== "#ffffff" && k.path.length >= 2), { message: "MACD is drawn" })
             .toBe(true);
-        await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
+        await probe.waitForReady({ timeout: 20000 });
         const frame = await rec.last(),
           colours = await rec.colours();
         // a golden or death cross is a dot (filled or ringed); a MACD crossing is a triangle: up in the positive role where MACD crosses above its signal,
@@ -551,7 +549,7 @@ test.describe("B33 a squeeze run is known bar by bar and final once a later comp
         return;
       }
       await expect.poll(async () => (await rec.last()).rects.some((r) => r.h === 8 && r.alpha === 1 && r.w >= 2), { message: "the squeeze lane is drawn", timeout: 20000 }).toBe(true);
-      await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
+      await probe.waitForReady({ timeout: 20000 });
       const frame = await rec.last();
       const marks = frame.rects.filter((r) => r.h === 8 && r.alpha === 1 && r.w >= 2);
       expect(marks.length, "one interval in the lane").toBe(1);

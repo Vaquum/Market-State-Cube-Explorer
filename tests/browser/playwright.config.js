@@ -23,7 +23,9 @@ module.exports = defineConfig({
     ["list"],
     ["json", { outputFile: path.join(ROOT, "reports", "browser.json") }],
     ["junit", { outputFile: path.join(ROOT, "reports", "browser.xml") }],
-    ["html", { outputFolder: path.join(ROOT, "playwright-report"), open: "never" }],
+    CI
+      ? ["blob", { outputDir: path.join(ROOT, "blob-report") }]
+      : ["html", { outputFolder: path.join(ROOT, "playwright-report"), open: "never" }],
   ],
   retries: 0,
   forbidOnly: CI,

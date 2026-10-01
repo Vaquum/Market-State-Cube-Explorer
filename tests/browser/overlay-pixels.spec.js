@@ -20,7 +20,6 @@
 const { test: base, expect } = require("./fixtures.js");
 const paneCanvas = require("./pane-canvas.js");
 const masks = require("./masks.js");
-const S = require("./rows-support.js");
 
 const test = base.extend({
   pane: async ({ page }, use) => {
@@ -32,10 +31,9 @@ const test = base.extend({
 const VIEW = "#t=2026-09-23T00:00Z~2026-09-24T12:00Z&p=22000~23500&r=7,0&vis=2";
 const layoutOf = (page) => page.locator("#ol-canvas").evaluate((el) => el.dataset.layout.split(",").map(Number));
 
-// Startup is over when the page has begun to poll the cube (see events-known-at.spec.js).
+// Startup is complete when required reads and decodes finish and the settled view is painted.
 async function ready(page, fake, probe) {
-  await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 30000 }).toBe(true);
-  await S.atRest(page, fake, probe);
+  await probe.waitForReady({ timeout: 30000 });
 }
 
 // The quantitative fills of a frame: opaque rectangles of the pinned unsigned LUT's entries, in the plot, big enough to have a core.

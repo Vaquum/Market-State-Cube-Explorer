@@ -173,4 +173,29 @@ test.describe("B36 the movement stroke is the only carrier of its value, and its
     expect(same, "most of the stroke pixels are compared").toBeGreaterThan(points.length * 0.4);
     console.log(`movement cores under a selection: ${same} pixels as they were, ${painted} under the selection's own marks, ${skipped} on cells its edge cuts`);
   });
+
+  test("tiny unresolved marks: every cell the price only moved through has its exact readout, and the key counts them all", async ({ page, probe, fakeFor }) => {
+    const fake = await fakeFor("micro:paths");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1500, height: 950 });
+    // 480 rows in the plot: each is about a pixel, so no movement-only cell can show an honest outline
+    await page.goto(`${fake.url}/#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=0~60000&r=0,0&mode=path&vis=2`);
+    await page.locator("#ol-loading").waitFor({ state: "hidden" });
+    await fake.idle({ quietMs: 600, timeoutMs: 20000 });
+    await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
+    await expect(page.locator("#ol-key-detail-text"), "represented and unresolved counts").toHaveText(`Detail unresolved: ${MOVEMENT_ONLY.length} of ${MOVEMENT_ONLY.length} moved-through cells`);
+    const layout = await layoutOf(page),
+      box = await page.locator("#ol-canvas").boundingBox(),
+      tip = page.locator("#ol-tip");
+    for (const z of MOVEMENT_ONLY) {
+      // the cell's centre: column c of 56.25 s over the six minutes, row r of 125 USDT over 60,000
+      const x = layout[0] + (((z.c + 0.5) * 56.25) / 360) * layout[2],
+        y = layout[1] + ((60000 - (z.r * 125 + 62.5)) / 60000) * layout[3];
+      await page.mouse.move(box.x + 5, box.y + box.height - 5);
+      await page.mouse.move(box.x + x, box.y + y);
+      await expect(tip).toBeVisible();
+      await expect(tip, `cell ${z.c}:${z.r}: the hand-computed path in USDT`).toContainText(new RegExp(`USDT moved\\s*${z.p} USDT`));
+      await expect(tip, `cell ${z.c}:${z.r}: and in row spans`).toContainText(new RegExp(`Path / price span\\s*${z.p / 125} row spans`));
+    }
+  });
 });

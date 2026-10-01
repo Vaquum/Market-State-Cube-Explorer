@@ -426,4 +426,51 @@ test.describe("B25 the adjacent profile tracks", () => {
     expect(shown.ref.length, "and the reference track").toBeGreaterThan(0);
     await expect.poll(() => page.evaluate(() => location.hash), { message: "po=1 in the address" }).toContain("po=1");
   });
+
+  // PR #52 review: the focus goes back to the control that had it, and each total is in its own unit
+  test("showing the tracks from the popover keeps the keyboard in the popover: the button that was pressed has the focus again", async ({ page, probe, fakeFor, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    await page.setViewportSize({ width: 520, height: 800 });
+    await open(page, fake, probe, pane, addressOf(sc));
+    const pop = await popover(page);
+    const show = pop.locator('button[data-action="profile-open"]');
+    await show.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#ol-profile-chip")).toHaveAttribute("data-collapsed", "false");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.dataset?.action ?? document.activeElement?.tagName), { message: "the focus is on the rebuilt button, not on the page's body" }).toBe("profile-open");
+    expect(await page.evaluate(() => document.getElementById("ol-profile-pop").contains(document.activeElement)), "inside the popover").toBe(true);
+    // a comparison button, which has a value, gets the focus back too
+    const absolute = pop.locator('button[data-action="profile-cmp"][data-value="absolute"]');
+    await absolute.focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => page.evaluate(() => `${document.activeElement?.dataset?.action}:${document.activeElement?.dataset?.value}`)).toBe("profile-cmp:absolute");
+  });
+
+  test("with Time at price as the reference, Shared row share names each total in its own unit: the current track's in USDT, the reference's in seconds", async ({ page, probe, fakeFor, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    await open(page, fake, probe, pane, addressOf(sc, { kind: "time", extra: "&pc=s" }));
+    const pop = await popover(page);
+    const current = (await pop.locator('[data-field="denominatorCurrent"]').textContent()).trim(),
+      reference = (await pop.locator('[data-field="denominatorReference"]').textContent()).trim();
+    expect(current, "the current track's total is USDT").toMatch(/USDT$/);
+    expect(reference, "the reference's is seconds, not USDT").not.toMatch(/USDT$/);
+    expect(Number(await fieldValue(pop, "denominatorCurrent"))).toBeGreaterThan(0);
+    expect(Number(await fieldValue(pop, "denominatorReference"))).toBeGreaterThan(0);
+  });
+
+  test("a saved level outside the visible prices does not paint over a track's heading or its domain: the level line and the pointer's row are clipped to the plot", async ({ page, probe, fakeFor, pane }) => {
+    const sc = scenario();
+    const fake = await fakeFor("standard");
+    const { frame } = await open(page, fake, probe, pane, addressOf(sc, { extra: "&level=90000" }));
+    const layout = (await page.locator("#ol-canvas").evaluate((c) => c.dataset.layout)).split(",").map(Number);
+    const levelStrokes = frame.strokes.filter((k) => k.dash.length === 2 && k.dash[0] === 6 && k.dash[1] === 4 && Math.abs(k.width - 1.3) < 1e-6);
+    expect(levelStrokes.length, "the level line is drawn through the tracks").toBeGreaterThan(0);
+    for (const k of levelStrokes) {
+      expect(k.clip, "under a clip").not.toBeNull();
+      expect(k.clip[1], "whose top is the plot's").toBeGreaterThanOrEqual(layout[1] - 0.5);
+      expect(k.clip[3], "and whose bottom is the plot's").toBeLessThanOrEqual(layout[1] + layout[3] + 0.5);
+    }
+  });
 });

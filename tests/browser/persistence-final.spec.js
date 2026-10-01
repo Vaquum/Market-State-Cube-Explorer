@@ -226,19 +226,23 @@ test.describe("B52 portable state after the final changes", () => {
     const marked = await copyBoth(page);
     expect(marked.link, "the link is the same with a Focus on").toBe(plain.link);
     expect(await P.storage(page), "and nothing about it is stored").toEqual(storedBefore);
-    // the code carries the same lines whether or not a line is in focus
+    // the code carries the same state whether or not a line is in focus: both are DECODED (a code that cannot be is a failure, not a comparison of lengths) and the
+    // payloads are the same payload, so the Focus is in neither
     const decode = (code) => page.evaluate(async (text) => {
-      const body = text.replace(/^origo-cube:2\.(?:j\.)?/, "");
-      const bytes = Uint8Array.from(atob(body.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+      const gz = /^origo-cube:2\.([A-Za-z0-9_-]+)$/.exec(text);
+      const plainJson = /^origo-cube:2j\.(.*)$/s.exec(text);
+      if (plainJson) return JSON.parse(decodeURIComponent(plainJson[1]));
+      if (!gz) throw new Error("not a version 2 code: " + text.slice(0, 40));
+      const bytes = Uint8Array.from(atob(gz[1].replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
       const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
       return JSON.parse(await new Response(stream).text());
     }, code);
-    const a = await decode(plain.code).catch(() => null);
-    const b = await decode(marked.code).catch(() => null);
-    if (a && b) {
-      expect(JSON.stringify(b.view.lines)).toBe(JSON.stringify(a.view.lines));
-      expect(JSON.stringify(Object.keys(b.view).sort())).toBe(JSON.stringify(Object.keys(a.view).sort()));
-    } else expect(marked.code.length, "an undecodable code is at least no longer").toBeLessThanOrEqual(plain.code.length + 8);
+    const a = await decode(plain.code);
+    const b = await decode(marked.code);
+    expect(a && typeof a === "object" && a.view && typeof a.view === "object", "the plain code decodes to a payload with a view").toBeTruthy();
+    expect(b.view.lines, "the same lines").toEqual(a.view.lines);
+    expect(Object.keys(b.view).sort(), "the same view keys").toEqual(Object.keys(a.view).sort());
+    expect(b, "the whole payload is the same: no Focus, no Inspect cursor, no temporary state").toEqual(a);
     const opened = await openLink(freshContext, marked.link, async (tab) => {
       await S.atRest(tab, fake, null).catch(() => {});
       await tab.waitForTimeout(900);

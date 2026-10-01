@@ -298,6 +298,36 @@ test("the scorer: the candidate palette must add no error; an error it removes d
   assert.throws(() => scorer.palette(PROTOCOL, { participant: "T", palette: [{ task: "PT-01", palette: "third", answer: "a" }] }), /candidate or current/);
 });
 
+test("the palette comparison needs every paired task of every participant, and the first attempt wins whatever the order of the file (PR #53 review)", () => {
+  const ids = PROTOCOL.palette.tasks.map((t) => t.id);
+  // correct case answers and two palette responses: one pair of eight is not a comparison
+  const two = session("T1");
+  two.palette = two.palette.filter((a) => a.task === ids[0]);
+  const r = scorer.score(PROTOCOL, { sessions: [two] });
+  assert.equal(r.palettes.met, false, "one pair among eight");
+  assert.deepEqual(r.palettes.incomplete, [{ participant: "T1", paired: 1, required: 8 }]);
+  assert.match(scorer.report(r), /incomplete: T1 answered 1 of 8 paired tasks/);
+  // a participant who did the cases and not the trials
+  const none = session("T2");
+  none.palette = [];
+  assert.equal(scorer.score(PROTOCOL, { sessions: [session("T1"), none] }).palettes.met, false);
+  // a correct rerun listed BEFORE the incorrect first attempt does not erase the error
+  const t = PROTOCOL.palette.tasks[0],
+    wrong = t.expect === "a" ? "b" : "a",
+    s = session("T3");
+  s.palette = s.palette.filter((a) => !(a.task === t.id && a.palette === "candidate"));
+  s.palette.unshift({ task: t.id, palette: "candidate", answer: t.expect, ms: 3000, attempt: 2, change: "the task was reworded" });
+  s.palette.push({ task: t.id, palette: "candidate", answer: wrong, ms: 4000, attempt: 1 });
+  const out = scorer.score(PROTOCOL, { sessions: [s] });
+  assert.equal(out.participants[0].palette.candidateErrors, 1, "the first attempt was wrong");
+  assert.equal(out.participants[0].palette.addedErrors, 1);
+  assert.equal(out.palettes.met, false);
+  // two first attempts for one trial is a malformed file
+  const twice = session("T4");
+  twice.palette.push({ ...twice.palette[0] });
+  assert.throws(() => scorer.score(PROTOCOL, { sessions: [twice] }), /two first attempts/);
+});
+
 test("the balanced palette order: every task twice in both palettes, each serial position once over eight participants, each palette first equally often", () => {
   const ids = PROTOCOL.palette.tasks.map((t) => t.id);
   const orders = Array.from({ length: 8 }, (_, i) => scorer.balancedOrder(i, ids));

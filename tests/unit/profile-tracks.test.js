@@ -43,6 +43,22 @@ function binAmounts(rows, from, m, read) {
   return bins;
 }
 const binsOverlapping = (from, view, rows) => rows.filter((x) => (x.r + 1) * 2 ** from > view.lo && x.r * 2 ** from < view.hi);
+// The exact amount of each bin of exponent `m` that lies WHOLLY inside the view [lo, hi), from rows of exponent `from`: every row of such a bin is summed (the
+// view is a union of whole bins, so none of its rows is outside it), and a bin that straddles an edge of the view is in no side (PR #52, review of the first
+// version, which filtered the rows by the view before coarsening them and so compared a half bin of one side with a whole bin of the other).
+function wholeBins(rows, from, m, view, read) {
+  const size = 2 ** m,
+    lo = Math.ceil(view.lo / size),
+    hi = Math.floor(view.hi / size) - 1,
+    k = 2 ** (m - from),
+    bins = new Map();
+  for (const x of rows) {
+    const r = Math.floor(x.r / k);
+    if (r < lo || r > hi) continue;
+    bins.set(r, R.add(bins.get(r) ?? R.ZERO, R.fromDouble(read(x))));
+  }
+  return bins;
+}
 
 function plan(mode, cur, ref, view) {
   return E.axis.profile({ mode, cur, ref, view });
@@ -85,8 +101,9 @@ test("a mode that is not offered falls back to independent, names why and keeps 
   assert.equal(p.cur, null);
 });
 
-test("shared absolute: the finer side is summed exactly onto the coarser partition and a coarse row is never split", () => {
+test("shared absolute: the finer side is summed exactly onto the coarser partition, a coarse row is never split, and only the bins wholly inside the view are shown", () => {
   const rand = lcg(7);
+  let shown = 0;
   for (let trial = 0; trial < 300; trial++) {
     const curM = Math.floor(rand() * 3),
       refM = curM + Math.floor(rand() * 4),
@@ -98,9 +115,9 @@ test("shared absolute: the finer side is summed exactly onto the coarser partiti
       p = plan("absolute", cur, ref, view);
     assert.equal(p.mode, "absolute");
     assert.equal(p.m, refM, "the coarser exponent is the partition");
-    const curIn = binAmounts(binsOverlapping(curM, view, cur.rows), curM, refM, (x) => x.v),
-      curBuy = binAmounts(binsOverlapping(curM, view, cur.rows), curM, refM, (x) => x.bv),
-      refIn = binAmounts(binsOverlapping(refM, view, ref.rows), refM, refM, (x) => x.v);
+    const curIn = wholeBins(cur.rows, curM, refM, view, (x) => x.v),
+      curBuy = wholeBins(cur.rows, curM, refM, view, (x) => x.bv),
+      refIn = wholeBins(ref.rows, refM, refM, view, (x) => x.v);
     assert.deepEqual(p.cur.map((x) => x.r), [...curIn.keys()].sort((a, b) => a - b), "the current bins, sorted");
     for (const x of p.cur) {
       close(x.v, R.toDouble(curIn.get(x.r)), `current bin ${x.r}`);
@@ -108,13 +125,39 @@ test("shared absolute: the finer side is summed exactly onto the coarser partiti
       assert.equal(x.t, x.v, "absolute draws the amount itself");
     }
     // the reference rows are exactly its own (coarse rows unsplit)
-    assert.deepEqual(p.ref.map((x) => [x.r, x.v]), binsOverlapping(refM, view, ref.rows).map((x) => [x.r, x.v]));
+    assert.deepEqual(p.ref.map((x) => x.r), [...refIn.keys()].sort((a, b) => a - b));
+    for (const x of p.ref) close(x.v, R.toDouble(refIn.get(x.r)), `reference bin ${x.r}`);
+    shown += p.cur.length + p.ref.length;
     let want = -Infinity,
       count = 0;
     for (const side of [curIn, refIn]) for (const v of side.values()) { want = Math.max(want, R.toDouble(v)); count++; }
     assert.equal(p.summary.count, count, "the domain is summarised over BOTH displayed sets");
-    close(p.summary.max, want, "the shared maximum");
+    if (count) close(p.summary.max, want, "the shared maximum");
   }
+  assert.ok(shown > 1000, "the trials show something");
+});
+
+test("identical distributions on two partitions give equal bars: a coarse row of 20 against two fine rows of 10, whole bins only (PR #52 review)", () => {
+  const fine = { kind: "volume", rows: [{ r: 0, v: 10, bv: 0, w: 1 }, { r: 1, v: 10, bv: 0, w: 1 }], m: 0, ready: true },
+    coarse = { rows: [{ r: 0, v: 20, bv: 5 }], m: 1, ready: true };
+  // the reference is the fine side
+  let p = plan("absolute", coarse, fine, { lo: 0, hi: 2 });
+  assert.deepEqual(p.cur.map((x) => [x.r, x.v]), [[0, 20]]);
+  assert.deepEqual(p.ref.map((x) => [x.r, x.v]), [[0, 20]], "the two fine rows are one coarse bin, both of them");
+  // the current is the fine side
+  p = plan("absolute", { rows: fine.rows, m: 0, ready: true }, { kind: "volume", rows: [{ r: 0, v: 20, bv: 0, w: 1 }], m: 1, ready: true }, { lo: 0, hi: 2 });
+  assert.deepEqual(p.cur.map((x) => [x.r, x.v]), [[0, 20]]);
+  assert.deepEqual(p.ref.map((x) => [x.r, x.v]), [[0, 20]]);
+  // a view that holds half of the coarse bin shows no bin of it at all, rather than 10 against 20
+  p = plan("absolute", coarse, fine, { lo: 1, hi: 2 });
+  assert.equal(p.state, "none");
+  assert.equal(p.reason, "no-window");
+  assert.deepEqual([p.cur, p.ref], [null, null]);
+  // two bins, one of them wholly inside: only that one, on both sides
+  p = plan("absolute", { rows: [{ r: 0, v: 20, bv: 0 }, { r: 1, v: 6, bv: 0 }], m: 1, ready: true }, { kind: "volume", rows: [...fine.rows, { r: 2, v: 2, bv: 0, w: 1 }, { r: 3, v: 4, bv: 0, w: 1 }], m: 0, ready: true }, { lo: 0, hi: 3 });
+  assert.deepEqual(p.cur.map((x) => [x.r, x.v]), [[0, 20]]);
+  assert.deepEqual(p.ref.map((x) => [x.r, x.v]), [[0, 20]]);
+  assert.deepEqual(p.window, { first: 0, last: 0, bins: 1 });
 });
 
 test("shared absolute coarsens a finer reference onto the current partition too", () => {
@@ -126,11 +169,13 @@ test("shared absolute coarsens a finer reference onto the current partition too"
       ref = { kind: "volume", rows: rowsOf(rand, refM, 40, 100, 0.8), m: refM, ready: true },
       view = { lo: 41 + rand() * 20, hi: 120 + rand() * 20 },
       p = plan("absolute", cur, ref, view),
-      want = binAmounts(binsOverlapping(refM, view, ref.rows), refM, curM, (x) => x.v);
+      want = wholeBins(ref.rows, refM, curM, view, (x) => x.v),
+      wantCur = wholeBins(cur.rows, curM, curM, view, (x) => x.v);
     assert.equal(p.m, curM);
     assert.deepEqual(p.ref.map((x) => x.r), [...want.keys()].sort((a, b) => a - b));
     for (const x of p.ref) close(x.v, R.toDouble(want.get(x.r)), `reference bin ${x.r}`);
-    assert.deepEqual(p.cur.map((x) => [x.r, x.v]), binsOverlapping(curM, view, cur.rows).map((x) => [x.r, x.v]));
+    assert.deepEqual(p.cur.map((x) => x.r), [...wantCur.keys()].sort((a, b) => a - b));
+    for (const x of p.cur) close(x.v, R.toDouble(wantCur.get(x.r)), `current bin ${x.r}`);
   }
 });
 

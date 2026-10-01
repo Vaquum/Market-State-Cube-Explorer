@@ -78,6 +78,10 @@ test.describe("B47 Inspect and touch", () => {
       for (let i = 0; i + 1 < k.path.length; i += 2) if (k.path[i][1] === k.path[i + 1][1] && k.path[i + 1][0] - k.path[i][0] > 100) ys.push(k.path[i][1]);
     expect(ys.length, "POC lines are on the plot (the standard cube puts them on one price row, so one tap is within reach of several)").toBeGreaterThan(0);
     await page.keyboard.press("e");
+    // a first reading, early in the view: the chooser's tap below is later, and what a chosen reference is read at is the tap's time, not this one
+    const earlyX = box.x + layout[0] + layout[2] * 0.2;
+    await page.touchscreen.tap(earlyX, box.y + layout[1] + layout[3] * 0.05);
+    await probe.waitForQuiet({ quietMs: 500, timeout: 30000 });
     const before = await state(page),
       start = await where(page);
     // (the 1-day line begins late in the view: near its end both it and the 7-day line, on the same price row, are within a finger's reach)
@@ -93,6 +97,12 @@ test.describe("B47 Inspect and touch", () => {
     await expect(page.locator("#ol-inspect")).toHaveAttribute("data-surface", "references");
     expect(await page.locator("#ol-inspect-position").textContent()).toContain(name.trim());
     expect(await state(page), "choosing changed nothing the page keeps").toEqual(before);
+    // PR #53 review: the chosen reference is read where the finger was: the cursor's time is the tap's, not the earlier reading's
+    const chosen = await where(page);
+    expect(chosen.c, "the cursor's time moved to the tap's").toBeGreaterThan(start.c);
+    await page.touchscreen.tap(box.x + layout[0] + layout[2] * 0.9, box.y + layout[1] + layout[3] * 0.02);
+    await probe.waitForQuiet({ quietMs: 500, timeout: 30000 });
+    expect(chosen.c, "the same column as a tap at that time on a place with no reference").toBe((await where(page)).c);
   });
 
   test("the large-target resolution steppers reach every level of the lattice, n = 0..20 and m = 0..9, with 44 px taps and nothing else changed", async ({ page, probe, fakeFor }) => {

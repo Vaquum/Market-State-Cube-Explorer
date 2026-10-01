@@ -31,7 +31,7 @@ Testing it: `tests/unit/color-matrix.test.js` (U60) fails when this file is not 
 | fill.negative | Signed fill, negative arm | area | #b3624b | #d89777 | sign, legend, number | the minus mark, the legend's signed ramp, the signed readout (B23, B44, B50) |
 | fill.midpoint | Signed fill, midpoint | area | #b9c2bc | #5f6b64 | sign, legend, number | the ring mark, the legend's midpoint, the signed readout (B23, B44, B50) |
 | fill.rows | Rows band (16% composite) | area | #d9dde2 | #363f3b | position, legend, number | the strip at the right edge, its legend and its Rows readout (B28, B44) |
-| fill.bar | Profile bar | area | #435a75 | #97b2c8 | position, number | the profile track's row and its readout (B25, B44) |
+| fill.bar | Profile bar (the appearance's bar colour at 70% over the surface) | area | #7b8c9e | #708694 | position, number | the profile track's row and its readout (B25, B44) |
 | ref.profile | Volume-profile references | stroke | #a87823 | #dfb967 | label, pattern, glyph | the tag at the line's end, its Lines menu row and the Inspect References detail (B40, B44) |
 | ref.level | Price levels | stroke | #9471f5 | #bb6bd9 | label, pattern | the tag at the line's end, its Lines menu row and the Inspect References detail (B40, B44) |
 | ref.average | Averages and Bollinger | stroke | #6c661f | #8a9650 | label, pattern | the tag at the line's end, its Lines menu row and the Inspect References detail (B40, B44) |
@@ -43,7 +43,7 @@ Testing it: `tests/unit/color-matrix.test.js` (U60) fails when this file is not 
 | mark.state | State ink: patterns, ticks, open cap | outline | #5c7263 | #a1b5a7 | pattern, glyph | the footer's key for each pattern and the readout's tag (B30, B38) |
 | mark.occupancy | Occupancy outline (Geometry, unsigned zero) | outline | #768d7e | #667f6f | glyph, number | the footer's Occupied and Zero keys and the readout's tag (B16, B38) |
 | mark.movement | Moved-through outline (movement) | outline | #435a75 | #97b2c8 | glyph, legend, number | the footer's Moved through key and the readout of the cell (B26, B36) |
-| mark.inset | Taker-buy inset of a profile row | outline | #20392b | #e0eee4 | position, label | the footer's Taker-buy volume key and the profile row's readout (B25, B40) |
+| mark.inset | Taker-buy inset of a profile row (the ink at 85% over the bar) | outline | #2e453c | #cfded8 | position, label | the footer's Taker-buy volume key and the profile row's readout (B25, B40) |
 | plane.panel | Resolution plane, unavailable or resting tile | plate | #eff4f0 | #1b2720 | glyph, position, label | the tile's glyph and name, and the stepper routes (B29, B31) |
 | plane.on | Resolution plane, selected tile | plate | #d6e0d9 | #2e4035 | glyph, position, label | the tile's glyph and name, and the stepper routes (B29, B31) |
 | plane.hover | Menu row, hover and focus | plate | #dde6e0 | #2a3a30 | label, position | the row's name and the focus ring (B23, B29) |
@@ -68,8 +68,8 @@ Testing it: `tests/unit/color-matrix.test.js` (U60) fails when this file is not 
 
 | Theme | Pairs | Separated (>= 8 under every condition) | Form | Redundant | FAIL |
 |---|---|---|---|---|---|
-| light | 131 | 92 | 25 | 14 | 0 |
-| dark | 131 | 94 | 24 | 13 | 0 |
+| light | 131 | 93 | 24 | 14 | 0 |
+| dark | 131 | 96 | 22 | 13 | 0 |
 
 ## The PRD's named pairs
 
@@ -89,8 +89,8 @@ Testing it: `tests/unit/color-matrix.test.js` (U60) fails when this file is not 
 | focus, state, Geometry and movement: Occupancy outline (Geometry, unsigned zero) and Moved-through outline (movement) | 27.2 / 18.4 (gray) | 24.6 / 17.6 (gray) | separated, separated |
 | menus and tags: Menu row, hover and focus and Control and plane border | 26.3 / 25.1 (protan-1) | 23.8 / 23.4 (deutan-1) | separated, separated |
 | menus and tags: Resolution plane, unavailable or resting tile and Menu row, hover and focus | 3.8 / 3.2 (gray) | 6.1 / 5.7 (deutan-1) | redundant, redundant |
-| profiles: Profile bar and Taker-buy inset of a profile row | 23.8 / 12.1 (gray) | 20.4 / 14.7 (gray) | separated, separated |
-| profiles: Profile bar and Volume-profile references | 41.1 / 15.9 (gray) | 37.1 / 4.3 (gray) | separated, form |
+| profiles: Profile bar (the appearance's bar colour at 70% over the surface) and Taker-buy inset of a profile row (the ink at 85% over the bar) | 30.9 / 27.6 (gray) | 26.7 / 24.7 (gray) | separated, separated |
+| profiles: Profile bar (the appearance's bar colour at 70% over the surface) and Volume-profile references | 36.2 / 3.3 (gray) | 38.3 / 18.1 (gray) | form, separated |
 | the resolution plane: Resolution plane, unavailable or resting tile and Resolution plane, selected tile | 5.3 / 4.6 (protan-1) | 8.0 / 7.4 (deutan-1) | redundant, redundant |
 | the resolution plane: Resolution plane, selected tile and Control and plane border | 24.8 / 23.7 (protan-1) | 22.0 / 21.7 (deutan-0.5) | separated, separated |
 
@@ -163,10 +163,10 @@ Each cell is the least CIEDE2000 over the eight conditions, with the condition t
 | fill.midpoint and mark.state | marks-cells | 28.1 | 27.0 (protan-1) | separated | 25.4 | 25.0 (protan-0.5) | separated |
 | fill.midpoint and mark.occupancy | marks-cells | 18.3 | 16.9 (protan-1) | separated | 9.0 | 6.7 (gray) | form |
 | fill.midpoint and mark.movement | marks-cells | 39.9 | 36.7 (gray) | separated | 28.0 | 24.7 (gray) | separated |
-| fill.bar and ref.profile | profiles | 41.1 | 15.9 (gray) | separated | 37.1 | 4.3 (gray) | form |
-| fill.bar and ref.compare | profiles | 21.5 | 7.8 (gray) | form | 15.9 | 0.6 (gray) | form |
-| fill.bar and mark.state | profiles | 21.5 | 7.8 (gray) | form | 15.9 | 0.6 (gray) | form |
-| fill.bar and mark.inset | profiles | 23.8 | 12.1 (gray) | separated | 20.4 | 14.7 (gray) | separated |
+| fill.bar and ref.profile | profiles | 36.2 | 3.3 (gray) | form | 38.3 | 18.1 (gray) | separated |
+| fill.bar and ref.compare | profiles | 19.9 | 11.3 (gray) | separated | 19.6 | 14.4 (gray) | separated |
+| fill.bar and mark.state | profiles | 19.9 | 11.3 (gray) | separated | 19.6 | 14.4 (gray) | separated |
+| fill.bar and mark.inset | profiles | 30.9 | 27.6 (gray) | separated | 26.7 | 24.7 (gray) | separated |
 | ref.profile and ref.level | refs | 54.3 | 2.6 (gray) | redundant | 56.0 | 14.9 (gray) | separated |
 | ref.profile and ref.average | refs | 17.3 | 9.9 (protan-1) | separated | 20.2 | 12.4 (protan-1) | separated |
 | ref.profile and ref.vwap | refs | 25.6 | 20.6 (gray) | separated | 26.7 | 14.0 (deutan-1) | separated |
@@ -177,7 +177,7 @@ Each cell is the least CIEDE2000 over the eight conditions, with the condition t
 | ref.profile and mark.state | marks, profiles | 28.9 | 7.9 (gray) | form | 24.8 | 3.8 (gray) | form |
 | ref.profile and mark.occupancy | marks | 27.9 | 2.2 (gray) | form | 33.5 | 21.8 (gray) | separated |
 | ref.profile and mark.movement | marks | 41.1 | 15.9 (gray) | separated | 37.1 | 4.3 (gray) | form |
-| ref.profile and mark.inset | profiles | 40.1 | 27.6 (gray) | separated | 25.9 | 10.4 (gray) | separated |
+| ref.profile and mark.inset | profiles | 37.7 | 23.8 (gray) | separated | 25.8 | 6.8 (gray) | form |
 | ref.level and ref.average | refs | 59.5 | 14.3 (gray) | separated | 60.4 | 1.4 (gray) | redundant |
 | ref.level and ref.vwap | refs | 48.2 | 23.6 (gray) | separated | 44.7 | 1.1 (gray) | redundant |
 | ref.level and ref.clock | refs | 30.3 | 3.5 (gray) | redundant | 29.9 | 1.8 (gray) | redundant |
@@ -217,13 +217,13 @@ Each cell is the least CIEDE2000 over the eight conditions, with the condition t
 | ref.compare and mark.state | marks, profiles | 0.0 | 0.0 (normal) | form | 0.0 | 0.0 (normal) | form |
 | ref.compare and mark.occupancy | marks | 10.5 | 10.2 (gray) | separated | 18.3 | 17.9 (protan-1) | separated |
 | ref.compare and mark.movement | marks | 21.5 | 7.8 (gray) | form | 15.9 | 0.6 (gray) | form |
-| ref.compare and mark.inset | profiles | 19.8 | 19.5 (tritan-0.5) | separated | 14.5 | 14.0 (protan-1) | separated |
+| ref.compare and mark.inset | profiles | 15.9 | 15.6 (tritan-0.5) | separated | 11.4 | 10.6 (gray) | separated |
 | mark.focus and mark.state | marks | 19.8 | 19.5 (tritan-0.5) | separated | 14.5 | 14.0 (protan-1) | separated |
 | mark.focus and mark.occupancy | marks | 30.3 | 30.0 (deutan-1) | separated | 32.3 | 31.3 (protan-1) | separated |
 | mark.focus and mark.movement | marks | 23.8 | 12.1 (gray) | separated | 20.4 | 14.7 (gray) | separated |
 | mark.state and mark.occupancy | marks | 10.5 | 10.2 (gray) | separated | 18.3 | 17.9 (protan-1) | separated |
 | mark.state and mark.movement | marks | 21.5 | 7.8 (gray) | redundant | 15.9 | 0.6 (gray) | redundant |
-| mark.state and mark.inset | profiles | 19.8 | 19.5 (tritan-0.5) | separated | 14.5 | 14.0 (protan-1) | separated |
+| mark.state and mark.inset | profiles | 15.9 | 15.6 (tritan-0.5) | separated | 11.4 | 10.6 (gray) | separated |
 | mark.occupancy and mark.movement | marks | 27.2 | 18.4 (gray) | separated | 24.6 | 17.6 (gray) | separated |
 | plane.panel and plane.on | plane | 5.3 | 4.6 (protan-1) | redundant | 8.0 | 7.4 (deutan-1) | redundant |
 | plane.panel and plane.hover | plane | 3.8 | 3.2 (gray) | redundant | 6.1 | 5.7 (deutan-1) | redundant |

@@ -4624,8 +4624,8 @@
     let readout = null;
     // A line or its tag under the pointer names the line; a clock line or a
     // CME gap, its event.
-    const onLine = inspect.forced ?? (last && lineHits.length && inPlot(p) ? lineAt(p) : null),
-      onClock = !onLine && last && clockHits.length && inPlot(p) ? clockAt(p) : null;
+    const onLine = inspect.forced === false ? null : (inspect.forced ?? (last && lineHits.length && inPlot(p) ? lineAt(p) : null)),
+      onClock = !onLine && inspect.forced !== false && last && clockHits.length && inPlot(p) ? clockAt(p) : null;
     hover.line = onLine?.id || null;
     // Cleared first, so a branch that names no readout (a line, a clock event, a profile row, an unavailable
     // cell) leaves none behind; a branch that does (the pane sections name theirs through paneTipFields,
@@ -4834,16 +4834,44 @@
     const out = [],
       cut = activeCutoff(),
       items = S.lines.length ? lineItems(cut) : [],
-      push = (l, curve) => out.push({ id: l.id, key: l.key, name: curve ? l.name || l.tag : lineItemName(l), hit: { key: l.key, id: l.id, item: l, colour: lineStyle(l.family || "vwap").colour, ...(curve ? { curve: { points: l.r.points } } : {}) }, at: curve ? null : l.at, kind: curve ? "curve" : l.kind });
+      // a curve is named by its own name and, where its tag tells it apart from its siblings (Upper, Middle, Lower), the tag
+      curveName = (c) => (c.name && c.tag && c.tag !== c.name && !String(c.name).includes(c.tag) ? `${c.name} · ${c.tag}` : c.name || c.tag),
+      push = (l, curve) => out.push({ id: l.id, key: l.key, name: curve ? curveName(l) : lineItemName(l), hit: { key: l.key, id: l.id, item: l, colour: lineStyle(l.family || "vwap").colour, ...(curve ? { curve: { points: l.r.points } } : {}) }, at: curve ? null : l.at, kind: curve ? "curve" : l.kind });
     for (const l of items) if (!l.eq) push(l, false);
     for (const c of items.curves ?? []) push(c, true);
+    // the equal highs and lows and the golden and death crosses are plotted records with their own hover details: each is a reference the cursor can be on
+    for (const m of items.marks ?? []) {
+      if (!m.s.equal) continue;
+      const id = `${m.key}|eq|${m.s.i}`;
+      out.push({ id, key: m.key, name: `${m.frame} ${m.s.kind === "high" ? "equal highs" : "equal lows"} · ${when(m.s.t)}`, hit: { key: m.key, id, item: { kind: "equal", s: m.s, frame: m.frame }, colour: lineStyle("level").colour }, at: m.s.price / PR, kind: "equal" });
+    }
+    for (const c of items.crosses ?? []) {
+      const id = `gdcross|${c.x.i}`;
+      out.push({ id, key: c.key, name: `${c.golden ? "Golden cross" : "Death cross"} · ${when(c.t)}`, hit: { key: c.key, id, item: { kind: "cross", c }, colour: lineStyle("average").colour }, at: c.v / PR, kind: "cross" });
+    }
     for (const kind of S.lines.filter((k) => CLOCK[k])) out.push({ id: "clock|" + kind, key: kind, name: CLOCK[kind].name, hit: null, at: null, kind: "clock" });
     if (S.level !== null) out.push({ id: "level", key: "level", name: "Level", hit: { key: "level", id: "level", colour: colors.ink }, at: S.level, kind: "level" });
-    const order = { profile: 1, session: 2, structure: 3, average: 4, vwap: 5, clock: 6 };
-    return out
-      .map((e, i) => ({ e, i, f: e.key === "level" ? 0 : order[familyOf(e.key)] ?? 7 }))
-      .sort((a, b) => a.f - b.f || a.i - b.i)
-      .map((x) => x.e);
+    const order = { profile: 1, session: 2, structure: 3, average: 4, vwap: 5, clock: 6 },
+      sorted = out
+        .map((e, i) => ({ e, i, f: e.key === "level" ? 0 : order[familyOf(e.key)] ?? 7 }))
+        .sort((a, b) => a.f - b.f || a.i - b.i)
+        .map((x) => x.e);
+    // two references of one name (the swings of one timeframe, the days of the session VWAP) are told apart: by their price where they have one, then by their order
+    const total = new Map(),
+      nth = new Map();
+    for (const e of sorted) total.set(e.name, (total.get(e.name) ?? 0) + 1);
+    for (const e of sorted) {
+      const n = total.get(e.name);
+      if (n === 1) continue;
+      const k = (nth.get(e.name) ?? 0) + 1;
+      nth.set(e.name, k);
+      e.name = `${e.name} · ${Number.isFinite(e.at) && e.kind !== "curve" ? `${price(e.at * PR)} USDT` : `${k} of ${n}`}`;
+    }
+    // a price that did not tell two apart (two swings at one price) falls back to the order
+    const groups = new Map();
+    for (const e of sorted) groups.set(e.name, [...(groups.get(e.name) ?? []), e]);
+    for (const list of groups.values()) if (list.length > 1) list.forEach((e, i) => (e.name = `${e.name} (${i + 1} of ${list.length})`));
+    return sorted;
   }
   function lineItemName(l) {
     return l.tag?.name || l.name || lineName(l.key);
@@ -4856,13 +4884,15 @@
   // The visible items of a surface along each axis, in its own level: the first and last time cell and price row.
   function inspectSpan(surface) {
     const lens = surface === "lens" ? inspectLensParts()?.parts : null,
-      ts = lens ? lens.ts : stepT(),
+      // an oscillator's columns are its own bars (a day, or four hours), not the Cells grid's
+      bar = surface === "columns" && paneShown?.measure?.osc ? (paneShown.key === "rsi4h" ? DAYS / 6 : DAYS) : null,
+      ts = lens ? lens.ts : bar ?? stepT(),
       ps = lens ? lens.ps : stepP(),
       lo = Math.max(lens ? lens.lensBounds[0] : 0, S.tA),
       hi = Math.min(lens ? lens.lensBounds[1] : cutEdge(), S.tB, cutEdge()),
       pLo = Math.max(0, lens ? lens.lensBounds[2] : S.pA),
       pHi = lens ? lens.lensBounds[3] : S.pB;
-    return { ts, ps, c0: Math.floor(lo / ts), c1: Math.max(Math.floor(lo / ts), Math.ceil(hi / ts) - 1), r0: Math.floor(pLo / ps), r1: Math.max(Math.floor(pLo / ps), Math.ceil(pHi / ps) - 1), lens };
+    return { ts, ps, c0: Math.floor(lo / ts), c1: Math.max(Math.floor(lo / ts), Math.ceil(hi / ts) - 1), r0: Math.floor(pLo / ps), r1: Math.max(Math.floor(pLo / ps), Math.ceil(pHi / ps) - 1), lens, bar: bar !== null };
   }
   // Where the tooltip's own code finds the cursor: a pointer made from it, on the surface's own region of the canvas.
   function inspectPointer() {
@@ -4890,7 +4920,7 @@
     cells: (w) => `${range(w.c * w.sp.ts, (w.c + 1) * w.sp.ts)} UTC · ${price(w.r * w.sp.ps * PR)}–${price((w.r + 1) * w.sp.ps * PR)} USDT`,
     lens: (w) => `Lens · ${range(w.c * w.sp.ts, (w.c + 1) * w.sp.ts)} UTC · ${price(w.r * w.sp.ps * PR)}–${price((w.r + 1) * w.sp.ps * PR)} USDT`,
     rows: (w) => `Row ${price(w.r * w.sp.ps * PR)}–${price((w.r + 1) * w.sp.ps * PR)} USDT`,
-    columns: (w) => `Column ${range(w.c * w.sp.ts, (w.c + 1) * w.sp.ts)} UTC`,
+    columns: (w) => `${w.sp.bar ? "Bar" : "Column"} ${range(w.c * w.sp.ts, (w.c + 1) * w.sp.ts)} UTC`,
   };
   function inspectEntry() {
     const list = inspectReferences();
@@ -4963,10 +4993,11 @@
     if (state === "ready" && s !== "lens") {
       hover = inspectPointer();
       const was = inspect.forced;
-      inspect.forced = s === "references" && entry ? entry.hit : null;
+      // a reference surface reads the chosen reference; every other surface reads its own record, never a line or a calendar event that happens to lie under the cursor
+      inspect.forced = s === "references" && entry ? entry.hit : false;
       if (s === "references" && entry && !entry.hit) {
         // a clock kind has no line of its own to name: its events, at the cursor's time
-        tipRows(tip, entry.name, "Calendar lines", [["Kind", entry.name], ["Drawn", spaced(CLOCK[entry.key].gap) ? "yes" : "too close together at this zoom"]], "A calendar definition, not a measured trade event");
+        tipRows(tip, entry.name, "Calendar lines", [["Kind", entry.name], ["Drawn", occlusion.off.has("clock|" + entry.key) ? "no: held back by the 20% budget" : spaced(CLOCK[entry.key].gap) ? "yes" : "too close together at this zoom"]], "A calendar definition, not a measured trade event");
         tip.hidden = false;
       } else tooltip(hover, { redraw: false });
       inspect.forced = was;
@@ -5012,8 +5043,10 @@
         scaleFault(error);
       }
     }
-    if (!z) tipRows(tip, head, sub, [["Lens", `${lp.fine ? "Finer" : "Finest loaded"} cells · ${dur(lp.ts * BASE)} × ${price(lp.ps * PR)} USDT`]], "No trades in this finer cell");
-    else tipRows(tip, head, sub, [...readoutRows(readout, f), ...cellFacts(z, f), ["Lens", `${lp.fine ? "Finer" : "Finest loaded"} cells · ${dur(lp.ts * BASE)} × ${price(lp.ps * PR)} USDT`]], "The finer record, not the coarse cell under the lens");
+    // an empty cell of the open column is not a completed zero: the same word as the Cells', for the lens's own column
+    const open = !S.replay && w.c * w.sp.ts < CUT && (w.c + 1) * w.sp.ts > CUT;
+    if (!z) tipRows(tip, head, sub, [["Lens", `${lp.fine ? "Finer" : "Finest loaded"} cells · ${dur(lp.ts * BASE)} × ${price(lp.ps * PR)} USDT`]], open ? "Still open: no trades yet" : "No trades in this finer cell");
+    else tipRows(tip, head, sub, [...readoutRows(readout, f), ...cellFacts(z, f), ["Column", open ? "Still open" : "Complete"], ["Lens", `${lp.fine ? "Finer" : "Finest loaded"} cells · ${dur(lp.ts * BASE)} × ${price(lp.ps * PR)} USDT`]], "The finer record, not the coarse cell under the lens");
     tip.hidden = false;
     return tip.textContent;
   }
@@ -5104,19 +5137,23 @@
       return true;
     }
     if ((s === "rows" && horizontal) || (s === "columns" && !horizontal)) return false;
-    const sp = inspectSpan(s);
+    const sp = inspectSpan(s),
+      // the axes this surface reads: Rows read prices only, Columns read time only, so the coordinate the surface ignores (a time that a pan has carried out of the
+      // view, say) neither blocks a step nor is changed by it
+      useT = s !== "rows",
+      useP = s !== "columns";
     let c = Math.floor((inspect.t ?? 0) / sp.ts),
       r = Math.floor((inspect.p ?? 0) / sp.ps);
     const outside = !inspectWhere().inside;
     if (outside) {
       // the first key brings a cursor that is outside the view back to the nearest visible item, without moving the view
-      c = clamp(c, sp.c0, sp.c1);
-      r = clamp(r, sp.r0, sp.r1);
+      if (useT) c = clamp(c, sp.c0, sp.c1);
+      if (useP) r = clamp(r, sp.r0, sp.r1);
       inspect.boundary = "Back in the view";
     } else {
       const nc = c + (dir === "right" ? 1 : dir === "left" ? -1 : 0),
         nr = r + (dir === "up" ? 1 : dir === "down" ? -1 : 0);
-      if (nc < sp.c0 || nc > sp.c1 || nr < sp.r0 || nr > sp.r1) {
+      if ((useT && (nc < sp.c0 || nc > sp.c1)) || (useP && (nr < sp.r0 || nr > sp.r1))) {
         inspect.boundary = { left: "Start of the view", right: "End of the view", up: "Top of the view", down: "Bottom of the view" }[dir];
         inspectRender(true);
         return true;
@@ -5125,10 +5162,15 @@
       r = nr;
       inspect.boundary = "";
     }
-    inspect.t = (c + 0.5) * sp.ts;
-    inspect.p = (r + 0.5) * sp.ps;
+    if (useT) inspect.t = inspectColumnT(sp, c);
+    if (useP) inspect.p = (r + 0.5) * sp.ps;
     inspectRender(true);
     return true;
+  }
+  // The time the cursor takes in column `c` of a span: its middle, or for an oscillator's bar a moment before its close (the bar the tooltip reads is the one whose close is
+  // nearest the pointer, and the middle of a bar is as near to its open, the previous close, as to its own).
+  function inspectColumnT(sp, c) {
+    return sp.bar ? (c + 0.95) * sp.ts : (c + 0.5) * sp.ts;
   }
   // Home and End: the first and last visible item along the surface's primary axis.
   function inspectEdge(end) {
@@ -5140,7 +5182,7 @@
       const sp = inspectSpan(s);
       if (s === "rows") inspect.p = ((end ? sp.r0 : sp.r1) + 0.5) * sp.ps;
       else {
-        inspect.t = ((end ? sp.c1 : sp.c0) + 0.5) * sp.ts;
+        inspect.t = inspectColumnT(sp, end ? sp.c1 : sp.c0);
         if (!inspectWhere().inside || (s !== "columns" && Math.floor(inspect.p / sp.ps) < sp.r0)) inspect.p = clamp(inspect.p ?? (sp.r0 + sp.r1) / 2, (sp.r0 + 0.5) * sp.ps, (sp.r1 + 0.5) * sp.ps);
       }
     }
@@ -5239,7 +5281,7 @@
         if (e) found.set(id, e);
       };
     for (const h of lineHits) {
-      const id = h.id.replace(/\|(mark|eq)\|/, "|");
+      const id = want.has(h.id) ? h.id : h.id.replace(/\|(mark|eq)\|/, "|");
       let near = false;
       if (h.tag && dist(h.tag) <= INSPECT_REACH) near = true;
       else if (h.mark && dist(h.mark) <= INSPECT_REACH) near = true;
@@ -5256,7 +5298,9 @@
     }
     return [...found.values()];
   }
-  function inspectChoose(list) {
+  function inspectChoose(list, p) {
+    // where the finger was: a reference chosen from the list is read at that time and price, not at the previous cursor's
+    inspect.tapped = p ? { t: p.t, p: p.p } : null;
     const box = el("inspect-chooser");
     box.replaceChildren(
       Object.assign(document.createElement("div"), { className: "ol-inspect-chooser-head", textContent: `${list.length} references here: choose one` }),
@@ -5279,8 +5323,10 @@
     el("inspect-chooser").hidden = true;
     if (touch && !f) {
       const near = inspectNear(p);
-      if (near.length > 1) return inspectChoose(near);
+      if (near.length > 1) return inspectChoose(near, p);
       if (near.length === 1) {
+        inspect.t = p.t;
+        inspect.p = p.p;
         inspect.surface = "references";
         inspect.ref = near[0].id;
         inspect.lens = null;
@@ -5295,6 +5341,8 @@
       return;
     }
     if (hit && inspectReferences().some((e) => e.id === hit.id)) {
+      inspect.t = p.t;
+      inspect.p = p.p;
       inspect.surface = "references";
       inspect.ref = hit.id;
       inspect.lens = null;
@@ -5319,7 +5367,11 @@
   function inspectKey(e) {
     const k = e.key;
     if (e.altKey || e.ctrlKey || e.metaKey) return false;
-    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(k)) return inspectMove({ ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" }[k]);
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(k)) {
+      // an arrow with no meaning on this surface does nothing, and it is still consumed: Inspect never pans the chart (the key does not fall through to it)
+      inspectMove({ ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" }[k]);
+      return true;
+    }
     if (k === "Home" || k === "End") {
       inspectEdge(k === "End");
       return true;
@@ -5377,6 +5429,11 @@
       const b = e.target.closest("[data-ref]");
       if (!b) return;
       el("inspect-chooser").hidden = true;
+      if (inspect.tapped) {
+        inspect.t = inspect.tapped.t;
+        inspect.p = inspect.tapped.p;
+        inspect.tapped = null;
+      }
       inspect.surface = "references";
       inspect.ref = b.dataset.ref;
       inspect.lens = null;
@@ -5397,9 +5454,9 @@
         b.focus();
       });
     el("inspect-reference").addEventListener("change", (e) => {
+      // choosing a reference reads it, from whichever surface the cursor was on
       inspect.ref = e.target.value;
-      inspect.boundary = "";
-      inspectRender(true);
+      inspectSurface("references");
     });
   }
   function update() {
@@ -7128,9 +7185,10 @@
       if (plan.m !== null) add("Price rows", `${price(2 ** plan.m * PR)} USDT, the coarser of the two`, "partition", plan.m);
       if (plan.window) add("Window W", `${plan.window.bins} rows`, "window", plan.window);
       if (plan.denominators) {
-        const unit = under?.kind === "time" ? "seconds" : "usdt";
-        add("Total over W, current", `${uiFmt(plan.denominators.cur, unit)} ${uiAxisUnit(unit)}`, "denominatorCurrent", plan.denominators.cur);
-        add("Total over W, reference", `${uiFmt(plan.denominators.ref, unit)} ${uiAxisUnit(unit)}`, "denominatorReference", plan.denominators.ref);
+        // the current track is always USDT; the reference is seconds when it is Time at price (each total in its own unit)
+        const refUnit = under?.kind === "time" ? "seconds" : "usdt";
+        add("Total over W, current", `${uiFmt(plan.denominators.cur, "usdt")} ${uiAxisUnit("usdt")}`, "denominatorCurrent", plan.denominators.cur);
+        add("Total over W, reference", `${uiFmt(plan.denominators.ref, refUnit)} ${uiAxisUnit(refUnit)}`, "denominatorReference", plan.denominators.ref);
       }
       if (plan.state !== "ok" && plan.reason) add("Result", PROFILE_TEXT.why[plan.reason], "result", plan.reason);
     }
@@ -7166,7 +7224,9 @@
       parts.push(open);
     }
     panel.replaceChildren(uiEl("div", "ol-pop-head", "Profile tracks"), ...parts);
-    if (focused?.dataset?.action) panel.querySelector(`[data-action="${focused.dataset.action}"][data-value="${focused.dataset.value ?? ""}"]`)?.focus();
+    // the control that had the focus gets it back: by its action, and by its value where it has one (the comparison buttons do; "Show the tracks on the chart" does not)
+    if (focused?.dataset?.action)
+      panel.querySelector(`[data-action="${focused.dataset.action}"]${focused.dataset.value !== undefined ? `[data-value="${focused.dataset.value}"]` : ""}`)?.focus();
     uiPopPlace(panel, chip, "start");
   }
   function profileSet(field, value) {
@@ -8982,6 +9042,11 @@
       paintProfileDomains(plan, curAxis, refAxis, state, under);
       // The level line and the pointer's row across the tracks
       const right = G.tx[G.tracks - 1] + TRACK_BARS + 3;
+      // inside the plot's height, like the tracks themselves: a saved level or the pointer's row outside the visible prices must not paint over a track's heading or its domain
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(G.tx[0] - 1, G.y, right - G.tx[0] + 3, G.h);
+      ctx.clip();
       if (S.level !== null) {
         const y = Math.round(G.Y(S.level)) + 0.5;
         ctx.setLineDash([6, 4]);
@@ -8997,6 +9062,7 @@
         ctx.lineWidth = 1;
         for (let k = 0; k < G.tracks; k++) ctx.strokeRect(G.tx[k] + 0.5, ya + 0.5, TRACK_BARS + 2, Math.max(1, yb - ya - 1));
       }
+      ctx.restore();
     }
     // What the axes say about their bars: counted again each frame (a bar past a held domain is clamped at the track's edge and counted).
     for (const [rec, n] of shared ? [[curAxis, null]] : [[curAxis, counts.cur], [refAxis, counts.ref]]) {
@@ -12716,6 +12782,7 @@
           chartLabel(`${m.frame} ${m.s.kind === "high" ? "EQH" : "EQL"}`, x + 6, up ? y + 16 : y - 8, colour);
           lineHits.push({ key: m.key, id: `${m.key}|eq|${m.s.i}`, eq: [x0, y0, x, y], item: { kind: "equal", s: m.s, frame: m.frame }, colour });
         }
+        if (occlusion.off.has(`${m.key}|mark|${m.s.i}`)) continue;
         ctx.beginPath();
         ctx.moveTo(x, tip);
         ctx.lineTo(x - k, up ? tip + 1.6 * k : tip - 1.6 * k);
@@ -12933,6 +13000,41 @@
       if (y >= G.y - 4 && y <= G.y + G.h + 4) candidates.push({ id: "level", hot: true, rank: 0, rects: [[G.x, y - half, right, y + half]], tag: null });
       fixed.push({ id: "level", y: G.Y(S.level), w: tagPlateWidth("Level" + (G.Y(S.level) < G.y ? " ↑" : G.Y(S.level) > G.y + G.h ? " ↓" : ""), price(S.level * PR)) });
     }
+    // The swings' triangles and the CME gaps are automatic persistent marks of the lines that are on, too (PR #52 review): each is a candidate like a line, with its
+    // casing and its label's plate, so its coverage is inside the 20% and in the shown/eligible count, and one that is held back is not drawn. An equal pair's segment
+    // and label and the crosses are candidates above; a swing's triangle is a mark of its own.
+    for (const m of items.marks ?? []) {
+      const x = G.X(m.s.t),
+        y = G.Y(m.s.price / PR),
+        up = m.s.kind === "low",
+        k = m.size,
+        tip = up ? y + 3 : y - 3,
+        base = up ? tip + 1.6 * k : tip - 1.6 * k,
+        id = `${m.key}|mark|${m.s.i}`;
+      if (x < G.x - k || x > right + k) continue;
+      candidates.push({ id, hot: refHot(m.key, id), rank: OCC_PRIORITY.structure, rects: [[x - k - 2, Math.min(tip, base) - 2, x + k + 2, Math.max(tip, base) + 2]] });
+    }
+    if (S.lines.includes("cme") && PACK.live) {
+      const s = barSeries(6);
+      if (s.state === "ready")
+        for (const g of cmeGaps(s)) {
+          const x0 = G.X(g.open),
+            x1 = G.X(g.filled ?? Math.min(s.end, cut)),
+            y0 = G.Y(g.hi / PR),
+            y1 = G.Y(g.lo / PR);
+          if (x1 < G.x || x0 > G.x + G.w || y1 < G.y || y0 > G.y + G.h) continue;
+          const wide = Math.max(1, x1 - x0),
+            tall = Math.max(1, y1 - y0),
+            rects = [[x0 - 1, y0 - 1, x0 + wide + 1, y0 + 2], [x0 - 1, y0 + tall - 2, x0 + wide + 1, y0 + tall + 1], [x0 - 1, y0 - 1, x0 + 2, y0 + tall + 1], [x0 + wide - 2, y0 - 1, x0 + wide + 1, y0 + tall + 1]];
+          if (wide > 62 && tall > 16) {
+            const w = tagWidth(`${TYPE.s}px ${FONT}`, g.filled === null || g.filled === undefined ? "CME gap · open" : "CME gap") + 6,
+              lx = Math.max(x0 + 4, G.x + 4),
+              ly = clamp(y0 + 12, G.y + 12, G.y + G.h - 12);
+            rects.push([lx - 3, ly - 10, lx - 3 + w, ly + 8]);
+          }
+          candidates.push({ id: `cmegap|${g.open}`, hot: false, rank: 7, rects });
+        }
+    }
     for (const kind of S.lines.filter((k) => CLOCK[k])) {
       const rects = clockShown(kind).map((e) => {
         const x = G.X(e.t);
@@ -13022,6 +13124,7 @@
             y0 = G.Y(g.hi / PR),
             y1 = G.Y(g.lo / PR);
           if (x1 < G.x || x0 > G.x + G.w || y1 < G.y || y0 > G.y + G.h) continue;
+          if (occlusion.off.has(`cmegap|${g.open}`)) continue;
           // The gap is the rectangle between its reopen and spot prices, from its reopen to where it was traded
           // back through (or the latest data): an outline and a name, never a tint over the cells under it. Its
           // interval is in the event strip.

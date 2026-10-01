@@ -95,7 +95,11 @@ function score(protocol, responses) {
     met: participants.length > 0 && participants.every((p) => p.pass) && pooledRight / Math.max(1, pooledCases) >= protocol.gate.overall && cases.length >= protocol.gate.minimumCases,
     pooledOverall: pooledCases ? pooledRight / pooledCases : null,
   };
-  const palettes = { participants: participants.filter((p) => p.palette.tasks > 0).length, trials: paletteTrials, addedErrors, removedErrors, met: paletteTrials > 0 && addedErrors === 0 };
+  // the palette comparison is evidence only when EVERY participant completed EVERY paired task (a task is paired when both palettes were answered): one pair among
+  // fourteen missing is not a comparison, and a participant who answered the cases but not the trials has not taken part in it
+  const required = protocol.palette.tasks.length,
+    incomplete = participants.filter((p) => p.palette.tasks < required).map((p) => ({ participant: p.participant, paired: p.palette.tasks, required }));
+  const palettes = { participants: participants.filter((p) => p.palette.tasks > 0).length, trials: paletteTrials, required, incomplete, addedErrors, removedErrors, met: participants.length > 0 && incomplete.length === 0 && addedErrors === 0 };
   return { protocol: { cases: cases.length, critical: critical.length, version: protocol.version }, sample, participants, gate, palettes, outstanding: participants.length === 0 };
 }
 
@@ -107,8 +111,11 @@ function palette(protocol, session) {
   for (const a of session.palette ?? []) {
     if (!byId.has(a.task)) throw new RangeError(`session ${session.participant}: unknown palette task ${a.task}`);
     if (!["candidate", "current"].includes(a.palette)) throw new RangeError(`session ${session.participant}: palette must be candidate or current`);
+    // the first attempt is the result, in whatever order the file lists them; a rerun (attempt 2 or more) never replaces it
+    if ((a.attempt ?? 1) !== 1) continue;
     const key = `${a.task}|${a.palette}`;
-    if (!got.has(key)) got.set(key, a);
+    if (got.has(key)) throw new RangeError(`session ${session.participant}: two first attempts for ${key}`);
+    got.set(key, a);
   }
   let added = 0,
     removed = 0,
@@ -179,8 +186,9 @@ function report(result) {
     for (const r of reruns) w(`| ${r.participant} | ${r.case} | ${r.attempt} | ${r.correct ? "yes" : "no"} | ${r.change ?? "(not recorded)"} |`);
   }
   w();
-  w(`## Candidate and current unsigned palettes: ${result.palettes.met ? "the candidate added no error" : result.palettes.trials ? "the candidate ADDED errors" : "not run"}`);
+  w(`## Candidate and current unsigned palettes: ${result.palettes.met ? "the candidate added no error" : result.palettes.incomplete.length ? "INCOMPLETE" : result.palettes.trials ? "the candidate ADDED errors" : "not run"}`);
   w();
+  for (const i of result.palettes.incomplete) w(`- incomplete: ${i.participant} answered ${i.paired} of ${i.required} paired tasks, so the comparison is not met`);
   w(`${result.palettes.participants} participant(s), ${result.palettes.trials} paired tasks: the candidate was wrong where the current palette was right ${result.palettes.addedErrors} time(s), and right where it was wrong ${result.palettes.removedErrors} time(s). This is a test on this task set with these people; it does not establish that either palette is better for a population.`);
   w();
   w("## Limits");

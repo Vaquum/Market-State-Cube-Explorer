@@ -108,7 +108,7 @@ test("every carrier resolves to a colour in both themes, belongs to a context, a
   const index = new Set([...CONTRACT.matchAll(/^\| ([UB]\d+) \| `tests\//gm)].map((m) => m[1]));
   const used = new Set(INV.contexts.flatMap((c) => c.members));
   for (const c of INV.carriers) {
-    for (const theme of matrix.THEMES) matrix.colourOf(c, theme, tokens).forEach((v) => assert.ok(Number.isInteger(v) && v >= 0 && v <= 255, `${c.id}: ${v}`));
+    for (const theme of matrix.THEMES) matrix.colourOf(c, theme, tokens, M.carriers).forEach((v) => assert.ok(Number.isInteger(v) && v >= 0 && v <= 255, `${c.id}: ${v}`));
     assert.ok(used.has(c.id), `${c.id} is in no context`);
     assert.ok(c.identity && c.tests.length > 0, `${c.id} names no route to its exact identity`);
     for (const t of c.tests) assert.ok(index.has(t), `${c.id} names ${t}, which is not in the contract's test index`);
@@ -206,4 +206,25 @@ test("the signed arms are not forced apart in grayscale: positive and negative a
 test("docs/color-matrix.md is what the tokens, the LUT and the inventory give now", () => {
   const doc = fs.readFileSync(matrix.FILES.doc, "utf8");
   assert.equal(doc, matrix.render(M), "regenerate it: node tests/support/color-matrix.js --write");
+});
+
+test("a carrier painted translucent is screened as the colour the renderer composites (PR #53 review): the profile bar at 70% over the surface, the inset at 85% over the bar", () => {
+  const js = fs.readFileSync(path.join(ROOT, "src/explorer.js"), "utf8");
+  assert.match(js, /PROFILE_BAR_ALPHA = 0\.7\b/, "the page paints the bar at 70%");
+  assert.ok(/ctx\.fillStyle = colors\.ink;\n\s*ctx\.globalAlpha = 0\.85;/.test(js), "and the taker-buy inset in the ink at 85%");
+  const tokens = matrix.readTokens(),
+    bar = M.carriers.get("fill.bar"),
+    inset = M.carriers.get("mark.inset");
+  assert.equal(bar.source.alpha, 0.7);
+  assert.equal(inset.source.alpha, 0.85);
+  assert.equal(inset.source.over, "fill.bar");
+  for (const theme of matrix.THEMES) {
+    const surface = tokens["--ol-surface"][theme],
+      lut = E.lut.build(E.lut.DEFAULT_APPEARANCE, theme),
+      solid = Array.from(lut.bar.rgb),
+      want = ref.over(solid, 0.7, surface);
+    assert.deepEqual(matrix.colourOf(bar, theme, tokens, M.carriers), want, `${theme}: the bar over the surface`);
+    assert.notDeepEqual(want, solid, "it is not the opaque entry");
+    assert.deepEqual(matrix.colourOf(inset, theme, tokens, M.carriers), ref.over(tokens["--ol-ink"][theme], 0.85, want), `${theme}: the inset over the composited bar`);
+  }
 });

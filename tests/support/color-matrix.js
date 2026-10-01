@@ -36,9 +36,14 @@ const ON_SCENE = new Set(["label", "glyph", "pattern", "sign", "position"]);
 const readInventory = () => JSON.parse(fs.readFileSync(FILES.inventory, "utf8"));
 const readTokens = () => ref.tokensFromCss(fs.readFileSync(FILES.css, "utf8"));
 
-// The 8-bit colour of one carrier in one theme.
-function colourOf(carrier, theme, tokens) {
+// The 8-bit colour of one carrier in one theme. A carrier painted translucent (the profile bars at 70%, the taker-buy inset at 85%) is the colour the renderer
+// composites over what it is painted on: `alpha` over `over` (a token, or another carrier, whose composite is taken first), rounded to 8 bits as a canvas does.
+function colourOf(carrier, theme, tokens, carriers = null) {
   const s = carrier.source;
+  if (s.alpha !== undefined) {
+    const under = s.over.startsWith("--") ? tokens[s.over][theme] : colourOf(carriers.get(s.over), theme, tokens, carriers);
+    return ref.over(colourOf({ ...carrier, source: { ...s, alpha: undefined } }, theme, tokens, carriers), s.alpha, under);
+  }
   if (s.token) {
     const t = tokens[s.token];
     if (!t) throw new Error(`co-occurrence: ${carrier.id} names ${s.token}, which the stylesheet does not define as a colour`);
@@ -75,8 +80,8 @@ function pairsOf(inv) {
 function screenPair(inv, carriers, pair, theme, tokens) {
   const A = carriers.get(pair.a),
     B = carriers.get(pair.b),
-    rgbA = colourOf(A, theme, tokens),
-    rgbB = colourOf(B, theme, tokens),
+    rgbA = colourOf(A, theme, tokens, carriers),
+    rgbB = colourOf(B, theme, tokens, carriers),
     labOf = (rgb) => E.lut.rgbToLab(rgb[0], rgb[1], rgb[2]),
     byCondition = {};
   let min = Infinity,
@@ -136,7 +141,7 @@ function render(m) {
   w("| Id | Carrier | Kind | Light | Dark | On-scene and other forms | Exact identity reached by |");
   w("|---|---|---|---|---|---|---|");
   const tokens = readTokens();
-  for (const c of inv.carriers) w(`| ${c.id} | ${c.name} | ${c.kind} | ${hex(colourOf(c, "light", tokens))} | ${hex(colourOf(c, "dark", tokens))} | ${c.forms.join(", ")} | ${c.identity} (${c.tests.join(", ")}) |`);
+  for (const c of inv.carriers) w(`| ${c.id} | ${c.name} | ${c.kind} | ${hex(colourOf(c, "light", tokens, m.carriers))} | ${hex(colourOf(c, "dark", tokens, m.carriers))} | ${c.forms.join(", ")} | ${c.identity} (${c.tests.join(", ")}) |`);
   w();
   w("## Contexts");
   w();

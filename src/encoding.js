@@ -6660,7 +6660,8 @@
   // price rows: row r of exponent m spans the base rows [r 2^m, (r + 1) 2^m), each list sorted by r.
   //   independent  each track on an axis of its own (the default): this function has nothing to add.
   //   absolute     one domain for both, the same pixels per unit. Needs the SAME measure and basis (Volume against Volume) and an exact
-  //                common partition: the finer side is coarsened by exact summation onto the coarser exponent, a coarse row is never split.
+  //                common partition: the finer side is coarsened by exact summation onto the coarser exponent, a coarse row is never split,
+  //                and only the bins wholly inside the view are shown (a bin that straddles the view's edge has rows one side never measured).
   //   share        each row's share of the total of the same window W (the bins wholly inside the view and inside the reference's
   //                support), both denominators reported. Needs two nonnegative distributions (Volume, Time at price); a signed Delta and a
   //                ratio are not distributions. A zero total is "undefined", never a share of 0.
@@ -6732,13 +6733,26 @@
     const m = Math.max(cur.m, ref.m),
       size = Math.pow(2, m),
       total = axsProfileTotal[ref.kind],
-      overlapping = (rows, from, read, buy) => axsCoarsen(axsBinsOf(rows, from, view.lo, view.hi, []), from, m, read, buy),
-      curBins = overlapping(cur.rows, cur.m, axsProfileTotal.volume, (x) => x.bv || 0),
-      refBins = overlapping(ref.rows, ref.m, total, () => 0);
+      // The partition's bins wholly inside the view: a bin that straddles an edge of the view holds rows of one side that the other side never measured, so it is
+      // shown on neither (the same support rule both comparisons use). Every row of such a bin lies inside the view, so coarsening a side onto the partition sums
+      // ALL the rows of each bin it keeps: a coarse row on one side and the fine rows that make it up on the other cover the same price support.
+      viewFirst = Math.ceil(view.lo / size),
+      viewLast = Math.floor(view.hi / size) - 1,
+      binsOf = (rows, from, read, buy) => axsCoarsen(axsBinsOf(rows, from, viewFirst * size, (viewLast + 1) * size, []), from, m, read, buy);
     plan.mode = asked;
     plan.m = m;
     plan.state = "ok";
+    const none = () => {
+      plan.state = "none";
+      plan.reason = "no-window";
+      plan.summary = { count: 0, max: -Infinity, min: Infinity };
+      return plan;
+    };
+    if (!(viewLast >= viewFirst)) return none();
+    const curBins = binsOf(cur.rows, cur.m, axsProfileTotal.volume, (x) => x.bv || 0),
+      refBins = binsOf(ref.rows, ref.m, total, () => 0);
     if (asked === "absolute") {
+      plan.window = { first: viewFirst, last: viewLast, bins: viewLast - viewFirst + 1 };
       plan.cur = curBins.map((x) => ({ r: x.r, v: x.v, bv: x.bv, t: x.v, tb: x.bv }));
       plan.ref = refBins.map((x) => ({ r: x.r, v: x.v, bv: 0, t: x.v, tb: 0 }));
     } else {
@@ -6746,14 +6760,9 @@
       // the reference's support, its first to its last row, in the partition's rows.
       const refFirst = ref.rows.length ? Math.floor(ref.rows[0].r / Math.pow(2, m - ref.m)) : Infinity,
         refLast = ref.rows.length ? Math.floor(ref.rows[ref.rows.length - 1].r / Math.pow(2, m - ref.m)) : -Infinity,
-        first = Math.max(Math.ceil(view.lo / size), refFirst),
-        last = Math.min(Math.floor(view.hi / size) - 1, refLast);
-      if (!(last >= first)) {
-        plan.state = "none";
-        plan.reason = "no-window";
-        plan.summary = { count: 0, max: -Infinity, min: Infinity };
-        return plan;
-      }
+        first = Math.max(viewFirst, refFirst),
+        last = Math.min(viewLast, refLast);
+      if (!(last >= first)) return none();
       const inside = (x) => x.r >= first && x.r <= last,
         curW = curBins.filter(inside),
         refW = refBins.filter(inside);

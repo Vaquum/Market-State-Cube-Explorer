@@ -1,7 +1,8 @@
 "use strict";
 // B30 state-table.spec.js (PRD-0002 S2, #47 section 4): the measure-by-state table, row by row, each with its rendering AND its readout.
 //
-// Rows that other specs already own keep their tests where they are; this file lists every row of the PRD's table in one place, names the test
+// Each row's readout (what a person reads for it) is held beside its rendering in state-readouts.spec.js (B38) for the rows that have a cell or a column to hover; the
+// rows below name the rest. Rows that other specs already own keep their tests where they are; this file lists every row of the PRD's table in one place, names the test
 // that holds it, and adds the rows and the co-occurrences that had none:
 //   1  valid positive / signed       cells-matrix.spec.js (every mode, both themes), axes.spec.js (column lengths)
 //   2  zero Volume/Trades, no trades nonvalues-panes.spec.js (the zero tick), readout-agreement.spec.js (the cell's words)
@@ -9,7 +10,7 @@
 //   4  movement without trades       stroke-roles.spec.js, cells-matrix.spec.js, motion-measures.spec.js
 //   5  pending                       nonvalues-cells.spec.js (dots), nonvalues-panes.spec.js
 //   6  failed                        motion-measures.spec.js (the crosshatch), nonvalues-*.spec.js
-//   7  unsupported / unavailable     nonvalues-cells.spec.js (slash), nonvalues.spec.js (Rows)
+//   7  unsupported / unavailable     state-readouts.spec.js (the recorded pane's slash and its readout), nonvalues-cells.spec.js's glyph table (U-level)
 //   8  undefined / no reference      nonvalues.spec.js (Rows), nonvalues-panes.spec.js (the diamond)
 //   9  parent not complete           HERE (the waiting-parent pattern and the open cap, together)
 //  10  finite under/overflow         axes.spec.js (the edge triangle), warnings.spec.js (the counts)

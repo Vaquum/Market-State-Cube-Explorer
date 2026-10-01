@@ -6298,9 +6298,10 @@
       if (plan.m !== null) add("Price rows", `${price(2 ** plan.m * PR)} USDT, the coarser of the two`, "partition", plan.m);
       if (plan.window) add("Window W", `${plan.window.bins} rows`, "window", plan.window);
       if (plan.denominators) {
-        const unit = under?.kind === "time" ? "seconds" : "usdt";
-        add("Total over W, current", `${uiFmt(plan.denominators.cur, unit)} ${uiAxisUnit(unit)}`, "denominatorCurrent", plan.denominators.cur);
-        add("Total over W, reference", `${uiFmt(plan.denominators.ref, unit)} ${uiAxisUnit(unit)}`, "denominatorReference", plan.denominators.ref);
+        // the current track is always USDT; the reference is seconds when it is Time at price (each total in its own unit)
+        const refUnit = under?.kind === "time" ? "seconds" : "usdt";
+        add("Total over W, current", `${uiFmt(plan.denominators.cur, "usdt")} ${uiAxisUnit("usdt")}`, "denominatorCurrent", plan.denominators.cur);
+        add("Total over W, reference", `${uiFmt(plan.denominators.ref, refUnit)} ${uiAxisUnit(refUnit)}`, "denominatorReference", plan.denominators.ref);
       }
       if (plan.state !== "ok" && plan.reason) add("Result", PROFILE_TEXT.why[plan.reason], "result", plan.reason);
     }
@@ -6336,7 +6337,9 @@
       parts.push(open);
     }
     panel.replaceChildren(uiEl("div", "ol-pop-head", "Profile tracks"), ...parts);
-    if (focused?.dataset?.action) panel.querySelector(`[data-action="${focused.dataset.action}"][data-value="${focused.dataset.value ?? ""}"]`)?.focus();
+    // the control that had the focus gets it back: by its action, and by its value where it has one (the comparison buttons do; "Show the tracks on the chart" does not)
+    if (focused?.dataset?.action)
+      panel.querySelector(`[data-action="${focused.dataset.action}"]${focused.dataset.value !== undefined ? `[data-value="${focused.dataset.value}"]` : ""}`)?.focus();
     uiPopPlace(panel, chip, "start");
   }
   function profileSet(field, value) {
@@ -7961,6 +7964,11 @@
       paintProfileDomains(plan, curAxis, refAxis, state, under);
       // The level line and the pointer's row across the tracks
       const right = G.tx[G.tracks - 1] + TRACK_BARS + 3;
+      // inside the plot's height, like the tracks themselves: a saved level or the pointer's row outside the visible prices must not paint over a track's heading or its domain
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(G.tx[0] - 1, G.y, right - G.tx[0] + 3, G.h);
+      ctx.clip();
       if (S.level !== null) {
         const y = Math.round(G.Y(S.level)) + 0.5;
         ctx.setLineDash([6, 4]);
@@ -7976,6 +7984,7 @@
         ctx.lineWidth = 1;
         for (let k = 0; k < G.tracks; k++) ctx.strokeRect(G.tx[k] + 0.5, ya + 0.5, TRACK_BARS + 2, Math.max(1, yb - ya - 1));
       }
+      ctx.restore();
     }
     // What the axes say about their bars: counted again each frame (a bar past a held domain is clamped at the track's edge and counted).
     for (const [rec, n] of shared ? [[curAxis, null]] : [[curAxis, counts.cur], [refAxis, counts.ref]]) {
@@ -11698,7 +11707,7 @@
           k = m.size,
           tip = up ? y + 3 : y - 3;
         if (x < G.x - k || x > right + k) continue;
-        if (m.s.equal) {
+        if (m.s.equal && !occlusion.off.has(`${m.key}|eq|${m.s.i}`)) {
           const x0 = G.X(m.s.equal.t),
             y0 = G.Y(m.s.equal.price / PR);
           markLine(x0, y0, x, y, colors.surface, 3, 0.85);
@@ -11707,6 +11716,7 @@
           chartLabel(m.s.kind === "high" ? "EQH" : "EQL", x + 6, up ? y + 16 : y - 8, colour);
           lineHits.push({ key: m.key, id: `${m.key}|eq|${m.s.i}`, eq: [x0, y0, x, y], item: { kind: "equal", s: m.s, frame: m.frame }, colour });
         }
+        if (occlusion.off.has(`${m.key}|mark|${m.s.i}`)) continue;
         ctx.beginPath();
         ctx.moveTo(x, tip);
         ctx.lineTo(x - k, up ? tip + 1.6 * k : tip - 1.6 * k);
@@ -11737,6 +11747,7 @@
         y = G.Y(c.v / PR),
         colour = lineStyle("average", c.tier).colour;
       if (x < G.x - 6 || x > right + 6 || y < G.y - 6 || y > G.y + G.h + 6) continue;
+      if (occlusion.off.has(`gdcross|${c.x.i}`)) continue;
       ctx.beginPath();
       ctx.arc(x, y, 4.5, 0, 2 * Math.PI);
       ctx.fillStyle = c.golden ? colour : colors.surface;
@@ -11849,6 +11860,58 @@
       rects.push([right - 70, ys[ys.length - 1] - 8, right, ys[ys.length - 1] + 8]);
       candidates.push({ id: c.id, hot, rank: OCC_PRIORITY[c.family || "vwap"] ?? 5, rects });
     }
+    // Swings, equal highs and lows, golden and death crosses and the CME gaps are automatic persistent marks of the lines that are on, each a stroke or a glyph with a casing and
+    // a label's box (PR #52 review): each is a candidate like a line, so its coverage is inside the 20% and in the shown/eligible count, and one that is held back is not drawn.
+    // The swing's triangle and an equal pair (its segment and its label) are two candidates, as they are two marks.
+    ctx.font = `500 ${TYPE.s}px ${FONT}`;
+    for (const m of items.marks ?? []) {
+      const x = G.X(m.s.t),
+        y = G.Y(m.s.price / PR),
+        up = m.s.kind === "low",
+        k = m.size,
+        tip = up ? y + 3 : y - 3,
+        base = up ? tip + 1.6 * k : tip - 1.6 * k;
+      if (x < G.x - k || x > right + k) continue;
+      if (m.s.equal) {
+        const x0 = G.X(m.s.equal.t),
+          y0 = G.Y(m.s.equal.price / PR),
+          steps = Math.max(1, Math.ceil(Math.max(Math.abs(x - x0), Math.abs(y - y0)) / OCC_CELL)),
+          rects = [];
+        for (let i = 0; i <= steps; i++) {
+          const px = x0 + ((x - x0) * i) / steps,
+            py = y0 + ((y - y0) * i) / steps;
+          rects.push([px - 1.5, py - 1.5, px + 1.5, py + 1.5]);
+        }
+        const w = ctx.measureText(m.s.kind === "high" ? "EQH" : "EQL").width + 6,
+          ly = y + (up ? 16 : -8);
+        rects.push([x + 3, ly - 8, x + 3 + w, ly + 8]);
+        candidates.push({ id: `${m.key}|eq|${m.s.i}`, hot: false, rank: OCC_PRIORITY.structure, rects });
+      }
+      candidates.push({ id: `${m.key}|mark|${m.s.i}`, hot: false, rank: OCC_PRIORITY.structure, rects: [[x - k - 2, Math.min(tip, base) - 2, x + k + 2, Math.max(tip, base) + 2]] });
+    }
+    for (const c of items.crosses ?? []) {
+      const x = G.X(c.t),
+        y = G.Y(c.v / PR);
+      if (x < G.x - 6 || x > right + 6 || y < G.y - 6 || y > G.y + G.h + 6) continue;
+      const w = ctx.measureText(c.golden ? "Golden cross" : "Death cross").width + 6;
+      candidates.push({ id: `gdcross|${c.x.i}`, hot: false, rank: OCC_PRIORITY.average, rects: [[x - 6.5, y - 6.5, x + 6.5, y + 6.5], [x + 5, y - 18, x + 5 + w + 3, y - 2]] });
+    }
+    if (S.lines.includes("cme") && PACK.live) {
+      const s = barSeries(6);
+      if (s.state === "ready")
+        for (const g of cmeGaps(s)) {
+          const x0 = G.X(g.open),
+            x1 = G.X(g.filled ?? Math.min(s.end, cut)),
+            y0 = G.Y(g.hi / PR),
+            y1 = G.Y(g.lo / PR);
+          if (x1 < G.x || x0 > G.x + G.w || y1 < G.y || y0 > G.y + G.h) continue;
+          const wide = Math.max(1, x1 - x0),
+            tall = Math.max(1, y1 - y0),
+            rects = [[x0 - 1, y0 - 1, x0 + wide + 1, y0 + 2], [x0 - 1, y0 + tall - 2, x0 + wide + 1, y0 + tall + 1], [x0 - 1, y0 - 1, x0 + 2, y0 + tall + 1], [x0 + wide - 2, y0 - 1, x0 + wide + 1, y0 + tall + 1]];
+          if (wide > 62 && tall > 16) rects.push([x0 + 1, y0 + 4, x0 + 7 + ctx.measureText("CME gap · open").width, y0 + 20]);
+          candidates.push({ id: `cmegap|${g.open}`, hot: false, rank: 7, rects });
+        }
+    }
     for (const kind of S.lines.filter((k) => CLOCK[k])) {
       const look = CLOCK_LOOK[kind],
         rects = clockShown(kind).map((e) => {
@@ -11899,6 +11962,7 @@
             y0 = G.Y(g.hi / PR),
             y1 = G.Y(g.lo / PR);
           if (x1 < G.x || x0 > G.x + G.w || y1 < G.y || y0 > G.y + G.h) continue;
+          if (occlusion.off.has(`cmegap|${g.open}`)) continue;
           // The gap is the rectangle between its reopen and spot prices, from its reopen to where it was traded
           // back through (or the latest data): an outline and a name, never a tint over the cells under it. Its
           // interval is in the event strip.

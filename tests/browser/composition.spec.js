@@ -154,6 +154,30 @@ test.describe("B27 reference strokes and the occlusion budget", () => {
     expect(frame.texts.some((t) => /^CME gap/.test(t.text)), "the gap is named on the plot").toBe(true);
   });
 
+  // PR #52 review: the swings, their equal pairs, the crosses and the CME gaps are persistent marks of the lines that are on, so they count
+  test("swings, equal pairs, crosses and CME gaps are inside the budget: they are eligible, and a held-back one is not drawn", async ({ page, probe, fakeFor, pane }) => {
+    const fake = await fakeFor("standard");
+    await page.setViewportSize({ width: 760, height: 520 });
+    const base = "1d,wk,7d,mo,30d,90d,yr,1y,3y,cday,funding,usopen";
+    const count = async (lines) => {
+      await page.goto(`${fake.url}/#w=30d&vis=2&lines=${lines}`);
+      await S.atRest(page, fake, probe);
+      await probe.waitForQuiet({ quietMs: 800, timeout: 60000 });
+      const data = await page.locator("#ol-canvas").evaluate((el) => el.dataset.occlusion ?? "");
+      expect(data, `the canvas carries the counts for ${lines}`).toMatch(/^\d+\/\d+!?$/);
+      const [shown, eligible] = data.replace("!", "").split("/").map(Number);
+      return { shown, eligible, frame: await pane.last() };
+    };
+    const without = await count(base);
+    const withMarks = await count(`${base},swing4h,swing1d,gdcross,cme`);
+    // what the frame drew of these marks: each swing's triangle, each equal pair's and each cross's and gap's label (a mark that was held back is not drawn at all)
+    const drawn = withMarks.frame.fills.filter((f) => f.path.length === 3).length + withMarks.frame.texts.filter((x) => /^(EQH|EQL|Golden cross|Death cross|CME gap)/.test(x.text)).length;
+    expect(drawn, "the view draws these marks").toBeGreaterThanOrEqual(8);
+    expect(withMarks.eligible - without.eligible, `every mark drawn was eligible: ${drawn} drawn, ${withMarks.eligible - without.eligible} more eligible`).toBeGreaterThanOrEqual(drawn);
+    // and what was held back is held back from the canvas too: the triangles drawn are not more than the marks the plan shows
+    expect(withMarks.frame.fills.filter((f) => f.path.length === 3).length, "no more swing triangles are drawn than the plan shows").toBeLessThanOrEqual(withMarks.shown);
+  });
+
   test("over the budget the lowest-priority marks are left out with a shown/eligible notice, and every mark stays in the list", async ({ page, probe, fakeFor, pane }) => {
     const fake = await fakeFor("standard");
     await page.setViewportSize({ width: 760, height: 520 });

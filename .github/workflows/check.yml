@@ -17,7 +17,7 @@ permissions:
   pull-requests: read
 jobs:
   select:
-    name: Select checks
+    name: ${{ github.event_name == 'push' && 'Push / ' || '' }}Select checks
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -51,7 +51,7 @@ jobs:
   static:
     needs: select
     if: ${{ needs.select.outputs.required == 'true' }}
-    name: Build, syntax and goldens
+    name: ${{ github.event_name == 'push' && 'Push / ' || '' }}Build, syntax and goldens
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -85,7 +85,7 @@ jobs:
   unit:
     needs: select
     if: ${{ needs.select.outputs.required == 'true' }}
-    name: Node tests
+    name: ${{ github.event_name == 'push' && 'Push / ' || '' }}Node tests
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -114,7 +114,7 @@ jobs:
   browser:
     needs: select
     if: ${{ needs.select.outputs.required == 'true' }}
-    name: Browser tests (${{ matrix.shard }}/4)
+    name: ${{ github.event_name == 'push' && 'Push / ' || '' }}Browser tests (${{ matrix.shard }}/4)
     strategy:
       fail-fast: false
       matrix:
@@ -161,7 +161,7 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   reports:
-    name: Complete browser report
+    name: ${{ github.event_name == 'push' && 'Push / ' || '' }}Complete browser report
     needs: [select, browser]
     if: ${{ !cancelled() && needs.select.outputs.required == 'true' }}
     runs-on: ubuntu-24.04
@@ -198,7 +198,9 @@ jobs:
           retention-days: 14
           if-no-files-found: error
   gate:
-    name: All required checks
+    # Check names on the head SHA must distinguish pushes from PRs before selection or matrix expansion.
+    # A skipped push job is successful in GitHub and must never satisfy a required PR check.
+    name: ${{ github.event_name == 'push' && 'Push checks' || 'All required checks' }}
     needs: [select, static, unit, browser, reports]
     if: ${{ always() }}
     runs-on: ubuntu-24.04

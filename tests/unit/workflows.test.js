@@ -115,6 +115,9 @@ function commonProblems(label, lines, facts) {
 // ---- check.yml ----
 
 const JOBS = ["select", "static", "unit", "browser", "reports", "gate"];
+const PUSH_PREFIX = "${{ github.event_name == 'push' && 'Push / ' || '' }}";
+const GATE_NAME = "name: ${{ github.event_name == 'push' && 'Push checks' || 'All required checks' }}";
+const PR_NAMES = { select: "Select checks", static: "Build, syntax and goldens", unit: "Node tests", browser: "Browser tests (${{ matrix.shard }}/4)", reports: "Complete browser report", gate: "All required checks" };
 
 function checkProblems(text, facts) {
   const lines = code(text);
@@ -140,6 +143,8 @@ function checkProblems(text, facts) {
   if (Object.keys(jobs).sort().join(",") !== [...JOBS].sort().join(",")) add(`jobs are ${Object.keys(jobs).join(",")}, expected ${JOBS.join(",")}`);
   for (const [id, job] of Object.entries(jobs)) {
     const own = job.filter((line) => indentOf(line) === 4 || indentOf(line) === 2);
+    const expectedName = id === "gate" ? GATE_NAME : `name: ${PUSH_PREFIX}${PR_NAMES[id]}`;
+    if (!has(own, expectedName)) add(`job ${id}: push and PR check names must be distinct before selection`);
     if (!has(own, "runs-on: ubuntu-24.04")) add(`job ${id}: runs-on must be ubuntu-24.04 (the runner image moves under ubuntu-latest)`);
     // A hung job would hold the deploy-main group, so every job has a bound.
     const timeout = own.map((line) => /^ {4}timeout-minutes: (\d+)$/.exec(line)).find(Boolean);
@@ -332,6 +337,39 @@ describe("the two files together", () => {
   });
 });
 
+describe("push results cannot satisfy PR checks with the same name", () => {
+  const jobs = jobsOf(code(checkText));
+  // These name expressions use operators shared by GitHub and JavaScript. Evaluate the actual workflow text;
+  // event names are canonical lowercase strings, and no selection output or job status is available here.
+  const name = (id, github, shard) => {
+    const raw = jobs[id].find((line) => /^ {4}name: /.test(line)).trim().slice("name: ".length);
+    return raw.replace(/\$\{\{(.*?)\}\}/g, (_, expression) => new Function("github", "matrix", `return (${expression});`)(github, { shard }));
+  };
+  const canonical = (id, shard) => PR_NAMES[id].replace("${{ matrix.shard }}", String(shard));
+  const environments = [
+    ["PR merge", "pull_request", "refs/pull/59/merge"],
+    ["duplicate branch push while PR checks are pending or failed", "push", "refs/heads/feature"],
+    ["full branch checks without an open PR", "push", "refs/heads/standalone"],
+    ["full branch fallback after lookup failure", "push", "refs/heads/unknown"],
+    ["main deployment through the reusable workflow", "push", "refs/heads/main"],
+    ["upper-case branch name", "push", "refs/heads/MAIN"],
+    ["tag", "push", "refs/tags/v1"],
+  ];
+  for (const [label, event_name, ref] of environments) {
+    it(label, () => {
+      for (const shard of [1, 2, 3, 4]) {
+        const requiredNames = new Set(JOBS.map((id) => canonical(id, shard)));
+        for (const id of JOBS) {
+          const actual = name(id, { event_name, ref }, shard);
+          const expected = event_name === "push" ? (id === "gate" ? "Push checks" : `Push / ${canonical(id, shard)}`) : canonical(id, shard);
+          assert.equal(actual, expected, `${id} on ${label}`);
+          if (event_name === "push") assert.equal(requiredNames.has(actual), false, `${actual} must not satisfy any PR check`);
+        }
+      }
+    });
+  }
+});
+
 describe("duplicate-push selection executes the real Actions script", () => {
   const select = stepsOf(jobsOf(code(checkText)).select)[0];
   const decide = new (Object.getPrototypeOf(async function () {}).constructor)("github", "context", "core", blockOf(select, "script"));
@@ -434,6 +472,9 @@ describe("the guards bite: a mutated copy of the real text is refused", () => {
   const refused = (problems, words) => assert.ok(problems.some((p) => p.includes(words)), `no problem mentions ${JSON.stringify(words)}; got ${JSON.stringify(problems)}`);
 
   const checkMutations = [
+    ["a duplicate push publishes the PR gate name", GATE_NAME, "name: All required checks", "push and PR check names"],
+    ["a skipped push unit job publishes the PR check name", `name: ${PUSH_PREFIX}Node tests`, "name: Node tests", "push and PR check names"],
+    ["a push gate name waits for selection", GATE_NAME, "name: ${{ needs.select.outputs.required == 'false' && 'Push checks' || 'All required checks' }}", "before selection"],
     ["workflow_call trigger removed", "  workflow_call:\n", "", "workflow_call"],
     ["sha output removed", "        value: ${{ jobs.static.outputs.sha }}\n", "", "output sha"],
     ["a runner that moves", "    runs-on: ubuntu-24.04\n    timeout-minutes: 10\n    steps:", "    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:", "ubuntu-24.04"],
@@ -451,7 +492,7 @@ describe("the guards bite: a mutated copy of the real text is refused", () => {
     ["a report excluded from the gate", "needs: [select, static, unit, browser, reports]", "needs: [select, static, unit, browser]", "every required job"],
     ["a skipped report accepted", "REPORTS: ${{ needs.reports.result }}", "REPORTS: success", "reports's result"],
     ["concurrency added", "permissions:\n  contents: read\n  pull-requests: read\njobs:", "concurrency:\n  group: check\npermissions:\n  contents: read\n  pull-requests: read\njobs:", "concurrency"],
-    ["checkout without the commit", "    name: Node tests\n    runs-on: ubuntu-24.04\n    timeout-minutes: 10\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: ${{ github.sha }}\n", "    name: Node tests\n    runs-on: ubuntu-24.04\n    timeout-minutes: 10\n    steps:\n      - uses: actions/checkout@v4\n        with:\n", "ref: ${{ github.sha }}"],
+    ["checkout without the commit", `    name: ${PUSH_PREFIX}Node tests\n    runs-on: ubuntu-24.04\n    timeout-minutes: 10\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: \${{ github.sha }}\n`, `    name: ${PUSH_PREFIX}Node tests\n    runs-on: ubuntu-24.04\n    timeout-minutes: 10\n    steps:\n      - uses: actions/checkout@v4\n        with:\n`, "ref: ${{ github.sha }}"],
     ["credentials persisted", "          persist-credentials: false\n      - id: commit", "      - id: commit", "persist credentials"],
     ["the HEAD proof removed from a job", "      - run: test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"\n      # python3 is needed by the build test", "      # python3 is needed by the build test", "GITHUB_SHA"],
     ["a job renamed", "  browser:\n", "  browsers:\n", "jobs are"],

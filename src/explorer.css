@@ -15,7 +15,7 @@
   --ol-negative: light-dark(#b3624b, #d89777);
   --ol-midpoint: light-dark(#b9c2bc, #5f6b64);
   /* Non-value marks: the occupancy outline and the ink of patterns and glyphs, from tokens that pass 3:1
-     on the surface (--ol-line and --ol-neutral do not and must not colour them) */
+     on the surface (--ol-line and --ol-midpoint do not and must not colour them) */
   --ol-occupancy: var(--ol-border);
   --ol-state: var(--ol-muted);
   /* Lines: one colour per reference family (E.role.REFERENCE), apart from the data's colours and from
@@ -2444,6 +2444,32 @@
 #origo-lens .ol-table tbody tr:focus-visible {
   outline: 2px solid var(--ol-accent);
   outline-offset: -2px;
+}
+
+/* The view summary in the Query tab: the same details list as a legend's popover, in sections, for a screenshot of the whole */
+#origo-lens .ol-summary {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--ol-line);
+}
+#origo-lens .ol-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+#origo-lens .ol-summary-head h3 {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+}
+#origo-lens .ol-summary-section h4 {
+  margin: var(--sp-2) 0 0;
+  font-size: inherit;
+  font-weight: 600;
+}
+#origo-lens .ol-summary-section .ol-legend-details {
+  margin: var(--sp-1) 0;
 }
 
 @media (pointer: coarse) {

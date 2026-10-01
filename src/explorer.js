@@ -1076,6 +1076,8 @@
       noFit: { cells: "", rows: "", lens: "" },
       // The context that was re-initialised after the store had let it go (the details say so).
       evicted: { cells: "", rows: "", lens: "" },
+      // The Cells context a link or a code carried a scale for, until the first settled mapping says whether this view is at that level (carriedCheck).
+      carried: null,
       // The axis ids the last draw displayed: what the Comparison lock freezes.
       shown: new Set(),
       // Why the next disclosure changed ("fit", "policy", "lock"), and the cause Pin sets.
@@ -3156,6 +3158,7 @@
   // written here; how it is shown is one loop over the codec's table (applyVisual), so a setting added to
   // the table is applied, written and read back by the same entry.
   function applyView(v) {
+    scaleRt.carried = null;
     if (v.window) setWindow(v.window);
     else {
       [S.tA, S.tB, S.pA, S.pB] = [v.tA, v.tB, v.pA, v.pB];
@@ -5502,6 +5505,7 @@
     scaleArm();
     // What the loading line says follows what the view needs now.
     renderLoading();
+    summaryRefresh();
   }
   function bindRoot() {
     el("query-text").addEventListener("blur", () => {
@@ -5512,6 +5516,7 @@
     );
     // The view code is made asynchronously (it is compressed), so the copy is handed the maker, not its text.
     el("copy-view").addEventListener("click", () => copyText(viewCode, "View code"));
+    el("copy-summary").addEventListener("click", () => copyText(summaryText, "Summary"));
     el("import-toggle").addEventListener("click", () => {
       el("import").hidden = !el("import").hidden;
     });
@@ -6202,9 +6207,20 @@
     if (text.textContent !== shown) text.textContent = shown;
     if (node.getAttribute("aria-label") !== label) node.setAttribute("aria-label", label);
   }
+  // A link or a code that carries the Cells scale of a level this view does not settle at (a window refits its prices when it opens, and the level follows them) keeps
+  // that scale in the store for the level it was fitted at; this view fits its own, and the page says so with both levels, so a different colour is never a silent one.
+  // Asked once, at the first mapping that is in use (state ok: a fit has landed for the context the settled view is in) after the view was applied.
+  function carriedCheck() {
+    const carried = scaleRt.carried,
+      mine = cellsContext();
+    scaleRt.carried = null;
+    if (carried && mine && (carried.n !== mine.n || carried.m !== mine.m))
+      postNotice({ code: "scale-context-differs", params: { n: carried.n, m: carried.m, n2: mine.n, m2: mine.m } });
+  }
   // One colour channel's chip, written when the key computed from its ids changed; in a steady frame that
   // is one object and a few string joins, and no Legend model is built (DD-90).
   function legendChannel(channel, frame, sc, node, textId, barId, barWidth, under) {
+    if (channel === "cells" && frame.mappingState === "ok") carriedCheck();
     const chip = sc.chip[channel],
       key = E.legend.keyOf({
         mappingId: frame.mappingId,
@@ -6235,6 +6251,7 @@
     // paints, and this runs only when the chip's key changed.
     scaleUi.keysKey = "";
     legendPop(channel);
+    summaryRefresh();
   }
   // The legend chips, the lens status and the generated keys, once per draw (registered as `legend`).
   function legendWrite(sc, under) {
@@ -6850,6 +6867,7 @@
     };
     for (const [name, value] of Object.entries(attrs)) if (chip.dataset[name] !== value) chip.dataset[name] = value;
     axisPop();
+    summaryRefresh();
   }
   // The axis popover: every axis the frame drew (the pane, the profiles), each with its policy, domain,
   // unit, provenance, hold reason and clip counts, and the Comparison lock, which freezes them all.
@@ -6917,6 +6935,111 @@
     lock.setAttribute("aria-pressed", String(S.scale.lock));
     if (focused && !focused.isConnected) lock.focus();
     uiPopPlace(panel, chip, "end");
+  }
+  // ---- The view summary (PRD-0002 S3, section 5) ----
+  // What a screenshot of this view should say about what its colours and lengths mean, in one place: where the view is and at what level, the cube's cutoff
+  // (and the replay edge), each colour channel's measure, basis, unit, transform, scale policy, mapping id, cohort, fit cutoff, support and clipping (the rows of
+  // its Details popover, taken from the same records, so the two cannot disagree), what the Rows are (period, row size, quality, the support they were compared
+  // on), each axis's policy and domain, the profile tracks, the model in use, the appearance and the standing sentence that original vintages are not recorded.
+  // It is built from the records the popovers read, never from the canvas, it lives in the Query tab, and it is not an export or a snapshot: it leaves the page
+  // only if the person copies it.
+  const summaryRt = { timer: 0, sections: [] };
+  function summaryRow(field, label, value, canonical = null) {
+    return { field, label, value, canonical };
+  }
+  // The sections of the summary now: [{ id, title, rows: [{ field, label, value, canonical }] }].
+  function summarySections() {
+    const b = requestedBounds(),
+      cutMs = wholeMs(E.time.baseToMs(activeCutoff(), T0, BASE)),
+      canonMs = CANON === null ? null : wholeMs(E.time.baseToMs(CANON, T0, BASE)),
+      sections = [],
+      add = (id, title, rows) => {
+        if (rows.length) sections.push({ id, title, rows });
+      },
+      row = summaryRow,
+      detail = (d) => row(d.field, uiDetailLabel(d), uiUtcText(d), d.canonical);
+    const view = [
+      row("place", S.selection ? "Selection" : "View", `${range(b[0], b[1])} UTC · ${price(b[2] * PR)}–${price(b[3] * PR)} USDT`, b),
+      row("level", "Level", `${dur(BASE * stepT())} columns × ${price(PR * stepP())} USDT rows`, [S.n, S.m]),
+      row("cellsMeasure", "Cells", MODE_NAMES[S.mode], S.mode),
+      row("columnsMeasure", "Columns", PANE_INFO[S.pane].name, S.pane),
+    ];
+    if (S.rows !== "off") view.push(row("rowsMeasure", "Rows", `${ROWS_INFO[S.rows].name} ${periodPhrase(S.period)}`, `${S.rows}:${S.period}`));
+    view.push(row("dataCutoff", "Data through", uiUtcMs(cutMs), cutMs));
+    if (canonMs !== null) view.push(row("canonicalThrough", "Canonical through", uiUtcMs(canonMs), canonMs));
+    view.push(row("replay", "Replay", S.replay ? `At ${uiUtcMs(cutMs)}` : "Live", Boolean(S.replay)));
+    view.push(row("source", "Source", String(PACK.source ?? "").slice(0, 200)));
+    const status = E.model.status(cutMs);
+    view.push(
+      row(
+        "model",
+        "Efficiency model",
+        status === "retrospective" ? E.text.model.retrospective : status === "timing-unverified" ? E.text.model.timingUnverified : E.text.model.eligibleByBound,
+        status,
+      ),
+    );
+    view.push(row("appearance", "Appearance", `${E.text.fill(E.text.ui.appearance, { id: appearanceId() })} · version ${E.lut.APPEARANCES[scaleRt.appearance].version}`, appearanceId()));
+    add("view", E.text.ui.summaryView, view);
+    const names = { cells: "Cells", rows: "Rows", lens: "Lens", pane: "Columns" };
+    for (const channel of ["cells", "rows", "lens", "pane"]) {
+      const legend = scaleUi.models[channel];
+      if (!legend) continue;
+      const rows = [];
+      if (channel === "rows") for (const d of uiRowsInfo(scaleUi.rowsInfo).rows) rows.push(row(d.field, d.label, d.value, d.canonical));
+      if (scaleUi.fallback[channel]) rows.push(row("fallback", "Held scale", scaleUi.fallback[channel]));
+      for (const text of legend.notes) rows.push(row("note", "Note", text));
+      rows.push(...E.legend.details(legend).map(detail));
+      add(channel, `${names[channel]} · ${legend.summary.measure}`, rows);
+    }
+    add(
+      "axes",
+      E.text.ui.summaryAxes,
+      scaleUi.axisRecords.flatMap((rec) => [
+        row(`axis:${rec.id}`, rec.id, `${uiAxisText(rec)} · ${uiAxisDomain(rec)}${rec.unit ? ` · ${uiAxisUnit(rec.unit)}` : ""}`, { policy: rec.policy, domain: rec.domain ?? null, through: rec.provenance?.through ?? null, mappingId: rec.mappingId ?? null }),
+      ]),
+    );
+    const { plan, cur, ref, under } = profileUi;
+    if (plan) {
+      const rows = [row("profileComparison", "Comparison", profileSummary(), plan.mode), row("profileCurrent", "Current track", cur ? `${uiAxisText(cur)} · ${profileDomainText(cur)}` : E.text.axis.none, cur?.domain ?? null)];
+      if (under) rows.push(row("profileReference", "Reference track", `${ROWS_INFO[under.kind].name} ${periodPhrase(under.period)}${ref ? ` · ${profileDomainText(ref)}` : ""}`, `${under.kind}:${under.period}`));
+      add("profile", E.text.ui.summaryProfile, rows);
+    }
+    add("vintage", E.text.ui.summaryVintage, [row("vintage", "Vintage", E.text.vintage), row("limit", "Limits", E.text.ui.summaryLimit)]);
+    return sections;
+  }
+  // The summary as plain text, for a person who copies it.
+  function summaryText() {
+    return summarySections()
+      .map((s) => [s.title, ...s.rows.map((r) => `  ${r.label}: ${r.value}`)].join("\n"))
+      .join("\n\n");
+  }
+  // The summary in the Query tab, rebuilt from the sections.
+  function summaryRender() {
+    summaryRt.timer = 0;
+    if (!(S.drawerOpen && S.drawer === "query") || !el("summary-body")) return;
+    summaryRt.sections = summarySections();
+    el("summary-body").replaceChildren(
+      ...summaryRt.sections.map((s) => {
+        const box = uiEl("section", "ol-summary-section"),
+          list = uiEl("dl", "ol-legend-details");
+        box.dataset.section = s.id;
+        box.append(uiEl("h4", "", s.title));
+        for (const r of s.rows) {
+          const dd = uiEl("dd", "ol-num", r.value);
+          dd.dataset.field = r.field;
+          if (r.canonical !== null && r.canonical !== undefined) dd.dataset.value = typeof r.canonical === "string" ? r.canonical : JSON.stringify(r.canonical);
+          list.append(uiEl("dt", "", r.label), dd);
+        }
+        box.append(list);
+        return box;
+      }),
+    );
+  }
+  // Rebuild the summary soon, once, while the Query tab is the one open (a settle, a draw and a tab switch all ask).
+  function summaryRefresh() {
+    if (!(S.drawerOpen && S.drawer === "query")) return;
+    clearTimeout(summaryRt.timer);
+    summaryRt.timer = setTimeout(summaryRender, 120);
   }
   // ---- the profile chip (PRD-0002 S2) ----
   // The chip says how the two tracks are compared and what each one's domain is; its popover names both tracks, offers the three comparisons
@@ -17380,6 +17503,8 @@
         through: rec.obsEndMs,
       });
     }
+    // A scale the view carries was fitted at some level; whether this view lands at that level is known only once it has settled
+    scaleRt.carried = records.find((r) => r.chan === "c" && r.ctx)?.ctx ?? null;
     const out = E.policy.restore({ scale: v.scale, records, axes: v.axes ?? [], replay: S.replay === true });
     S.scale = out.scale;
     // What is protected from eviction while these are committed: the context in view and every held one.

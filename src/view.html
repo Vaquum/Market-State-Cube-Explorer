@@ -967,7 +967,7 @@
             ><canvas class="ol-ramp" id="ol-ramp" width="64" height="8" aria-hidden="true"></canvas
             ><i class="ol-legend-marker" id="ol-legend-marker" data-coordinate="" data-readout="" aria-hidden="true" hidden></i
           ></span>
-          <span id="ol-legend-text" class="ol-num">USDT per cell · log</span>
+          <span id="ol-legend-text" class="ol-num"></span>
         </button>
         <span id="ol-legend-marker-text" class="ol-sr" hidden></span>
         <div data-temporary="popover"
@@ -1449,6 +1449,23 @@
               </button>
             </div>
             <div id="ol-query-ready" class="ol-muted"></div>
+            <section class="ol-summary" id="ol-summary" aria-labelledby="ol-summary-title">
+              <div class="ol-summary-head">
+                <h3 id="ol-summary-title">View summary</h3
+                ><button
+                  type="button"
+                  id="ol-copy-summary"
+                  class="ol-action ol-s cursor-interaction"
+                  title="Copy this summary as text"
+                >
+                  Copy summary
+                </button>
+              </div>
+              <p class="ol-muted" id="ol-summary-intro">
+                What a screenshot of this view should say about its colours and lengths. It describes the view as drawn now: it is not an export and not a snapshot of the data.
+              </p>
+              <div id="ol-summary-body"></div>
+            </section>
           </div>
         </div>
       </div>

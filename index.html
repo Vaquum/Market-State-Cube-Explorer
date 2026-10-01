@@ -26,7 +26,6 @@
   --ol-line: light-dark(#d8e3db, #334a3c);
   /* Data: these colours encode the market and nothing else */
   --ol-poc: light-dark(#a87823, #dfb967);
-  --ol-evidence: light-dark(#7664a9, #b4a1df);
   /* Roles (visual version 2): a signed measure colours by role, never by side. The hexes are those of the
      retired buy, sell and neutral tokens, renamed by role (DR-20). */
   --ol-positive: light-dark(#2d769c, #73b8d4);
@@ -36,24 +35,16 @@
      on the surface (--ol-line and --ol-neutral do not and must not colour them) */
   --ol-occupancy: var(--ol-border);
   --ol-state: var(--ol-muted);
-  /* Interim names for the unsigned and reference marks that still use the taker sides (taker-buy subset
-     bar, Buy POC, RSI divergences), so that positive never appears in an unsigned context */
-  --ol-legacy-buy: light-dark(#2d769c, #73b8d4);
-  --ol-legacy-sell: light-dark(#b3624b, #d89777);
-  /* Lines: one colour per family, apart from the data's colours and from
-     each other in every colour vision; a line's timeframe shows in its
-     weight and saturation, in three tiers. Clock lines are neutral. */
+  /* Lines: one colour per reference family (E.role.REFERENCE), apart from the data's colours and from
+     each other in every colour vision. A line's timeframe is in its tag and name, never in its colour or
+     weight. Clock lines are neutral. */
   --ol-line-poc: var(--ol-poc);
   --ol-line-level: light-dark(#9471f5, #bb6bd9);
   --ol-line-average: light-dark(#6c661f, #8a9650);
   --ol-line-vwap: light-dark(#7c3514, #e2621a);
   --ol-line-clock: light-dark(#8c948f, #7d8a82);
-  --ol-tier-short-width: 1.25;
-  --ol-tier-short-chroma: 0.7;
-  --ol-tier-medium-width: 1.75;
-  --ol-tier-medium-chroma: 0.85;
-  --ol-tier-long-width: 2.5;
-  --ol-tier-long-chroma: 1;
+  /* Historical comparison is neutral, never a third hue beside the price levels' violet: its two sets are told apart by shape and label */
+  --ol-line-compare: var(--ol-muted);
   /* Interface: focus, selection, controls; never data */
   --ol-accent: var(--ol-ink);
   --ol-border: light-dark(#768d7e, #667f6f);
@@ -669,6 +660,11 @@
   flex: 1;
   text-align: left;
 }
+#origo-lens .ol-family-kin {
+  font-size: var(--fs-s);
+  font-weight: 400;
+  color: var(--ol-muted);
+}
 #origo-lens .ol-family-count {
   font-size: var(--fs-s);
   font-weight: 400;
@@ -690,10 +686,10 @@
 }
 /* The level line's: dashed, in the text colour, as on the chart. */
 #origo-lens .ol-level-swatch {
-  height: 0;
+  width: 22px;
+  height: 1.5px;
   border-radius: 0;
-  background: none;
-  border-top: 1.5px dashed var(--ol-ink);
+  background: var(--ol-ink);
 }
 /* The tooltip passes the pointer through, all but its one control: the level
    line's, which a tap on touch shows in the row section. */
@@ -820,6 +816,33 @@
   margin-bottom: var(--sp-2);
   font-size: var(--fs-m);
   font-weight: 500;
+}
+#origo-lens .ol-pop-actions {
+  display: inline-flex;
+  gap: var(--sp-2);
+}
+/* What the chart did with the references that are on: how many are shown and, for each that is not, the reason. */
+#origo-lens .ol-lines-summary {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-s);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-lines-summary:empty {
+  display: none;
+}
+#origo-lens .ol-line-focus {
+  flex: none;
+  margin-left: auto;
+}
+#origo-lens .ol-line-focus[aria-pressed="true"] {
+  background: var(--ol-on);
+  box-shadow: inset 0 0 0 1px var(--ol-accent);
+}
+#origo-lens .ol-line-row[data-ref-state]:not([data-ref-state="shown"]) .ol-line-value {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-focus-chip {
+  box-shadow: inset 0 0 0 1px var(--ol-accent);
 }
 #origo-lens .ol-res-pop {
   width: 296px;
@@ -1217,6 +1240,109 @@
 }
 #origo-lens .ol-tip-note {
   margin-top: var(--sp-1);
+}
+/* Inspect: the navigator of the cursor, over the plot's bottom left, with its readout, its edge messages, its steppers and the chooser that reach the same
+   record without a pointer or a precise one. */
+#origo-lens .ol-inspect {
+  position: absolute;
+  left: 64px;
+  bottom: 56px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  width: min(440px, calc(100% - 80px));
+  padding: var(--sp-2);
+  font-size: var(--fs-s);
+  font-variant-numeric: tabular-nums;
+  color: var(--ol-ink);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+  box-shadow: 0 var(--sp-1) var(--sp-5) var(--ol-shadow);
+}
+#origo-lens .ol-inspect[hidden],
+#origo-lens .ol-inspect-detail[hidden] {
+  display: none;
+}
+#origo-lens .ol-inspect:focus-visible {
+  outline: 2px solid var(--ol-accent);
+  outline-offset: 2px;
+}
+#origo-lens .ol-inspect-head,
+#origo-lens .ol-inspect-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1);
+}
+#origo-lens .ol-inspect-steps {
+  justify-content: flex-start;
+}
+#origo-lens .ol-inspect-steps select {
+  flex: 1 1 120px;
+  min-width: 0;
+  min-height: var(--h-m);
+}
+#origo-lens .ol-inspect-position {
+  font-weight: 500;
+}
+#origo-lens .ol-inspect-readout {
+  max-height: 168px;
+  overflow: auto;
+}
+#origo-lens .ol-inspect-boundary {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-inspect-boundary:empty {
+  display: none;
+}
+#origo-lens .ol-inspect[data-state="outside"] .ol-inspect-position,
+#origo-lens .ol-inspect[data-state="unavailable"] .ol-inspect-position {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-inspect-chooser {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: var(--sp-1);
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 420px);
+  overflow: auto;
+  padding: var(--sp-1);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+  box-shadow: 0 var(--sp-1) var(--sp-5) var(--ol-shadow);
+}
+#origo-lens .ol-inspect-chooser[hidden] {
+  display: none;
+}
+#origo-lens .ol-inspect-chooser-head {
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-inspect-choice {
+  justify-content: flex-start;
+  min-height: 44px;
+  text-align: left;
+}
+#origo-lens .ol-inspect-detail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: var(--sp-1);
+  max-height: min(60vh, 420px);
+  overflow: auto;
+  padding: var(--sp-2);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+  box-shadow: 0 var(--sp-1) var(--sp-5) var(--ol-shadow);
 }
 /* The replay transport, at the top of the plot on the replay line, and the
    lens's own controls at its top left while the lens is the tool; both placed
@@ -1699,7 +1825,7 @@
   display: block;
   width: 0;
   height: 5px;
-  background: var(--ol-evidence);
+  background: var(--ol-line-compare);
   border-radius: var(--r-s);
 }
 #origo-lens .ol-probability .ol-base-track {
@@ -1730,10 +1856,37 @@
   width: 15px;
   height: var(--sp-1);
   border-radius: var(--r-s);
-  background: var(--ol-evidence);
+  background: var(--ol-line-compare);
 }
 #origo-lens .ol-evidence-legend .ol-all-key {
-  background: var(--ol-muted);
+  background: var(--ol-line-compare);
+}
+/* The same two shapes the chart's median markers use: a square for the matching states, a ring for all states. */
+#origo-lens .ol-evidence-legend .ol-match-key,
+#origo-lens .ol-evidence-legend .ol-all-key {
+  position: relative;
+  overflow: visible;
+}
+#origo-lens .ol-evidence-legend .ol-match-key::after,
+#origo-lens .ol-evidence-legend .ol-all-key::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  outline: 1px solid var(--ol-surface);
+}
+#origo-lens .ol-evidence-legend .ol-match-key::after {
+  background: var(--ol-line-compare);
+}
+#origo-lens .ol-evidence-legend .ol-all-key::after {
+  border: 1.25px solid var(--ol-line-compare);
+  border-radius: 50%;
+  background: var(--ol-surface);
+  outline: 0;
 }
 #origo-lens .ol-evidence-brief {
   position: relative;
@@ -1963,6 +2116,14 @@
   }
 }
 @media (pointer: coarse) {
+  #origo-lens .ol-inspect button,
+  #origo-lens .ol-inspect select {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  #origo-lens .ol-inspect-head [role="tab"] {
+    padding: 0 var(--sp-3);
+  }
   /* Touch targets win over every size class. */
   #origo-lens button,
   #origo-lens button.ol-s,
@@ -2284,6 +2445,22 @@
   width: 11px;
   height: 11px;
 }
+/* A reference key's swatch is a line sample, wider than a state key's square. */
+#origo-lens .ol-data-key.ol-glyph.ol-ref-swatch,
+#origo-lens .ol-data-key.ol-glyph.ol-ref-swatch canvas {
+  width: 26px;
+}
+#origo-lens .ol-keys-ref > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+/* A table row that holds the keyboard shows it. */
+#origo-lens .ol-table tbody tr:focus-visible {
+  outline: 2px solid var(--ol-accent);
+  outline-offset: -2px;
+}
 
     </style>
   </head>
@@ -2548,14 +2725,26 @@
         >
           <div class="ol-pop-head">
             <span id="ol-lines-title">Lines</span
-            ><button
-              type="button"
-              id="ol-lines-clear"
-              class="ol-action ol-s cursor-interaction"
+            ><span class="ol-pop-actions"
+              ><button
+                type="button"
+                id="ol-lines-showall"
+                class="ol-action ol-s cursor-interaction"
+                title="Show every enabled line again; a temporary focus is never saved"
+                disabled
+              >
+                Show all
+              </button
+              ><button
+                type="button"
+                id="ol-lines-clear"
+                class="ol-action ol-s cursor-interaction"
+              >
+                Clear
+              </button></span
             >
-              Clear
-            </button>
           </div>
+          <p class="ol-lines-summary" id="ol-lines-summary" role="status"></p>
           <section class="ol-family" data-family="profile">
             <button
               type="button"
@@ -2625,6 +2814,7 @@
             >
               <i class="ol-family-dot" aria-hidden="true"></i
               ><span class="ol-family-name">Session levels</span
+              ><span class="ol-family-kin">price levels</span
               ><span class="ol-family-count ol-num"></span>
               <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
@@ -2651,6 +2841,7 @@
             >
               <i class="ol-family-dot" aria-hidden="true"></i
               ><span class="ol-family-name">Structure</span
+              ><span class="ol-family-kin">price levels</span
               ><span class="ol-family-count ol-num"></span>
               <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
@@ -2857,6 +3048,22 @@
               <circle cx="7" cy="7" r="4.2" />
               <path d="m10.2 10.2 3.3 3.3" /></svg
             ><span class="ol-label">Lens</span>
+          </button
+          ><button
+            type="button"
+            id="ol-inspect-tool"
+            class="ol-icon-button cursor-interaction"
+            data-tool="inspect"
+            aria-pressed="false"
+            aria-label="Inspect"
+            aria-keyshortcuts="E"
+            data-keys="E"
+            data-hint="Move a cursor through cells, rows, columns and references with the keys; Enter opens a record's detail"
+          >
+            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2.5 5.5v-3h3M10.5 2.5h3v3M13.5 10.5v3h-3M5.5 13.5h-3v-3" />
+              <circle cx="8" cy="8" r="1.6" /></svg
+            ><span class="ol-label">Inspect</span>
           </button>
         </div>
       </div>
@@ -3193,6 +3400,16 @@
             tabindex="-1"
             hidden
           ></div>
+          <button
+            type="button"
+            class="ol-legend ol-legend-chip ol-focus-chip cursor-interaction"
+            id="ol-focus-chip"
+            title="A temporary focus on one reference line or family; nothing is saved. Click to show all."
+            aria-label="Focus"
+            hidden
+          >
+            <span id="ol-focus-chip-text"></span>
+          </button>
         </div>
         <div class="ol-marks" role="group" aria-label="Overlays">
           <label title="Each column's point of control, and the profile's (P and B) · Shift+P"
@@ -3365,6 +3582,50 @@
             Pin
           </button>
         </div>
+        <div
+          class="ol-inspect"
+          id="ol-inspect"
+          data-temporary="inspect"
+          role="group"
+          aria-label="Inspection"
+          aria-describedby="ol-inspect-position"
+          tabindex="0"
+          hidden
+        >
+          <div class="ol-inspect-head">
+            <div class="ol-seg" role="tablist" aria-label="What to inspect" id="ol-inspect-surfaces">
+              <button type="button" role="tab" data-surface="cells" aria-selected="true" class="cursor-interaction">Cells</button
+              ><button type="button" role="tab" data-surface="rows" aria-selected="false" tabindex="-1" class="cursor-interaction">Rows</button
+              ><button type="button" role="tab" data-surface="columns" aria-selected="false" tabindex="-1" class="cursor-interaction">Columns</button
+              ><button type="button" role="tab" data-surface="references" aria-selected="false" tabindex="-1" class="cursor-interaction">References</button
+              ><button type="button" role="tab" data-surface="lens" aria-selected="false" tabindex="-1" class="cursor-interaction">Lens</button>
+            </div>
+            <button type="button" id="ol-inspect-exit" class="ol-action ol-s cursor-interaction" title="Leave Inspect (Escape)">Exit</button>
+          </div>
+          <div class="ol-inspect-position" id="ol-inspect-position"></div>
+          <div class="ol-inspect-readout" id="ol-inspect-readout"></div>
+          <div class="ol-inspect-boundary" id="ol-inspect-boundary"></div>
+          <div class="ol-inspect-steps" role="group" aria-label="Move the cursor">
+            <button type="button" data-step="left" class="ol-icon-button cursor-interaction" aria-label="Previous time cell" title="Previous time cell (Left)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg></button
+            ><button type="button" data-step="right" class="ol-icon-button cursor-interaction" aria-label="Next time cell" title="Next time cell (Right)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg></button
+            ><button type="button" data-step="up" class="ol-icon-button cursor-interaction" aria-label="Next higher price row" title="Next higher price row (Up)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 10 5-5 5 5" /></svg></button
+            ><button type="button" data-step="down" class="ol-icon-button cursor-interaction" aria-label="Next lower price row" title="Next lower price row (Down)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 6 5 5 5-5" /></svg></button
+            ><select id="ol-inspect-reference" aria-label="Reference" title="Choose a reference"></select>
+          </div>
+          <span class="ol-sr" id="ol-inspect-live" role="status" aria-live="polite"></span>
+          <div class="ol-inspect-chooser" id="ol-inspect-chooser" role="dialog" aria-label="References at the tap" hidden></div>
+          <div class="ol-inspect-detail" id="ol-inspect-detail" role="dialog" aria-labelledby="ol-inspect-detail-title" hidden>
+            <div class="ol-pop-head">
+              <span id="ol-inspect-detail-title"></span
+              ><button type="button" id="ol-inspect-detail-close" class="ol-action ol-s cursor-interaction">Close</button>
+            </div>
+            <div id="ol-inspect-detail-body"></div>
+          </div>
+        </div>
         <button
           type="button"
           id="ol-latest"
@@ -3467,7 +3728,7 @@
                 </button>
               </div>
             </div>
-            <table class="ol-table">
+            <table class="ol-table" id="ol-table">
               <thead>
                 <tr>
                   <th>
@@ -3689,8 +3950,12 @@
             ><i class="ol-data-key ol-glyph" data-stroke-role="poc" aria-hidden="true"></i>P · total POC</span
           ><span id="ol-key-bpoc"
             ><i class="ol-data-key ol-glyph" data-stroke-role="bpoc" aria-hidden="true"></i>B · buy POC</span
-          ><span id="ol-key-area" hidden>H/L · composite 70%</span
-          ><span id="ol-ray-count" hidden></span>
+          ><span id="ol-key-area" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="va" aria-hidden="true"></i>H/L · VAH and VAL, 70% value area</span
+          ><span id="ol-ray-count" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="untested" aria-hidden="true"></i
+            ><span id="ol-ray-count-text"></span></span
+          ><span id="ol-keys-ref" class="ol-keys-scale ol-keys-ref" aria-label="References"></span>
         </div>
         <span class="ol-gesture" id="ol-gesture"
           >Drag to pan · wheel to zoom · click to anchor</span
@@ -8897,6 +9162,151 @@
     return spans;
   }
 
+  // E.role.REFERENCE (PRD-0002 S3, section 1): the reference language, one table for the canvas, the tags, the menu and toolbar keys, the
+  // footer keys and the inspector's tracks. A reference mark says WHAT it is by its family (the hue below), WHICH one by its label and
+  // endpoint glyph, and HOW it is known by its pattern; none of it by a stroke weight or a saturation, so a timeframe is never a colour. The
+  // hues are tested starting points (docs/visual-contract.md checks every pair that meets on the chart), not a promise to keep a failing hex.
+  //   STROKE   an ordinary reference stroke is 1.5 css px; the focused one adds one pixel; with its backing (one pixel each side) it is never
+  //            wider than 4.5 px, which is the occlusion budget's maximum.
+  //   PATTERN  inside the span a market reference is supported over: solid is observed or derived; dashed [5,4] is the held extension to the
+  //            edge; dotted [1,3] is a retrospective lead-in to a confirmation. The user's own Level is the one dash-dot, [8,3,2,3].
+  //   FAMILIES the seven roles. `colour` is the page's key for the canvas colour (the CSS custom property is `token`); `groups` are menu
+  //            subgroups of ONE family (they share its hue and are not advertised as separate hues); `identification` is what tells two
+  //            marks of one family apart; `glyph` names the endpoint glyph where one is part of the identity.
+  const rolReferenceFamilies = Object.freeze([
+    Object.freeze({
+      id: "profile",
+      name: "Volume profile",
+      role: "Volume-profile references",
+      colour: "poc",
+      token: "--ol-line-poc",
+      hue: "gold",
+      groups: Object.freeze(["Volume profile"]),
+      identification: Object.freeze(["POC", "Buy POC", "VAH", "VAL", "period", "endpoint glyph"]),
+      glyph: Object.freeze({ poc: "triangle", buyPoc: "diamond", valueArea: "square" }),
+    }),
+    Object.freeze({
+      id: "level",
+      name: "Price levels",
+      role: "Price levels",
+      colour: "level",
+      token: "--ol-line-level",
+      hue: "violet",
+      groups: Object.freeze(["Session levels", "Structure"]),
+      identification: Object.freeze(["Session or Structure subgroup", "exact kind", "timeframe"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "average",
+      name: "Averages and Bollinger",
+      role: "Averages and Bollinger",
+      colour: "average",
+      token: "--ol-line-average",
+      hue: "olive",
+      groups: Object.freeze(["Moving averages"]),
+      identification: Object.freeze(["indicator period", "bar timeframe", "Upper, Middle or Lower"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "vwap",
+      name: "VWAP",
+      role: "VWAP",
+      colour: "vwap",
+      token: "--ol-line-vwap",
+      hue: "rust",
+      groups: Object.freeze(["VWAP"]),
+      identification: Object.freeze(["Session or the exact anchor"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "clock",
+      name: "Clock",
+      role: "Clock",
+      colour: "clock",
+      token: "--ol-line-clock",
+      hue: "neutral",
+      groups: Object.freeze(["Clock"]),
+      identification: Object.freeze(["calendar-event label", "vertical geometry", "keyed event pattern"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "user",
+      name: "User Level",
+      role: "User Level",
+      colour: "ink",
+      token: "--ol-ink",
+      hue: "ink",
+      groups: Object.freeze(["Level"]),
+      identification: Object.freeze(["Level label", "endpoint diamond", "long dash-dot"]),
+      glyph: Object.freeze({ level: "diamond" }),
+    }),
+    Object.freeze({
+      id: "compare",
+      name: "Historical comparison",
+      role: "Historical comparison",
+      colour: "compare",
+      token: "--ol-line-compare",
+      hue: "neutral",
+      groups: Object.freeze(["Matching states", "All states"]),
+      identification: Object.freeze(["Matching states or All states", "square or circle median marker", "labelled interval track"]),
+      glyph: Object.freeze({ matching: "square", all: "circle" }),
+    }),
+  ]);
+  const rolReference = Object.freeze({
+    STROKE: Object.freeze({ ordinary: 1.5, focusExtra: 1, backing: 1, max: 4.5 }),
+    PATTERN: Object.freeze({
+      support: Object.freeze([]),
+      held: Object.freeze([5, 4]),
+      lead: Object.freeze([1, 3]),
+      user: Object.freeze([8, 3, 2, 3]),
+    }),
+    PATTERN_NAMES: Object.freeze({ support: "Solid: observed or derived", held: "Dashed: held to the edge", lead: "Dotted: lead-in to a confirmation", user: "Dash-dot: your Level" }),
+    FAMILIES: rolReferenceFamilies,
+  });
+  // E.role.referenceFamily(id) -> the family record; a RangeError for an id the table does not have.
+  function rolReferenceFamily(id) {
+    for (let i = 0; i < rolReferenceFamilies.length; i++) if (rolReferenceFamilies[i].id === id) return rolReferenceFamilies[i];
+    throw new RangeError("E.role.referenceFamily: unknown family " + String(id));
+  }
+
+  // E.role.REASONS / E.role.inventory (PRD-0002 S3, section 2): what the chart says about the references it was asked to draw. Every ENABLED and
+  // SUPPORTED reference (a menu row, the user's Level) has exactly one status, so the count of what is shown is always over everything that
+  // could be, and a reference that is not shown says why, in one of these words: `occlusion` (held back by the 20% budget), `density` (too
+  // close to its neighbours to draw at this zoom), `offscreen` (outside the view; its arrow tag at the edge and its row in the list remain),
+  // `warmup` (the indicator has no value yet), `missing` (its data is not read yet or could not be), `unsupported` (needs a closer zoom or the
+  // live cube) and `none` (there is no event to draw). The words, their order and their labels are this table's, never a page's.
+  const rolReasons = Object.freeze([
+    Object.freeze({ id: "shown", label: "shown", short: "shown" }),
+    Object.freeze({ id: "occlusion", label: "held back by the 20% budget", short: "held back" }),
+    Object.freeze({ id: "density", label: "too close together to draw at this zoom", short: "too close" }),
+    Object.freeze({ id: "offscreen", label: "off screen (its tag at the edge and its row remain)", short: "off screen" }),
+    Object.freeze({ id: "warmup", label: "warming up (no value yet)", short: "warming up" }),
+    Object.freeze({ id: "missing", label: "not read yet or could not be read", short: "not read" }),
+    Object.freeze({ id: "unsupported", label: "needs a closer zoom or the live cube", short: "zoom in" }),
+    Object.freeze({ id: "none", label: "no event to draw", short: "no event" }),
+  ]);
+  // E.role.inventory(entries) -> {eligible, shown, reasons: {id: count}, byReason: {id: [entry ids]}}: `entries` are {id, reason}; a reason that is
+  // not in the table throws, a repeated id throws, and `eligible` is every entry, so a suppressed reference is counted and never dropped.
+  function rolInventory(entries) {
+    const known = new Set(rolReasons.map((r) => r.id)),
+      seen = new Set(),
+      reasons = {},
+      byReason = {};
+    for (const r of rolReasons) {
+      reasons[r.id] = 0;
+      byReason[r.id] = [];
+    }
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (!known.has(e.reason)) throw new RangeError("E.role.inventory: unknown reason " + String(e.reason));
+      if (seen.has(e.id)) throw new RangeError("E.role.inventory: repeated reference " + String(e.id));
+      seen.add(e.id);
+      reasons[e.reason]++;
+      byReason[e.reason].push(e.id);
+    }
+    return { eligible: entries.length, shown: reasons.shown, reasons, byReason };
+  }
+
   API.role = Object.freeze({
     ROLES: rolRoles,
     GLYPHS: rolGlyphs,
@@ -8906,6 +9316,10 @@
     keyEntries: rolKeyEntries,
     occlusion: rolOcclusion,
     unionSpans: rolUnionSpans,
+    REFERENCE: rolReference,
+    referenceFamily: rolReferenceFamily,
+    REASONS: rolReasons,
+    inventory: rolInventory,
   });
 
   // == §13-store ==
@@ -15693,6 +16107,8 @@
   // Reference strokes (PRD-0002 S2): 1.5 px ordinarily, 2.5 at the most, and never more than 1 px of casing a side.
   const REFERENCE_STROKE = 1.5,
     REFERENCE_STROKE_MAX = 2.5;
+  // The swing triangle is one size whatever its timeframe: the label says which (4h or 1D).
+  const SWING_GLYPH = 4.25;
   const EVENT_LANE = 14,
     EVENT_GAP = 3,
     EVENT_MIN_PLOT = 150,
@@ -16380,25 +16796,16 @@
       ["midpoint", "midpoint"],
       ["occupancy", "occupancy"],
       ["state", "state"],
-      ["legacyBuy", "legacy-buy"],
-      ["legacySell", "legacy-sell"],
     ]) {
       probe.style.color = `var(--ol-${token})`;
       colors[key] = getComputedStyle(probe).color;
     }
-    // The line families' colours, and each tier's weight and saturation.
+    // The line families' colours: one per reference family, whatever a line's timeframe (E.role.REFERENCE).
     colors.family = {};
-    for (const key of ["poc", "level", "average", "vwap", "clock"]) {
+    for (const key of ["poc", "level", "average", "vwap", "clock", "compare"]) {
       probe.style.color = `var(--ol-line-${key})`;
       colors.family[key] = getComputedStyle(probe).color;
     }
-    const tokens = getComputedStyle(root);
-    colors.tiers = {};
-    for (const tier of ["short", "medium", "long"])
-      colors.tiers[tier] = {
-        width: parseFloat(tokens.getPropertyValue(`--ol-tier-${tier}-width`)) || 1.5,
-        chroma: parseFloat(tokens.getPropertyValue(`--ol-tier-${tier}-chroma`)) || 1,
-      };
     probe.remove();
     themeChanged();
   }
@@ -16450,17 +16857,34 @@
   // Chart labels: one style, 11px and sentence case, placed so none covers
   // another. A label tries its own line, then the next ones down and up; with
   // no room left it is left out. The rects taken reset with every frame.
+  // Every label stands on an opaque plate of the surface, so its text is read against a colour that is known and not against whatever cell lies
+  // under it (PRD-0002 S3 section 2): the muted ink, or the ink for a label that belongs to a hue, which is then marked by a 3 px bar of the hue on
+  // the plate's left edge. The plates are persistent marks: their rectangles are kept in `labelPlates` for the frame, and counted in the
+  // area the references may cover.
   let labelsTaken = [];
+  let labelPlates = [];
   function chartLabel(s, x, y, color = colors.muted, align = "left") {
     ctx.font = `${TYPE.s}px ${FONT}`;
     const w = ctx.measureText(s).width,
-      left = align === "left" ? x : align === "right" ? x - w : x - w / 2;
+      left = align === "left" ? x : align === "right" ? x - w : x - w / 2,
+      accent = color !== colors.muted && color !== colors.ink,
+      lead = accent ? 5 : 0;
     for (const dy of [0, 15, -15, 30]) {
-      const r = [left - 3, y + dy - 8, left + w + 3, y + dy + 8];
+      const r = [left - 3 - lead, y + dy - 8, left + w + 3, y + dy + 8];
+      // a label that would stand partly off the canvas is not drawn: it takes no slot
+      if (r[0] < 0 || r[2] > G.width || r[1] < 0 || r[3] > G.height) continue;
       if (labelsTaken.some((q) => r[0] < q[2] && q[0] < r[2] && r[1] < q[3] && q[1] < r[3]))
         continue;
       labelsTaken.push(r);
-      text(s, x, y + dy, color, align);
+      labelPlates.push(r);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = colors.surface;
+      ctx.fillRect(r[0], r[1], r[2] - r[0], r[3] - r[1]);
+      if (accent) {
+        ctx.fillStyle = color;
+        ctx.fillRect(r[0], r[1], 3, r[3] - r[1]);
+      }
+      text(s, lead ? left : x, y + dy, accent ? colors.ink : color, lead ? "left" : align);
       return true;
     }
     return false;
@@ -17788,6 +18212,7 @@
     if (!ready) return;
     geometry();
     for (const k in markCount) markCount[k] = 0;
+    refTally.clear();
     const { src, cut, moving, sum, full, meas, b, query, shown, mv, ts, ps } = viewParts(),
       u = transition
         ? clamp((performance.now() - transition.start) / 170, 0, 1)
@@ -17836,6 +18261,7 @@
       }
     }
     labelsTaken = [];
+    labelPlates = [];
     // Latest sits over the plot's top right when it shows, and the replay
     // transport on the replay line: labels keep clear of both.
     if (!el("latest").hidden) {
@@ -17902,6 +18328,7 @@
     drawClock(cut);
     drawLines(cut);
     occlusionNotice();
+    referenceInventoryCommit();
     if (S.tab === "evidence") {
       const ev = settledEvidence();
       // Busy until a result for this view is up: the panel may still show the last one.
@@ -17941,7 +18368,7 @@
     ) {
       const x = G.X(Math.floor(S.anchor / ts) * ts);
       ctx.setLineDash([3, 4]);
-      line(x, G.y, x, G.y + G.h, colors.evidence, 1, 0.65);
+      line(x, G.y, x, G.y + G.h, colors.family.compare, 1, 0.65);
       ctx.setLineDash([]);
     }
     // The selection comes after every state mark (the cutoff, the provisional edge, the anchor) and before what the pointer links.
@@ -18010,6 +18437,7 @@
       }
     }
     drawResolutionLens(sc);
+    inspectPaint();
     ctx.restore();
     const ro = readouts(cut);
     axes(ro);
@@ -18034,7 +18462,7 @@
       el("legend-text").title = "";
     }
     const marks = marksReadout(b);
-    el("ray-count").textContent = marks.rayCount + " untested levels";
+    el("ray-count-text").textContent = marks.rayCount + " untested levels";
     el("ray-count").hidden = !S.untested;
     el("va-value").textContent =
       marks.vaLow === null || meas.state === "pending" || meas.state === "failed"
@@ -18046,6 +18474,8 @@
       else delete canvas.dataset.temporary;
     }
     strokeKeysCommit();
+    referenceKeysCommit();
+    inspectSync();
     // A failure noted for a tile says itself while that tile is what the view or the lens needs: a tool that opens or closes changes that without
     // an update, so the line is decided again with the frame (nothing is noted on a healthy page, and then there is nothing to decide).
     if (noted.size || loadingLine.blocks.size) renderLoading();
@@ -19288,7 +19718,15 @@
       cellRowsLevel = null;
       hoverRow = null;
       el("table-body").replaceChildren();
-      el("table-caption").textContent = "Measuring the rectangle in the cube…";
+      // pending, failed and unavailable are three states, each with its own words (the inspection navigator reads any position the table lacks)
+      const why = last?.meas?.state === "failed" ? "failed" : last?.meas?.state === "pending" || !last ? "pending" : "unavailable";
+      el("table-caption").dataset.state = why;
+      el("table-caption").textContent =
+        why === "failed"
+          ? `Not measured: the cube didn't answer (${last.meas.error})`
+          : why === "pending"
+            ? "Measuring the rectangle in the cube…"
+            : "Not measured: this rectangle has no cells at this level. Inspect (E) reads any position.";
       el("table-page").textContent = "";
       el("table-back").disabled = el("table-next").disabled = true;
       // The rows are gone: a row the pointer was on no longer has a value to show on the legend.
@@ -19364,6 +19802,10 @@
       tr.dataset.r = c.r;
       tr.dataset.cellKey = `${listed.n}:${listed.m}:${c.c}:${c.r}`;
       tr.dataset.level = `${listed.n}:${listed.m}`;
+      // one row is the table's tab stop and the arrows move it; each row carries its state and its place in the whole listing
+      tr.tabIndex = frag.childElementCount === 0 ? 0 : -1;
+      tr.dataset.state = state;
+      tr.setAttribute("aria-rowindex", String(tablePage * CELLS_PAGE + frag.childElementCount + 2));
       // The text of each column and, for a number, the canonical value it was made from (the same field
       // names as the tooltip's rows, so the two can be compared for one cell).
       const values = [
@@ -19423,11 +19865,16 @@
     hoverRow = null;
     // The rows are new: a row the pointer is on keeps its marker on the legend.
     if (tableHover) rowMarker();
+    el("table-caption").dataset.state = "ready";
+    el("table").setAttribute("aria-rowcount", String(cells.length + 1));
     el("table-caption").textContent =
       (mq
         ? `${integer(listed.cells.length)} occupied and ${integer(movedThrough.length)} moved-through cells in view · other zero cells omitted`
         : `${integer(cells.length)} occupied cells in view · zero cells omitted`) + scaleCaption();
+    // the page says which of the listed cells it holds, so a reader of the page hears where they are in a long list
     el("table-page").textContent = `${tablePage + 1} / ${pages}`;
+    el("table-page").title = `Cells ${integer(tablePage * CELLS_PAGE + 1)} to ${integer(Math.min(cells.length, (tablePage + 1) * CELLS_PAGE))} of ${integer(cells.length)}`;
+    el("table-page").setAttribute("aria-label", el("table-page").title);
     el("table-back").disabled = tablePage === 0;
     el("table-next").disabled = tablePage === pages - 1;
     for (const button of qsa("[data-sort]")) {
@@ -20173,7 +20620,7 @@
     let readout = null;
     // A line or its tag under the pointer names the line; a clock line or a
     // CME gap, its event.
-    const onLine = last && lineHits.length && inPlot(p) ? lineAt(p) : null,
+    const onLine = inspect.forced ?? (last && lineHits.length && inPlot(p) ? lineAt(p) : null),
       onClock = !onLine && last && clockHits.length && inPlot(p) ? clockAt(p) : null;
     hover.line = onLine?.id || null;
     // Cleared first, so a branch that names no readout (a line, a clock event, a profile row, an unavailable
@@ -20340,6 +20787,583 @@
     // A derivation inside a draw (refreshTip) asks for no frame: it is in one.
     if (redraw) requestDraw();
   }
+  // ---- Inspect (PRD-0002 S3, section 3) ----
+  // The fourth pointer tool (E): a cursor of its own, `{surface, t, p, ref}` in absolute cube time and price, that is moved by keys, steppers, a
+  // chooser or a tap and read through the same record the tooltip is made from. It is not the hover: a pan, a zoom, a refresh or a change of level
+  // does not erase it (the position is remapped to the cell, row or column that contains it, or says it is outside the view), and nothing it does
+  // touches the selection, the anchor, the replay edge or the history. It is kept nowhere: not in the address, not in a saved view.
+  //   Cells, Lens   Left and Right: the previous and next time cell at the surface's level; Up and Down: the next higher and lower price row
+  //   Rows          Up and Down: the next higher and lower row; Left and Right do nothing
+  //   Columns       Left and Right: the previous and next column (or bar of an oscillator); Up and Down do nothing
+  //   References    Up and Down: the previous and next enabled reference in the stable list; it keeps its identity through a redraw
+  //   Home, End     the first and last visible item along the surface's primary axis (time; for Rows the highest and lowest row; for References the list)
+  //   Enter, Space  open the record's detail, and nothing else: no anchor, no Pin, no Play
+  //   Escape        close the detail; then leave Inspect for the tool it came from; only a later Escape does what it did before
+  // At the edge of the visible items the cursor stays and the edge is announced; the view is never panned and a replay edge never moved.
+  const INSPECT_SURFACES = [
+    { id: "cells", name: "Cells" },
+    { id: "rows", name: "Rows" },
+    { id: "columns", name: "Columns" },
+    { id: "references", name: "References" },
+    { id: "lens", name: "Lens" },
+  ];
+  const inspect = { on: false, surface: "cells", t: null, p: null, ref: null, prev: "pan", detail: false, boundary: "", sig: "", lens: null, forced: null, listKey: "", list: [] };
+  const inspectSurfaceOn = (id) =>
+    id === "cells" ||
+    (id === "rows" && Boolean(G.tracks)) ||
+    (id === "columns" && Boolean(paneShown) && G.ah > 0) ||
+    (id === "references" && inspectReferences().length > 0) ||
+    (id === "lens" && inspectLensOn());
+  const inspectLensOn = () => Boolean(inspect.lens) || S.lens || nav.alt || nav.hold;
+  // The enabled references in a stable order (the menu's families, then each family's own order), whether the budget drew them or not: the
+  // lines, the curves, the clock's kinds and the user's Level. Each entry has what the tooltip's builders take as a hit.
+  function inspectReferences() {
+    // once for a draw and a state of the lines: it walks the same items the plot is drawn from
+    const key = [last?.sc?.stamp ?? "", S.lines.join(","), S.level, S.tA, S.tB, S.pA, S.pB, S.n, S.m, activeCutoff()].join("|");
+    if (inspect.listKey === key) return inspect.list;
+    inspect.listKey = key;
+    inspect.list = inspectReferencesNow();
+    return inspect.list;
+  }
+  function inspectReferencesNow() {
+    const out = [],
+      cut = activeCutoff(),
+      items = S.lines.length ? lineItems(cut) : [],
+      push = (l, curve) => out.push({ id: l.id, key: l.key, name: curve ? l.name || l.tag : lineItemName(l), hit: { key: l.key, id: l.id, item: l, colour: lineStyle(l.family || "vwap").colour, ...(curve ? { curve: { points: l.r.points } } : {}) }, at: curve ? null : l.at, kind: curve ? "curve" : l.kind });
+    for (const l of items) if (!l.eq) push(l, false);
+    for (const c of items.curves ?? []) push(c, true);
+    for (const kind of S.lines.filter((k) => CLOCK[k])) out.push({ id: "clock|" + kind, key: kind, name: CLOCK[kind].name, hit: null, at: null, kind: "clock" });
+    if (S.level !== null) out.push({ id: "level", key: "level", name: "Level", hit: { key: "level", id: "level", colour: colors.ink }, at: S.level, kind: "level" });
+    const order = { profile: 1, session: 2, structure: 3, average: 4, vwap: 5, clock: 6 };
+    return out
+      .map((e, i) => ({ e, i, f: e.key === "level" ? 0 : order[familyOf(e.key)] ?? 7 }))
+      .sort((a, b) => a.f - b.f || a.i - b.i)
+      .map((x) => x.e);
+  }
+  function lineItemName(l) {
+    return l.tag?.name || l.name || lineName(l.key);
+  }
+  // The lens as the cursor reads it: the lens's own level and rectangle (the finer record), from the frame that is shown or the one that is held.
+  function inspectLensParts() {
+    const f = lensFrame();
+    return f ? { f, parts: lensParts(f) } : null;
+  }
+  // The visible items of a surface along each axis, in its own level: the first and last time cell and price row.
+  function inspectSpan(surface) {
+    const lens = surface === "lens" ? inspectLensParts()?.parts : null,
+      ts = lens ? lens.ts : stepT(),
+      ps = lens ? lens.ps : stepP(),
+      lo = Math.max(lens ? lens.lensBounds[0] : 0, S.tA),
+      hi = Math.min(lens ? lens.lensBounds[1] : cutEdge(), S.tB, cutEdge()),
+      pLo = Math.max(0, lens ? lens.lensBounds[2] : S.pA),
+      pHi = lens ? lens.lensBounds[3] : S.pB;
+    return { ts, ps, c0: Math.floor(lo / ts), c1: Math.max(Math.floor(lo / ts), Math.ceil(hi / ts) - 1), r0: Math.floor(pLo / ps), r1: Math.max(Math.floor(pLo / ps), Math.ceil(pHi / ps) - 1), lens };
+  }
+  // Where the tooltip's own code finds the cursor: a pointer made from it, on the surface's own region of the canvas.
+  function inspectPointer() {
+    const s = inspect.surface,
+      t = inspect.t ?? (S.tA + S.tB) / 2,
+      p = inspect.p ?? (S.pA + S.pB) / 2,
+      x = G.X(t),
+      y = G.Y(p);
+    if (s === "rows") return { x: (G.tx[0] ?? G.x + G.w) + 6, y, t, p, inspect: true };
+    if (s === "columns") return { x: clamp(x, G.x, G.x + G.w), y: G.ay + G.ah / 2, t, p, inspect: true };
+    if (s === "references") return { x: G.x + G.w - 24, y: clamp(y, G.y + 8, G.y + G.h - 8), t, p, inspect: true };
+    return { x: clamp(x, G.x, G.x + G.w), y: clamp(y, G.y, G.y + G.h), t, p, inspect: true };
+  }
+  // The cursor's cell, row or column, and whether it lies in the view, for the position line and the readout.
+  function inspectWhere() {
+    const s = inspect.surface,
+      sp = inspectSpan(s),
+      c = Math.floor((inspect.t ?? 0) / sp.ts),
+      r = Math.floor((inspect.p ?? 0) / sp.ps),
+      inT = c >= sp.c0 && c <= sp.c1,
+      inP = r >= sp.r0 && r <= sp.r1;
+    return { sp, c, r, inside: s === "rows" ? inP : s === "columns" ? inT : s === "references" ? true : inT && inP };
+  }
+  const inspectText = {
+    cells: (w) => `${range(w.c * w.sp.ts, (w.c + 1) * w.sp.ts)} UTC · ${price(w.r * w.sp.ps * PR)}–${price((w.r + 1) * w.sp.ps * PR)} USDT`,
+    lens: (w) => `Lens · ${range(w.c * w.sp.ts, (w.c + 1) * w.sp.ts)} UTC · ${price(w.r * w.sp.ps * PR)}–${price((w.r + 1) * w.sp.ps * PR)} USDT`,
+    rows: (w) => `Row ${price(w.r * w.sp.ps * PR)}–${price((w.r + 1) * w.sp.ps * PR)} USDT`,
+    columns: (w) => `Column ${range(w.c * w.sp.ts, (w.c + 1) * w.sp.ts)} UTC`,
+  };
+  function inspectEntry() {
+    const list = inspectReferences();
+    return list.find((e) => e.id === inspect.ref) ?? list[0] ?? null;
+  }
+  // The tooltip's own builders write the readout of the cursor into the tip, and the navigator shows a copy of what they wrote.
+  function inspectRender(announce, redraw = true) {
+    if (!inspect.on) return;
+    const nav2 = el("inspect"),
+      tip = el("tip"),
+      s = inspect.surface,
+      w = inspectWhere();
+    // a surface that is gone (the lens closed, no pane) gives way to the Cells
+    if (!inspectSurfaceOn(s)) {
+      inspect.surface = "cells";
+      return inspectRender(announce, redraw);
+    }
+    for (const b of qsa("#ol-inspect-surfaces [data-surface]")) {
+      const id = b.dataset.surface,
+        on = inspectSurfaceOn(id);
+      if (b.disabled !== !on) b.disabled = !on;
+      if (b.getAttribute("aria-selected") !== String(id === s)) b.setAttribute("aria-selected", String(id === s));
+      b.tabIndex = id === s ? 0 : -1;
+    }
+    nav2.dataset.surface = s;
+    // where the cursor stands, as numbers a reader of the page (and a test) can compare: the cell, row or column and whether it is in the view
+    nav2.dataset.c = String(w.c);
+    nav2.dataset.r = String(w.r);
+    nav2.dataset.inside = String(w.inside);
+    nav2.dataset.ts = String(w.sp.ts);
+    nav2.dataset.ps = String(w.sp.ps);
+    // the reference chooser: a large-target way to reach every reference, the held-back ones too
+    const chooser = el("inspect-reference"),
+      list = inspectReferences(),
+      listText = list.map((e) => e.id + "\t" + e.name).join("\n");
+    if (chooser.dataset.list !== listText) {
+      chooser.dataset.list = listText;
+      chooser.replaceChildren(...list.map((e) => Object.assign(document.createElement("option"), { value: e.id, textContent: e.name })));
+    }
+    if (inspect.ref !== null && chooser.value !== inspect.ref) chooser.value = inspect.ref;
+    if (chooser.disabled !== !list.length) chooser.disabled = !list.length;
+    let position = "",
+      state = "ready";
+    const entry = s === "references" ? inspectEntry() : null;
+    if (s === "references") {
+      if (entry) inspect.ref = entry.id;
+      position = entry ? `${entry.name} · ${inspectReferences().findIndex((e) => e.id === entry.id) + 1} of ${inspectReferences().length}` : "No reference is on";
+      state = entry ? "ready" : "unavailable";
+    } else {
+      position = w.inside ? inspectText[s](w) : "Outside the view";
+      state = w.inside ? "ready" : "outside";
+    }
+    if (el("inspect-position").textContent !== position) el("inspect-position").textContent = position;
+    nav2.dataset.state = state;
+    const boundary = inspect.boundary;
+    if (el("inspect-boundary").textContent !== boundary) el("inspect-boundary").textContent = boundary;
+    // the readout: the tooltip's builders, so the cell, the row, the column and the reference say what the hover says
+    const readout = el("inspect-readout");
+    let summary = "";
+    if (state === "ready" && s !== "lens") {
+      hover = inspectPointer();
+      const was = inspect.forced;
+      inspect.forced = s === "references" && entry ? entry.hit : null;
+      if (s === "references" && entry && !entry.hit) {
+        // a clock kind has no line of its own to name: its events, at the cursor's time
+        tipRows(tip, entry.name, "Calendar lines", [["Kind", entry.name], ["Drawn", spaced(CLOCK[entry.key].gap) ? "yes" : "too close together at this zoom"]], "A calendar definition, not a measured trade event");
+        tip.hidden = false;
+      } else tooltip(hover, { redraw: false });
+      inspect.forced = was;
+      readout.replaceChildren(...[...tip.childNodes].map((n) => n.cloneNode(true)));
+      summary = `${position}. ${tip.textContent}`;
+    } else if (state === "ready" && s === "lens") {
+      const shown = inspectLensTip(tip, w);
+      readout.replaceChildren(...[...tip.childNodes].map((n) => n.cloneNode(true)));
+      summary = `${position}. ${shown}`;
+    } else {
+      tip.hidden = true;
+      const note = state === "outside" ? "The cursor is outside the view. Home brings it back; the view is not moved." : "Nothing to read here.";
+      readout.replaceChildren(Object.assign(document.createElement("div"), { className: "ol-tip-note", textContent: note }));
+      summary = `${position}. ${note}`;
+    }
+    if (announce) {
+      el("inspect-live").textContent = boundary ? `${boundary}. ${summary}` : summary;
+      el("inspect-live").dataset.at = String((Number(el("inspect-live").dataset.at) || 0) + 1);
+    }
+    if (inspect.detail) renderInspectDetail();
+    if (redraw) requestDraw();
+  }
+  // The lens's finer record under the cursor, from the frame the lens drew: its cell at the lens's own level, with the readout the Cells have.
+  function inspectLensTip(tip, w) {
+    const lp = w.sp.lens,
+      q = lp?.q,
+      z = q?.cells.find((x) => x.c === w.c && x.r === w.r) ?? null,
+      frame = last?.sc?.lens,
+      exact = nav.shift,
+      f = { money: (x) => (exact ? usdt(x) : compact(x)) + " USDT", count: (x) => (exact ? integer(x) : compact(x)), share: (x) => (x * 100).toFixed(exact ? 2 : 1) + "%", exact },
+      head = `Lens · ${range(w.c * w.sp.ts, (w.c + 1) * w.sp.ts)} UTC · ${dur(w.sp.ts * BASE)}`,
+      sub = `${price(w.r * w.sp.ps * PR)}–${price((w.r + 1) * w.sp.ps * PR)} USDT`;
+    if (!lp) {
+      tipRows(tip, "Lens", "", [], "The lens has no finer cells here");
+      tip.hidden = false;
+      return "The lens has no finer cells here";
+    }
+    let readout = null;
+    if (z && frame && frame.readout) {
+      try {
+        readout = frame.readout(z, { interaction: "inspect" });
+      } catch (error) {
+        scaleFault(error);
+      }
+    }
+    if (!z) tipRows(tip, head, sub, [["Lens", `${lp.fine ? "Finer" : "Finest loaded"} cells · ${dur(lp.ts * BASE)} × ${price(lp.ps * PR)} USDT`]], "No trades in this finer cell");
+    else tipRows(tip, head, sub, [...readoutRows(readout, f), ...cellFacts(z, f), ["Lens", `${lp.fine ? "Finer" : "Finest loaded"} cells · ${dur(lp.ts * BASE)} × ${price(lp.ps * PR)} USDT`]], "The finer record, not the coarse cell under the lens");
+    tip.hidden = false;
+    return tip.textContent;
+  }
+  function inspectEnter() {
+    if (inspect.on) return;
+    inspect.prev = S.lens ? "lens" : S.select ? "select" : "pan";
+    inspect.on = true;
+    S.select = false;
+    S.lens = false;
+    const inView = inspect.t !== null && inspect.p !== null && inspect.t >= S.tA && inspect.t <= S.tB && inspect.p >= S.pA && inspect.p <= S.pB;
+    if (!inView) {
+      const p = hover && inPlot(hover) ? hover : nav.last && inPlot(nav.last) ? nav.last : null;
+      inspect.t = p ? p.t : (S.tA + S.tB) / 2;
+      inspect.p = p ? p.p : (S.pA + S.pB) / 2;
+    }
+    inspect.surface = "cells";
+    inspect.boundary = "";
+    inspect.detail = false;
+    el("inspect").hidden = false;
+    update();
+    inspectRender(true);
+    el("inspect").focus();
+  }
+  // Leave: the tool it came from is the tool again, a held lens is let go, and the readout, the focus a detail took and the navigator are gone.
+  function inspectExit() {
+    if (!inspect.on) return;
+    if (inspect.detail) inspectDetail(false, false);
+    inspect.on = false;
+    inspect.lens = null;
+    inspect.forced = null;
+    el("inspect").hidden = true;
+    el("tip").hidden = true;
+    hover = null;
+    S.lens = inspect.prev === "lens";
+    S.select = inspect.prev === "select";
+    update();
+    canvas.focus();
+    requestDraw();
+  }
+  function inspectSurface(id) {
+    if (!inspect.on || !inspectSurfaceOn(id)) return;
+    if (inspect.detail) inspectDetail(false, false);
+    // the Lens surface freezes the lens frame where it is, so the cursor can move inside it while the pointer is elsewhere
+    if (id === "lens" && !inspect.lens) {
+      const f = lensFrame();
+      if (f) inspect.lens = { t: f.p.t, p: f.p.p };
+      const sp = inspectSpan("lens");
+      inspect.t = (Math.floor(clamp(inspect.t, sp.lens?.lensBounds[0] ?? inspect.t, sp.lens?.lensBounds[1] ?? inspect.t) / sp.ts) + 0.5) * sp.ts;
+      inspect.p = (Math.floor(clamp(inspect.p, sp.lens?.lensBounds[2] ?? inspect.p, sp.lens?.lensBounds[3] ?? inspect.p) / sp.ps) + 0.5) * sp.ps;
+    } else if (id !== "lens") inspect.lens = null;
+    inspect.surface = id;
+    inspect.boundary = "";
+    inspectRender(true);
+  }
+  // One step of the cursor: the surface's own keys. Returns whether the key means something here.
+  function inspectMove(dir) {
+    const s = inspect.surface,
+      horizontal = dir === "left" || dir === "right";
+    if (s === "references") {
+      if (horizontal) return false;
+      const list = inspectReferences(),
+        at = Math.max(0, list.findIndex((e) => e.id === inspect.ref)),
+        next = at + (dir === "down" ? 1 : -1);
+      if (next < 0 || next >= list.length) inspect.boundary = next < 0 ? "First reference" : "Last reference";
+      else {
+        inspect.ref = list[next].id;
+        inspect.boundary = "";
+      }
+      inspectRender(true);
+      return true;
+    }
+    if ((s === "rows" && horizontal) || (s === "columns" && !horizontal)) return false;
+    const sp = inspectSpan(s);
+    let c = Math.floor((inspect.t ?? 0) / sp.ts),
+      r = Math.floor((inspect.p ?? 0) / sp.ps);
+    const outside = !inspectWhere().inside;
+    if (outside) {
+      // the first key brings a cursor that is outside the view back to the nearest visible item, without moving the view
+      c = clamp(c, sp.c0, sp.c1);
+      r = clamp(r, sp.r0, sp.r1);
+      inspect.boundary = "Back in the view";
+    } else {
+      const nc = c + (dir === "right" ? 1 : dir === "left" ? -1 : 0),
+        nr = r + (dir === "up" ? 1 : dir === "down" ? -1 : 0);
+      if (nc < sp.c0 || nc > sp.c1 || nr < sp.r0 || nr > sp.r1) {
+        inspect.boundary = { left: "Start of the view", right: "End of the view", up: "Top of the view", down: "Bottom of the view" }[dir];
+        inspectRender(true);
+        return true;
+      }
+      c = nc;
+      r = nr;
+      inspect.boundary = "";
+    }
+    inspect.t = (c + 0.5) * sp.ts;
+    inspect.p = (r + 0.5) * sp.ps;
+    inspectRender(true);
+    return true;
+  }
+  // Home and End: the first and last visible item along the surface's primary axis.
+  function inspectEdge(end) {
+    const s = inspect.surface;
+    if (s === "references") {
+      const list = inspectReferences();
+      if (list.length) inspect.ref = (end ? list[list.length - 1] : list[0]).id;
+    } else {
+      const sp = inspectSpan(s);
+      if (s === "rows") inspect.p = ((end ? sp.r0 : sp.r1) + 0.5) * sp.ps;
+      else {
+        inspect.t = ((end ? sp.c1 : sp.c0) + 0.5) * sp.ts;
+        if (!inspectWhere().inside || (s !== "columns" && Math.floor(inspect.p / sp.ps) < sp.r0)) inspect.p = clamp(inspect.p ?? (sp.r0 + sp.r1) / 2, (sp.r0 + 0.5) * sp.ps, (sp.r1 + 0.5) * sp.ps);
+      }
+    }
+    inspect.boundary = "";
+    inspectRender(true);
+  }
+  // The detail of the record under the cursor: what the readout says, in a panel of its own, with a button to close it. Enter or Space opens it and
+  // does nothing else. On a reference it takes the focus, and gives the previous focus back when it closes.
+  function inspectDetail(open, announce = true) {
+    if (!inspect.on) return;
+    if (open === inspect.detail) return;
+    inspect.detail = open;
+    const panel = el("inspect-detail");
+    panel.hidden = !open;
+    if (open) {
+      if (inspect.surface === "references" && inspect.ref && inspect.ref !== "level") {
+        const e = inspectEntry();
+        if (e) focusBegin({ key: e.key });
+      }
+      renderInspectDetail();
+      el("inspect-detail-close").focus();
+    } else {
+      focusEnd();
+      el("inspect").focus();
+    }
+    if (announce) el("inspect-live").textContent = open ? "Detail open" : "Detail closed";
+  }
+  function renderInspectDetail() {
+    const body = el("inspect-detail-body"),
+      readout = el("inspect-readout");
+    body.replaceChildren(...[...readout.childNodes].map((n) => n.cloneNode(true)));
+    el("inspect-detail-title").textContent = el("inspect-position").textContent;
+  }
+  // The cursor's mark on the plot: the strongest persistent mark of the interaction table, on the item it reads.
+  function inspectPaint() {
+    if (!inspect.on || inspect.t === null) return;
+    const s = inspect.surface,
+      w = inspectWhere();
+    if (!w.inside) return;
+    ctx.save();
+    // on the plot the mark is clipped to it; beside it (a profile row, a pane's column) it is not
+    if (s === "cells" || s === "lens" || s === "references") {
+      ctx.beginPath();
+      ctx.rect(G.x, G.y, G.w, G.h);
+      ctx.clip();
+    }
+    let box = null;
+    if (s === "cells" || s === "lens") box = [G.X(w.c * w.sp.ts), G.Y((w.r + 1) * w.sp.ps), G.X((w.c + 1) * w.sp.ts) - G.X(w.c * w.sp.ts), G.Y(w.r * w.sp.ps) - G.Y((w.r + 1) * w.sp.ps)];
+    else if (s === "rows" && G.tracks) box = [G.tx[0] - 2, G.Y((w.r + 1) * w.sp.ps), (G.tracks > 1 ? G.tx[1] - G.tx[0] : 0) + TRACK_BARS + 4, G.Y(w.r * w.sp.ps) - G.Y((w.r + 1) * w.sp.ps)];
+    else if (s === "columns" && G.ah > 0) box = [G.X(w.c * w.sp.ts), G.ay, G.X((w.c + 1) * w.sp.ts) - G.X(w.c * w.sp.ts), G.ah];
+    else if (s === "references") {
+      const e = inspectEntry(),
+        hit = e && lineHits.find((h) => h.id === e.id);
+      if (hit?.tag) box = [hit.tag[0], hit.tag[1], hit.tag[2] - hit.tag[0], hit.tag[3] - hit.tag[1]];
+      else if (e && e.at !== null && e.at !== undefined) {
+        const y = G.Y(e.at);
+        if (y >= G.y && y <= G.y + G.h) box = [G.x + G.w - 22, y - 8, 18, 16];
+      }
+    }
+    if (box && box[2] > 0 && box[3] > 0) {
+      const [x, y, bw, bh] = box;
+      STROKE.inspect(ctx, x, y, Math.max(8, bw), Math.max(8, bh));
+      markCount.inspect++;
+    }
+    ctx.restore();
+  }
+  // A draw that changed what the cursor stands on (the view, the level, the data) reads it again, so a pan or a refresh never leaves a stale readout.
+  function inspectSync() {
+    if (!inspect.on) return;
+    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", inspectReferences().length, nav.shift].join("|");
+    if (sig === inspect.sig) return;
+    inspect.sig = sig;
+    inspectRender(false, false);
+  }
+  // A table row's cell, read in Inspect: the cursor goes to the centre of the cell at the level the row names and its detail opens.
+  function inspectAtCell(c, r, n, m) {
+    if (!inspect.on) inspectEnter();
+    inspect.surface = "cells";
+    inspect.lens = null;
+    inspect.t = (c + 0.5) * 2 ** n;
+    inspect.p = (r + 0.5) * 2 ** m;
+    inspect.boundary = "";
+    inspectRender(true);
+    inspectDetail(true);
+  }
+  // A tap or a click with Inspect: the cursor goes where it landed, on the surface the tap is over, and nothing else changes.
+  // On touch a finger is not a point: the references within a finger's reach of the tap are the candidates. One is taken; several are shown in a
+  // chooser with a 44 px row each, and the cursor is not moved until one is chosen (nothing is guessed).
+  const INSPECT_REACH = 22;
+  function inspectNear(p) {
+    const dist = ([x0, y0, x1, y1]) => Math.hypot(Math.max(x0 - p.x, 0, p.x - x1), Math.max(y0 - p.y, 0, p.y - y1)),
+      want = new Map(inspectReferences().map((e) => [e.id, e])),
+      found = new Map(),
+      add = (id) => {
+        const e = want.get(id);
+        if (e) found.set(id, e);
+      };
+    for (const h of lineHits) {
+      const id = h.id.replace(/\|(mark|eq)\|/, "|");
+      let near = false;
+      if (h.tag && dist(h.tag) <= INSPECT_REACH) near = true;
+      else if (h.mark && dist(h.mark) <= INSPECT_REACH) near = true;
+      else if (h.eq && dist([Math.min(h.eq[0], h.eq[2]), Math.min(h.eq[1], h.eq[3]), Math.max(h.eq[0], h.eq[2]), Math.max(h.eq[1], h.eq[3])]) <= INSPECT_REACH) near = true;
+      else if (h.curve) {
+        const { xs, ys } = h.curve;
+        for (let i = 0; i < xs.length && !near; i++) if (Math.abs(xs[i] - p.x) <= INSPECT_REACH && Math.abs(ys[i] - p.y) <= INSPECT_REACH) near = true;
+      } else if (h.y !== undefined && p.x >= h.xa - INSPECT_REACH && p.x <= h.xb + INSPECT_REACH && Math.abs(h.y - p.y) <= INSPECT_REACH) near = true;
+      if (near) add(id);
+    }
+    if (S.level !== null) {
+      const y = G.Y(S.level);
+      if (Math.abs(y - p.y) <= INSPECT_REACH && inPlot({ x: p.x, y })) add("level");
+    }
+    return [...found.values()];
+  }
+  function inspectChoose(list) {
+    const box = el("inspect-chooser");
+    box.replaceChildren(
+      Object.assign(document.createElement("div"), { className: "ol-inspect-chooser-head", textContent: `${list.length} references here: choose one` }),
+      ...list.map((e) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "ol-inspect-choice cursor-interaction";
+        b.dataset.ref = e.id;
+        b.textContent = e.name;
+        return b;
+      }),
+    );
+    box.hidden = false;
+    box.querySelector("button")?.focus();
+    el("inspect-live").textContent = `${list.length} references here: choose one`;
+  }
+  function inspectTap(p, touch = false) {
+    const hit = last && lineHits.length && inPlot(p) ? lineAt(p) : null,
+      f = lensShown() ? lensFrame() : null;
+    el("inspect-chooser").hidden = true;
+    if (touch && !f) {
+      const near = inspectNear(p);
+      if (near.length > 1) return inspectChoose(near);
+      if (near.length === 1) {
+        inspect.surface = "references";
+        inspect.ref = near[0].id;
+        inspect.lens = null;
+        inspect.boundary = "";
+        return inspectRender(true);
+      }
+    }
+    if (f && p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + f.h) {
+      inspect.t = p.t;
+      inspect.p = p.p;
+      inspectSurface("lens");
+      return;
+    }
+    if (hit && inspectReferences().some((e) => e.id === hit.id)) {
+      inspect.surface = "references";
+      inspect.ref = hit.id;
+      inspect.lens = null;
+    } else if (G.tracks && onProfile(p)) {
+      inspect.surface = "rows";
+      inspect.p = p.p;
+      inspect.lens = null;
+    } else if (paneShown && inActivity(p)) {
+      inspect.surface = "columns";
+      inspect.t = p.t;
+      inspect.lens = null;
+    } else if (inPlot(p)) {
+      inspect.surface = "cells";
+      inspect.t = p.t;
+      inspect.p = p.p;
+      inspect.lens = null;
+    } else return;
+    inspect.boundary = "";
+    inspectRender(true);
+  }
+  // The navigator's own keys, and the canvas's while Inspect is the tool.
+  function inspectKey(e) {
+    const k = e.key;
+    if (e.altKey || e.ctrlKey || e.metaKey) return false;
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(k)) return inspectMove({ ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" }[k]);
+    if (k === "Home" || k === "End") {
+      inspectEdge(k === "End");
+      return true;
+    }
+    if (k === "Enter" || k === " ") {
+      inspectDetail(!inspect.detail);
+      return true;
+    }
+    return false;
+  }
+  function bindInspect() {
+    const nav2 = el("inspect");
+    nav2.addEventListener("keydown", (e) => {
+      // a native control inside the navigator (a tab, a button, the chooser) keeps its own keys, but Escape still leaves
+      if (e.target !== nav2 && e.target.closest("button, select, input, [role=tab]") && e.key !== "Escape") {
+        if (e.target.matches("[role=tab]") && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+        if (!["ArrowUp", "ArrowDown"].includes(e.key)) return;
+        if (e.target.matches("select")) return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (inspect.detail) inspectDetail(false);
+        else inspectExit();
+        return;
+      }
+      if (e.target.closest("button, select, input, [role=tab]") && e.target !== nav2) return;
+      if (inspectKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    });
+    el("inspect-surfaces").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-surface]");
+      if (b && !b.disabled) inspectSurface(b.dataset.surface);
+    });
+    el("inspect-surfaces").addEventListener("keydown", (e) => {
+      const tabs = qsa("#ol-inspect-surfaces [data-surface]:not(:disabled)"),
+        at = tabs.findIndex((b) => b === document.activeElement);
+      if (at < 0 || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const to = e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : (at + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+      tabs[to].focus();
+      inspectSurface(tabs[to].dataset.surface);
+    });
+    el("inspect-exit").addEventListener("click", () => inspectExit());
+    el("inspect-detail-close").addEventListener("click", () => inspectDetail(false));
+    el("inspect-chooser").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-ref]");
+      if (!b) return;
+      el("inspect-chooser").hidden = true;
+      inspect.surface = "references";
+      inspect.ref = b.dataset.ref;
+      inspect.lens = null;
+      inspect.boundary = "";
+      inspectRender(true);
+      el("inspect").focus();
+    });
+    el("inspect-chooser").addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      el("inspect-chooser").hidden = true;
+      el("inspect").focus();
+    });
+    for (const b of qsa("#ol-inspect [data-step]"))
+      b.addEventListener("click", () => {
+        inspectMove(b.dataset.step);
+        b.focus();
+      });
+    el("inspect-reference").addEventListener("change", (e) => {
+      inspect.ref = e.target.value;
+      inspect.boundary = "";
+      inspectRender(true);
+    });
+  }
   function update() {
     if (!ready) return;
     limits();
@@ -20496,6 +21520,37 @@
       rowMarker();
       requestDraw();
     });
+    // The rows are reached by their own keys, which they consume before the chart's: the arrows and Home and End move along the page, Enter and
+    // Space read the cell in Inspect, with its detail open. Nothing here anchors, pins or plays.
+    el("table-body").addEventListener("keydown", (e) => {
+      const tr = e.target.closest("tr");
+      if (!tr || !["ArrowUp", "ArrowDown", "Home", "End", "Enter", " "].includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rows = [...el("table-body").children],
+        at = rows.indexOf(tr);
+      if (e.key === "Enter" || e.key === " ") {
+        const [n, m] = tr.dataset.level.split(":").map(Number);
+        inspectAtCell(Number(tr.dataset.c), Number(tr.dataset.r), n, m);
+        return;
+      }
+      const to = e.key === "Home" ? 0 : e.key === "End" ? rows.length - 1 : clamp(at + (e.key === "ArrowDown" ? 1 : -1), 0, rows.length - 1);
+      for (const [i, row] of rows.entries()) row.tabIndex = i === to ? 0 : -1;
+      rows[to].focus();
+    });
+    el("table-body").addEventListener("focusin", (e) => {
+      const tr = e.target.closest("tr");
+      if (!tr) return;
+      const [n, m] = tr.dataset.level.split(":").map(Number);
+      tableHover = { c: Number(tr.dataset.c), r: Number(tr.dataset.r), n, m };
+      rowMarker();
+      requestDraw();
+    });
+    el("table-body").addEventListener("focusout", () => {
+      tableHover = null;
+      rowMarker();
+      requestDraw();
+    });
     el("table-body").addEventListener("pointerleave", () => {
       tableHover = null;
       rowMarker();
@@ -20515,7 +21570,7 @@
           : "free";
   }
   function tool() {
-    return S.lens ? "lens" : S.select ? "select" : "pan";
+    return inspect.on ? "inspect" : S.lens ? "lens" : S.select ? "select" : "pan";
   }
   // How the price range follows a time zoom: one of four, never two at once.
   function setFollow(mode) {
@@ -20548,6 +21603,17 @@
   // A tool stays chosen until another is: Select for as many rectangles as
   // wanted, the lens until it is left.
   function setTool(next) {
+    if (next === "inspect") {
+      inspectEnter();
+      return;
+    }
+    // choosing another tool leaves Inspect for that one
+    if (inspect.on) {
+      inspect.prev = next;
+      inspectExit();
+      save();
+      return;
+    }
     S.select = next === "select";
     S.lens = next === "lens";
     if (S.lens) el("tip").hidden = true;
@@ -22719,6 +23785,7 @@
     bindMenu("rows", "rows-menu", buildRowsMenu);
     bindPeriods();
     bindLines();
+    bindInspect();
     bindPop("res", "res-pop", () => {
       nav.planeKey = "";
       refreshPlane();
@@ -23200,7 +24267,15 @@
   // How many of each mark the last draw painted: the footer shows the key of each that is on the plot, and says how many of the tiny moved-through
   // cells could not be resolved.
   let markTally = false;
-  const markCount = { empty: 0, open: 0, partial: 0, provisional: 0, moved: 0, detail: 0, selection: 0, hover: 0, unavailable: 0 };
+  const markCount = { empty: 0, open: 0, partial: 0, provisional: 0, moved: 0, detail: 0, selection: 0, hover: 0, unavailable: 0, cone: 0, inspect: 0 };
+  // What each enabled reference did in this frame (PRD-0002 S3, section 2), by the key of its menu row: how many of its marks were drawn, were
+  // held back by the budget, were outside the plot or too close to draw. The inventory below turns it into one status for each reference.
+  const refTally = new Map();
+  function refNote(key, outcome) {
+    const t = refTally.get(key) ?? {};
+    t[outcome] = (t[outcome] ?? 0) + 1;
+    refTally.set(key, t);
+  }
   const STROKE = {
     // A cell with no trade: the surface with a hairline, as the plot leaves it.
     empty(c, x, y, w, h) {
@@ -23312,7 +24387,31 @@
       c.moveTo(x, y + h / 2);
       c.lineTo(x + w - 6, y + h / 2);
       c.stroke();
-      pocGlyph(c, x + w - 6, y + h / 2, false);
+      pocGlyph(c, x + w - 6, y + h / 2, "poc");
+    },
+    // An untested POC's ray: the thin gold line from its column on, starting in a dot, as the plot draws it.
+    untested(c, x, y, w, h) {
+      c.strokeStyle = colors.poc;
+      c.fillStyle = colors.poc;
+      c.globalAlpha = 0.7;
+      c.fillRect(x + 1, y + h / 2 - 1, 2, 2);
+      c.globalAlpha = 0.36;
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(x + 3, y + h / 2);
+      c.lineTo(x + w, y + h / 2);
+      c.stroke();
+      c.globalAlpha = 1;
+    },
+    // The value area's high and low: the same gold line as the POC, ending in a hollow square.
+    va(c, x, y, w, h) {
+      c.strokeStyle = colors.poc;
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(x, y + h / 2);
+      c.lineTo(x + w - 6, y + h / 2);
+      c.stroke();
+      pocGlyph(c, x + w - 6, y + h / 2, "va");
     },
     bpoc(c, x, y, w, h) {
       c.save();
@@ -23324,7 +24423,7 @@
       c.lineTo(x + w - 6, y + h / 2);
       c.stroke();
       c.restore();
-      pocGlyph(c, x + w - 6, y + h / 2, true);
+      pocGlyph(c, x + w - 6, y + h / 2, "buy");
     },
     // Not measured yet: the dots of the role table, as the plot draws them.
     pending(c, x, y, w, h) {
@@ -23369,6 +24468,8 @@
     pending: { body: false },
     poc: { body: false },
     bpoc: { body: false },
+    va: { body: false },
+    untested: { body: false },
     inspect: { body: true, box: [2.5, 2.5, 6, 6] },
   };
   const strokeKeys = { epoch: -1, dpr: 0 };
@@ -23411,10 +24512,84 @@
     show("key-detail", markCount.detail > 0);
     show("key-selection", markCount.selection > 0);
     show("key-hover", markCount.hover > 0);
+    show("key-inspect", markCount.inspect > 0);
     if (markCount.detail > 0) {
       const text = `Detail unresolved: ${markCount.detail} of ${markCount.detail + markCount.moved} moved-through cells`;
       if (el("key-detail-text").textContent !== text) el("key-detail-text").textContent = text;
     }
+  }
+  // ---- The reference keys (PRD-0002 S3, section 1) ----
+  // The footer says what each reference on the chart is: one key for each family that has lines on (its hue and, where it has one, its
+  // endpoint glyph), one for each pattern a market reference can be drawn in, and the user's Level; each swatch is painted by the same
+  // functions as the plot (the pattern table, the glyph painters, the median markers), from E.role.REFERENCE, so a key cannot say what the
+  // chart does not.
+  const REF_KEY_W = 26,
+    REF_KEY_H = 11;
+  const refKeys = { sig: "", dpr: 0 };
+  // The families that have something on: by the menu's families and the line, the level and the continuation's cone.
+  function referenceKeyList() {
+    const menu = { profile: "profile", session: "level", structure: "level", average: "average", vwap: "vwap", clock: "clock" },
+      have = new Set(S.lines.map((k) => menu[familyOf(k)]).filter(Boolean)),
+      out = [];
+    if (S.level !== null) have.add("user");
+    if (markCount.cone > 0) have.add("compare");
+    for (const f of E.role.REFERENCE.FAMILIES) if (have.has(f.id)) out.push({ id: "family:" + f.id, label: f.name, family: f });
+    const horizontal = ["profile", "level", "average", "vwap"].some((id) => have.has(id));
+    if (horizontal) for (const name of ["support", "held", "lead"]) out.push({ id: "pattern:" + name, label: E.role.REFERENCE.PATTERN_NAMES[name], pattern: name });
+    return out;
+  }
+  // One key swatch on a canvas of REF_KEY_W x REF_KEY_H css px: a line in the family's colour or a pattern in the ink, its endpoint glyph.
+  function referenceSwatch(node, spec) {
+    const dpr = devicePixelRatio || 1,
+      canvas = node.firstChild instanceof HTMLCanvasElement ? node.firstChild : document.createElement("canvas"),
+      c = canvas.getContext("2d"),
+      y = REF_KEY_H / 2;
+    canvas.width = Math.round(REF_KEY_W * dpr);
+    canvas.height = Math.round(REF_KEY_H * dpr);
+    canvas.setAttribute("aria-hidden", "true");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.fillStyle = colors.surface;
+    c.fillRect(0, 0, REF_KEY_W, REF_KEY_H);
+    const f = spec.family,
+      stroke = spec.pattern || f.id === "user" ? colors.ink : colors.family[f.colour],
+      dash = spec.pattern ? E.role.REFERENCE.PATTERN[spec.pattern] : f.id === "user" ? E.role.REFERENCE.PATTERN.user : [];
+    c.strokeStyle = stroke;
+    c.lineWidth = REFERENCE_STROKE;
+    c.setLineDash(dash);
+    c.beginPath();
+    c.moveTo(1, y);
+    c.lineTo(REF_KEY_W - (f && f.glyph ? 9 : 1), y);
+    c.stroke();
+    c.setLineDash([]);
+    if (f && f.id === "profile") pocGlyph(c, REF_KEY_W - 8, y, "poc");
+    else if (f && f.id === "user") levelDiamond(c, REF_KEY_W - 5, y);
+    else if (f && f.id === "compare") {
+      medianMarker(c, "match", REF_KEY_W - 15, y, stroke);
+      medianMarker(c, "all", REF_KEY_W - 5, y, stroke);
+    }
+    if (!node.contains(canvas)) node.replaceChildren(canvas);
+  }
+  // Each draw: rebuilt when the families on, the palette or the pixel ratio changed.
+  function referenceKeysCommit() {
+    const dpr = devicePixelRatio || 1,
+      list = referenceKeyList(),
+      sig = list.map((k) => k.id).join(",") + "|" + colourEpoch,
+      host = el("keys-ref");
+    if (refKeys.sig === sig && refKeys.dpr === dpr) return;
+    refKeys.sig = sig;
+    refKeys.dpr = dpr;
+    host.replaceChildren(
+      ...list.map((k) => {
+        const span = document.createElement("span"),
+          swatch = document.createElement("i");
+        swatch.className = "ol-data-key ol-glyph ol-ref-swatch";
+        swatch.setAttribute("aria-hidden", "true");
+        span.dataset.refKey = k.id;
+        referenceSwatch(swatch, k);
+        span.append(swatch, document.createTextNode(k.label));
+        return span;
+      }),
+    );
   }
   // ---- The profile tracks (PRD-0002 S2, section 3) ----
   // Two tracks side by side, right of the Rows strip, each with a heading of its own and its numeric domain under it. The CURRENT track is the
@@ -23492,14 +24667,18 @@
     const [lo, hi] = rec.domain;
     return rec.sign === "signed-symmetric" ? "±" + uiFmt(hi, rec.unit) : rec.sign === "ratio" ? `${lo}–${hi}` : `${lo === 0 ? "0" : uiFmt(lo, rec.unit)}–${uiFmt(hi, rec.unit)}`;
   }
-  // The endpoint glyphs: a filled triangle for the POC, a hollow diamond for the Buy POC, both in the gold profile role.
-  function pocGlyph(c, x, y, buy) {
+  // The endpoint glyphs of the volume-profile references, all in the gold profile role: a filled triangle for the POC, a hollow diamond for
+  // the Buy POC, a hollow square for the value area's high and low.
+  function pocGlyph(c, x, y, kind) {
     c.save();
     c.strokeStyle = colors.poc;
     c.fillStyle = colors.poc;
     c.lineWidth = 1.25;
     c.beginPath();
-    if (buy) {
+    if (kind === "va") {
+      c.rect(x - 0.5, y - 3, 6, 6);
+      c.stroke();
+    } else if (kind === "buy") {
       c.moveTo(x + 2.5, y - 3.5);
       c.lineTo(x + 6, y);
       c.lineTo(x + 2.5, y + 3.5);
@@ -23524,7 +24703,7 @@
       for (let i = visible.length - 2; i >= 0; i--) visible[i].ly = Math.min(visible[i].ly, visible[i + 1].ly - 14);
     }
     for (const l of visible) {
-      if (l.glyph) pocGlyph(ctx, x, l.y, l.glyph === "buy");
+      if (l.glyph) pocGlyph(ctx, x, l.y, l.glyph);
       else markLine(x, l.y, x + 5, l.y, l.color, 1, 0.7);
       if (Math.abs(l.ly - l.y) > 1) markLine(x + 6, l.y, x + 8, l.ly, l.color, 1, 0.7);
       text(l.symbol, x + 8, l.ly, colors.ink, "left", 11);
@@ -23649,10 +24828,11 @@
     if (S.area && va) {
       const high = G.Y(Math.min(va.r1 * ps, b[3])),
         low = G.Y(Math.max(va.r0 * ps, b[2]));
-      markLine(x0 + TRACK_BARS + 2, high, x0 + TRACK_BARS + 2, low, colors.muted, 1, 0.6);
-      markLine(x0, high, x0 + TRACK_BARS + 3, high, colors.muted, 1, 0.6);
-      markLine(x0, low, x0 + TRACK_BARS + 3, low, colors.muted, 1, 0.6);
-      labels.push({ symbol: "H", y: high, color: colors.muted }, { symbol: "L", y: low, color: colors.muted });
+      // The value area's high and low are volume-profile references: the gold role and a square endpoint, lettered H and L (the footer key and the line tags say VAH and VAL).
+      markLine(x0 + TRACK_BARS + 2, high, x0 + TRACK_BARS + 2, low, colors.poc, 1, 0.6);
+      markLine(x0, high, x0 + TRACK_BARS + 3, high, colors.poc, 1, 0.6);
+      markLine(x0, low, x0 + TRACK_BARS + 3, low, colors.poc, 1, 0.6);
+      labels.push({ symbol: "H", y: high, color: colors.poc, glyph: "va" }, { symbol: "L", y: low, color: colors.poc, glyph: "va" });
     }
     if (S.poc) {
       for (const [row, symbol, buy] of [[query.poc, "P", false], [query.bpoc, "B", true]]) {
@@ -23924,7 +25104,7 @@
     );
     ctx.save();
     if (S.area) {
-      ctx.strokeStyle = colors.muted;
+      ctx.strokeStyle = colors.poc;
       ctx.lineWidth = 1;
       ctx.globalAlpha = 0.5;
       for (const c of cols) {
@@ -24036,11 +25216,10 @@
   // areas, each day's POC and value area and the untested POCs; the session
   // levels the day's, week's and month's opens and the previous day's high,
   // low and close; the clock vertical lines at the times the market
-  // coordinates on. A line's timeframe shows in the thickness and saturation
-  // of its family's colour, in three tiers: short (a day to a week), medium
-  // (a month to a quarter) and long (a year or more); its tag names its exact
-  // period. Any number can be on at once, and the address and saved views
-  // keep them all.
+  // coordinates on. A line's colour and stroke are those of its family
+  // whatever its timeframe (E.role.REFERENCE); its tag and its name give its
+  // exact period. Any number can be on at once, and the address and saved
+  // views keep them all.
   const FAMILIES = [
       { id: "profile", name: "Volume profile", colour: "poc" },
       { id: "session", name: "Session levels", colour: "level" },
@@ -24051,75 +25230,67 @@
     ],
     TOGGLES = {
       va: { family: "profile", name: "Value area high and low", desc: "The top and bottom of each period's 70% value area" },
-      dpoc: { family: "profile", name: "Daily POC and value area", desc: "Each UTC day's, across its day", tier: "short" },
+      dpoc: { family: "profile", name: "Daily POC and value area", desc: "Each UTC day's, across its day" },
       udpoc: {
         family: "profile",
         name: "Untested daily POCs",
         desc: "The last 30 sessions' POCs that no later trade has come within 125 USDT of, within 5 daily ATRs of the price",
-        tier: "short",
         live: true,
       },
       uwpoc: {
         family: "profile",
         name: "Untested weekly POCs",
         desc: "The last 26 weeks' POCs, the same way",
-        tier: "short",
         live: true,
       },
-      dopen: { family: "session", name: "Daily open", desc: "Each UTC day's first trade, across its day", tier: "short", live: true },
-      pdhlc: { family: "session", name: "Previous day's high, low and close", desc: "Across the following day", tier: "short", live: true },
-      wopen: { family: "session", name: "Weekly open", desc: "Monday 00:00 UTC, across its week", tier: "short", live: true },
-      mopen: { family: "session", name: "Monthly open", desc: "The 1st, 00:00 UTC, across its month", tier: "medium", live: true },
-      ath: { family: "structure", name: "All-time high", desc: "The highest trade in the cube's history, from its time on", tier: "long", live: true },
+      dopen: { family: "session", name: "Daily open", desc: "Each UTC day's first trade, across its day", live: true },
+      pdhlc: { family: "session", name: "Previous day's high, low and close", desc: "Across the following day", live: true },
+      wopen: { family: "session", name: "Weekly open", desc: "Monday 00:00 UTC, across its week", live: true },
+      mopen: { family: "session", name: "Monthly open", desc: "The 1st, 00:00 UTC, across its month", live: true },
+      ath: { family: "structure", name: "All-time high", desc: "The highest trade in the cube's history, from its time on", live: true },
       pch: {
         family: "structure",
         name: "Prior cycle high",
         desc: "The highest price before the last fall of more than half that came before the all-time high",
-        tier: "long",
         live: true,
       },
       swing4h: {
         family: "structure",
         name: "4-hour swings",
         desc: "Highs and lows a 3 ATR reversal confirms on the 4-hour bars, until price trades through them; equal ones flagged",
-        tier: "short",
         live: true,
       },
-      swing1d: { family: "structure", name: "Daily swings", desc: "The same on the daily bars", tier: "short", live: true },
+      swing1d: { family: "structure", name: "Daily swings", desc: "The same on the daily bars", live: true },
       fib30: {
         family: "structure",
         name: "Retracements · 30 days",
         desc: "0.382, 0.5 and 0.618 of the move between the last 30 sessions' high and low, back from the later",
-        tier: "medium",
         live: true,
       },
-      fib90: { family: "structure", name: "Retracements · 90 days", desc: "The same over 90 sessions", tier: "medium", live: true },
+      fib90: { family: "structure", name: "Retracements · 90 days", desc: "The same over 90 sessions", live: true },
       fibswing: {
         family: "structure",
         name: "Retracements · last daily swing",
         desc: "The same for the move between the last two daily swings",
-        tier: "medium",
         live: true,
       },
-      ema21: { family: "average", group: "1d", name: "21 EMA", desc: "The exponential average of the last 21 daily closes", tier: "medium", live: true },
-      sma50: { family: "average", group: "1d", name: "50 SMA", desc: "The mean of the last 50 daily closes", tier: "medium", live: true },
-      sma100: { family: "average", group: "1d", name: "100 SMA", desc: "The mean of the last 100 daily closes", tier: "medium", live: true },
-      sma200: { family: "average", group: "1d", name: "200 SMA", desc: "The mean of the last 200 daily closes", tier: "medium", live: true },
+      ema21: { family: "average", group: "1d", name: "21 EMA", desc: "The exponential average of the last 21 daily closes", live: true },
+      sma50: { family: "average", group: "1d", name: "50 SMA", desc: "The mean of the last 50 daily closes", live: true },
+      sma100: { family: "average", group: "1d", name: "100 SMA", desc: "The mean of the last 100 daily closes", live: true },
+      sma200: { family: "average", group: "1d", name: "200 SMA", desc: "The mean of the last 200 daily closes", live: true },
       gdcross: {
         family: "average",
         group: "1d",
         name: "Golden and death crosses",
         desc: "Where the 50-day SMA crosses above the 200-day SMA, or below it",
-        tier: "medium",
         live: true,
       },
-      sma200w: { family: "average", group: "1w", name: "200-week SMA", desc: "The mean of the last 200 weekly closes", tier: "long", live: true },
+      sma200w: { family: "average", group: "1w", name: "200-week SMA", desc: "The mean of the last 200 weekly closes", live: true },
       bmsb: {
         family: "average",
         group: "1w",
         name: "Bull market support band",
         desc: "The 20-week SMA and 21-week EMA, as two lines",
-        tier: "long",
         live: true,
       },
       ema3m: {
@@ -24127,27 +25298,24 @@
         group: "intraday",
         name: "12 and 28 EMA · 3.75 min",
         desc: "On 3.75-minute bars, standing in for the 5-minute 9 and 21",
-        tier: "short",
         live: true,
       },
-      ema15m: { family: "average", group: "intraday", name: "9 and 21 EMA · 15 min", desc: "On 15-minute bars", tier: "short", live: true },
-      ema1h: { family: "average", group: "intraday", name: "50 and 200 EMA · 1 h", desc: "On hourly bars", tier: "short", live: true },
-      ema4h: { family: "average", group: "intraday", name: "50 and 200 EMA · 4 h", desc: "On 4-hour bars", tier: "short", live: true },
+      ema15m: { family: "average", group: "intraday", name: "9 and 21 EMA · 15 min", desc: "On 15-minute bars", live: true },
+      ema1h: { family: "average", group: "intraday", name: "50 and 200 EMA · 1 h", desc: "On hourly bars", live: true },
+      ema4h: { family: "average", group: "intraday", name: "50 and 200 EMA · 4 h", desc: "On 4-hour bars", live: true },
       bb15m: {
         family: "average",
         group: "bb",
         name: "Bollinger · 15 min",
         desc: "The 20-bar SMA ± 2 population standard deviations, on 15-minute bars",
-        tier: "short",
         live: true,
       },
-      bb1h: { family: "average", group: "bb", name: "Bollinger · 1 h", desc: "The same on hourly bars", tier: "short", live: true },
+      bb1h: { family: "average", group: "bb", name: "Bollinger · 1 h", desc: "The same on hourly bars", live: true },
       bb4h: {
         family: "average",
         group: "bb",
         name: "Bollinger · 4 h",
         desc: "The same on 4-hour bars; squeezes are intervals in the event strip, bandwidth below its 10th percentile of the last 500 bars",
-        tier: "short",
         live: true,
       },
       bb1d: {
@@ -24155,12 +25323,11 @@
         group: "bb",
         name: "Bollinger · 1D",
         desc: "The same on daily bars; squeezes are intervals in the event strip, bandwidth at its lowest of the last 182 days",
-        tier: "medium",
         live: true,
       },
-      svwap: { family: "vwap", name: "Session VWAP", desc: "USDT ÷ BTC from each 00:00 UTC", tier: "short", live: true },
-      avwaph: { family: "vwap", name: "From the last daily swing high", desc: "USDT ÷ BTC from it on", tier: "medium", live: true },
-      avwapl: { family: "vwap", name: "From the last daily swing low", desc: "USDT ÷ BTC from it on", tier: "medium", live: true },
+      svwap: { family: "vwap", name: "Session VWAP", desc: "USDT ÷ BTC from each 00:00 UTC", live: true },
+      avwaph: { family: "vwap", name: "From the last daily swing high", desc: "USDT ÷ BTC from it on", live: true },
+      avwapl: { family: "vwap", name: "From the last daily swing low", desc: "USDT ÷ BTC from it on", live: true },
       cday: { family: "clock", name: "Day start", desc: "00:00 UTC" },
       cweek: { family: "clock", name: "Week open", desc: "Monday 00:00 UTC" },
       cmonth: { family: "clock", name: "Month open", desc: "The 1st, 00:00 UTC" },
@@ -24171,50 +25338,18 @@
         name: "CME close and reopen",
         desc: "Friday 16:00 and Sunday 17:00 Chicago; live, the spot gap between them is outlined until the hourly bar in which a trade reaches the Friday close ends",
       },
-      deribit: { family: "clock", name: "Deribit expiry", desc: "Fridays 08:00 UTC; heavier on the month's last and at a quarter's end" },
+      deribit: { family: "clock", name: "Deribit expiry", desc: "Fridays 08:00 UTC; the month's last and a quarter's end are named monthly and quarterly" },
     },
     TOGGLE_KEYS = Object.keys(TOGGLES),
     isPeriod = (k) => LINE_KEYS.includes(k) || isDay(k),
     periodLines = () => S.lines.filter(isPeriod),
     familyOf = (k) => (isPeriod(k) ? "profile" : isVwapDay(k) ? "vwap" : TOGGLES[k]?.family),
     // The recorded snapshot has no exact opens, highs, lows or closes.
-    lineAvailable = (k) => isPeriod(k) || (isVwapDay(k) ? Boolean(PACK.live) : Boolean(TOGGLES[k] && (PACK.live || !TOGGLES[k].live))),
-    PERIOD_TIERS = {
-      "1d": "short",
-      wk: "short",
-      "7d": "short",
-      mo: "medium",
-      "30d": "medium",
-      "90d": "medium",
-      yr: "long",
-      "1y": "long",
-      "3y": "long",
-      all: "long",
-    };
-  // A line's tier: a period's by its length, a day chosen by how long ago it is.
-  function lineTier(key) {
-    if (TOGGLES[key]) return TOGGLES[key].tier || "short";
-    if (!isDay(key) && !isVwapDay(key)) return PERIOD_TIERS[key];
-    const days = (cutEdge() - (isVwapDay(key) ? vwapDayStart(key) : dayStart(key))) / DAYS;
-    return days <= 7 ? "short" : days <= 92 ? "medium" : "long";
-  }
-  // A family's colour at a tier: long lines at full saturation and weight,
-  // shorter ones paler and thinner. Kept per theme.
-  const styleMemo = new Map();
-  function lineStyle(family, tier) {
-    const key = family + "|" + tier + "|" + colourEpoch;
-    let style = styleMemo.get(key);
-    if (!style) {
-      const t = colors.tiers[tier] || colors.tiers.long,
-        c = d3.lch(colors.family[family]);
-      c.c *= t.chroma;
-      // An ordinary reference stroke is 1.5 px whatever its timeframe (the timeframe shows in its tag and the
-      // tier's saturation); a weighted or focused line may reach 2.5, whose 1 px casing each side totals 4.5.
-      style = { colour: c.formatHex(), width: REFERENCE_STROKE };
-      styleMemo.set(key, style);
-      while (styleMemo.size > 64) styleMemo.delete(styleMemo.keys().next().value);
-    }
-    return style;
+    lineAvailable = (k) => isPeriod(k) || (isVwapDay(k) ? Boolean(PACK.live) : Boolean(TOGGLES[k] && (PACK.live || !TOGGLES[k].live)));
+  // A family's stroke: its one colour at the ordinary reference width. The timeframe is in the line's tag and name, never in its colour
+  // or weight (PRD-0002 S3 section 1); a focused line adds one pixel at the draw site, inside the occlusion budget's maximum.
+  function lineStyle(family) {
+    return { colour: colors.family[family], width: REFERENCE_STROKE };
   }
   // A line's name, in lists and its tooltip; its tag, on the chart. The
   // calendar periods are named by what they are now: the month, the year; a
@@ -25643,8 +26778,7 @@
       const spec = AVERAGE_SPECS[key],
         frame = spec ? averageFrame(spec.tf) : null;
       if (!frame || frame.state !== "ready") continue;
-      const tier = TOGGLES[key].tier,
-        tf = TF_NAMES[spec.tf];
+      const tf = TF_NAMES[spec.tf];
       for (const [what, n, tag] of spec.lines || []) {
         const values = indicator(frame, what, n);
         curves.push({
@@ -25652,7 +26786,6 @@
           id: `${key}|${what}${n}`,
           kind: "average",
           family: "average",
-          tier,
           frame,
           what,
           n,
@@ -25665,36 +26798,35 @@
       }
       if (spec.bands) {
         const bb = indicator(frame, "bb", 20);
-        for (const [part, values, weight] of [
-          ["upper", bb.upper, 0.75],
-          ["mid", bb.mid, 0.6],
-          ["lower", bb.lower, 0.75],
+        // The three bands are one stroke each, solid: the middle is told from the others by its label (a dash is the held extension).
+        for (const [part, values, word] of [
+          ["upper", bb.upper, "Upper"],
+          ["mid", bb.mid, "Middle"],
+          ["lower", bb.lower, "Lower"],
         ])
           curves.push({
             key,
             id: `${key}|${part}`,
             kind: "average",
             family: "average",
-            tier,
             frame,
             what: "bb",
             part,
             bb,
             values,
             name: `Bollinger (20, 2σ) · ${tf}`,
-            tag: part === "mid" ? spec.bands : null,
-            weight,
-            dash: part === "mid" ? [4, 3] : null,
+            tag: `${spec.bands} ${word}`,
+            word,
             r: { points: framePoints(frame, values) },
             on,
           });
         if (spec.squeeze)
           for (const [i0, i1] of frameSqueezes(frame))
-            fills.push({ key, frame, a: bb.upper, b: bb.lower, i0: Math.max(19, i0 - 1), i1, tier, alpha: 0.24, squeeze: [i0, i1] });
+            fills.push({ key, frame, a: bb.upper, b: bb.lower, i0: Math.max(19, i0 - 1), i1, alpha: 0.24, squeeze: [i0, i1] });
       }
       if (key === "gdcross") {
         const fast = indicator(frame, "sma", 50);
-        for (const x of frameCrosses(frame)) crosses.push({ key, frame, x, t: frame.ends[x.i], v: fast[x.i], golden: x.up, tier });
+        for (const x of frameCrosses(frame)) crosses.push({ key, frame, x, t: frame.ends[x.i], v: fast[x.i], golden: x.up });
       }
     }
     return { curves, fills, crosses };
@@ -25726,7 +26858,7 @@
       tip.dataset.event = `${crossRec.kind}|${crossRec.label}`;
       tipRows(
         tip,
-        `${c.golden ? "Golden" : "Death"} cross · ${usd(c.v)}`,
+        `${c.golden ? "50 SMA above 200 SMA" : "50 SMA below 200 SMA"} · ${c.golden ? "golden" : "death"} cross`,
         `At the close of ${frameBar(c.frame, c.x.i)}`,
         [
           ["50 SMA", usd(c.v)],
@@ -25885,8 +27017,28 @@
         }
     return { count, max, min };
   }
+  // A divergence's marker: a small ink triangle, pointing down where the price made a higher high and RSI a lower one, up where it made a lower
+  // low and RSI a higher one, on a surface casing so that it reads over the RSI's own line.
+  function divergenceMark(c, x, y, bearish) {
+    const s = 4,
+      tip = bearish ? y + s : y - s,
+      base = bearish ? y - s : y + s;
+    c.save();
+    c.beginPath();
+    c.moveTo(x, tip);
+    c.lineTo(x - s, base);
+    c.lineTo(x + s, base);
+    c.closePath();
+    c.lineJoin = "miter";
+    c.strokeStyle = colors.surface;
+    c.lineWidth = 2.5;
+    c.stroke();
+    c.fillStyle = colors.ink;
+    c.fill();
+    c.restore();
+  }
   // The pane under an oscillator: RSI with its 70 and 30 guides and its
-  // divergences, bearish in the negative colour and bullish in the positive one, or
+  // divergences, neutral triangles that say which swings disagree, or
   // MACD's histogram, line and signal with its crosses; each on its own bars,
   // one point to a pixel column, sharing the chart's time axis. RSI's axis is
   // fixed, 0 to 100; MACD's is one axis for its three series, symmetric about
@@ -25999,6 +27151,9 @@
             room = h / 2 - 6,
             y = (v) => zero - E.axis.coordinate(rec, v, place).t * room;
           markLine(G.x, zero, right, zero, colors.line, 1, 0.9);
+          // The zero is named in the price labels' column: positive above it, negative below, and the histogram, the crossing markers'
+          // direction and their colours all say MACD minus its signal.
+          guides = [["0", zero]];
           // The histogram, a bar to a day, thinned to one a pixel column.
           let lastX = -Infinity;
           for (let i = i0; i <= i1; i++) {
@@ -26013,14 +27168,21 @@
             ctx.fillRect(xa, Math.min(zero, y(v)), Math.max(0.6, xb - xa - (xb - xa > 3 ? 1 : 0)), Math.abs(y(v) - zero));
           }
           ctx.globalAlpha = 1;
-          stroke(pts(o.signal, y), lineStyle("average", "long").colour, 1.25);
+          stroke(pts(o.signal, y), lineStyle("average").colour, 1.25);
           stroke(pts(o.macd, y), colors.ink, 1.5);
           for (const x of o.crosses) {
             if (x.i < i0 || x.i > i1) continue;
             const cx = G.X(f.ends[x.i]),
               cy = y(o.macd[x.i]);
+            // MACD crossing above its signal: a triangle pointing up in the positive role; below: pointing down in the negative role.
+            const s = 4.5,
+              tip = x.up ? cy - s : cy + s,
+              base = x.up ? cy + s * 0.8 : cy - s * 0.8;
             ctx.beginPath();
-            ctx.arc(cx, cy, 3, 0, 2 * Math.PI);
+            ctx.moveTo(cx, tip);
+            ctx.lineTo(cx - s, base);
+            ctx.lineTo(cx + s, base);
+            ctx.closePath();
             ctx.fillStyle = x.up ? colors.positive : colors.negative;
             ctx.fill();
             ctx.strokeStyle = colors.surface;
@@ -26047,23 +27209,23 @@
             .filter((t) => t.kind === "guide" || guideY.every((gy) => Math.abs(gy - y(t.value)) >= 12))
             .map((t) => [String(t.value), clamp(y(t.value), top + 6, top + h - 6)]);
           stroke(pts(o.rsi, y), colors.ink, 1.5);
+          // A divergence is a relationship between two swings, not a sign: its line and markers are neutral, a triangle pointing down at a
+          // higher high that RSI did not confirm and up at a lower low that it did not confirm, and its words say which (PRD-0002 S3 section 1).
           for (const d of o.divergences) {
             if (d.b.confirmed > cut || f.ends[d.b.i] < S.tA || f.ends[d.a.i] > S.tB) continue;
-            const colour = d.bearish ? colors.legacySell : colors.legacyBuy;
-            // A divergence whose later swing is only a candidate (the bar that reversed is still forming) is dashed: not confirmed yet
-            // (E.readout.events.rsiDivergence)
-            if (d.b.ce > f.end) ctx.setLineDash([3, 3]);
-            line(G.X(f.ends[d.a.i]), y(d.r0), G.X(f.ends[d.b.i]), y(d.r1), colour, 2, 0.95);
+            // A divergence whose later swing is only a candidate (the bar that reversed is still forming) is dotted, the lead-in pattern: not
+            // confirmed yet (E.readout.events.rsiDivergence)
+            const xa = G.X(f.ends[d.a.i]),
+              xb = G.X(f.ends[d.b.i]);
+            if (d.b.ce > f.end) ctx.setLineDash(E.role.REFERENCE.PATTERN.lead);
+            line(xa, y(d.r0), xb, y(d.r1), colors.ink, REFERENCE_STROKE, 0.95);
             ctx.setLineDash([]);
-            for (const [s, r] of [
-              [d.a, d.r0],
-              [d.b, d.r1],
-            ]) {
-              ctx.beginPath();
-              ctx.arc(G.X(f.ends[s.i]), y(r), 2.5, 0, 2 * Math.PI);
-              ctx.fillStyle = colour;
-              ctx.fill();
-            }
+            for (const [x, r] of [
+              [xa, d.r0],
+              [xb, d.r1],
+            ])
+              divergenceMark(ctx, x, y(r), d.bearish);
+            if (xb >= G.x && xb <= right) chartLabel(d.bearish ? "Price higher, RSI lower" : "Price lower, RSI higher", xb + 7, y(d.r1) + (d.bearish ? -9 : 12), colors.ink);
           }
         }
       }
@@ -26721,15 +27883,13 @@
     for (const key of periodLines()) {
       const r = lineShown(key);
       if (r.state !== "ready" || r.row === null) continue;
-      const tier = lineTier(key),
-        at = (r.row + 0.5) * r.rowPrice,
+      const at = (r.row + 0.5) * r.rowPrice,
         span = [r.span[0], Math.min(r.span[1], cut)];
       items.push({
         key,
         id: key,
         kind: "poc",
         family: "poc",
-        tier,
         at,
         from: span[0],
         to: span[1],
@@ -26750,12 +27910,10 @@
             side,
             period: key,
             family: "poc",
-            tier,
             at: edge,
             from: span[0],
             to: span[1],
             on: true,
-            weight: 0.65,
             r,
             va,
             tag: tag(`${lineTag(key)} ${side}`, edge, !r.exact),
@@ -26818,7 +27976,6 @@
         d,
         p,
         family: "poc",
-        tier: "short",
         at: p.poc + 0.5,
         from,
         to,
@@ -26838,12 +27995,10 @@
             d,
             p,
             family: "poc",
-            tier: "short",
             at: edge,
             from,
             to,
             on: latest,
-            weight: 0.65,
             tag: latest ? tag(`Day ${side}`, edge) : null,
           });
     }
@@ -26867,7 +28022,6 @@
           u,
           list,
           family: "poc",
-          tier: "short",
           at: u.price / PR,
           from: u.from,
           to: u.to,
@@ -26904,7 +28058,6 @@
             g: day,
             span: "day",
             family: "level",
-            tier: "short",
             at: day.open / PR,
             from: day.t,
             to: Math.min(day.z, end),
@@ -26926,12 +28079,10 @@
               g: day,
               prev,
               family: "level",
-              tier: "short",
               at: value / PR,
               from: day.t,
               to: Math.min(day.z, end),
               on: latest,
-              weight: side === "close" ? 0.75 : 1,
               tag: latest ? tag(name, value / PR) : null,
             });
       }
@@ -26946,7 +28097,6 @@
           g: week,
           span: "week",
           family: "level",
-          tier: "short",
           at: week.open / PR,
           from: Math.max(0, week.t),
           to: Math.min(week.z, end),
@@ -26966,7 +28116,6 @@
           g: month,
           span: "month",
           family: "level",
-          tier: "medium",
           at: month.open / PR,
           from: month.t,
           to: Math.min(month.z, end),
@@ -27002,7 +28151,6 @@
           kind: "peak",
           x,
           family: "level",
-          tier: "long",
           at: x.price / PR,
           from: x.t,
           to: end,
@@ -27027,7 +28175,6 @@
           s,
           frame,
           family: "level",
-          tier: "short",
           at: s.price / PR,
           lead: s.t,
           from: s.confirmed,
@@ -27035,7 +28182,7 @@
           on: s.broken === null,
           tag: s.broken === null && seen ? tag(name, s.price / PR) : null,
         });
-        marks.push({ s, key, frame, size: key === "swing1d" ? 5 : 3.5 });
+        marks.push({ s, key, frame, size: SWING_GLYPH });
       }
     }
     for (const [key, name] of [
@@ -27054,12 +28201,10 @@
           f: level.f,
           name,
           family: "level",
-          tier: "medium",
           at: level.price / PR,
           from: m.to.t,
           to: end,
           on: true,
-          weight: level.f === 0.5 ? 0.85 : 0.7,
           tag: tag(`${name} ${(level.f * 100).toFixed(1)}%`, level.price / PR),
         });
     }
@@ -27100,7 +28245,7 @@
           r = vwapCurve(t, n, t, Math.min(t + DAYS, cut));
         if (r.state !== "ready" || !r.points.length) continue;
         const latest = d === dNow && stop >= cut;
-        out.push({ key: "svwap", id: `svwap|${d}`, name: "Session VWAP", anchor: t, day: d, r, tier: "short", on: latest, tag: latest ? "VWAP" : null });
+        out.push({ key: "svwap", id: `svwap|${d}`, name: "Session VWAP", anchor: t, day: d, r, on: latest, tag: latest ? "VWAP" : null });
       }
     }
     // An anchored curve spans the chunks of bars the view is in.
@@ -27110,7 +28255,7 @@
       const r = vwapCurve(a.t, n, Math.max(a.t, from), to);
       if (r.state !== "ready" || !r.points.length) continue;
       const { name, tag } = anchorNames(a);
-      out.push({ key: a.key, id: a.id, name, anchor: a.t, swing: a.swing, r, tier: isVwapDay(a.key) ? lineTier(a.key) : "medium", on: stop >= cut, tag });
+      out.push({ key: a.key, id: a.id, name, anchor: a.t, swing: a.swing, r, on: stop >= cut, tag });
     }
     return out;
   }
@@ -27179,6 +28324,7 @@
     const right = G.x + G.w,
       halo = new Map(),
       ticks = [],
+      glyphs = [],
       strokes = new Map(),
       stroke = (colour, width, dash, alpha, x1, y, x2) => {
         const k = [colour, width, dash, alpha].join("|");
@@ -27192,10 +28338,13 @@
       };
     items.sort((a, b) => b.to - b.from - (a.to - a.from));
     for (const l of items) {
-      if (occlusion.off.has(l.id)) continue;
-      const style = lineStyle(l.family, l.tier),
-        hot = hover?.line === l.id,
-        width = Math.min(style.width * (l.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX),
+      if (occlusion.off.has(l.id)) {
+        refNote(l.key, "occlusion");
+        continue;
+      }
+      const style = lineStyle(l.family),
+        hot = refHot(l.key, l.id),
+        width = Math.min(style.width + (hot ? 1 : 0), REFERENCE_STROKE_MAX),
         y = Math.round(G.Y(l.at)) + 0.5,
         xa = clamp(G.X(l.from), G.x - 2, right),
         xb = clamp(G.X(l.to), G.x - 2, right),
@@ -27205,12 +28354,20 @@
       l.y = y;
       // A line off the plot draws nothing, but its tag, at the edge, still names it.
       lineHits.push({ key: l.key, id: l.id, y, xa: xl, xb: xe, item: l, colour: style.colour });
-      if (y < G.y - 4 || y > G.y + G.h + 4 || xe <= G.x) continue;
+      if (y < G.y - 4 || y > G.y + G.h + 4 || xe <= G.x) {
+        refNote(l.key, "offscreen");
+        continue;
+      }
+      refNote(l.key, "shown");
       // The halo, then the span solid and the rest of the way dashed.
       haloAt(width + 2, xl, y, xe);
-      if (xa > xl) stroke(style.colour, Math.max(1, width * 0.8), "1,3", 0.9, xl, y, xa);
+      // The pattern is the support: the lead-in before a confirmation dotted, the span solid, the held extension dashed; one width and no
+      // transparency for all three (PRD-0002 S3 section 1).
+      if (xa > xl) stroke(style.colour, width, E.role.REFERENCE.PATTERN.lead.join(","), 1, xl, y, xa);
       if (xb > xa) stroke(style.colour, width, "", 1, xa, y, xb);
-      if (l.on && right > xb) stroke(style.colour, Math.max(1, width * 0.7), "5,4", 0.85, xb, y, right);
+      if (l.on && right > xb) stroke(style.colour, width, E.role.REFERENCE.PATTERN.held.join(","), 1, xb, y, right);
+      // The profile references end their observed span in a named glyph: a triangle for a POC, a square for a value area's edge.
+      if (l.family === "poc") glyphs.push([Math.min(xb, right - 6), y, l.kind === "va" || l.side === "VAH" || l.side === "VAL" ? "va" : "poc"]);
       // Where a period starts, when it starts in view.
       if (l.kind === "poc" && G.X(l.from) > G.x + 1 && G.X(l.from) < right - 1) ticks.push([xa, y, style.colour]);
     }
@@ -27222,14 +28379,21 @@
     // their latest value to the right edge. The support band and the squeezes draw no area over the cells: the
     // band is its two boundary curves, and a squeeze is an interval of the event strip.
     for (const c of curves) {
-      if (occlusion.off.has(c.id)) continue;
-      const style = lineStyle(c.family || "vwap", c.tier),
-        hot = hover?.line === c.id,
+      if (occlusion.off.has(c.id)) {
+        refNote(c.key, "occlusion");
+        continue;
+      }
+      const style = lineStyle(c.family || "vwap"),
+        hot = refHot(c.key, c.id),
         { xs, ys, vals } = occlusion.vertices.get(c.id) ?? curveVertices(c.r.points, right);
-      if (!xs.length) continue;
+      if (!xs.length) {
+        refNote(c.key, !c.r.points.length || c.r.points[0][0] >= S.tB ? "warmup" : "offscreen");
+        continue;
+      }
+      refNote(c.key, "shown");
       c.colour = style.colour;
       c.at = vals[vals.length - 1] / PR;
-      const width = Math.min(style.width * (c.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX),
+      const width = Math.min(style.width + (hot ? 1 : 0), REFERENCE_STROKE_MAX),
         path = () => {
           ctx.beginPath();
           ctx.moveTo(xs[0], ys[0]);
@@ -27243,13 +28407,11 @@
       ctx.globalAlpha = 1;
       ctx.strokeStyle = style.colour;
       ctx.lineWidth = width;
-      if (c.dash) ctx.setLineDash(c.dash);
       path();
       ctx.stroke();
-      if (c.dash) ctx.setLineDash([]);
       if (c.on && xs[xs.length - 1] < right) {
-        ctx.setLineDash([5, 4]);
-        line(xs[xs.length - 1], ys[ys.length - 1], right, ys[ys.length - 1], style.colour, Math.max(1, width * 0.7), 0.85);
+        ctx.setLineDash(E.role.REFERENCE.PATTERN.held);
+        line(xs[xs.length - 1], ys[ys.length - 1], right, ys[ys.length - 1], style.colour, width, 1);
         ctx.setLineDash([]);
       }
       lineHits.push({
@@ -27292,24 +28454,26 @@
       line(x, y - 5, x, y + 5, colors.surface, 4, 0.85);
       line(x, y - 5, x, y + 5, colour, 2, 1);
     }
+    for (const [x, y, kind] of glyphs) pocGlyph(ctx, x - 2, y, kind);
     // Swings: a triangle at each extreme, over a high and under a low; equal
     // ones joined, and flagged at the later.
     if (marks.length) {
-      const colour = lineStyle("level", "short").colour;
+      const colour = lineStyle("level").colour;
       for (const m of marks) {
+        if (occlusion.off.has(`${m.key}|${m.s.i}`)) continue;
         const x = G.X(m.s.t),
           y = G.Y(m.s.price / PR),
           up = m.s.kind === "low",
           k = m.size,
           tip = up ? y + 3 : y - 3;
         if (x < G.x - k || x > right + k) continue;
-        if (m.s.equal) {
+        if (m.s.equal && !occlusion.off.has(`${m.key}|eq|${m.s.i}`)) {
           const x0 = G.X(m.s.equal.t),
             y0 = G.Y(m.s.equal.price / PR);
-          markLine(x0, y0, x, y, colors.surface, 3, 0.85);
-          markLine(x0, y0, x, y, colour, 1.2, 1);
+          markLine(x0, y0, x, y, colors.surface, REFERENCE_STROKE + 2, 0.85);
+          markLine(x0, y0, x, y, colour, REFERENCE_STROKE, 1);
           ctx.font = `500 ${TYPE.s}px ${FONT}`;
-          chartLabel(m.s.kind === "high" ? "EQH" : "EQL", x + 6, up ? y + 16 : y - 8, colour);
+          chartLabel(`${m.frame} ${m.s.kind === "high" ? "EQH" : "EQL"}`, x + 6, up ? y + 16 : y - 8, colour);
           lineHits.push({ key: m.key, id: `${m.key}|eq|${m.s.i}`, eq: [x0, y0, x, y], item: { kind: "equal", s: m.s, frame: m.frame }, colour });
         }
         ctx.beginPath();
@@ -27338,10 +28502,18 @@
     // Golden and death crosses: a dot where the 50-day SMA crossed the 200-day,
     // filled for a golden one and ringed for a death one, and named beside it.
     for (const c of crosses) {
+      if (occlusion.off.has(`gdcross|${c.x.i}`)) {
+        refNote(c.key, "occlusion");
+        continue;
+      }
       const x = G.X(c.t),
         y = G.Y(c.v / PR),
-        colour = lineStyle("average", c.tier).colour;
-      if (x < G.x - 6 || x > right + 6 || y < G.y - 6 || y > G.y + G.h + 6) continue;
+        colour = lineStyle("average").colour;
+      if (x < G.x - 6 || x > right + 6 || y < G.y - 6 || y > G.y + G.h + 6) {
+        refNote(c.key, "offscreen");
+        continue;
+      }
+      refNote(c.key, "shown");
       ctx.beginPath();
       ctx.arc(x, y, 4.5, 0, 2 * Math.PI);
       ctx.fillStyle = c.golden ? colour : colors.surface;
@@ -27349,23 +28521,26 @@
       ctx.lineWidth = 2;
       ctx.strokeStyle = colour;
       ctx.stroke();
-      chartLabel(c.golden ? "Golden cross" : "Death cross", x + 8, y - 10, colour);
+      chartLabel(c.golden ? "SMA 50 over 200 · golden" : "SMA 50 under 200 · death", x + 8, y - 10, colour);
       lineHits.push({ key: c.key, id: `gdcross|${c.x.i}`, mark: [x - 7, y - 7, x + 7, y + 7], item: { kind: "cross", c }, colour });
     }
-    // The level line: dashed across the prices in the neutral text colour, on
-    // a halo, unlike the family lines, which are coloured and solid over their span.
+    // The level line is the user's own: the one long dash-dot, [8,3,2,3], in the ink, across the prices, ending in a diamond and named Level
+    // by its tag, so no family line (solid, dashed or dotted, in a hue) can be taken for it.
     if (S.level !== null) {
-      const y = Math.round(G.Y(S.level)) + 0.5;
-      ctx.setLineDash([6, 4]);
-      line(G.x, y, right, y, colors.surface, 4, 0.8);
-      line(G.x, y, right, y, colors.ink, hover?.line === "level" ? 2 : 1.3, 0.9);
+      const y = Math.round(G.Y(S.level)) + 0.5,
+        width = Math.min(REFERENCE_STROKE + (refHot("level", "level") ? 1 : 0), REFERENCE_STROKE_MAX);
+      ctx.setLineDash(E.role.REFERENCE.PATTERN.user);
+      line(G.x, y, right, y, colors.surface, width + 2, 0.85);
+      line(G.x, y, right, y, colors.ink, width, 1);
       ctx.setLineDash([]);
+      levelDiamond(ctx, right - 7, y);
+      refNote("level", y < G.y - 4 || y > G.y + G.h + 4 ? "offscreen" : "shown");
       lineHits.push({ key: "level", id: "level", y, xa: G.x, xb: right, colour: colors.ink });
     }
     ctx.restore();
     drawLineTags([
       ...items
-        .filter((l) => l.tag)
+        .filter((l) => l.tag && !occlusion.off.has(l.id))
         .map((l) => ({ key: l.id, colour: l.colour, at: l.at, name: l.tag.name, value: l.tag.value })),
       ...curves
         .filter((c) => c.tag && c.colour)
@@ -27375,20 +28550,38 @@
         : [{ key: "level", colour: colors.ink, at: S.level, name: "Level", value: price(S.level * PR) }]),
     ]);
   }
+  // The User Level's endpoint: a filled ink diamond cased by the surface, at the right end of its line.
+  function levelDiamond(c, x, y) {
+    const s = 4.5;
+    c.save();
+    c.beginPath();
+    c.moveTo(x, y - s);
+    c.lineTo(x + s, y);
+    c.lineTo(x, y + s);
+    c.lineTo(x - s, y);
+    c.closePath();
+    c.strokeStyle = colors.surface;
+    c.lineWidth = 2.5;
+    c.lineJoin = "miter";
+    c.stroke();
+    c.fillStyle = colors.ink;
+    c.fill();
+    c.restore();
+  }
   // Clock lines: vertical, in the clock's neutral colour, each kind with a
-  // dash and weight of its own, across the prices, into the future too; each
+  // pattern of its own and all at the stable reference width, across the prices, into the future too; each
   // kind draws only while its lines are at least 6 px apart, and the Deribit
-  // expiry's monthly and quarterly ones, heavier, while theirs are. Under the
+  // expiry's monthly and quarterly ones, named as such in the tooltip and the list, while theirs are. Under the
   // horizontal lines. Live, the CME gap is shaded from the reopen until a
   // trade reaches the Friday close.
   const CLOCK_LOOK = {
-    cday: { dash: [], width: 1 },
-    cweek: { dash: [], width: 1.3 },
-    cmonth: { dash: [], width: 1.7 },
-    funding: { dash: [1, 3], width: 1 },
-    usopen: { dash: [4, 3], width: 1.2 },
-    cme: { dash: [7, 2, 1, 2], width: 1.2 },
-    deribit: { dash: [2, 2], width: 1 },
+    cday: { dash: [] },
+    cweek: { dash: [12, 3] },
+    cmonth: { dash: [12, 3, 3, 3, 3, 3] },
+    funding: { dash: [1, 3] },
+    usopen: { dash: [4, 3] },
+    cme: { dash: [7, 2, 1, 2] },
+    deribit: { dash: [2, 2] },
   };
   let clockHits = [];
   // The calendar events of a kind that are far enough apart to draw at this zoom.
@@ -27420,28 +28613,36 @@
     const vertices = new Map();
     occlusion = { off: new Set(), vertices, shown: 0, eligible: 0, focusOver: false };
     if (!G.w || !G.h) return;
+    // A candidate is the marks of one reference (`rects`) and, where it has one, its tag (`tag`: the line's own y and the words): the tag's plate is
+    // placed by the same layout the tags are drawn in, among the tags that are shown. The tags of lines off the plot are drawn at its edge whatever the
+    // budget says, so they are `fixed`: they take their place first and are not counted as references.
     const right = G.x + G.w,
-      candidates = [];
+      candidates = [],
+      fixed = [];
     const items = S.lines.length ? lineItems(cut) : [];
     for (const l of items) {
-      if (l.kind === "swing" || l.eq) continue;
-      const style = lineStyle(l.family, l.tier),
-        hot = hover?.line === l.id,
-        width = Math.min(style.width * (l.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX) + 2,
+      if (l.eq) continue;
+      const style = lineStyle(l.family),
+        hot = refHot(l.key, l.id),
+        width = Math.min(style.width + (hot ? 1 : 0), REFERENCE_STROKE_MAX) + 2,
         y = Math.round(G.Y(l.at)) + 0.5,
         xe = l.on ? right : clamp(G.X(l.to), G.x - 2, right),
-        xl = l.lead === undefined ? clamp(G.X(l.from), G.x - 2, right) : clamp(G.X(l.lead), G.x - 2, right);
-      if (y < G.y - 4 || y > G.y + G.h + 4 || xe <= G.x) continue;
-      // The tag plate at the line's end: about 70 by 16 px
-      candidates.push({ id: l.id, hot, rank: OCC_PRIORITY[l.family] ?? 6, rects: [[xl, y - width / 2, xe, y + width / 2], [right - 70, y - 8, right, y + 8]] });
+        xl = l.lead === undefined ? clamp(G.X(l.from), G.x - 2, right) : clamp(G.X(l.lead), G.x - 2, right),
+        raw = G.Y(l.at),
+        arrow = raw < G.y ? " ↑" : raw > G.y + G.h ? " ↓" : "";
+      if (y < G.y - 4 || y > G.y + G.h + 4 || xe <= G.x) {
+        if (l.tag) fixed.push({ id: l.id, y: raw, w: tagPlateWidth(l.tag.name + arrow, l.tag.value) });
+        continue;
+      }
+      candidates.push({ id: l.id, hot, rank: OCC_PRIORITY[familyOf(l.key)] ?? 6, rects: [[xl, y - width / 2, xe, y + width / 2]], tag: l.tag ? { y: raw, w: tagPlateWidth(l.tag.name + arrow, l.tag.value) } : null });
     }
     for (const c of items.curves || []) {
       const { xs, ys, vals } = curveVertices(c.r.points, right);
       vertices.set(c.id, { xs, ys, vals });
       if (!xs.length) continue;
-      const style = lineStyle(c.family || "vwap", c.tier),
-        hot = hover?.line === c.id,
-        half = (Math.min(style.width * (c.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX) + 2) / 2,
+      const style = lineStyle(c.family || "vwap"),
+        hot = refHot(c.key, c.id),
+        half = (Math.min(style.width + (hot ? 1 : 0), REFERENCE_STROKE_MAX) + 2) / 2,
         rects = [];
       for (let i = 1; i < xs.length; i++) {
         const steps = Math.max(1, Math.ceil(Math.max(Math.abs(xs[i] - xs[i - 1]), Math.abs(ys[i] - ys[i - 1])) / OCC_CELL));
@@ -27451,19 +28652,93 @@
           rects.push([x - half, y - half, x + half, y + half]);
         }
       }
-      rects.push([right - 70, ys[ys.length - 1] - 8, right, ys[ys.length - 1] + 8]);
-      candidates.push({ id: c.id, hot, rank: OCC_PRIORITY[c.family || "vwap"] ?? 5, rects });
+      const lastY = G.Y(vals[vals.length - 1] / PR);
+      candidates.push({ id: c.id, hot, rank: OCC_PRIORITY[familyOf(c.key)] ?? 5, rects, tag: c.tag ? { y: lastY, w: tagPlateWidth(c.tag + (lastY < G.y ? " ↑" : lastY > G.y + G.h ? " ↓" : ""), price(vals[vals.length - 1])) } : null });
+    }
+    // Equal highs and lows (the joining segment and its label's plate) and the golden and death crosses (the dot and its label's plate): marks of
+    // their families, counted with them and held back with them.
+    for (const m of items.marks ?? []) {
+      if (!m.s.equal) continue;
+      const id = `${m.key}|eq|${m.s.i}`,
+        x = G.X(m.s.t),
+        y = G.Y(m.s.price / PR),
+        x0 = G.X(m.s.equal.t),
+        y0 = G.Y(m.s.equal.price / PR),
+        label = `${m.frame} ${m.s.kind === "high" ? "EQH" : "EQL"}`,
+        half = (REFERENCE_STROKE + 2) / 2,
+        rects = [],
+        steps = Math.max(1, Math.ceil(Math.max(Math.abs(x - x0), Math.abs(y - y0)) / OCC_CELL));
+      if (x < G.x - 2 || x0 > right + 2) continue;
+      for (let k = 0; k <= steps; k++) {
+        const px = x0 + ((x - x0) * k) / steps,
+          py = y0 + ((y - y0) * k) / steps;
+        rects.push([px - half, py - half, px + half, py + half]);
+      }
+      const w = tagWidth(`${TYPE.s}px ${FONT}`, label) + 6;
+      rects.push([x + 3, y - 8 + (m.s.kind === "low" ? 16 : -8), x + 3 + w, y + 8 + (m.s.kind === "low" ? 16 : -8)]);
+      candidates.push({ id, hot: refHot(m.key, id), rank: OCC_PRIORITY.structure, rects });
+    }
+    for (const c of items.crosses ?? []) {
+      const id = `gdcross|${c.x.i}`,
+        x = G.X(c.t),
+        y = G.Y(c.v / PR),
+        w = tagWidth(`${TYPE.s}px ${FONT}`, c.golden ? "SMA 50 over 200 · golden" : "SMA 50 under 200 · death") + 8;
+      if (x < G.x - 6 || x > right + 6 || y < G.y - 6 || y > G.y + G.h + 6) continue;
+      candidates.push({ id, hot: refHot(c.key, id), rank: OCC_PRIORITY.average, rects: [[x - 6.5, y - 6.5, x + 6.5, y + 6.5], [x + 5, y - 18, x + 5 + w + 8, y - 2]] });
+    }
+    // The user's Level: a persistent stroke, its backing, its diamond and its tag plate, kept before every family's lines.
+    if (S.level !== null) {
+      const y = Math.round(G.Y(S.level)) + 0.5,
+        half = (Math.min(REFERENCE_STROKE + (refHot("level", "level") ? 1 : 0), REFERENCE_STROKE_MAX) + 2) / 2;
+      if (y >= G.y - 4 && y <= G.y + G.h + 4) candidates.push({ id: "level", hot: true, rank: 0, rects: [[G.x, y - half, right, y + half]], tag: null });
+      fixed.push({ id: "level", y: G.Y(S.level), w: tagPlateWidth("Level" + (G.Y(S.level) < G.y ? " ↑" : G.Y(S.level) > G.y + G.h ? " ↓" : ""), price(S.level * PR)) });
     }
     for (const kind of S.lines.filter((k) => CLOCK[k])) {
-      const look = CLOCK_LOOK[kind],
-        rects = clockShown(kind).map((e) => {
-          const x = G.X(e.t);
-          return [x - look.width, G.y, x + look.width, G.y + G.h];
-        });
-      if (rects.length) candidates.push({ id: "clock|" + kind, hot: false, rank: 7, rects });
+      const rects = clockShown(kind).map((e) => {
+        const x = G.X(e.t);
+        return [x - REFERENCE_STROKE, G.y, x + REFERENCE_STROKE, G.y + G.h];
+      });
+      if (rects.length) candidates.push({ id: "clock|" + kind, hot: refHot(kind, "clock|" + kind), rank: 7, rects });
     }
-    // The planner is the module's (E.role.occlusion): the grid, the order, the focused mark that is never thinned.
-    const plan = E.role.occlusion(candidates, { x: G.x, y: G.y, w: G.w, h: G.h }, { budget: OCCLUSION_BUDGET, cell: OCC_CELL });
+    // The planner is the module's (E.role.occlusion): the grid, the order, the focused mark that is never thinned. It is run until the references
+    // it keeps and the places their tags are laid out in agree (at most four times), the tags of the fixed ones and the notice that says something
+    // was held back being claimed first: every persistent plate is inside the budget it reports on.
+    // nothing persistent on the plot: nothing to plan (the common case, and a frame that costs no grid)
+    if (!candidates.length && !fixed.length) return;
+    const plot = { x: G.x, y: G.y, w: G.w, h: G.h },
+      opts = { budget: OCCLUSION_BUDGET, cell: OCC_CELL },
+      plate = (pos, spec) => [pos.x, pos.ty - TAG_HEIGHT / 2, pos.x + spec.w, pos.ty + TAG_HEIGHT / 2],
+      same = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
+    let off = new Set(),
+      plan = null,
+      notice = false;
+    for (let pass = 0; pass < 4; pass++) {
+      const specs = [
+          ...candidates.filter((c) => c.tag && !off.has(c.id)).map((c) => ({ id: c.id, y: c.tag.y, w: c.tag.w })),
+          ...fixed,
+        ],
+        pos = tagLayout(specs),
+        reserved = [];
+      for (const f of fixed) reserved.push({ id: "fixed|" + f.id, hot: true, rank: -1, rects: [plate(pos.get(f.id), f)] });
+      if (notice) {
+        ctx.font = `${TYPE.s}px ${FONT}`;
+        const w = Math.ceil(ctx.measureText(occlusionWords(plan.shown, plan.eligible, true)).width) + 6;
+        reserved.push({ id: "fixed|notice", hot: true, rank: -1, rects: [[G.x + G.w - w - 14 - 3, G.y + G.h - 18, G.x + G.w - 14 + 3, G.y + G.h - 2]] });
+      }
+      const placed = candidates.map((c) => {
+        const at = c.tag ? (pos.has(c.id) ? pos.get(c.id) : tagLayout([...specs, { id: c.id, y: c.tag.y, w: c.tag.w }]).get(c.id)) : null;
+        return { id: c.id, hot: c.hot, rank: c.rank, rects: at ? [...c.rects, plate(at, c.tag)] : c.rects };
+      });
+      const next = E.role.occlusion([...reserved, ...placed], plot, opts);
+      for (const r of reserved) next.off.delete(r.id);
+      next.eligible -= reserved.length;
+      next.shown -= reserved.length;
+      const stable = plan !== null && same(next.off, off);
+      plan = next;
+      notice = plan.eligible > plan.shown || plan.focusOver;
+      if (stable) break;
+      off = plan.off;
+    }
     occlusion.off = plan.off;
     occlusion.shown = plan.shown;
     occlusion.eligible = plan.eligible;
@@ -27472,6 +28747,9 @@
   // What the budget left out, said where it happened: the canvas carries the counts (for a reader of the page and a
   // test) and a label at the pane's top right names them. The focused mark alone over the budget is said too,
   // never hidden by a wider casing.
+  function occlusionWords(shown, eligible, held) {
+    return held ? `${shown} of ${eligible} reference marks shown · 20% budget` : "The focused mark alone passes the 20% budget";
+  }
   function occlusionNotice() {
     const held = occlusion.eligible - occlusion.shown,
       value = held > 0 || occlusion.focusOver ? `${occlusion.shown}/${occlusion.eligible}${occlusion.focusOver ? "!" : ""}` : "";
@@ -27481,7 +28759,7 @@
     }
     if (!value || !G.w) return;
     // TEXT(S1): the occlusion budget's count
-    const words = held > 0 ? `${occlusion.shown} of ${occlusion.eligible} reference marks shown · 20% budget` : "The focused mark alone passes the 20% budget";
+    const words = occlusionWords(occlusion.shown, occlusion.eligible, held > 0);
     ctx.font = `${TYPE.s}px ${FONT}`;
     chartLabel(words, G.x + G.w - ctx.measureText(words).width - 14, G.y + G.h - 10);
   }
@@ -27490,7 +28768,7 @@
     if (!S.lines.length) return;
     const kinds = S.lines.filter((k) => CLOCK[k]);
     if (!kinds.length) return;
-    const colour = lineStyle("clock", "long").colour;
+    const colour = lineStyle("clock").colour;
     ctx.save();
     ctx.beginPath();
     ctx.rect(G.x, G.y, G.w, G.h);
@@ -27514,30 +28792,35 @@
           ctx.lineWidth = 1;
           ctx.strokeRect(x0 + 0.5, y0 + 0.5, wide - 1, tall - 1);
           ctx.globalAlpha = 1;
-          if (wide > 62 && tall > 16) chartLabel(g.filled === null || g.filled === undefined ? "CME gap · open" : "CME gap", x0 + 4, y0 + 12);
+          if (wide > 62 && tall > 16) chartLabel(g.filled === null || g.filled === undefined ? "CME gap · open" : "CME gap", Math.max(x0 + 4, G.x + 4), clamp(y0 + 12, G.y + 12, G.y + G.h - 12));
           clockHits.push({ gap: g, box: [x0, Math.min(y0, y1 - 3), x1, Math.max(y1, y0 + 3)] });
         }
     }
     for (const kind of kinds) {
-      if (occlusion.off.has("clock|" + kind)) continue;
+      if (occlusion.off.has("clock|" + kind)) {
+        refNote(kind, "occlusion");
+        continue;
+      }
       const look = CLOCK_LOOK[kind],
         events = clockShown(kind);
-      for (const weight of [1, 2, 3]) {
-        const drawn = events.filter((e) => (e.weight || 1) === weight);
-        if (!drawn.length) continue;
-        ctx.strokeStyle = colour;
-        ctx.lineWidth = Math.min(look.width * (weight === 3 ? 2 : weight === 2 ? 1.5 : 1), REFERENCE_STROKE_MAX);
-        ctx.globalAlpha = 0.6;
-        ctx.setLineDash(look.dash);
-        ctx.beginPath();
-        for (const e of drawn) {
-          const x = Math.round(G.X(e.t)) + 0.5;
-          ctx.moveTo(x, G.y);
-          ctx.lineTo(x, G.y + G.h);
-          clockHits.push({ event: e, x });
-        }
-        ctx.stroke();
+      if (!events.length) {
+        // The CME gap, outlined above, is the kind's own mark; the lines of a kind that are too close at this zoom say so
+        if (kind !== "cme") refNote(kind, spaced(CLOCK[kind].gap) ? "none" : "density");
+        continue;
       }
+      refNote(kind, "shown");
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = REFERENCE_STROKE + (refHot(kind, "clock|" + kind) ? 1 : 0);
+      ctx.globalAlpha = 0.6;
+      ctx.setLineDash(look.dash);
+      ctx.beginPath();
+      for (const e of events) {
+        const x = Math.round(G.X(e.t)) + 0.5;
+        ctx.moveTo(x, G.y);
+        ctx.lineTo(x, G.y + G.h);
+        clockHits.push({ event: e, x });
+      }
+      ctx.stroke();
     }
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
@@ -27710,9 +28993,8 @@
   // Tags at the plot's right edge, one per line, level with it or pushed apart
   // just enough to read, with a leader back to the line; a line above or below
   // the view keeps its tag at that edge, with an arrow. A text's width, and
-  // whether a colour takes dark ink, are kept: the tags are drawn every frame.
-  const tagWidths = new Map(),
-    tagInk = new Map();
+  // are kept: the tags are drawn every frame.
+  const tagWidths = new Map();
   function tagWidth(font, text) {
     const key = font + "|" + text;
     let w = tagWidths.get(key);
@@ -27724,39 +29006,57 @@
     }
     return w;
   }
+  // A tag is an opaque plate of the surface: a 5 px bar of the line's hue, its name in the ink, its value in the ink. The text is always the ink on
+  // the surface (12:1 or better in both themes), so no hue has to carry text, and the plate has a width that the occlusion plan can count.
+  const TAG_PAD = 5,
+    TAG_BAR = 5,
+    TAG_HEIGHT = 16;
+  // Where the tags go: each as near its line as it can be, a tag's height and two pixels apart, below the Latest button and the replay's transport.
+  // The one function the plan of the budget and the drawing of the tags share, so the area the plan counts for a plate is the area it is drawn in.
+  function tagTop0() {
+    const transport = el("transport");
+    return Math.max(
+      G.y + 2,
+      el("latest").hidden ? 0 : 16 + el("latest").offsetHeight + 4,
+      transport.hidden || transport.offsetLeft + transport.offsetWidth < G.x + G.w - 140 ? 0 : transport.offsetTop + transport.offsetHeight + 4,
+    );
+  }
+  // specs: [{id, y (the line's own y), w (the plate's width)}] -> Map id -> {ty (the tag's middle), x (its left), w}
+  function tagLayout(specs) {
+    const top0 = tagTop0(),
+      right = G.x + G.w - 6,
+      list = specs
+        .map((s) => ({ ...s, at: clamp(s.y, top0 + TAG_HEIGHT / 2, G.y + G.h - TAG_HEIGHT / 2 - 2) }))
+        .sort((a, b) => a.at - b.at);
+    for (let i = 0; i < list.length; i++) list[i].ty = Math.max(list[i].at, i ? list[i - 1].ty + TAG_HEIGHT + 2 : -Infinity);
+    for (let i = list.length - 1; i >= 0; i--) list[i].ty = Math.min(list[i].ty, i < list.length - 1 ? list[i + 1].ty - TAG_HEIGHT - 2 : G.y + G.h - TAG_HEIGHT / 2 - 2);
+    return new Map(list.map((s) => [s.id, { ty: s.ty, x: right - s.w, w: s.w }]));
+  }
+  function tagPlateWidth(name, value) {
+    return tagWidth(`500 ${TYPE.s}px ${FONT}`, name) + 2 * TAG_PAD + TAG_BAR + tagWidth(`${TYPE.s}px ${FONT}`, value) + 2 * TAG_PAD;
+  }
   function drawLineTags(shown) {
     const bold = `500 ${TYPE.s}px ${FONT}`,
       plain = `${TYPE.s}px ${FONT}`;
     ctx.font = bold;
     const right = G.x + G.w - 6,
-      pad = 5,
-      height = 16,
-      transport = el("transport"),
-      // Below the Latest button, and the replay's transport when it reaches the
-      // right edge, where the tags go.
-      top0 = Math.max(
-        G.y + 2,
-        el("latest").hidden ? 0 : 16 + el("latest").offsetHeight + 4,
-        transport.hidden || transport.offsetLeft + transport.offsetWidth < G.x + G.w - 140
-          ? 0
-          : transport.offsetTop + transport.offsetHeight + 4,
-      ),
+      pad = TAG_PAD,
+      height = TAG_HEIGHT,
+      top0 = tagTop0(),
       tags = shown
         .map((l) => {
           const y = G.Y(l.at),
             off = y < G.y ? -1 : y > G.y + G.h ? 1 : 0,
             name = l.name + (off < 0 ? " ↑" : off > 0 ? " ↓" : ""),
             value = l.value,
-            nameW = tagWidth(bold, name) + 2 * pad,
+            nameW = tagWidth(bold, name) + 2 * pad + TAG_BAR,
             valueW = tagWidth(plain, value) + 2 * pad;
           return { ...l, y: clamp(y, top0 + height / 2, G.y + G.h - height / 2 - 2), line: y, off, name, value, nameW, valueW };
         })
         .sort((a, b) => a.y - b.y);
-    // Apart by a tag's height, top down, then back up from the bottom edge.
-    for (let i = 0; i < tags.length; i++)
-      tags[i].ty = Math.max(tags[i].y, i ? tags[i - 1].ty + height + 2 : -Infinity);
-    for (let i = tags.length - 1; i >= 0; i--)
-      tags[i].ty = Math.min(tags[i].ty, i < tags.length - 1 ? tags[i + 1].ty - height - 2 : G.y + G.h - height / 2 - 2);
+    // Apart by a tag's height, top down, then back up from the bottom edge (the layout the budget's plan counts the plates in).
+    const layout = tagLayout(tags.map((t) => ({ id: t.key, y: t.line, w: t.nameW + t.valueW })));
+    for (const t of tags) t.ty = layout.get(t.key).ty;
     // Each tag's line, the first of its id, as a search from the start finds it.
     const hits = new Map();
     for (const h of lineHits) if (!hits.has(h.id)) hits.set(h.id, h);
@@ -27773,33 +29073,28 @@
         line(x - 6, t.line, x, t.ty, t.colour, 1, 0.8);
       }
       ctx.fillStyle = colors.surface;
-      ctx.globalAlpha = 0.92;
+      ctx.globalAlpha = 1;
       ctx.beginPath();
       ctx.roundRect(x, top, w, height, 3);
       ctx.fill();
-      ctx.globalAlpha = 1;
       ctx.fillStyle = t.colour;
       ctx.beginPath();
-      ctx.roundRect(x, top, t.nameW, height, [3, 0, 0, 3]);
+      ctx.roundRect(x, top, TAG_BAR, height, [3, 0, 0, 3]);
       ctx.fill();
       ctx.strokeStyle = t.colour;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.roundRect(x + 0.5, top + 0.5, w - 1, height - 1, 3);
       ctx.stroke();
-      let light = tagInk.get(t.colour);
-      if (light === undefined) {
-        if (tagInk.size > 256) tagInk.clear();
-        tagInk.set(t.colour, (light = d3.lab(t.colour).l > 62));
-      }
       ctx.font = bold;
-      ctx.fillStyle = light ? "#15191c" : "#fff";
-      ctx.fillText(t.name, x + t.nameW / 2, t.ty + 0.5);
+      ctx.fillStyle = colors.ink;
+      ctx.fillText(t.name, x + TAG_BAR + (t.nameW - TAG_BAR) / 2, t.ty + 0.5);
       ctx.font = plain;
       ctx.fillStyle = colors.ink;
       ctx.fillText(t.value, x + t.nameW + t.valueW / 2, t.ty + 0.5);
       ctx.globalAlpha = 1;
       labelsTaken.push([x - 3, top - 2, x + w + 3, top + height + 2]);
+      labelPlates.push([x, top, x + w, top + height]);
       const hit = hits.get(t.key);
       if (hit) hit.tag = [x, top, x + w, top + height];
     }
@@ -28208,13 +29503,12 @@
     const r = vwapFrom(anchor, 9, anchor, edge);
     return r.state === "ready" && r.points.length ? { text: price(Math.round(100 * r.points[r.points.length - 1][1]) / 100) } : { text: "…" };
   }
-  function swatch(key, family, tier) {
+  function swatch(key, family) {
     const s = document.createElement("i");
     s.className = "ol-line-swatch" + (CLOCK[key] ? " ol-clock-swatch" : "");
     s.setAttribute("aria-hidden", "true");
     s.dataset.lineSwatch = key;
     s.dataset.family = family;
-    if (tier) s.dataset.tier = tier;
     return s;
   }
   function lineRow(key, removable) {
@@ -28228,7 +29522,11 @@
     if (toggle) row.title = toggle.desc;
     value.className = "ol-line-value ol-num";
     value.dataset.lineValue = key;
-    const look = swatch(key, FAMILIES.find((f) => f.id === familyOf(key)).colour, toggle ? null : lineTier(key));
+    const look = swatch(key, FAMILIES.find((f) => f.id === familyOf(key)).colour),
+      reason = document.createElement("span"),
+      focusButton = lineFocusButton(key, toggle ? toggle.name : lineName(key));
+    row.dataset.refKey = key;
+    reason.className = "ol-line-reason ol-num";
     if (removable) {
       const remove = document.createElement("button");
       remove.type = "button";
@@ -28240,12 +29538,12 @@
       );
       remove.innerHTML =
         '<svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>';
-      row.append(look, name, value, remove);
+      row.append(look, name, value, reason, focusButton, remove);
     } else {
       const box = document.createElement("input");
       box.type = "checkbox";
       box.dataset.line = key;
-      row.append(box, look, name, value);
+      row.append(box, look, name, value, reason, focusButton);
     }
     return row;
   }
@@ -28294,13 +29592,15 @@
     // written would have the next frame lay the page out again.
     for (const s of qsa("[data-line-swatch]")) {
       const key = s.dataset.lineSwatch,
-        tier = s.dataset.tier || (isPeriod(key) ? lineTier(key) : TOGGLES[key]?.tier || "short"),
-        style = lineStyle(s.dataset.family, CLOCK[key] ? "long" : tier),
-        look = `${style.colour}|${Math.max(1, style.width).toFixed(2)}px`;
+        style = lineStyle(s.dataset.family),
+        dash = CLOCK[key] ? CLOCK_LOOK[key].dash : [],
+        look = `${style.colour}|${Math.max(1, style.width).toFixed(2)}px|${dash.join(",")}`;
       if (s.dataset.look === look) continue;
       s.dataset.look = look;
       s.style.setProperty("--line", style.colour);
       s.style.setProperty("--weight", look.split("|")[1]);
+      // A clock kind's swatch is upright as its line is, and carries its own pattern.
+      s.style.background = dash.length ? dashGradient(dash, style.colour, 14, "to bottom") : "";
     }
     for (const value of qsa("[data-line-value]")) {
       const key = value.dataset.lineValue,
@@ -28331,8 +29631,19 @@
         isOpen = Boolean(open[f.id]);
       if (head.getAttribute("aria-expanded") !== String(isOpen)) head.setAttribute("aria-expanded", String(isOpen));
       if (body.hidden === isOpen) body.hidden = !isOpen;
+      if (!body.querySelector("[data-focus-family]")) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "ol-action ol-s ol-family-focus cursor-interaction";
+        b.dataset.focusFamily = f.id;
+        b.setAttribute("aria-pressed", String(focus.family === f.id));
+        b.setAttribute("aria-label", `Focus ${f.name}`);
+        b.title = "Focus this family: its lines are drawn one pixel wider and never left out. Temporary; nothing is saved.";
+        b.textContent = "Focus family";
+        body.prepend(b);
+      }
       const dot = head.querySelector(".ol-family-dot"),
-        colour = lineStyle(f.colour, "long").colour;
+        colour = lineStyle(f.colour).colour;
       if (dot.dataset.colour !== colour) {
         dot.dataset.colour = colour;
         dot.style.background = colour;
@@ -28344,7 +29655,7 @@
       if (status.textContent !== note) status.textContent = note;
     }
     const level = el("lines-level"),
-      levelKey = S.level === null ? "" : String(S.level);
+      levelKey = S.level === null ? "" : String(S.level) + "|" + colourEpoch;
     if (level.dataset.level !== levelKey) {
       level.dataset.level = levelKey;
       if (S.level === null) {
@@ -28359,8 +29670,11 @@
           value = document.createElement("span"),
           remove = document.createElement("button");
         row.className = "ol-line-row";
+        row.dataset.refKey = "level";
         look.className = "ol-line-swatch ol-level-swatch";
         look.setAttribute("aria-hidden", "true");
+        // The user's Level: the long dash-dot, as on the chart
+        look.style.background = dashGradient(E.role.REFERENCE.PATTERN.user, colors.ink, 22, "to right");
         name.className = "ol-line-name";
         name.textContent = "Level";
         value.className = "ol-line-value ol-num";
@@ -28373,8 +29687,11 @@
         remove.setAttribute("aria-label", `Remove the level line at ${price(S.level * PR)}`);
         remove.innerHTML =
           '<svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>';
-        row.append(look, name, value, remove);
+        const reason = document.createElement("span");
+        reason.className = "ol-line-reason ol-num";
+        row.append(look, name, value, reason, lineFocusButton("level", "Level"), remove);
         level.replaceChildren(row);
+        renderFocus();
       }
     }
     const cleared = !S.lines.length && S.level === null,
@@ -28391,18 +29708,205 @@
       if (el(id).min !== "2021-01-01") el(id).min = "2021-01-01";
       if (el(id).max !== last) el(id).max = last;
     }
+    renderFocus();
+    renderReferenceStatus();
+  }
+  // ---- Reference focus and the inventory of references (PRD-0002 S3, section 2) ----
+  // FOCUS is a temporary emphasis on one reference line (a menu key, or the user's Level) or one menu family: its marks are drawn one pixel
+  // wider and are never the ones the 20% budget leaves out. It does not enable or disable anything, does not recolour or fade any other
+  // mark, and is kept nowhere: not in the address, not in a saved view, not in storage. "Show all" ends it. A detail that is opened for a
+  // reference (the Inspect navigator's) takes the focus for as long as it is open and gives the previous focus back when it closes.
+  const focus = { key: null, family: null, saved: null };
+  const focusOn = (key) => (key === "level" ? S.level !== null : S.lines.includes(key));
+  const focusFamilyOn = (id) => S.lines.some((k) => familyOf(k) === id);
+  const refHot = (key, id) => hover?.line === id || (focus.key !== null && key === focus.key) || (focus.family !== null && familyOf(key) === focus.family);
+  function focusName() {
+    if (focus.key !== null) return focus.key === "level" ? "Level" : TOGGLES[focus.key]?.name || lineName(focus.key);
+    return focus.family !== null ? FAMILIES.find((f) => f.id === focus.family).name : "";
+  }
+  // Whatever the focus is now, the chart is drawn again and its controls say what is focused.
+  function focusChanged() {
+    renderFocus();
+    requestDraw();
+  }
+  function focusKey(key) {
+    if (!focusOn(key)) return;
+    focus.key = focus.key === key ? null : key;
+    focus.family = null;
+    focus.saved = null;
+    focusChanged();
+  }
+  function focusFamily(id) {
+    if (!focusFamilyOn(id)) return;
+    focus.family = focus.family === id ? null : id;
+    focus.key = null;
+    focus.saved = null;
+    focusChanged();
+  }
+  // Show all: the focus ends, and everything that is enabled is drawn by the budget's own order again.
+  function focusClear() {
+    if (focus.key === null && focus.family === null && focus.saved === null) return;
+    focus.key = focus.family = focus.saved = null;
+    focusChanged();
+  }
+  // A detail takes the focus (a reference key or a family) and, when it closes, the previous focus is restored.
+  function focusBegin(spec) {
+    if (focus.saved === null) focus.saved = { key: focus.key, family: focus.family };
+    focus.key = spec.key ?? null;
+    focus.family = spec.family ?? null;
+    focusChanged();
+  }
+  function focusEnd() {
+    if (focus.saved === null) return;
+    focus.key = focus.saved.key;
+    focus.family = focus.saved.family;
+    focus.saved = null;
+    focusChanged();
+  }
+  // A focus on something that is no longer on ends with it.
+  function focusValidate() {
+    if ((focus.key !== null && !focusOn(focus.key)) || (focus.family !== null && !focusFamilyOn(focus.family))) {
+      focus.key = focus.family = focus.saved = null;
+      renderFocus();
+    }
+  }
+  // A dash pattern as a gradient the length of a menu swatch, its runs as hard stops, so that a key shows the pattern the chart draws.
+  function dashGradient(dash, colour, length, direction) {
+    if (!dash.length) return colour;
+    const stops = [];
+    let at = 0,
+      on = true;
+    for (let i = 0; at < length; i++) {
+      const end = Math.min(length, at + dash[i % dash.length]);
+      stops.push(`${on ? colour : "transparent"} ${at}px ${end}px`);
+      at = end;
+      on = !on;
+    }
+    return `linear-gradient(${direction}, ${stops.join(", ")})`;
+  }
+  // The focus button of a menu row.
+  function lineFocusButton(key, name) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ol-icon-button ol-s ol-line-focus cursor-interaction";
+    b.dataset.lineFocus = key;
+    b.setAttribute("aria-pressed", String(focus.key === key));
+    b.setAttribute("aria-label", `Focus ${name}`);
+    b.title = "Focus this line: drawn one pixel wider and never left out. Temporary; nothing is saved.";
+    b.innerHTML = '<svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.5"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/></svg>';
+    return b;
+  }
+  function renderFocus() {
+    const on = focus.key !== null || focus.family !== null,
+      chip = el("focus-chip"),
+      text = on ? `Focus: ${focusName()} · Show all` : "";
+    if (chip.hidden === on) chip.hidden = !on;
+    if (el("focus-chip-text").textContent !== text) el("focus-chip-text").textContent = text;
+    if (el("lines-showall").disabled === on) el("lines-showall").disabled = !on;
+    for (const b of qsa("[data-line-focus]")) {
+      const pressed = focus.key === b.dataset.lineFocus,
+        off = !focusOn(b.dataset.lineFocus);
+      if (b.getAttribute("aria-pressed") !== String(pressed)) b.setAttribute("aria-pressed", String(pressed));
+      if (b.disabled !== off) b.disabled = off;
+    }
+    for (const b of qsa("[data-focus-family]")) {
+      const pressed = focus.family === b.dataset.focusFamily,
+        off = !focusFamilyOn(b.dataset.focusFamily);
+      if (b.getAttribute("aria-pressed") !== String(pressed)) b.setAttribute("aria-pressed", String(pressed));
+      if (b.disabled !== off) b.disabled = off;
+    }
+  }
+  // Why an enabled reference drew nothing when no mark of it reached the plot this frame: its data, its zoom, its warm-up or nothing to draw.
+  function referenceBlock(key) {
+    const spec = AVERAGE_SPECS[key],
+      bad = (s) => s === "failed" || s === "pending";
+    if (!lineAvailable(key)) return "unsupported";
+    if (spec) {
+      const f = averageFrame(spec.tf);
+      if (f.state === "wide") return "unsupported";
+      if (bad(f.state)) return "missing";
+      return key === "gdcross" ? "none" : "warmup";
+    }
+    if (isPeriod(key)) return bad(lineShown(key).state) ? "missing" : "none";
+    if (key === "cme") return bad(barSeries(6).state) ? "missing" : "none";
+    if (FOUR_HOUR_LINES.includes(key)) return bad(barSeries(8).state) ? "missing" : "none";
+    if (key === "svwap" || key === "avwaph" || key === "avwapl" || isVwapDay(key)) {
+      const need = vwapBarNeed(),
+        r = need ? barsBetween(...need) : null;
+      return r && bad(r.state) ? "missing" : "none";
+    }
+    if (EIGHT_HOUR_LINES.includes(key) || STRUCTURE_LINES.includes(key)) return bad(barSeries(9).state) ? "missing" : "none";
+    return "none";
+  }
+  // The status of every enabled and supported reference: the Lines menu's rows and the user's Level, each with the one reason it is not shown.
+  let refInventory = E.role.inventory([]);
+  function referenceInventory() {
+    const entries = [],
+      keys = [...S.lines.filter(lineAvailable), ...(S.level === null ? [] : ["level"])];
+    for (const key of keys) {
+      const n = refTally.get(key),
+        reason = n?.shown ? "shown" : n?.occlusion ? "occlusion" : n?.offscreen ? "offscreen" : n?.density ? "density" : n?.warmup ? "warmup" : n?.none ? "none" : referenceBlock(key);
+      entries.push({ id: key, reason });
+    }
+    return E.role.inventory(entries);
+  }
+  // The words of the summary: "11 of 14 references shown", then each reason that applies with its count, in the table's order.
+  function inventorySummary(inv) {
+    if (!inv.eligible) return "";
+    const parts = E.role.REASONS.filter((r) => r.id !== "shown" && inv.reasons[r.id] > 0).map((r) => `${inv.reasons[r.id]} ${r.label}`);
+    return `${inv.shown} of ${inv.eligible} references shown${parts.length ? " · " + parts.join(" · ") : ""}${occlusion.focusOver ? " · the focused reference alone passes the 20% budget; its row and detail are here" : ""}`;
+  }
+  // Each draw: the inventory is taken from what the frame drew, written on the canvas for a reader of the page and a test, and shown in the
+  // Lines menu with a reason on each row that is not drawn.
+  function referenceInventoryCommit() {
+    const inv = referenceInventory(),
+      value = inv.eligible ? `${inv.shown}/${inv.eligible}` : "",
+      reasons = E.role.REASONS.filter((r) => r.id !== "shown" && inv.reasons[r.id] > 0).map((r) => `${r.id}:${inv.reasons[r.id]}`).join(" ");
+    refInventory = inv;
+    if ((canvas.dataset.references ?? "") !== value) {
+      if (value) canvas.dataset.references = value;
+      else delete canvas.dataset.references;
+    }
+    if ((canvas.dataset.referenceReasons ?? "") !== reasons) {
+      if (reasons) canvas.dataset.referenceReasons = reasons;
+      else delete canvas.dataset.referenceReasons;
+    }
+    renderReferenceStatus();
+  }
+  function renderReferenceStatus() {
+    if (el("lines-pop").hidden) return;
+    const text = inventorySummary(refInventory);
+    if (el("lines-summary").textContent !== text) el("lines-summary").textContent = text;
+    const state = new Map();
+    for (const r of E.role.REASONS) for (const id of refInventory.byReason[r.id]) state.set(id, r);
+    for (const row of qsa("#ol-lines-pop .ol-line-row[data-ref-key]")) {
+      const r = state.get(row.dataset.refKey),
+        word = r && r.id !== "shown" ? r.short : "",
+        node = row.querySelector(".ol-line-reason");
+      if (r) {
+        if (row.dataset.refState !== r.id) row.dataset.refState = r.id;
+      } else if (row.dataset.refState !== undefined) delete row.dataset.refState;
+      if (node && node.textContent !== word) {
+        node.textContent = word;
+        node.title = r && word ? r.label : "";
+      }
+    }
   }
   function renderLinesButton() {
-    // The bar's button: a dot for each family on, in its colour.
+    focusValidate();
+    renderFocus();
+    // The bar's button: one dot for each colour that has lines on, not for each menu group: Session levels and Structure are two groups
+    // of one family and one hue, and two same-coloured dots would suggest two quantities. The count beside it is of the items on.
     const fams = familiesOn(),
+      hues = [...new Map(fams.map((f) => [f.colour, f])).values()],
       dots = el("lines-dots"),
-      want = fams.map((f) => f.id).join(",") + "|" + colourEpoch;
+      want = hues.map((f) => f.colour).join(",") + (S.level === null ? "" : ",user") + "|" + colourEpoch;
     if (dots.dataset.dots !== want) {
       dots.dataset.dots = want;
       dots.replaceChildren(
-        ...fams.map((f) => {
+        ...[...hues.map((f) => lineStyle(f.colour).colour), ...(S.level === null ? [] : [colors.ink])].map((colour) => {
           const dot = document.createElement("i");
-          dot.style.background = lineStyle(f.colour, "long").colour;
+          dot.style.background = colour;
           return dot;
         }),
       );
@@ -28481,6 +29985,24 @@
         root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:not(:disabled)") ||
         el("family-profile-head"))?.focus();
     });
+    el("lines-pop").addEventListener("click", (e) => {
+      const keyButton = e.target.closest("[data-line-focus]"),
+        familyButton = e.target.closest("[data-focus-family]");
+      if (keyButton) {
+        e.preventDefault();
+        focusKey(keyButton.dataset.lineFocus);
+        linesStatus(focus.key === keyButton.dataset.lineFocus ? `Focus: ${focusName()}` : "Focus ended: all shown");
+      } else if (familyButton) {
+        e.preventDefault();
+        focusFamily(familyButton.dataset.focusFamily);
+        linesStatus(focus.family === familyButton.dataset.focusFamily ? `Focus: ${focusName()}` : "Focus ended: all shown");
+      }
+    });
+    el("lines-showall").addEventListener("click", () => {
+      focusClear();
+      linesStatus("Focus ended: all shown");
+    });
+    el("focus-chip").addEventListener("click", () => focusClear());
     el("lines-pop").addEventListener("change", (e) => {
       const key = e.target.dataset?.line;
       if (!key) return;
@@ -29623,6 +31145,32 @@
     el("case-prev").disabled = S.casePage === 0;
     el("case-next").disabled = S.casePage + 1 >= pages;
   }
+  // The median marker of a historical-comparison set: a filled square for the matching states, a ring for all states, each cased by the
+  // surface so that it reads over any cell colour. Shared by the cone and the legend swatch so that a key cannot drift from its mark.
+  function medianMarker(c, set, x, y, colour) {
+    const half = 3;
+    c.save();
+    c.lineJoin = "miter";
+    c.strokeStyle = colors.surface;
+    c.fillStyle = colors.surface;
+    c.lineWidth = 1;
+    c.beginPath();
+    if (set === "match") c.rect(x - half - 1, y - half - 1, 2 * half + 2, 2 * half + 2);
+    else c.arc(x, y, half + 1, 0, 2 * Math.PI);
+    c.fill();
+    c.beginPath();
+    c.strokeStyle = colour;
+    c.fillStyle = colour;
+    c.lineWidth = 1.25;
+    if (set === "match") {
+      c.rect(x - half, y - half, 2 * half, 2 * half);
+      c.fill();
+    } else {
+      c.arc(x, y, half, 0, 2 * Math.PI);
+      c.stroke();
+    }
+    c.restore();
+  }
   // Continuations on the chart: for each column ahead, a box over the rows
   // where the POC landed, the middle 80% of outcomes light and the middle 50%
   // darker, with the median row marked. All states are outlined across the
@@ -29635,6 +31183,7 @@
       x0 = G.X((e.a + 1) * ts),
       y0 = G.Y((e.poc + 0.5) * ps);
     if (x0 < G.x || x0 > G.x + G.w) return;
+    markCount.cone++;
     const rows = (q, low, high) => [
         G.Y((e.poc + Math.ceil(q[high]) + 1) * ps),
         G.Y((e.poc + Math.floor(q[low])) * ps),
@@ -29642,8 +31191,8 @@
       ends = {};
     ctx.save();
     for (const [key, summaries, color, inset] of [
-      ["all", e.all, colors.muted, 0],
-      ["match", e.match, colors.evidence, 0.25],
+      ["all", e.all, colors.family.compare, 0],
+      ["match", e.match, colors.family.compare, 0.25],
     ]) {
       for (let h = 1; h <= 8 && summaries[h].n >= 30; h++) {
         const q = summaries[h].q,
@@ -29667,7 +31216,10 @@
         ctx.strokeRect(left, innerTop + 0.5, width, innerBottom - innerTop - 1);
         ctx.setLineDash([]);
         ctx.globalAlpha = 1;
-        line(left, median, left + width, median, color, chosen ? 2.5 : 2, 0.9);
+        line(left, median, left + width, median, color, chosen ? REFERENCE_STROKE + 1 : REFERENCE_STROKE, 0.9);
+        // The two sets share the neutral hue and are told apart by the shape of the median's marker: a square for the matching states, a
+        // ring for all states (PRD-0002 S3 section 1); the legend and the inspector's tracks carry the same shapes.
+        medianMarker(ctx, key, left + width / 2, median, color);
         ends[key] = { x: xb, y: median };
       }
     }
@@ -29677,17 +31229,17 @@
       ctx.setLineDash([4, 3]);
       for (const sign of [-1, 1]) {
         const y = G.Y((e.poc + 0.5 + sign * distance) * ps);
-        line(x0, y, x1, y, colors.evidence, 1, 0.7);
+        line(x0, y, x1, y, colors.family.compare, 1, 0.7);
       }
       ctx.setLineDash([]);
     }
-    ctx.fillStyle = colors.evidence;
+    ctx.fillStyle = colors.family.compare;
     ctx.beginPath();
     ctx.arc(x0, y0, 3, 0, 7);
     ctx.fill();
     ctx.restore();
     // Each set named beside its last box, at its median.
-    if (ends.match) chartLabel("Matching", ends.match.x + 6, ends.match.y, colors.evidence);
+    if (ends.match) chartLabel("Matching states", ends.match.x + 6, ends.match.y);
     if (ends.all) chartLabel("All states", ends.all.x + 6, ends.all.y);
   }
   function bindEvidence() {
@@ -29999,7 +31551,7 @@
   // is too wide for one tile.
   let lensSource = null;
   function lensTile() {
-    if (!PACK.live || !(S.lens || nav.alt || nav.hold)) return null;
+    if (!PACK.live || !lensShown()) return null;
     const f = lensFrame();
     if (!f) return null;
     const n = Math.max(0, renderN() - f.depth),
@@ -30489,7 +32041,7 @@
     if (["measure", "tile", "lens"].includes(cube.busy?.kind)) return null;
     for (const want of [measureWant(), tileWant(), lensWant()])
       if (want && !cube.failed.has(want.key)) return null;
-    const lens = viewing && (S.lens || nav.alt || nav.hold) ? lensFrame()?.src : null;
+    const lens = viewing && lensShown() ? lensFrame()?.src : null;
     return (
       [
         viewing ? motionSourceWant(displaySource()) : null,
@@ -32284,7 +33836,7 @@
   // E.cohort.cells(inputs) and keeps the result as scaleRt.local with this `key`; `ctx` and `key` ride along
   // because only the lens knows its own rectangle.
   function lensCohortInputs() {
-    if (!(S.lens || nav.alt || nav.hold) || !S.scale.local || E.measure.MODES[S.mode].kind !== "unbounded") return null;
+    if (!lensShown() || !S.scale.local || E.measure.MODES[S.mode].kind !== "unbounded") return null;
     const f = lensFrame(),
       p = f && lensParts(f);
     if (!p) return null;
@@ -32434,10 +33986,14 @@
       effective: { n: renderN(), m: renderM() },
     };
   }
+  // Whether a lens is on the plot: the tool, a peek by Alt or a hold, or the frame Inspect holds still while its cursor moves in it.
+  const lensShown = () => S.lens || nav.alt || nav.hold || inspect.lens !== null;
   function lensFrame() {
     if (!G.w) return null;
     const p =
-        nav.last && inPlot(nav.last)
+        inspect.lens !== null
+          ? { x: G.X(inspect.lens.t), y: G.Y(inspect.lens.p), t: inspect.lens.t, p: inspect.lens.p }
+          : nav.last && inPlot(nav.last)
           ? nav.last
           : {
               x: G.x + G.w / 2,
@@ -32503,7 +34059,7 @@
     return true;
   }
   function drawResolutionLens(sc) {
-    if (!(S.lens || nav.alt || nav.hold)) {
+    if (!lensShown()) {
       // a closed lens has no Local-contrast want to wait for
       lensWantDrop();
       return;
@@ -32809,7 +34365,8 @@
         return;
       }
       if (!drag) {
-        tooltip(p);
+        // Inspect owns the readout: a pointer moving over the chart does not replace its cursor's
+        if (!inspect.on) tooltip(p);
         return;
       }
       const dx = p.x - drag.start.x,
@@ -32876,12 +34433,14 @@
         // A click with Select clears the selection; with Pan it anchors the
         // column clicked, for the continuations.
         cleared = click && S.select && S.selection !== null;
-      if (click && S.select) S.selection = null;
+      // A tap with Inspect is a reading and nothing else: no anchor, no selection, no evidence tab, no replay edge, no history entry
+      if (click && inspect.on) inspectTap(p, e.pointerType === "touch");
+      else if (click && S.select) S.selection = null;
       else if (click && inPlot(p) && p.t < activeCutoff()) {
         S.anchor = (Math.floor(p.t / stepT()) + 1) * stepT();
         S.tab = "evidence";
       }
-      const label = held
+      const label = held || (click && inspect.on)
         ? null
         : drag.moved
           ? S.select
@@ -32903,10 +34462,12 @@
       settleNavigation(label, false);
       // A tap on touch shows the tooltip where it landed: its row section holds
       // the level line's control, as X over a row does with a pointer.
-      if (e.pointerType === "touch" && click && inPlot(p)) {
+      if (e.pointerType === "touch" && click && inPlot(p) && !inspect.on) {
         nav.touchTip = true;
         tooltip(p);
       }
+      // a peek of the lens, held, ends with Inspect's own readout back
+      if (inspect.on) inspectRender(false);
     };
     // The end of a pointer is a stamp and a wake on every path out of it, AFTER the hold is released: a
     // fit that waited on the drag is armed again only by this call.
@@ -32940,6 +34501,8 @@
     canvas.addEventListener("pointerleave", (e) => {
       // A finger lifted leaves the canvas: the tooltip its tap opened stays.
       if (e.pointerType === "touch" && nav.touchTip) return;
+      // the Inspect cursor is not a hover: leaving the chart does not erase it
+      if (inspect.on) return;
       if (!drag && !nav.pinch) {
         hover = null;
         nav.last = null;
@@ -33067,6 +34630,12 @@
         }
         return;
       }
+      // Inspect: its keys are the chart's and the navigator's only; a control keeps its own (the navigator handles its own children)
+      if (inspect.on && e.key !== "Escape" && (!target || target === canvas || target === document.body || target === root) && inspectKey(e)) {
+        e.preventDefault();
+        nav.pressed.add(id);
+        return;
+      }
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key,
         shift = e.shiftKey,
         // The digit typed, or on layouts that type another character there (AZERTY)
@@ -33127,6 +34696,7 @@
       else if (k === "s" && shift) openViews(true);
       else if (k === "s") setTool(S.select ? "pan" : "select");
       else if (k === "v") setTool("pan");
+      else if (k === "e") setTool(inspect.on ? inspect.prev : "inspect");
       else if (k === "d") setFollow(S.diagonal ? "free" : "diagonal");
       else if (k === "f") fitPrice("Fit price");
       else if (k === "," || k === ".") stepAnchor(k === "," ? -1 : 1);
@@ -33312,6 +34882,15 @@
     if (root.dataset.sheet === "open") {
       setSheet(false);
       el("sheet-toggle").focus();
+      return;
+    }
+    // Escape's order with Inspect: the detail first, then Inspect itself, and only a later Escape clears the selection or goes back to Pan
+    if (inspect.detail) {
+      inspectDetail(false);
+      return;
+    }
+    if (inspect.on) {
+      inspectExit();
       return;
     }
     nav.hold = false;

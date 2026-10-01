@@ -51,7 +51,7 @@ const SPEC = {
     APPEARANCES: "object", DEFAULT_APPEARANCE: V("slate2"), build: F(2), appearanceId: F(1), ROWS_ALPHA: V(0.16), composite: F(3), themeOf: F(1),
     screens: F(2), deltaE2000: F(2), rgbToLab: F(3), labToRgb: F(3), contrast: F(2), over: F(3), parseColor: F(1),
   },
-  role: { ROLES: "object", GLYPHS: "object", paint: F(6, 7), tile: F(2), glyphFor: F(1), keyEntries: F(2), occlusion: F(2, 3), unionSpans: F(1) },
+  role: { ROLES: "object", GLYPHS: "object", paint: F(6, 7), tile: F(2), glyphFor: F(1), keyEntries: F(2), occlusion: F(2, 3), unionSpans: F(1), REFERENCE: "object", referenceFamily: F(1), REASONS: "array", inventory: F(1) },
   context: { cellsKey: F(1), rowsKey: F(1), keyString: F(1), equal: F(2), periodIdentity: F(3), diff: F(2), compatClass: F(1) },
   store: { create: F(0, 1) },
   policy: { DEFAULTS: "object", effective: F(2, 3), sanitize: F(1), reduce: F(3), resolve: F(1), offers: F(4, 5), persisted: F(1), restore: F(1) },

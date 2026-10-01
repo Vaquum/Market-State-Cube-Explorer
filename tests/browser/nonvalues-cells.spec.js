@@ -179,23 +179,28 @@ test.describe("B16a zero, midpoint and outlines", () => {
     expect(ops[0].style, "the tile the module builds at this ratio").toBe(colours.tiles["pattern-slate"]);
     // Along one row inside the cell (near its top, clear of the price line that crosses its middle) the hatch lines cross every
     // 12 device pixels. The faint "unfinished" hatch the page lays over a cell next to the live edge is lighter than this ink.
-    const y = Math.round(box.y0 * 2) + 40;
+    // (a label's plate is opaque, so a row is chosen that no label covers: the first of several that shows the whole hatch)
     const x0 = Math.round((box.x0 + 8) * 2);
-    const row = await page.evaluate(([x, yy, n]) => {
-      const data = document.getElementById("ol-canvas").getContext("2d").getImageData(x, yy, n, 1).data;
-      const out = [];
-      for (let i = 0; i < n; i++) out.push(data[i * 4]);
-      return out;
-    }, [x0, y, 120]);
-    const ink = row.map((v, i) => (v < 150 ? i : -1)).filter((i) => i >= 0);
-    // Group adjacent ink pixels into one crossing each and take their centres.
-    const centres = [];
-    for (const i of ink) {
-      const last = centres[centres.length - 1];
-      if (last && i - last.end <= 1) last.end = i;
-      else centres.push({ start: i, end: i });
+    let at = [];
+    for (const offset of [40, 56, 72, 88, 104, 24]) {
+      const y = Math.round(box.y0 * 2) + offset;
+      const row = await page.evaluate(([x, yy, n]) => {
+        const data = document.getElementById("ol-canvas").getContext("2d").getImageData(x, yy, n, 1).data;
+        const out = [];
+        for (let i = 0; i < n; i++) out.push(data[i * 4]);
+        return out;
+      }, [x0, y, 120]);
+      const ink = row.map((v, i) => (v < 150 ? i : -1)).filter((i) => i >= 0);
+      // Group adjacent ink pixels into one crossing each and take their centres.
+      const centres = [];
+      for (const i of ink) {
+        const last = centres[centres.length - 1];
+        if (last && i - last.end <= 1) last.end = i;
+        else centres.push({ start: i, end: i });
+      }
+      at = centres.map((c) => (c.start + c.end) / 2);
+      if (at.length >= 8 && at.every((v, i) => i === 0 || Math.abs(v - at[i - 1] - 12) < 0.5)) break;
     }
-    const at = centres.map((c) => (c.start + c.end) / 2);
     expect(at.length, "several crossings in 120 device px").toBeGreaterThanOrEqual(8);
     for (let i = 1; i < at.length; i++) expect(at[i] - at[i - 1], "one crossing every 12 device px").toBeCloseTo(12, 0);
   });

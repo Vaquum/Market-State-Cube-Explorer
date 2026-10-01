@@ -282,7 +282,7 @@ test.describe("B37 the boundary where it is the same line as another mark", () =
       address: VIEW,
       select,
       prepare: level,
-      other: (frame) => masks.opsOf(frame).filter((o) => o.kind === "stroke" && o.key.includes("[6,4]") && o.segs.length === 1),
+      other: (frame) => masks.opsOf(frame).filter((o) => o.kind === "stroke" && o.key.includes("[8,3,2,3]") && o.segs.length === 1),
       least: 15,
     });
     await page.goto(`${fake.url}/${VIEW}&sel=${select}`);

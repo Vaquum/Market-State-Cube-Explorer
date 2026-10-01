@@ -124,9 +124,10 @@ test.describe("B33 a 4-hour swing is known at the end of the bar that reversed f
       await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
       const frame = await pane.last();
       // every dotted lead-in of the frame is a segment [from, to] of a batched stroke; the swing in question is the latest one, the one that ends last
-      const leads = [];
+      const leads = [],
+        hue = (await pane.colours()).level;
       for (const k of frame.strokes)
-        if (JSON.stringify(k.dash) === "[1,3]" && k.alpha === 0.9) for (let i = 0; i + 1 < k.path.length; i += 2) leads.push([k.path[i], k.path[i + 1]]);
+        if (k.stroke === hue && JSON.stringify(k.dash) === "[1,3]" && k.alpha === 1 && k.width === 1.5) for (let i = 0; i + 1 < k.path.length; i += 2) leads.push([k.path[i], k.path[i + 1]]);
       expect(leads.length, "the swing's lead-in is drawn").toBeGreaterThan(0);
       const lead = leads.reduce((a, b) => (b[1][0] > a[1][0] ? b : a));
       const box = await page.locator("#ol-canvas").boundingBox();
@@ -318,14 +319,24 @@ test.describe("B33 an RSI divergence and an equal pair are known at the later sw
       await page.goto(`${fake.url}/#t=${iso(T2 - 6 * HOUR)}~${iso(T2 + 72 * HOUR)}&p=24900~26000&r=6,3&vis=2&lines=swing4h&pane=rsi4h&replay=1&at=${iso(edge)}`);
       await ready(page, fake, probe);
       const want = divergenceAt(edge);
-      const frame = await pane.last();
-      const divs = frame.strokes.filter((k) => k.width === 2 && k.alpha === 0.95 && k.path.length === 2);
-      const joins = frame.strokes.filter((k) => Math.abs(k.width - 1.2) < 1e-3 && k.alpha === 1 && k.path.length === 2 && k.path[0][0] !== k.path[1][0]);
+      const frame = await pane.last(),
+        c = await pane.colours();
+      // a divergence is a neutral line (the ink, 1.5 px) between two RSI values; an equal pair is a price-level line (1.5 px) between two highs
+      const divs = frame.strokes.filter((k) => k.stroke === c.ink && k.width === 1.5 && k.alpha === 0.95 && k.path.length === 2);
+      const joins = frame.strokes.filter((k) => k.stroke === c.level && k.width === 1.5 && k.alpha === 1 && k.path.length === 2 && k.path[0][0] !== k.path[1][0] && k.path[0][1] !== k.path[1][1]);
       expect(divs.length, "the divergences drawn are the reference's").toBe(want.divergences.length);
       expect(joins.length, "the equal pairs joined are the reference's").toBe(want.equal.length);
       if (want.divergences.length === 0) return;
       const candidate = want.candidate(want.divergences[0]);
-      expect(JSON.stringify(divs[0].dash), "a divergence on a candidate swing is dashed").toBe(candidate ? "[3,3]" : "[]");
+      expect(JSON.stringify(divs[0].dash), "a divergence on a candidate swing is dotted, the lead-in pattern").toBe(candidate ? "[1,3]" : "[]");
+      // the markers are neutral triangles, one at each swing, pointing down for two highs (the price higher, RSI lower) and up for two lows, and the
+      // words say the relationship: a divergence is not a sign and borrows neither signed role
+      const bearish = want.divergences[0].b.kind === "high",
+        triangles = frame.fills.filter((f) => f.path.length === 3 && f.fill === c.ink && f.path[1][1] === f.path[2][1]);
+      expect(triangles.length, "a triangle at each of the two swings of each divergence").toBe(2 * want.divergences.length);
+      for (const t of triangles) expect(t.path[0][1] > t.path[1][1], "the apex points down for highs, up for lows").toBe(bearish);
+      expect(frame.fills.filter((f) => (f.fill === c.positive || f.fill === c.negative) && f.path.length === 3), "no signed role on a divergence").toEqual([]);
+      expect(frame.texts.some((t) => t.text === (bearish ? "Price higher, RSI lower" : "Price lower, RSI higher")), "the relationship in words").toBe(true);
       const box = await page.locator("#ol-canvas").boundingBox(),
         tip = page.locator("#ol-tip"),
         known = String(baseOf(want.confirmEnd(want.divergences[0])));
@@ -422,8 +433,19 @@ test.describe("B33 a crossing is known at the end of its day and a candidate whi
             .poll(async () => (await rec.last()).strokes.some((k) => k.width === 1.5 && k.stroke !== "#ffffff" && k.path.length >= 2), { message: "MACD is drawn" })
             .toBe(true);
         await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
-        const frame = await rec.last();
-        const arcs = frame.arcs.filter((a) => a.r >= 3);
+        const frame = await rec.last(),
+          colours = await rec.colours();
+        // a golden or death cross is a dot (filled or ringed); a MACD crossing is a triangle: up in the positive role where MACD crosses above its signal,
+        // down in the negative role where it crosses below, so the sign is in the shape and the colour both and means only MACD minus its signal
+        const arcs = pane
+          ? frame.fills
+              .filter((f) => f.path.length === 3 && (f.fill === colours.positive || f.fill === colours.negative))
+              .map((f) => {
+                const [tip, base] = f.path,
+                  up = tip[1] < base[1];
+                return { x: tip[0], y: up ? tip[1] + 4.5 : tip[1] - 4.5, up, fill: f.fill };
+              })
+          : frame.arcs.filter((a) => a.r >= 3);
         if (!want) {
           expect(arcs, "no crossing yet").toEqual([]);
           return;
@@ -431,6 +453,10 @@ test.describe("B33 a crossing is known at the end of its day and a candidate whi
         expect(arcs.length, "a marker for each crossing in view").toBeGreaterThan(0);
         // the newest crossing in view is the one that ends last
         const marker = arcs.reduce((a, b) => (b.x > a.x ? b : a));
+        if (pane) {
+          expect(marker.up, "the marker points up where MACD crossed above its signal").toBe(want.up);
+          expect(marker.fill, "and its colour is the role of that sign").toBe(want.up ? colours.positive : colours.negative);
+        }
         const box = await page.locator("#ol-canvas").boundingBox();
         // (two pixels inside the marker: a tooltip at the very edge of the data says the future is hidden)
         await page.mouse.move(box.x + marker.x - 2, box.y + marker.y);

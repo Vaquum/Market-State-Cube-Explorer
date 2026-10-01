@@ -147,7 +147,9 @@ async function coloursOf(page) {
       probe.style.color = `var(--ol-${name})`;
       return hex(getComputedStyle(probe).color);
     };
-    const out = { surface: token("surface"), ink: token("ink"), state: token("state"), line: token("line"), poc: token("poc") };
+    const out = { surface: token("surface"), bg: token("bg"), ink: token("ink"), muted: token("muted"), state: token("state"), line: token("line"), poc: token("poc") };
+    // the reference families' hues (E.role.REFERENCE): price levels, averages and Bollinger, VWAP, clock, historical comparison
+    for (const [key, name] of [["level", "line-level"], ["average", "line-average"], ["vwap", "line-vwap"], ["clock", "line-clock"], ["compare", "line-compare"]]) out[key] = token(name);
     probe.remove();
     const theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     const lut = window.explorerEncoding.lut.build(window.explorerEncoding.lut.DEFAULT_APPEARANCE, theme);

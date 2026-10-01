@@ -181,7 +181,7 @@ test.describe("B27 the transient lens is an identified region replacement", () =
       for (const el of document.querySelectorAll("[data-temporary]")) out[el.dataset.temporary] = (out[el.dataset.temporary] ?? 0) + 1;
       return out;
     });
-    expect(Object.keys(kinds).sort()).toEqual(["lens-controls", "modal", "popover", "replay-controls", "tooltip"]);
+    expect(Object.keys(kinds).sort()).toEqual(["inspect", "lens-controls", "modal", "popover", "replay-controls", "tooltip"]);
     expect(kinds.popover, "every popover and menu").toBeGreaterThan(10);
     // and every popover of the page is among them: none is an unidentified overlay
     const unmarked = await page.evaluate(() => [...document.querySelectorAll(".ol-pop")].filter((el) => !el.hasAttribute("data-temporary")).map((el) => el.id));

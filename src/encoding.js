@@ -4516,6 +4516,151 @@
     return spans;
   }
 
+  // E.role.REFERENCE (PRD-0002 S3, section 1): the reference language, one table for the canvas, the tags, the menu and toolbar keys, the
+  // footer keys and the inspector's tracks. A reference mark says WHAT it is by its family (the hue below), WHICH one by its label and
+  // endpoint glyph, and HOW it is known by its pattern; none of it by a stroke weight or a saturation, so a timeframe is never a colour. The
+  // hues are tested starting points (docs/visual-contract.md checks every pair that meets on the chart), not a promise to keep a failing hex.
+  //   STROKE   an ordinary reference stroke is 1.5 css px; the focused one adds one pixel; with its backing (one pixel each side) it is never
+  //            wider than 4.5 px, which is the occlusion budget's maximum.
+  //   PATTERN  inside the span a market reference is supported over: solid is observed or derived; dashed [5,4] is the held extension to the
+  //            edge; dotted [1,3] is a retrospective lead-in to a confirmation. The user's own Level is the one dash-dot, [8,3,2,3].
+  //   FAMILIES the seven roles. `colour` is the page's key for the canvas colour (the CSS custom property is `token`); `groups` are menu
+  //            subgroups of ONE family (they share its hue and are not advertised as separate hues); `identification` is what tells two
+  //            marks of one family apart; `glyph` names the endpoint glyph where one is part of the identity.
+  const rolReferenceFamilies = Object.freeze([
+    Object.freeze({
+      id: "profile",
+      name: "Volume profile",
+      role: "Volume-profile references",
+      colour: "poc",
+      token: "--ol-line-poc",
+      hue: "gold",
+      groups: Object.freeze(["Volume profile"]),
+      identification: Object.freeze(["POC", "Buy POC", "VAH", "VAL", "period", "endpoint glyph"]),
+      glyph: Object.freeze({ poc: "triangle", buyPoc: "diamond", valueArea: "square" }),
+    }),
+    Object.freeze({
+      id: "level",
+      name: "Price levels",
+      role: "Price levels",
+      colour: "level",
+      token: "--ol-line-level",
+      hue: "violet",
+      groups: Object.freeze(["Session levels", "Structure"]),
+      identification: Object.freeze(["Session or Structure subgroup", "exact kind", "timeframe"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "average",
+      name: "Averages and Bollinger",
+      role: "Averages and Bollinger",
+      colour: "average",
+      token: "--ol-line-average",
+      hue: "olive",
+      groups: Object.freeze(["Moving averages"]),
+      identification: Object.freeze(["indicator period", "bar timeframe", "Upper, Middle or Lower"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "vwap",
+      name: "VWAP",
+      role: "VWAP",
+      colour: "vwap",
+      token: "--ol-line-vwap",
+      hue: "rust",
+      groups: Object.freeze(["VWAP"]),
+      identification: Object.freeze(["Session or the exact anchor"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "clock",
+      name: "Clock",
+      role: "Clock",
+      colour: "clock",
+      token: "--ol-line-clock",
+      hue: "neutral",
+      groups: Object.freeze(["Clock"]),
+      identification: Object.freeze(["calendar-event label", "vertical geometry", "keyed event pattern"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "user",
+      name: "User Level",
+      role: "User Level",
+      colour: "ink",
+      token: "--ol-ink",
+      hue: "ink",
+      groups: Object.freeze(["Level"]),
+      identification: Object.freeze(["Level label", "endpoint diamond", "long dash-dot"]),
+      glyph: Object.freeze({ level: "diamond" }),
+    }),
+    Object.freeze({
+      id: "compare",
+      name: "Historical comparison",
+      role: "Historical comparison",
+      colour: "compare",
+      token: "--ol-line-compare",
+      hue: "neutral",
+      groups: Object.freeze(["Matching states", "All states"]),
+      identification: Object.freeze(["Matching states or All states", "square or circle median marker", "labelled interval track"]),
+      glyph: Object.freeze({ matching: "square", all: "circle" }),
+    }),
+  ]);
+  const rolReference = Object.freeze({
+    STROKE: Object.freeze({ ordinary: 1.5, focusExtra: 1, backing: 1, max: 4.5 }),
+    PATTERN: Object.freeze({
+      support: Object.freeze([]),
+      held: Object.freeze([5, 4]),
+      lead: Object.freeze([1, 3]),
+      user: Object.freeze([8, 3, 2, 3]),
+    }),
+    PATTERN_NAMES: Object.freeze({ support: "Solid: observed or derived", held: "Dashed: held to the edge", lead: "Dotted: lead-in to a confirmation", user: "Dash-dot: your Level" }),
+    FAMILIES: rolReferenceFamilies,
+  });
+  // E.role.referenceFamily(id) -> the family record; a RangeError for an id the table does not have.
+  function rolReferenceFamily(id) {
+    for (let i = 0; i < rolReferenceFamilies.length; i++) if (rolReferenceFamilies[i].id === id) return rolReferenceFamilies[i];
+    throw new RangeError("E.role.referenceFamily: unknown family " + String(id));
+  }
+
+  // E.role.REASONS / E.role.inventory (PRD-0002 S3, section 2): what the chart says about the references it was asked to draw. Every ENABLED and
+  // SUPPORTED reference (a menu row, the user's Level) has exactly one status, so the count of what is shown is always over everything that
+  // could be, and a reference that is not shown says why, in one of these words: `occlusion` (held back by the 20% budget), `density` (too
+  // close to its neighbours to draw at this zoom), `offscreen` (outside the view; its arrow tag at the edge and its row in the list remain),
+  // `warmup` (the indicator has no value yet), `missing` (its data is not read yet or could not be), `unsupported` (needs a closer zoom or the
+  // live cube) and `none` (there is no event to draw). The words, their order and their labels are this table's, never a page's.
+  const rolReasons = Object.freeze([
+    Object.freeze({ id: "shown", label: "shown", short: "shown" }),
+    Object.freeze({ id: "occlusion", label: "held back by the 20% budget", short: "held back" }),
+    Object.freeze({ id: "density", label: "too close together to draw at this zoom", short: "too close" }),
+    Object.freeze({ id: "offscreen", label: "off screen (its tag at the edge and its row remain)", short: "off screen" }),
+    Object.freeze({ id: "warmup", label: "warming up (no value yet)", short: "warming up" }),
+    Object.freeze({ id: "missing", label: "not read yet or could not be read", short: "not read" }),
+    Object.freeze({ id: "unsupported", label: "needs a closer zoom or the live cube", short: "zoom in" }),
+    Object.freeze({ id: "none", label: "no event to draw", short: "no event" }),
+  ]);
+  // E.role.inventory(entries) -> {eligible, shown, reasons: {id: count}, byReason: {id: [entry ids]}}: `entries` are {id, reason}; a reason that is
+  // not in the table throws, a repeated id throws, and `eligible` is every entry, so a suppressed reference is counted and never dropped.
+  function rolInventory(entries) {
+    const known = new Set(rolReasons.map((r) => r.id)),
+      seen = new Set(),
+      reasons = {},
+      byReason = {};
+    for (const r of rolReasons) {
+      reasons[r.id] = 0;
+      byReason[r.id] = [];
+    }
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (!known.has(e.reason)) throw new RangeError("E.role.inventory: unknown reason " + String(e.reason));
+      if (seen.has(e.id)) throw new RangeError("E.role.inventory: repeated reference " + String(e.id));
+      seen.add(e.id);
+      reasons[e.reason]++;
+      byReason[e.reason].push(e.id);
+    }
+    return { eligible: entries.length, shown: reasons.shown, reasons, byReason };
+  }
+
   API.role = Object.freeze({
     ROLES: rolRoles,
     GLYPHS: rolGlyphs,
@@ -4525,6 +4670,10 @@
     keyEntries: rolKeyEntries,
     occlusion: rolOcclusion,
     unionSpans: rolUnionSpans,
+    REFERENCE: rolReference,
+    referenceFamily: rolReferenceFamily,
+    REASONS: rolReasons,
+    inventory: rolInventory,
   });
 
   // == §13-store ==

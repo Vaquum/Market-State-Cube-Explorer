@@ -7,8 +7,8 @@
 //      B.3: delta has rank false);
 //   3. a theme flip at run time recolours every mark from the other theme's Lut with no new fit and no request (D12: a theme is a lookup),
 //      and the pattern tiles are the new theme's;
-//   4. a selection fades the block's cells at alpha 0.25 through the whole-block frame (`sc.cellsFull`) and redraws the selected ones on
-//      top at alpha 1, both in the colours of the one mapping (fitted over the selection, A-13c);
+//   4. a selection does not fade anything (S2, composition): every cell of the block is drawn at alpha 1 through the whole-block frame
+//      (`sc.cellsFull`), the selected ones again on top, both in the colours of the one mapping (fitted over the selection, A-13c);
 //   5. Path on the recorded snapshot, which holds no motion: the page does not offer it and draws Volume (no pattern of a missing read).
 //
 // Oracles: the hand values of tests/fixtures/trades/*.json, the rules of API.md C.3 to C.5 written out in cells-matrix.spec.js's helper
@@ -107,9 +107,9 @@ test.describe("Cells canvas, edge cases", () => {
     await context.close();
   });
 
-  test("a selection fades the block's cells at 0.25 and redraws the selected ones on top, in the colours of one mapping", async ({ freshContext, fakeFor }) => {
+  test("a selection fades nothing: every cell is opaque, the selected ones are drawn again on top, in the colours of one mapping", async ({ freshContext, fakeFor }) => {
     // mixed, Volume. The selection is the first four columns (00:00:00 to 00:03:45) over every row of the fixture: six cells. Explore is
-    // fitted over the selection (A-13c), the fade layer paints all nine cells in that mapping at alpha 0.25, then the six again at 1.
+    // fitted over the selection (A-13c), the block pass paints all nine cells in that mapping at alpha 1, then the six again at 1.
     const view = { from: "2021-01-01T00:00Z", to: "2021-01-01T00:06Z", low: 24750, high: 25500 };
     const { page, context } = await open(
       { freshContext, fakeFor },
@@ -130,14 +130,10 @@ test.describe("Cells canvas, edge cases", () => {
     for (const z of cells) {
       const ops = opsOfBox(draw, boxOf(draw.plot, rect, 0, 0, z.c, z.r, CUT));
       const style = colours.unsigned[idx(z.v)];
-      const faded = ops.filter((op) => Math.abs(op.alpha - 0.25) < 1e-9);
+      expect(ops.filter((op) => op.alpha !== 1), `cell ${z.c}:${z.r}: no fade`).toEqual([]);
       const solid = ops.filter((op) => op.alpha === 1);
-      expect(faded, `cell ${z.c}:${z.r}: one faded mark`).toHaveLength(1);
-      expect(faded[0].style, `cell ${z.c}:${z.r}: the colour of the selection's mapping`).toBe(style);
-      if (z.c < 4) {
-        expect(solid, `cell ${z.c}:${z.r}: selected, drawn again on top`).toHaveLength(1);
-        expect(solid[0].style).toBe(style);
-      } else expect(solid, `cell ${z.c}:${z.r}: outside the selection, faded only`).toHaveLength(0);
+      expect(solid.length, `cell ${z.c}:${z.r}: the block pass, and again for a selected cell`).toBe(z.c < 4 ? 2 : 1);
+      for (const op of solid) expect(op.style, `cell ${z.c}:${z.r}: the colour of the selection's mapping`).toBe(style);
     }
     await context.close();
   });

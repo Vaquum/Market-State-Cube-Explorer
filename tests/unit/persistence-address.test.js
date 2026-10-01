@@ -32,7 +32,7 @@ const isError = (name) => (e) => typeof e === "object" && e !== null && e.name =
 const base = (patch) => ({
   window: "24h", tA: NaN, tB: NaN, pA: NaN, pB: NaN, auto: true, n: null, m: null, selection: null, anchor: null, replay: false,
   follow: "refit", mode: "volume", pane: "cells", rows: "off", period: "90d", level: null, poc: true, area: false, untested: false,
-  lines: [], tab: "context", evidenceKind: "poc", horizon: 1, barrier: 1,
+  lines: [], tab: "context", evidenceKind: "poc", horizon: 1, barrier: 1, profileCmp: "independent", profileOpen: false,
   scale: { basis: "amount", pathBasis: "spans", transform: "value", curve: "log", rowsTransform: "value", cells: "explore", rows: "explore", local: false, window: null, lock: false },
   appearance: AP, scales: [], axes: [],
   ...(patch || {}),
@@ -83,6 +83,8 @@ const SAMPLES = {
   "scale.local": [{ scale: { local: true } }, "lc=1"],
   "scale.window": [{ mode: "flow", scale: { window: [0.25, 0.75] } }, "sw=0.25~0.75"],
   "scale.lock": [{ scale: { lock: true } }, "lk=1"],
+  profileCmp: [{ profileCmp: "share" }, "pc=s"],
+  profileOpen: [{ profileOpen: true }, "po=1"],
 };
 const DEFAULTS = {
   follow: { follow: "refit" }, mode: { mode: "volume" }, pane: { pane: "cells" }, rows: { rows: "off" }, period: { period: "90d" }, level: { level: null },
@@ -90,15 +92,16 @@ const DEFAULTS = {
   barrier: { barrier: 1 }, "scale.basis": { "scale.basis": "amount" }, "scale.pathBasis": { "scale.pathBasis": "spans" }, "scale.transform": { "scale.transform": "value" },
   "scale.curve": { "scale.curve": "log" }, "scale.rowsTransform": { "scale.rowsTransform": "value" }, "scale.cells": { "scale.cells": "explore" },
   "scale.rows": { "scale.rows": "explore" }, "scale.local": { "scale.local": false }, "scale.window": { "scale.window": null }, "scale.lock": { "scale.lock": false },
+  profileCmp: { profileCmp: "independent" }, profileOpen: { profileOpen: false },
 };
 
 test("VISUAL_KEYS is the single table: ids, params, fields, defaults; no visual key is a navigation key", () => {
   const keys = plain(C.VISUAL_KEYS);
-  assert.equal(keys.length, 22, "12 legacy entries (marks folds poc, area and untested) and 10 S1 settings");
+  assert.equal(keys.length, 24, "12 legacy entries (marks folds poc, area and untested), 10 S1 settings and the 2 S2 profile settings");
   assert.deepEqual(keys.map((k) => k.id).sort(), Object.keys(SAMPLES).sort());
   assert.deepEqual(
     keys.map((k) => k.param),
-    ["f", "mode", "pane", "rows", "period", "level", "marks", "lines", "tab", "outcome", "h", "dist", "bs", "pb", "tr", "cv", "rt", "cp", "rp", "lc", "sw", "lk"],
+    ["f", "mode", "pane", "rows", "period", "level", "marks", "lines", "tab", "outcome", "h", "dist", "bs", "pb", "tr", "cv", "rt", "cp", "rp", "lc", "sw", "lk", "pc", "po"],
     "canonical order of B.15 (sel, at and replay sit after lines and are navigation code)",
   );
   assert.equal(new Set(keys.map((k) => k.param)).size, keys.length, "no parameter twice");
@@ -596,7 +599,7 @@ test("a bad sc keeps every setting and drops only the records that fail, each wi
   assert.equal(none.view.mode, "delta");
 });
 
-test("16 active scales are accepted and 17 rejected, on write AND read; 19 frozen axes and 20 likewise", () => {
+test("16 active scales are accepted and 17 rejected, on write AND read; 21 frozen axes and 22 likewise", () => {
   const many = (count) => {
     const list = [];
     for (let i = 0; i < count; i++) list.push(record("c", valueDesc(1000 + i, 10 + i, false), cellsCtx("volume", i % 16, Math.floor(i / 16))));
@@ -619,12 +622,12 @@ test("16 active scales are accepted and 17 rejected, on write AND read; 19 froze
   assert.match(p17.dropped.find((d) => d.key === "sc").reason, /more than 16 active scales/);
   assert.equal(records.length, 16);
   const axes = (count) => Array.from({ length: count }, (_, i) => ({ id: "pane.a" + i, domain: [0, 10 + i], policy: "frozen", through: null }));
-  const a19 = C.formatAddress(base({ axes: axes(19) }), ENV);
-  assert.equal(C.parseAddress(a19.hash, ENV).axes.length, 19);
-  assert.throws(() => C.formatAddress(base({ axes: axes(20) }), ENV), isError("LimitError"));
-  const p20 = C.parseAddress(a19.hash + ";a.pane.a19:x:d0,30:-:-:" + E.scale.id({ v: 1, kind: "axis-linear", signed: false, params: { lo: 0, hi: 30 }, clip: "axis@1" }), ENV);
-  assert.equal(p20.axes.length, 0);
-  assert.match(p20.dropped.find((d) => d.key === "sc").reason, /19 frozen axes/);
+  const a21 = C.formatAddress(base({ axes: axes(21) }), ENV);
+  assert.equal(C.parseAddress(a21.hash, ENV).axes.length, 21);
+  assert.throws(() => C.formatAddress(base({ axes: axes(22) }), ENV), isError("LimitError"));
+  const p22 = C.parseAddress(a21.hash + ";a.pane.a21:x:d0,30:-:-:" + E.scale.id({ v: 1, kind: "axis-linear", signed: false, params: { lo: 0, hi: 30 }, clip: "axis@1" }), ENV);
+  assert.equal(p22.axes.length, 0);
+  assert.match(p22.dropped.find((d) => d.key === "sc").reason, /21 frozen axes/);
 });
 
 test("DD-92: an Auto descriptor whose cutMs advances leaves the address byte-identical (sc carries obsEndMs, nCohort, nExcluded only)", () => {

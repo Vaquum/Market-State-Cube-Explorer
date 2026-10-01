@@ -68,23 +68,61 @@
     PLOT_TOP = 12,
     PANE_GAP = 8,
     AXIS = 24,
-    profileWidth = (width) => (width > 470 ? 79 : 52);
+    // The profile tracks (PRD-0002 S2): the bars of a track are 48 px, then a 14 px gutter for its endpoint glyphs and letters, and the
+    // tracks stand 4 px apart. Under 600 px the tracks are a disclosure instead of a crushed chart.
+    TRACK_BARS = 48,
+    TRACK_GUTTER = 14,
+    TRACK_GAP = 4,
+    PROFILE_PAD = 9,
+    PROFILE_END = 8,
+    PROFILE_NARROW = 600,
+    // The width the tracks take: none under PROFILE_NARROW unless the disclosure is open. The tracks never shrink below their 48 px and no label
+    // goes under 11 px; from 600 px the two of them with the Rows strip leave the heatmap at least 368 px, so nothing else needs to collapse.
+    profileWidth = (width, tracks = 1, open = false) =>
+      width < PROFILE_NARROW && !open ? 0 : PROFILE_PAD + tracks * (TRACK_BARS + TRACK_GUTTER) + (tracks - 1) * TRACK_GAP + PROFILE_END;
   // The chart's panes: prices on top, activity under them sharing the time
   // axis, about 15% of the height, and the time labels along the bottom.
-  function layout(width, height) {
-    const profile = profileWidth(width),
+  // The event strip (PRD-0002 S2): one lane of EVENT_LANE px for each event kind that is switched on, between the
+  // price pane and the activity pane. Where the chart is too short to keep the price pane at least EVENT_MIN_PLOT
+  // px tall beside its lanes, the strip is one line that says how many events there are instead.
+  // Reference strokes (PRD-0002 S2): 1.5 px ordinarily, 2.5 at the most, and never more than 1 px of casing a side.
+  const REFERENCE_STROKE = 1.5,
+    REFERENCE_STROKE_MAX = 2.5;
+  const EVENT_LANE = 14,
+    EVENT_GAP = 3,
+    EVENT_MIN_PLOT = 150,
+    EVENT_NAME_EXTRA = 10;
+  // The Rows strip (PRD-0002 S2): 12 px, fixed, immediately right of the heatmap, while Rows is on; the profile
+  // tracks start after it.
+  const ROWS_STRIP = 12;
+  function layout(width, height, lanes = 0, strip = 0, tracks = 1, open = false) {
+    const profile = profileWidth(width, tracks, open),
       free = Math.max(1, height - PLOT_TOP - AXIS),
       ah = clamp(Math.round(free * 0.15), 36, 120),
-      h = Math.max(1, free - ah - PANE_GAP);
+      collapsed = lanes > 0 && free - ah - PANE_GAP - lanes * EVENT_LANE - EVENT_GAP < EVENT_MIN_PLOT,
+      eh = lanes === 0 ? 0 : collapsed ? EVENT_LANE : lanes * EVENT_LANE,
+      eventStrip = lanes === 0 ? 0 : eh + EVENT_GAP,
+      h = Math.max(1, free - ah - PANE_GAP - eventStrip);
+    // The lanes' names (4h squeeze is 61 px of 11 px type) stand in the price labels' column: with lanes the plot starts EVENT_NAME_EXTRA px later.
+    const left = PLOT_LEFT + (lanes > 0 && !collapsed ? EVENT_NAME_EXTRA : 0),
+      w = Math.max(1, width - left - profile - GUTTER - strip);
     return {
-      x: PLOT_LEFT,
+      x: left,
       y: PLOT_TOP,
-      w: Math.max(1, width - PLOT_LEFT - profile - GUTTER),
+      w,
+      sx: left + w,
+      sw: strip,
       h,
-      ay: PLOT_TOP + h + PANE_GAP,
+      ey: PLOT_TOP + h + EVENT_GAP,
+      eh,
+      ecollapsed: collapsed,
+      ay: PLOT_TOP + h + eventStrip + PANE_GAP,
       ah,
       axis: height - AXIS / 2,
       profile,
+      // The bars of the current track and of the reference track start here; none is reserved when the tracks are collapsed.
+      tracks: profile ? tracks : 0,
+      tx: [left + w + strip + PROFILE_PAD, left + w + strip + PROFILE_PAD + TRACK_BARS + TRACK_GUTTER + TRACK_GAP],
     };
   }
   const design = { gap: 1 },
@@ -104,6 +142,10 @@
       period: "90d",
       // The level line (X): one price, in base rows, or none.
       level: null,
+      // The profile tracks (PRD-0002 S2): how the current and the reference track are compared (independent, absolute, share), and whether
+      // a chart narrower than PROFILE_NARROW shows them anyway.
+      profileCmp: "independent",
+      profileOpen: false,
       // POC lines: the periods and days chosen, in list order.
       lines: [],
       tab: "context",
@@ -717,7 +759,6 @@
       "ink",
       "muted",
       "line",
-      "volume",
       "poc",
       "evidence",
       "accent",
@@ -763,6 +804,14 @@
         draw();
       });
   }
+  // The layout for this size from the state: the lanes of the event strip that are on, the Rows strip while Rows is on, and the profile's
+  // tracks (the current one, and the reference one while Rows is on).
+  function profileTrackCount() {
+    return S.rows !== "off" ? 2 : 1;
+  }
+  function layoutNow(width, height) {
+    return layout(width, height, eventKinds().length, S.rows !== "off" ? ROWS_STRIP : 0, profileTrackCount(), S.profileOpen);
+  }
   function geometry() {
     const rect = canvas.getBoundingClientRect(),
       width = rect.width,
@@ -771,7 +820,7 @@
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    G = { width, height, ...layout(width, height) };
+    G = { width, height, ...layoutNow(width, height) };
     G.X = d3
       .scaleLinear()
       .domain([S.tA, S.tB])
@@ -780,6 +829,10 @@
       .scaleLinear()
       .domain([S.pA, S.pB])
       .range([G.y + G.h, G.y]);
+    // The layout as the page drew it (css px), for the observation surface: the heatmap (x, y, w, h), the Rows strip (x, w), the profile tracks
+    // (count, x of each), the event strip (y, h, collapsed) and the activity pane (y, h). Written only when it changes.
+    const layoutText = [G.x, G.y, G.w, G.h, G.sx, G.sw, G.tracks, G.tx[0], G.tx[1], G.ey, G.eh, G.ecollapsed ? 1 : 0, G.ay, G.ah].map((n) => Math.round(n * 100) / 100).join(",");
+    if (canvas.dataset.layout !== layoutText) canvas.dataset.layout = layoutText;
   }
   const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
   function text(s, x, y, color = colors.muted, align = "left", size = TYPE.s) {
@@ -2129,6 +2182,7 @@
   function draw() {
     if (!ready) return;
     geometry();
+    for (const k in markCount) markCount[k] = 0;
     const { src, cut, moving, sum, full, meas, b, query, shown, mv, ts, ps } = viewParts(),
       u = transition
         ? clamp((performance.now() - transition.start) / 170, 0, 1)
@@ -2206,6 +2260,7 @@
       bar.style.top = top + "px";
       labelsTaken.push([left, top - 4, left + w, top + bar.offsetHeight]);
     }
+    temporaryRegions = [];
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, G.width, G.height);
     ctx.fillStyle = colors.surface;
@@ -2217,12 +2272,14 @@
     paintCoverage(b);
     grid();
     if (under) paintBands(under, sc.rows);
+    // The whole block's cells are drawn as they are, selection or not: a selection is a boundary, never a fade.
+    // The marks are counted once: in the whole block's pass when there is a selection (its cells are painted again inside it), else in the one pass.
+    markTally = true;
     if (S.selection) {
-      ctx.globalAlpha = 0.25;
       if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u, sc.cellsFull);
       else for (const z of full.cells) fillCell(z, full, u, sc.cellsFull);
-      ctx.globalAlpha = 1;
     }
+    markTally = !S.selection;
     ctx.save();
     const x1 = G.X(b[0]),
       x2 = G.X(b[1]),
@@ -2233,11 +2290,13 @@
     ctx.clip();
     if (moving) paintMotion(shown, mv.shown, mv, b, u, sc.cells);
     else for (const z of shown.cells) fillCell(z, full, u, sc.cells);
+    markTally = false;
     ctx.restore();
     markings(shown, cut);
-    paintUnfinished(shown);
+    occlusionPlan(cut);
     drawClock(cut);
     drawLines(cut);
+    occlusionNotice();
     if (S.tab === "evidence") {
       const ev = settledEvidence();
       // Busy until a result for this view is up: the panel may still show the last one.
@@ -2250,25 +2309,10 @@
       const ev = settledEvidence();
       if (ev) evidenceCases(ev);
     }
-    if (S.selection) {
-      ctx.strokeStyle = colors.accent;
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(
-        G.X(b[0]),
-        G.Y(b[3]),
-        G.X(b[1]) - G.X(b[0]),
-        G.Y(b[2]) - G.Y(b[3]),
-      );
-      // While a selection is dragged the rectangle under the pointer shows
-      // too, dashed; the solid outline is the cells it takes in.
-      if (S.select && drag?.moved && !drag.lens) {
-        const [ta, tb, pa, pb] = S.selection;
-        ctx.setLineDash([4, 3]);
-        ctx.lineWidth = 1;
-        ctx.strokeRect(G.X(ta), G.Y(pb), G.X(tb) - G.X(ta), G.Y(pa) - G.Y(pb));
-        ctx.setLineDash([]);
-      }
-    }
+    // The layers, bottom to top: the surface and the keys of what was not observed, the Rows projection, the cells'
+    // opaque fills or movement strokes, the bounded references and event boundaries, the state annotations (open,
+    // partial, provisional), then the selection, and last the lens and the tooltips.
+    paintUnfinished(shown);
     const xc = G.X(cut);
     if (xc >= G.x && xc <= G.x + G.w) {
       line(xc, G.y, xc, G.y + G.h, colors.muted, 1, 0.7);
@@ -2280,9 +2324,8 @@
     if (PACK.live && CANON !== null && CANON < cut) {
       const xp = G.X(CANON);
       if (xp > G.x && xp < G.x + G.w) {
-        ctx.setLineDash([2, 3]);
-        line(xp, G.y, xp, G.y + G.h, colors.muted, 1, 0.8);
-        ctx.setLineDash([]);
+        STROKE.provisional(ctx, xp - 0.5, G.y, 1, G.h);
+        markCount.provisional++;
         if (Math.min(xc, G.x + G.w) - xp > 90) chartLabel("Provisional", xp + 6, G.y + 12);
       } else if (xp <= G.x && xc > G.x + 90) chartLabel("Provisional", G.x + 8, G.y + 12);
     }
@@ -2296,39 +2339,56 @@
       line(x, G.y, x, G.y + G.h, colors.evidence, 1, 0.65);
       ctx.setLineDash([]);
     }
+    // The selection comes after every state mark (the cutoff, the provisional edge, the anchor) and before what the pointer links.
+    if (S.selection) {
+      selectionFrame(G.X(b[0]), G.Y(b[3]), G.X(b[1]), G.Y(b[2]));
+      // While a selection is dragged the rectangle under the pointer shows
+      // too, dashed; the solid outline is the cells it takes in.
+      if (S.select && drag?.moved && !drag.lens) {
+        const [ta, tb, pa, pb] = S.selection;
+        ctx.strokeStyle = colors.ink;
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(G.X(ta), G.Y(pb), G.X(tb) - G.X(ta), G.Y(pa) - G.Y(pb));
+        ctx.setLineDash([]);
+      }
+    }
     // The crosshair's price line and the cell under the pointer; its time line
-    // runs through both panes (see crosshair).
+    // runs through both panes (see crosshair). The cell is a two-tone boundary inside it, farther in where it
+    // meets the selection's edge, and tints nothing.
+    const hoverBox = (x, y, w, h) => {
+      let inset = 1.5;
+      if (S.selection) {
+        const sx1 = G.X(b[0]),
+          sx2 = G.X(b[1]),
+          sy1 = G.Y(b[3]),
+          sy2 = G.Y(b[2]);
+        if (Math.abs(x - sx1) < 1 || Math.abs(x + w - sx2) < 1 || Math.abs(y - sy1) < 1 || Math.abs(y + h - sy2) < 1) inset = 3.5;
+      }
+      STROKE.hover(ctx, x, y, w, h, inset);
+      markCount.hover++;
+    };
     if (hover && inPlot(hover) && hover.t < cut) {
       const y = Math.round(hover.y) + 0.5;
       line(G.x, y, G.x + G.w, y, colors.muted, 1, 0.6);
       const z = shown.map.get(
         Math.floor(hover.t / ts) + "," + Math.floor(hover.p / ps),
       );
-      if (z) {
-        ctx.strokeStyle = colors.ink;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(
+      if (z)
+        hoverBox(
           G.X(z.c * ts),
           G.Y((z.r + 1) * ps),
           G.X((z.c + 1) * ts) - G.X(z.c * ts),
           G.Y(z.r * ps) - G.Y((z.r + 1) * ps),
         );
-      }
     }
-    // The cell of the table row under the pointer, outlined on the chart.
+    // The cell of the table row under the pointer, linked on the chart in the same two-tone boundary.
     if (tableHover) {
       // The row stands at the level it was listed at, which is the drawn one unless it says otherwise.
       const { c, r } = tableHover,
         tt = tableHover.n === undefined ? ts : 2 ** tableHover.n,
         tp = tableHover.m === undefined ? ps : 2 ** tableHover.m;
-      ctx.strokeStyle = colors.ink;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(
-        G.X(c * tt) - 1,
-        G.Y((r + 1) * tp) - 1,
-        G.X((c + 1) * tt) - G.X(c * tt) + 2,
-        G.Y(r * tp) - G.Y((r + 1) * tp) + 2,
-      );
+      hoverBox(G.X(c * tt), G.Y((r + 1) * tp), G.X((c + 1) * tt) - G.X(c * tt), G.Y(r * tp) - G.Y((r + 1) * tp));
     }
     // The row under the pointer, over the prices or the profile, outlined
     // across the chart, as it is in the profile.
@@ -2348,8 +2408,10 @@
     ctx.restore();
     const ro = readouts(cut);
     axes(ro);
+    paintRowsStrip(under, sc.rows, sc);
     profile(query, b, meas.state, under, sc);
     activity(shown, cut, mv, full, sc);
+    paintEvents(cut);
     crosshair(ro);
     querySummary(meas, mv);
     // The legends: the chips when the DOM package has registered them; none after a fault, which turns the
@@ -2373,6 +2435,15 @@
       marks.vaLow === null || meas.state === "pending" || meas.state === "failed"
         ? "—"
         : price(marks.vaLow) + "–" + price(marks.vaHigh);
+    const regions = temporaryRegions.map((r) => `${r.kind}:${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.w)},${Math.round(r.h)}`).join(";");
+    if ((canvas.dataset.temporary ?? "") !== regions) {
+      if (regions) canvas.dataset.temporary = regions;
+      else delete canvas.dataset.temporary;
+    }
+    strokeKeysCommit();
+    // A failure noted for a tile says itself while that tile is what the view or the lens needs: a tool that opens or closes changes that without
+    // an update, so the line is decided again with the frame (nothing is noted on a healthy page, and then there is nothing to decide).
+    if (noted.size || loadingLine.blocks.size) renderLoading();
     last = { full, query, shown, meas, b, cut, mv, under, sc };
     if (transition) {
       if (u >= 1) transition = null;
@@ -3329,12 +3400,12 @@
       x0 = clamp(G.X(start), G.x, G.x + G.w),
       xe = clamp(G.X(span && stop < cut ? Math.floor(stop / span) * span : stop), G.x, G.x + G.w),
       xc = clamp(G.X(cut), G.x, G.x + G.w);
-    hatchRect(G.x, G.y, x0 - G.x, G.h, colors.line, 11, 0.6);
+    hatchRect(G.x, G.y, x0 - G.x, G.h, colors.state, 11, 0.4);
     // Recorded time the source does not cover.
-    hatchRect(xe, G.y, xc - xe, G.h, colors.line, 11, 0.45);
+    hatchRect(xe, G.y, xc - xe, G.h, colors.state, 11, 0.3);
     // After the cutoff: hidden in replay, otherwise the future, left plain.
     if (S.replay)
-      hatchRect(xc, G.y, G.x + G.w - xc, G.h, colors.line, 11, 0.45);
+      hatchRect(xc, G.y, G.x + G.w - xc, G.h, colors.state, 11, 0.3);
     else {
       ctx.fillStyle = colors.bg;
       ctx.fillRect(xc, G.y, G.x + G.w - xc, G.h);
@@ -3357,13 +3428,14 @@
       xc - xe > 1 ||
       (S.replay && G.x + G.w - xc > 1) ||
       b.some((x, i) => x !== r[i]);
+    if (b[0] > r[0] || b[1] < r[1] || b[2] > r[2] || b[3] < r[3]) markCount.unavailable++;
     if (b[0] > r[0])
       hatchRect(
         Math.max(G.x, G.X(r[0])),
         G.y,
         G.X(b[0]) - Math.max(G.x, G.X(r[0])),
         G.h,
-        colors.poc,
+        colors.state,
         5,
         0.35,
       );
@@ -3373,7 +3445,7 @@
         G.y,
         Math.min(G.x + G.w, G.X(r[1])) - G.X(b[1]),
         G.h,
-        colors.poc,
+        colors.state,
         5,
         0.35,
       );
@@ -3383,7 +3455,7 @@
         G.Y(b[2]),
         G.X(b[1]) - G.X(b[0]),
         G.Y(r[2]) - G.Y(b[2]),
-        colors.poc,
+        colors.state,
         5,
         0.35,
       );
@@ -3393,7 +3465,7 @@
         G.Y(r[3]),
         G.X(b[1]) - G.X(b[0]),
         G.Y(b[3]) - G.Y(r[3]),
-        colors.poc,
+        colors.state,
         5,
         0.35,
       );
@@ -3408,24 +3480,28 @@
       span = parentSpan() || ts,
       c = Math.floor(cut / span);
     unfinishedShown = false;
+    // The open column: a neutral cap along its top edge and the word; the values under it are drawn as they are, never hatched.
     if ((!S.replay || span > ts) && cut % span !== 0) {
       const xa = Math.max(G.x, G.X(c * span)),
         xb = Math.min(G.x + G.w, G.X(cut));
-      hatchRect(xa, G.y, xb - xa, G.h, colors.poc, 7, 0.25);
       if (xb > G.x && xa < G.x + G.w) {
         unfinishedShown = span > ts;
-        line(xa, G.y, xb, G.y, colors.poc, 3, 0.8);
-        if (!S.replay) chartLabel("Open", clamp(xa + 3, G.x + 4, G.x + G.w - 36), G.y + 28, colors.poc);
+        STROKE.open(ctx, xa, G.y, xb - xa);
+        markCount.open++;
+        if (!S.replay) chartLabel("Open", clamp(xa + 3, G.x + 4, G.x + G.w - 36), G.y + 28, colors.state);
       }
     }
+    // Cells of a level coarser than asked for stand for more than their place: a short tick across the corner.
     if (renderN() > S.n || renderM() > S.m) {
       for (const z of query.cells) {
         const x = G.X(z.c * ts),
           y = G.Y((z.r + 1) * stepP()),
           w = G.X((z.c + 1) * ts) - x,
           h = G.Y(z.r * stepP()) - y;
-        if (w > 6 && h > 6)
-          line(x + 1, y + 6, x + 6, y + 1, colors.poc, 1, 0.65);
+        if (w > 6 && h > 6) {
+          STROKE.partial(ctx, x, y);
+          markCount.partial++;
+        }
       }
     }
   }
@@ -3965,7 +4041,16 @@
     }
     if (!frame) return tipRows(tip, head, sub, [], E.text.notice.scaleFault);
     // The column's readout: its typed result, its place on the axis and whether the axis leaves it out.
-    const readout = frame.readout(x, { ctx: x.ctx, index: x.c }),
+    const readout = frame.readout(x, {
+        ctx: x.ctx,
+        index: x.c,
+        // the column's interval and whether it is complete: the readout's known-at is its end (E.readout.events.interval)
+        interval: [
+          E.time.baseToMs(c * ts, T0, BASE),
+          E.time.baseToMs(Math.min((c + 1) * ts, last.cut), T0, BASE),
+          (c + 1) * ts <= last.cut ? "complete" : S.replay ? "partial" : "open",
+        ],
+      }),
       typed = readout.typed,
       at = `pane:${rec.id}:${c}`,
       modelNote = model ? modelNoteWords(model) : "";
@@ -4086,6 +4171,8 @@
       readout = frame && band && u.kind !== "relvol" ? frame.readout(band) : null,
       // The observed amount of the band: the readout's, or (the scale display is off) the band's own.
       observed = readout ? readout.observed?.value : u.kind === "volume" ? band?.v : u.kind === "delta" ? (band ? 2 * band.bv - band.v : undefined) : band?.w;
+    // Where the row's value is beyond the Rows mapping's domain, said with the row: the coordinate is clipped, the number is not.
+    const coordinate = readout?.coordinate;
     if (u.kind === "volume")
       out.push([label, observed > 0 ? `${approx}${money(observed)} · ${share(observed / u.bands.v)}` : "No trades in the period"]);
     else if (u.kind === "delta")
@@ -4113,6 +4200,8 @@
         );
       }
     }
+    if (coordinate && (coordinate.clip === "low" || coordinate.clip === "high"))
+      out.push(["Numeric clipping", coordinate.clip === "low" ? E.text.key.below : E.text.key.above, "clip", coordinate.clip]);
     // Relative volume: the underlay's own value under Relative volume.
     const vb = u.volBands;
     if (vb) {
@@ -4135,6 +4224,9 @@
         "relvol",
         typed.tag === "finite" ? typed.value : typed.tag,
       ]);
+      // The comparison support W the ratios are taken over: the rows both the rectangle and the period have, in USDT, never redefined by the ratio.
+      if (u.kind === "relvol" && rv.support.first !== null)
+        out.push(["Comparison support W", `${price(rv.support.first * 2 ** vb.m * PR)}–${price((rv.support.last + 1) * 2 ** vb.m * PR)} USDT`, "support", [rv.support.first, rv.support.last]]);
     }
     return out;
   }
@@ -4166,8 +4258,7 @@
         : "";
   }
   function onProfile(p) {
-    const px = G.x + G.w + 9;
-    return p.x >= px && p.x <= px + G.profile - 8 && p.y >= G.y && p.y <= G.y + G.h;
+    return p.x >= G.x + G.w && p.x <= G.x + G.w + G.sw + G.profile && p.y >= G.y && p.y <= G.y + G.h;
   }
   // ---- The readout consumers (PRD-0002 S1) ----
   // The tooltip, the Cells table and the inspector say what a cell measures by reading the ONE readout of
@@ -4484,6 +4575,8 @@
     // cell) leaves none behind; a branch that does (the pane sections name theirs through paneTipFields,
     // which runs inside the branch) is not overwritten below.
     if (tip.dataset.readout) tip.dataset.readout = "";
+    // The annotation record a line, gap or strip tip is made from (E.readout.events), named the same way and cleared the same way.
+    if (tip.dataset.event) tip.dataset.event = "";
     if (onLine) {
       lineTip(tip, onLine);
       syncRowHover(null);
@@ -4529,6 +4622,9 @@
           ],
           note,
         );
+    } else if (last && inStrip(p) && eventAt(p)) {
+      eventTip(tip, eventAt(p));
+      syncRowHover(null);
     } else if (last && paneShown && inActivity(p)) {
       paneTip(tip, p, money, count, share, exact, note);
       syncRowHover(null);
@@ -4741,7 +4837,7 @@
     // Latest appears when the cutoff is out of view, beside the price profile.
     el("latest").hidden = S.replay || (S.tA < CUT && S.tB >= CUT);
     el("latest").style.right =
-      GUTTER + profileWidth(canvas.clientWidth) + 8 + "px";
+      GUTTER + profileWidth(canvas.clientWidth, profileTrackCount(), S.profileOpen) + (S.rows !== "off" ? ROWS_STRIP : 0) + 8 + "px";
     applyPanels();
     updateNavigation();
     requestDraw();
@@ -4749,6 +4845,8 @@
     // The Scale section and the legend chips (DOM package), and the calibration clock.
     renderScaleUi();
     scaleArm();
+    // What the loading line says follows what the view needs now.
+    renderLoading();
   }
   function bindRoot() {
     el("query-text").addEventListener("blur", () => {
@@ -5112,6 +5210,8 @@
   // Nothing here is an aria-live region: a state is visible text in a chip that a person can open, never a
   // polite announcement on every zoom step (the banner and the lens status are the two status elements, and
   // both change only on an event).
+  // What the profile tracks of the last frame drew (the plan, the two axes, the underlay), for the chip that summarises them.
+  const profileUi = { plan: null, cur: null, ref: null, under: null, state: "", tracks: 0, key: "" };
   const scaleUi = {
       // The Legend model of each colour channel, built when its key changed: the popover, the marker and the
       // footer keys read it, so nothing is built twice for one state.
@@ -5470,6 +5570,7 @@
     lensStatusWrite(sc);
     // The axis chip first: it builds the Columns pane's Legend, whose marks the footer keys count too
     axisChipCommit();
+    profileChipCommit();
     // The footer keys: those of the channels in view that have marks, each id once, counts added
     const legends = [scaleUi.models.cells, scaleUi.models.rows, scaleUi.models.pane].filter(Boolean),
       keysKey =
@@ -5614,7 +5715,24 @@
         ticks.append(node);
       });
       if (rowEnd[1] > -Infinity) ticks.style.height = "30px";
-      dyn("bar", [bar, ticks]);
+      // Rows has two things to read colours from: the strip, each row's value at full strength, and the backdrop, the same entries at the fixed 16%
+      // over the surface. Each has its own bar and says which it is.
+      const bars = [bar, ticks];
+      if (channel === "rows") {
+        const lut = lutFor(scaleRt.appearance, scaleRt.theme),
+          ramps =
+            legend.bar.ramps.kind === "signed"
+              ? { kind: "signed", negative: lut.negative.css, positive: lut.positive.css, midpoint: lut.midpoint.css }
+              : { kind: "unsigned", unsigned: lut.unsigned.css },
+          stripBar = uiEl("div", "ol-legend-bar"),
+          stripCanvas = uiEl("canvas", "ol-legend-canvas");
+        stripCanvas.setAttribute("aria-hidden", "true");
+        stripCanvas.dataset.role = "strip";
+        stripBar.append(stripCanvas);
+        legendBar(stripCanvas, { bar: { ramps } }, 240, 10);
+        bars.unshift(uiEl("p", "ol-legend-note", "Strip: each row's value at full strength"), stripBar, uiEl("p", "ol-legend-note", "Backdrop: the same entries at 16% over the surface"));
+      }
+      dyn("bar", bars);
       const legendDetails = E.legend.details(legend),
         details = legendDetails.map((d) => {
           const dt = uiEl("dt", "", uiDetailLabel(d)),
@@ -5904,7 +6022,10 @@
   function uiPopAction(button) {
     const name = button.dataset.action,
       channel = button.dataset.channel === "rows" ? "rows" : "cells";
-    if (name === "warn-open-lens") {
+    if (name === "profile-cmp") {
+      if (button.getAttribute("aria-disabled") !== "true") profileSet("profileCmp", button.dataset.value);
+    } else if (name === "profile-open") profileSet("profileOpen", !S.profileOpen);
+    else if (name === "warn-open-lens") {
       closePop();
       if (PHONE.matches && root.dataset.sheet !== "open") setSheet(true);
       el("lens").focus();
@@ -5931,7 +6052,7 @@
   // The words of an axis unit id (an id with no string of its own reads as itself)
   function uiAxisUnit(unit) {
     const u = E.text.unit;
-    return { usdt: u.usdt, trades: u.trades, "usdt-per-trade": u.usdtPerTrade, "log2-ratio": u.log2, seconds: u.seconds }[unit] ?? unit ?? "";
+    return { usdt: u.usdt, trades: u.trades, "usdt-per-trade": u.usdtPerTrade, "log2-ratio": u.log2, seconds: u.seconds, share: u.share }[unit] ?? unit ?? "";
   }
   // "±1.92 B USDT", "0 – 100", "−2 – 2 log2 ratio": the domain as the chart's own numbers read it
   function uiAxisDomain(rec) {
@@ -6099,6 +6220,134 @@
     lock.setAttribute("aria-pressed", String(S.scale.lock));
     if (focused && !focused.isConnected) lock.focus();
     uiPopPlace(panel, chip, "end");
+  }
+  // ---- the profile chip (PRD-0002 S2) ----
+  // The chip says how the two tracks are compared and what each one's domain is; its popover names both tracks, offers the three comparisons
+  // (a disabled one says why) and, on a chart narrower than PROFILE_NARROW, is the disclosure that shows the tracks. On a narrow chart the
+  // chip's own text is the visible summary of the active measures and domains.
+  function profileSummary() {
+    const { plan, cur, ref, under } = profileUi,
+      domain = (rec) => profileDomainText(rec),
+      narrow = canvas.clientWidth < PROFILE_NARROW,
+      policy = cur?.policy === "frozen" ? "Frozen" : "Auto",
+      refName = under ? ROWS_INFO[under.kind].name.replace("Relative volume", "Rel. vol.").replace("Time at price", "Time") : "";
+    if (!under) return `Profile · Volume ${domain(cur)}`;
+    if (plan.mode === "absolute") return `Profile · ${PROFILE_TEXT.names.absolute} · ${domain(cur)}`;
+    if (plan.mode === "share") return `Profile · ${PROFILE_TEXT.names.share} · ${plan.state === "ok" ? domain(cur) : plan.reason === "zero-total" ? "undefined" : "no window"}`;
+    return narrow && !S.profileOpen
+      ? `Profile · Volume ${domain(cur)} · ${refName} ${domain(ref)}`
+      : `Profile · ${PROFILE_TEXT.names.independent} · ${policy}`;
+  }
+  function profileChipCommit() {
+    const { plan, cur, ref, under } = profileUi;
+    if (!plan) return;
+    const chip = el("profile-chip"),
+      narrow = canvas.clientWidth < PROFILE_NARROW,
+      offers = plan.offers,
+      key = [
+        plan.mode, plan.asked, plan.state, plan.reason, profileDomainText(cur), ref ? profileDomainText(ref) : "", narrow, S.profileOpen, profileUi.tracks,
+        under ? under.kind + under.period : "", plan.denominators ? plan.denominators.cur + "/" + plan.denominators.ref : "", plan.window ? plan.window.bins : "",
+        offers.absolute.reason ?? "", offers.share.reason ?? "", cur?.policy ?? "", colourEpoch,
+      ].join("|");
+    if (profileUi.key === key) return;
+    profileUi.key = key;
+    const text = profileSummary();
+    if (el("profile-chip-text").textContent !== text) el("profile-chip-text").textContent = text;
+    const label = `Profile tracks: ${text}`;
+    if (chip.getAttribute("aria-label") !== label) chip.setAttribute("aria-label", label);
+    const attrs = {
+      comparison: plan.mode,
+      asked: plan.asked,
+      state: plan.state,
+      reason: plan.reason ?? "",
+      tracks: String(profileUi.tracks),
+      collapsed: String(narrow && !S.profileOpen),
+      currentDomain: profileDomainText(cur),
+      referenceDomain: ref ? profileDomainText(ref) : "",
+      reference: under ? `${under.kind}:${under.period}` : "",
+    };
+    for (const [name, value] of Object.entries(attrs)) if (chip.dataset[name] !== value) chip.dataset[name] = value;
+    if (pop.open?.panel === el("profile-pop")) profilePop();
+  }
+  function profilePop() {
+    const panel = el("profile-pop"),
+      chip = el("profile-chip"),
+      { plan, cur, ref, under } = profileUi,
+      narrow = canvas.clientWidth < PROFILE_NARROW,
+      list = uiEl("dl", "ol-legend-details"),
+      add = (label, value, field, canonical) => {
+        const dd = uiEl("dd", "ol-num", value);
+        dd.dataset.field = field;
+        if (canonical !== undefined) dd.dataset.value = typeof canonical === "string" ? canonical : JSON.stringify(canonical);
+        list.append(uiEl("dt", "", label), dd);
+      };
+    if (!plan) return;
+    const focused = panel.contains(document.activeElement) ? document.activeElement : null,
+      sel = Boolean(S.selection),
+      where = `${sel ? PROFILE_TEXT.currentSelected : PROFILE_TEXT.current}`;
+    const span = last?.meas?.r ? dur((last.meas.r[1] - last.meas.r[0]) * BASE) : "";
+    add("Current track", span ? `${where}, ${span}` : where, "currentTrack", sel ? "selection" : "view");
+    add("Current axis", cur ? `${uiAxisText(cur)}` : E.text.axis.none, "currentAxis", cur?.domain ?? null);
+    add("Buy subset", PROFILE_TEXT.buy, "buySubset", "inset");
+    if (under) {
+      add("Reference track", `${ROWS_INFO[under.kind].name} ${periodPhrase(under.period)}`, "referenceTrack", `${under.kind}:${under.period}`);
+      add("Reference axis", ref ? uiAxisText(ref) : E.text.axis.none, "referenceAxis", ref?.domain ?? null);
+      add("Point of control", PROFILE_TEXT.pocs, "pocSource", "volume");
+    } else add("Reference track", "Off: turn Rows on to add one", "referenceTrack", "");
+    if (plan.mode !== "independent") {
+      if (plan.m !== null) add("Price rows", `${price(2 ** plan.m * PR)} USDT, the coarser of the two`, "partition", plan.m);
+      if (plan.window) add("Window W", `${plan.window.bins} rows`, "window", plan.window);
+      if (plan.denominators) {
+        // the current track is always USDT; the reference is seconds when it is Time at price (each total in its own unit)
+        const refUnit = under?.kind === "time" ? "seconds" : "usdt";
+        add("Total over W, current", `${uiFmt(plan.denominators.cur, "usdt")} ${uiAxisUnit("usdt")}`, "denominatorCurrent", plan.denominators.cur);
+        add("Total over W, reference", `${uiFmt(plan.denominators.ref, refUnit)} ${uiAxisUnit(refUnit)}`, "denominatorReference", plan.denominators.ref);
+      }
+      if (plan.state !== "ok" && plan.reason) add("Result", PROFILE_TEXT.why[plan.reason], "result", plan.reason);
+    }
+    const group = uiEl("div", "ol-legend-actions"),
+      notes = uiEl("div", "ol-legend-part");
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", "Comparison");
+    group.dataset.part = "comparison";
+    for (const mode of ["independent", "absolute", "share"]) {
+      const offer = plan.offers[mode],
+        b = uiEl("button", "ol-action ol-s cursor-interaction", PROFILE_TEXT.names[mode] + (mode === "independent" ? " · Auto" : ""));
+      b.type = "button";
+      b.dataset.action = "profile-cmp";
+      b.dataset.value = mode;
+      b.setAttribute("aria-pressed", String(S.profileCmp === mode));
+      const reason = uiEl("p", "ol-legend-note", offer.ok ? PROFILE_TEXT.descs[mode] : PROFILE_TEXT.why[offer.reason]);
+      reason.id = `ol-profile-${mode}-note`;
+      b.setAttribute("aria-describedby", reason.id);
+      if (!offer.ok) {
+        b.setAttribute("aria-disabled", "true");
+        b.dataset.reason = offer.reason;
+      }
+      group.append(b);
+      notes.append(reason);
+    }
+    const parts = [list, group, notes];
+    if (S.profileCmp !== plan.mode) parts.push(uiEl("p", "ol-legend-note", `${PROFILE_TEXT.names[S.profileCmp]} is chosen and is not offered now: ${PROFILE_TEXT.why[plan.reason] ?? ""} The tracks are independent until it is.`));
+    if (narrow) {
+      const open = uiEl("button", "ol-action ol-s cursor-interaction", "Show the tracks on the chart");
+      open.type = "button";
+      open.dataset.action = "profile-open";
+      open.setAttribute("aria-pressed", String(S.profileOpen));
+      parts.push(open);
+    }
+    panel.replaceChildren(uiEl("div", "ol-pop-head", "Profile tracks"), ...parts);
+    // the control that had the focus gets it back: by its action, and by its value where it has one (the comparison buttons do; "Show the tracks on the chart" does not)
+    if (focused?.dataset?.action)
+      panel.querySelector(`[data-action="${focused.dataset.action}"]${focused.dataset.value !== undefined ? `[data-value="${focused.dataset.value}"]` : ""}`)?.focus();
+    uiPopPlace(panel, chip, "start");
+  }
+  function profileSet(field, value) {
+    if (S[field] === value) return;
+    S[field] = value;
+    // the layout moved (the tracks appear or go), so the next draw measures it afresh
+    update();
+    save();
   }
   // ---- the Scale sections of the Cells and Rows menus ----
   // One item of the Scale section: a native button with an accessible name and, when there is one, a
@@ -6336,7 +6585,11 @@
     bindPop("legend", "legend-pop", () => uiOpenPop("cells"));
     bindPop("rows-legend", "rows-legend-pop", () => uiOpenPop("rows"));
     bindPop("axis-chip", "axis-pop", () => uiOpenPop("axis"));
-    for (const id of ["legend-pop", "rows-legend-pop", "axis-pop"]) {
+    bindPop("profile-chip", "profile-pop", () => {
+      profilePop();
+      (el("profile-pop").querySelector("button:not(:disabled)") ?? el("profile-pop")).focus({ preventScroll: true });
+    });
+    for (const id of ["legend-pop", "rows-legend-pop", "axis-pop", "profile-pop"]) {
       const panel = el(id);
       panel.addEventListener("click", (e) => {
         const button = e.target.closest?.("button[data-action]");
@@ -7319,140 +7572,626 @@
     ctx.stroke();
     ctx.restore();
   }
+  // ---- The stroke roles of the composition (PRD-0002 S2, section 1) ----
+  // ONE table of the marks that say how a cell or an edge stands besides what it measures: empty, open, partial, provisional, moved through,
+  // too small to resolve, selected, linked. The plot paints each with the function of its row on its own context, and the footer paints the key of
+  // each with the same function on a swatch, so a key cannot drift from its mark. Each paints inside the box it is given, takes its colours from
+  // the page's tokens, and tints nothing under it.
+  //
+  // A two-tone stroke: the same path drawn as a wide casing in the surface colour and then as a narrow core in ink, so at least one of the two
+  // contrasts with whatever fill, empty cell or state mark lies under it (selection 1.5 core in a 3.5 casing, hover and table link 1 in 3, lens
+  // frame 1.5 in 3.5). `draw` adds the path to the context path it is given.
+  function twoToneOn(c, draw, core = 1.5, casing = 3.5) {
+    c.save();
+    c.lineJoin = "miter";
+    c.beginPath();
+    draw(c);
+    c.strokeStyle = colors.surface;
+    c.lineWidth = casing;
+    c.stroke();
+    c.strokeStyle = colors.ink;
+    c.lineWidth = core;
+    c.stroke();
+    c.restore();
+  }
+  const twoTone = (draw, core, casing) => twoToneOn(ctx, draw, core, casing);
+  // How many of each mark the last draw painted: the footer shows the key of each that is on the plot, and says how many of the tiny moved-through
+  // cells could not be resolved.
+  let markTally = false;
+  const markCount = { empty: 0, open: 0, partial: 0, provisional: 0, moved: 0, detail: 0, selection: 0, hover: 0, unavailable: 0 };
+  const STROKE = {
+    // A cell with no trade: the surface with a hairline, as the plot leaves it.
+    empty(c, x, y, w, h) {
+      c.fillStyle = colors.surface;
+      c.fillRect(x, y, w, h);
+      c.strokeStyle = colors.line;
+      c.lineWidth = 1;
+      c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    },
+    // Open (the data's edge moves as trades arrive): a 1.5 px neutral cap along the top edge; the value under it is drawn as it is. A bar, not a
+    // stroke, so that it is never mistaken for the 1.5 px baseline tick of a zero column.
+    open(c, x, y, w) {
+      c.fillStyle = colors.state;
+      c.fillRect(x, y, w, 1.5);
+    },
+    // Partial or coarser than asked for: the cell stands for more than its place, cued by a short tick across its corner.
+    partial(c, x, y) {
+      c.strokeStyle = colors.state;
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(x + 1, y + 6);
+      c.lineTo(x + 6, y + 1);
+      c.stroke();
+    },
+    // The archive's edge: one 1 px neutral dashed line; what lies after it may still be revised.
+    provisional(c, x, y, w, h) {
+      c.save();
+      c.strokeStyle = colors.state;
+      c.lineWidth = 1;
+      c.setLineDash([2, 3]);
+      c.beginPath();
+      c.moveTo(x + w / 2, y);
+      c.lineTo(x + w / 2, y + h);
+      c.stroke();
+      c.restore();
+    },
+    // Moved through, no trade: the value's own colour as a 1.5 px core with up to 3.5 px of surface backing, inset from the cell, on a neutral
+    // interior, so no other row colour under the cell can be mistaken for the movement it encodes.
+    moved(c, x, y, w, h, colour) {
+      const m = Math.max(0.1, Math.min(w, h)),
+        casing = Math.min(3.5, m / 2),
+        core = Math.min(1.5, Math.max(1, casing - 1)),
+        half = casing / 2;
+      c.fillStyle = colors.surface;
+      c.fillRect(x, y, w, h);
+      c.lineWidth = casing;
+      c.strokeStyle = colors.surface;
+      c.strokeRect(x + half, y + half, Math.max(0.1, w - casing), Math.max(0.1, h - casing));
+      c.lineWidth = core;
+      c.strokeStyle = colour;
+      c.strokeRect(x + half, y + half, Math.max(0.1, w - casing), Math.max(0.1, h - casing));
+    },
+    // Too small to render an honest outline (a side of 3 px or less): a neutral occupancy mark, at full strength so that no alpha reads as a value.
+    detail(c, x, y, w, h) {
+      c.fillStyle = colors.occupancy;
+      c.fillRect(x, y, Math.max(1, w), Math.max(1, h));
+    },
+    // The selection: its support edge and a short tick outward of each corner along both edges. The ticks say where the rectangle ends; they are
+    // not handles and nothing drags them.
+    selection(c, x, y, w, h) {
+      const tick = 6,
+        x2 = x + w,
+        y2 = y + h;
+      twoToneOn(c, (k) => k.rect(x, y, w, h));
+      twoToneOn(c, (k) => {
+        for (const [cx, dx, cy, dy] of [[x, -1, y, -1], [x2, 1, y, -1], [x, -1, y2, 1], [x2, 1, y2, 1]]) {
+          k.moveTo(cx, cy);
+          k.lineTo(cx + dx * tick, cy);
+          k.moveTo(cx, cy);
+          k.lineTo(cx, cy + dy * tick);
+        }
+      });
+    },
+    // A cell or row the pointer or a table row links to: 1 px of ink in 3 px of surface, inside the boundary (farther in where it meets the
+    // selection's edge, which it never replaces).
+    hover(c, x, y, w, h, inset = 1.5) {
+      const i = Math.min(inset, Math.max(0, (Math.min(w, h) - 2) / 2));
+      twoToneOn(c, (k) => k.rect(x + i, y + i, w - 2 * i, h - 2 * i), 1, 3);
+    },
+    // The Inspect focus of #48 (the API is here, nothing draws it yet): a 2 px ink core in 4 px of surface, as four corner brackets of 5 px, the
+    // strongest persistent interaction mark. Its position is an absolute record the Inspect cursor keeps, never a hover.
+    inspect(c, x, y, w, h) {
+      const k = Math.min(5, w / 2, h / 2),
+        x2 = x + w,
+        y2 = y + h;
+      twoToneOn(
+        c,
+        (p) => {
+          for (const [cx, dx, cy, dy] of [[x, 1, y, 1], [x2, -1, y, 1], [x, 1, y2, -1], [x2, -1, y2, -1]]) {
+            p.moveTo(cx + dx * k, cy);
+            p.lineTo(cx, cy);
+            p.lineTo(cx, cy + dy * k);
+          }
+        },
+        2,
+        4,
+      );
+    },
+    // Not available or not shown (an unread region, the hidden future): a neutral hatch.
+    unavailable(c, x, y, w, h) {
+      markHatch(c, x, y, w, h, colors.state, 4, 0.7);
+    },
+    // The total POC: a solid gold line ending in a filled triangle; the Buy POC: a dashed gold line ending in a hollow diamond (the two shapes
+    // and the letters P and B tell them apart, not two colours).
+    poc(c, x, y, w, h) {
+      c.strokeStyle = colors.poc;
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(x, y + h / 2);
+      c.lineTo(x + w - 6, y + h / 2);
+      c.stroke();
+      pocGlyph(c, x + w - 6, y + h / 2, false);
+    },
+    bpoc(c, x, y, w, h) {
+      c.save();
+      c.strokeStyle = colors.poc;
+      c.lineWidth = 1.5;
+      c.setLineDash([3, 2]);
+      c.beginPath();
+      c.moveTo(x, y + h / 2);
+      c.lineTo(x + w - 6, y + h / 2);
+      c.stroke();
+      c.restore();
+      pocGlyph(c, x + w - 6, y + h / 2, true);
+    },
+    // Not measured yet: the dots of the role table, as the plot draws them.
+    pending(c, x, y, w, h) {
+      E.role.paint(c, "pattern-dots", x + w / 2, y + h / 2, Math.min(w, h), colors.state, { ground: colors.surface, font: `${TYPE.s}px ${FONT}` });
+    },
+  };
+  // Hatch lines over a box on the context given (the plot's coverage gaps and the key swatch).
+  function markHatch(c, x, y, w, h, color, spacing = 10, alpha = 0.22) {
+    if (w <= 0 || h <= 0) return;
+    c.save();
+    c.beginPath();
+    c.rect(x, y, w, h);
+    c.clip();
+    c.strokeStyle = color;
+    c.lineWidth = 1;
+    c.globalAlpha *= alpha;
+    c.beginPath();
+    for (let k = -h; k < w; k += spacing) {
+      c.moveTo(x + k, y + h);
+      c.lineTo(x + k + h, y);
+    }
+    c.stroke();
+    c.restore();
+  }
+  // The selection's frame on the plot.
+  function selectionFrame(x1, y1, x2, y2) {
+    STROKE.selection(ctx, x1, y1, x2 - x1, y2 - y1);
+    markCount.selection++;
+  }
+  // The key swatches: each painted by its row's function on a canvas of 11 css px, over a neutral cell where the mark sits on one. Repainted when
+  // the palette or the pixel ratio changes.
+  const STROKE_KEYS = {
+    empty: { body: false },
+    open: { body: true },
+    partial: { body: true },
+    provisional: { body: false },
+    moved: { body: false, colour: () => colors.state },
+    detail: { body: false, box: [3.5, 3.5, 3, 3] },
+    selection: { body: true, box: [2.5, 2.5, 6, 6] },
+    hover: { body: true },
+    unavailable: { body: false },
+    pending: { body: false },
+    poc: { body: false },
+    bpoc: { body: false },
+    inspect: { body: true, box: [2.5, 2.5, 6, 6] },
+  };
+  const strokeKeys = { epoch: -1, dpr: 0 };
+  function strokeSwatch(node, role) {
+    const dpr = devicePixelRatio || 1,
+      size = 11,
+      spec = STROKE_KEYS[role],
+      canvas = node.firstChild instanceof HTMLCanvasElement ? node.firstChild : document.createElement("canvas"),
+      c = canvas.getContext("2d");
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    canvas.setAttribute("aria-hidden", "true");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.fillStyle = colors.surface;
+    c.fillRect(0, 0, size, size);
+    if (spec.body) {
+      c.fillStyle = colors.muted;
+      c.globalAlpha = 0.3;
+      c.fillRect(1, 1, size - 2, size - 2);
+      c.globalAlpha = 1;
+    }
+    const [x, y, w, h] = spec.box ?? [0, 0, size, size];
+    STROKE[role](c, x, y, w, h, spec.colour?.());
+    if (!node.contains(canvas)) node.replaceChildren(canvas);
+  }
+  // Each draw: the keys of the marks on the plot are shown (the moved-through key says how many of the cells were too small to outline), and every
+  // swatch is repainted when the palette or the pixel ratio moved.
+  function strokeKeysCommit() {
+    const dpr = devicePixelRatio || 1;
+    if (strokeKeys.epoch !== colourEpoch || strokeKeys.dpr !== dpr) {
+      strokeKeys.epoch = colourEpoch;
+      strokeKeys.dpr = dpr;
+      for (const node of qsa("[data-stroke-role]")) strokeSwatch(node, node.dataset.strokeRole);
+    }
+    const show = (id, on) => {
+      const node = el(id);
+      if (node.hidden === on) node.hidden = !on;
+    };
+    show("key-provisional", markCount.provisional > 0);
+    show("key-detail", markCount.detail > 0);
+    show("key-selection", markCount.selection > 0);
+    show("key-hover", markCount.hover > 0);
+    if (markCount.detail > 0) {
+      const text = `Detail unresolved: ${markCount.detail} of ${markCount.detail + markCount.moved} moved-through cells`;
+      if (el("key-detail-text").textContent !== text) el("key-detail-text").textContent = text;
+    }
+  }
+  // ---- The profile tracks (PRD-0002 S2, section 3) ----
+  // Two tracks side by side, right of the Rows strip, each with a heading of its own and its numeric domain under it. The CURRENT track is the
+  // view's (or the selection's) Volume with its taker-buy subset, whatever the Cells measure; the REFERENCE track is the Rows measure over its
+  // period. They used to be one overpainted strip, on which two lengths on two axes could not be told apart. The default is Independent axes,
+  // each on an Auto domain that is printed; Shared absolute and Shared row share come from E.axis.profile and are offered only where they are
+  // exact (a disabled choice says why).
+  const PROFILE_TEXT = {
+    names: { independent: "Independent axes", absolute: "Shared absolute", share: "Shared row share" },
+    descs: {
+      independent: "Each track on its own Auto domain, shown under it.",
+      absolute: "One domain for both tracks, the same pixels per unit. The same measure and basis on an exact common price partition.",
+      share: "Each row's share of its track's total over the same price window, both totals shown. Two nonnegative distributions only.",
+    },
+    why: {
+      "current-not-ready": "The view is not measured yet.",
+      "no-reference": "Turn Rows on to have a reference track.",
+      "reference-not-ready": "The reference period is not read yet.",
+      "not-aligned": "The two row sizes have no exact common partition.",
+      "unlike-measure": "Needs the same measure on both tracks: Volume against Volume.",
+      signed: "A signed Delta is not a row-share distribution.",
+      "no-window": "The view and the period share no price rows.",
+      "zero-total": "A total of zero has no shares.",
+    },
+    // The reference track's own reasons when the mode asked is not offered for its measure
+    shareWhy: "Row share needs Volume or Time at price as the reference; a ratio is not a distribution.",
+    current: "Volume in the view",
+    currentSelected: "Volume in the selection",
+    buy: "Taker-buy volume, a subset of each row",
+    pocs: "POC and Buy POC are Volume-derived",
+  };
+  // The plan of the two tracks for this frame: what E.axis.profile says of the rows the page holds.
+  function profilePlan(query, b, state, under) {
+    // A view that is not a range (a frame before the first rectangle) compares nothing.
+    if (!(b[3] > b[2])) b = [0, 0, 0, 1];
+    const m = renderM(),
+      cur = { rows: query.rows, m, ready: state === "exact" || state === "recorded" || state === "cube" },
+      ref = under
+        ? {
+            kind: under.kind,
+            rows: under.bands?.rows ?? [],
+            m: under.bands?.m ?? m,
+            ready: Boolean(under.bands) && under.res.state === "ready" && !under.stale,
+          }
+        : null;
+    return E.axis.profile({ mode: S.profileCmp, cur, ref, view: { lo: b[2], hi: b[3] } });
+  }
+  // The axis of the reference track in independent mode: the exact maximum of the rows in view, or the fixed -2 to +2 of Relative volume.
+  const referenceRead = (kind) => (kind === "volume" ? rowsV : kind === "delta" ? rowsDelta : rowsW);
+  function referenceAxis(u) {
+    const b = u.bands,
+      kind = u.kind,
+      id = "profile.reference." + kind;
+    if (!b) return null;
+    const rows = b.rows,
+      ps = 2 ** b.m,
+      read = referenceRead(kind),
+      [first, hi] = rowsInView(rows, ps);
+    return axisFrame(
+      id,
+      kind === "relvol"
+        ? { sign: "ratio", eligible: true, sig: "fixed" }
+        : {
+            sign: kind === "delta" ? "signed-symmetric" : "unsigned",
+            eligible: u.res.state === "ready" && !u.stale,
+            sig: [scaleWorkspace(), id, objId(rows), b.m, first, hi].join("|"),
+            summary: () => rowsScan(rows, first, hi, read),
+          },
+    );
+  }
+  // The number a domain shows under its track: "0–12.3k", "±3.2k", "0", "No data".
+  function profileDomainText(rec) {
+    if (!rec || rec.typed === "none") return E.text.axis.none;
+    if (rec.typed === "zero-only" || !Array.isArray(rec.domain)) return E.text.axis.zero;
+    const [lo, hi] = rec.domain;
+    return rec.sign === "signed-symmetric" ? "±" + uiFmt(hi, rec.unit) : rec.sign === "ratio" ? `${lo}–${hi}` : `${lo === 0 ? "0" : uiFmt(lo, rec.unit)}–${uiFmt(hi, rec.unit)}`;
+  }
+  // The endpoint glyphs: a filled triangle for the POC, a hollow diamond for the Buy POC, both in the gold profile role.
+  function pocGlyph(c, x, y, buy) {
+    c.save();
+    c.strokeStyle = colors.poc;
+    c.fillStyle = colors.poc;
+    c.lineWidth = 1.25;
+    c.beginPath();
+    if (buy) {
+      c.moveTo(x + 2.5, y - 3.5);
+      c.lineTo(x + 6, y);
+      c.lineTo(x + 2.5, y + 3.5);
+      c.lineTo(x - 1, y);
+      c.closePath();
+      c.stroke();
+    } else {
+      c.moveTo(x, y - 3.5);
+      c.lineTo(x + 5, y);
+      c.lineTo(x, y + 3.5);
+      c.closePath();
+      c.fill();
+    }
+    c.restore();
+  }
+  // The letters of a track's gutter, a line of room apart, each joined to its row by a short leader.
+  function gutterLabels(labels, x, top, bottom) {
+    const visible = labels.filter((l) => l.y >= top && l.y <= bottom).sort((a, c) => a.y - c.y);
+    for (let i = 0; i < visible.length; i++) visible[i].ly = Math.max(top + 7, visible[i].y, i ? visible[i - 1].ly + 14 : top + 7);
+    if (visible.length && visible.at(-1).ly > bottom - 7) {
+      visible.at(-1).ly = bottom - 7;
+      for (let i = visible.length - 2; i >= 0; i--) visible[i].ly = Math.min(visible[i].ly, visible[i + 1].ly - 14);
+    }
+    for (const l of visible) {
+      if (l.glyph) pocGlyph(ctx, x, l.y, l.glyph === "buy");
+      else markLine(x, l.y, x + 5, l.y, l.color, 1, 0.7);
+      if (Math.abs(l.ly - l.y) > 1) markLine(x + 6, l.y, x + 8, l.ly, l.color, 1, 0.7);
+      text(l.symbol, x + 8, l.ly, colors.ink, "left", 11);
+    }
+  }
   function profile(query, b, state, under, sc) {
-    if (!G.profile) return;
-    // The length of every bar: the registered axis of the current profile, over the rows it shows. It is the
-    // exact maximum of them, "0" for rows that are all zero, and "No data" for none (never a maximum of 1
-    // made up for an empty view); it waits for a measured rectangle and keeps its domain through a gesture.
-    const axis = axisFrame("profile.current", {
+    const plan = profilePlan(query, b, state, under),
+      shared = plan.mode !== "independent",
+      sharedId = "profile.shared." + plan.mode,
+      curReady = state === "exact" || state === "recorded" || state === "cube",
+      refReady = Boolean(under?.bands) && under.res.state === "ready" && !under.stale;
+    // The axes, through the one registry. Independent: the current track's own (the exact maximum of the rows it shows, "0" for rows that
+    // are all zero, "No data" for none, never a maximum of 1 made up for an empty view; it waits for a measured rectangle and keeps its
+    // domain through a gesture) and the reference's. Shared: ONE, over the displayed rows of both.
+    let curAxis, refAxis;
+    if (shared) {
+      const rows = [...(plan.cur ?? []), ...(plan.ref ?? [])],
+        span = rows.length ? [Math.min(...rows.map((x) => x.r)), Math.max(...rows.map((x) => x.r))] : ["", ""];
+      curAxis = refAxis = axisFrame(sharedId, {
         sign: "unsigned",
-        eligible: state === "exact" || state === "recorded" || state === "cube",
+        eligible: curReady && refReady,
+        sig: [scaleWorkspace(), sharedId, objId(query.rows), under?.bands ? objId(under.bands.rows) : "", plan.m, plan.state, span[0], span[1]].join("|"),
+        summary: () => plan.summary,
+      });
+    } else {
+      curAxis = axisFrame("profile.current", {
+        sign: "unsigned",
+        eligible: curReady,
         sig: [scaleWorkspace(), "profile.current", objId(query), state].join("|"),
         summary: () => rowsScan(query.rows, 0, Infinity, rowsV),
-      }),
-      at = { t: 0, clip: 0 },
-      px = G.x + G.w + 9,
-      pw = G.profile - 29,
+      });
+      refAxis = under ? referenceAxis(under) : null;
+    }
+    const counts = { cur: { low: 0, high: 0, drawn: 0 }, ref: { low: 0, high: 0, drawn: 0 } };
+    if (G.profile) {
+      const unit = TRACK_BARS;
+      paintCurrentTrack(query, b, state, plan, curAxis, unit, counts.cur);
+      if (G.tracks === 2 && under) paintReferenceTrack(under, b, plan, refAxis, unit, sc, counts.ref);
+      paintProfileDomains(plan, curAxis, refAxis, state, under);
+      // The level line and the pointer's row across the tracks
+      const right = G.tx[G.tracks - 1] + TRACK_BARS + 3;
+      // inside the plot's height, like the tracks themselves: a saved level or the pointer's row outside the visible prices must not paint over a track's heading or its domain
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(G.tx[0] - 1, G.y, right - G.tx[0] + 3, G.h);
+      ctx.clip();
+      if (S.level !== null) {
+        const y = Math.round(G.Y(S.level)) + 0.5;
+        ctx.setLineDash([6, 4]);
+        line(G.tx[0], y, right, y, colors.ink, 1.3, 0.9);
+        ctx.setLineDash([]);
+      }
+      const hr = pointerRow();
+      if (hr !== null) {
+        const ps = stepP(),
+          ya = G.Y((hr + 1) * ps),
+          yb = G.Y(hr * ps);
+        ctx.strokeStyle = colors.ink;
+        ctx.lineWidth = 1;
+        for (let k = 0; k < G.tracks; k++) ctx.strokeRect(G.tx[k] + 0.5, ya + 0.5, TRACK_BARS + 2, Math.max(1, yb - ya - 1));
+      }
+      ctx.restore();
+    }
+    // What the axes say about their bars: counted again each frame (a bar past a held domain is clamped at the track's edge and counted).
+    for (const [rec, n] of shared ? [[curAxis, null]] : [[curAxis, counts.cur], [refAxis, counts.ref]]) {
+      if (!rec) continue;
+      const c = n ?? { low: counts.cur.low + counts.ref.low, high: counts.cur.high + counts.ref.high, drawn: counts.cur.drawn + counts.ref.drawn };
+      rec.clipped.low = c.low;
+      rec.clipped.high = c.high;
+      rec.clipped.count = c.low + c.high;
+      rec.clipped.total = c.drawn;
+      axisChipWrite(rec);
+    }
+    profileUi.plan = plan;
+    profileUi.cur = curAxis;
+    profileUi.ref = refAxis;
+    profileUi.under = under;
+    profileUi.state = state;
+    profileUi.tracks = G.profile ? G.tracks : 0;
+  }
+  // The current track: rows of the view's (or selection's) Volume with the taker-buy subset as a neutral inset on the same axis.
+  function paintCurrentTrack(query, b, state, plan, axis, unit, count) {
+    const x0 = G.tx[0],
+      shared = plan.mode !== "independent",
       ps = stepP(),
+      size = shared && plan.m !== null ? 2 ** plan.m : ps,
       va = markState.va,
-      labels = [];
-    let low = 0,
-      high = 0;
+      labels = [],
+      at = { t: 0, clip: 0 },
+      drawable = axis && axis.typed !== "none" && (!shared || plan.state === "ok"),
+      rows = drawable ? (shared ? plan.cur : query.rows) : [],
+      pocBin = query.poc === null ? null : shared && plan.m !== null ? Math.floor(query.poc / 2 ** (plan.m - renderM())) : query.poc;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(px, G.y, G.profile - 8, G.h);
+    ctx.rect(x0, G.y, TRACK_BARS + TRACK_GUTTER + 2, G.h);
     ctx.clip();
     if (S.area && va) {
       const ya = G.Y(Math.min(va.r1 * ps, b[3])),
         yb = G.Y(Math.max(va.r0 * ps, b[2]));
-      ctx.fillStyle = colors.volume;
-      ctx.globalAlpha = 0.08;
-      ctx.fillRect(px, ya, pw, yb - ya);
+      ctx.fillStyle = colors.muted;
+      ctx.globalAlpha = 0.14;
+      ctx.fillRect(x0, ya, TRACK_BARS, yb - ya);
       ctx.globalAlpha = 1;
     }
-    // The underlay's second profile, behind the view's.
-    if (under?.bands) underProfile(under, px, pw, sc);
-    for (const row of axis.typed === "none" ? [] : query.rows) {
-      const ya = G.Y(Math.min((row.r + 1) * ps, b[3])),
-        yb = G.Y(Math.max(row.r * ps, b[2]));
+    for (const row of rows) {
+      const ya = G.Y(Math.min((row.r + 1) * size, b[3])),
+        yb = G.Y(Math.max(row.r * size, b[2]));
       if (yb <= ya) continue;
-      // A bar past a held domain (a gesture or Play keeps it) is clamped at the strip's edge and counted.
-      E.axis.coordinate(axis, row.v, at);
-      if (at.clip === E.scale.CLIP.LOW) low++;
-      else if (at.clip === E.scale.CLIP.HIGH) high++;
-      ctx.fillStyle = S.poc && row.r === query.poc ? colors.poc : colors.muted;
-      ctx.globalAlpha = S.poc && row.r === query.poc ? 0.75 : 0.32;
-      ctx.fillRect(px, ya, pw * at.t, Math.max(0.1, yb - ya - 0.7));
-      E.axis.coordinate(axis, row.bv, at);
-      // The taker-buy subset of the row is an amount like the row: its interim colour, not a signed arm.
-      ctx.fillStyle = colors.legacyBuy;
-      ctx.globalAlpha = 0.85;
-      ctx.fillRect(px, ya, pw * at.t, Math.max(0.7, Math.min(2, (yb - ya) * 0.3)));
+      const value = shared ? row.t : row.v,
+        buy = shared ? row.tb : row.bv,
+        h = Math.max(0.1, yb - ya - 0.7);
+      E.axis.coordinate(axis, value, at);
+      count.drawn++;
+      if (at.clip === E.scale.CLIP.LOW) count.low++;
+      else if (at.clip === E.scale.CLIP.HIGH) count.high++;
+      const poc = S.poc && row.r === pocBin;
+      ctx.fillStyle = poc ? colors.poc : colors.muted;
+      ctx.globalAlpha = poc ? 0.75 : 0.32;
+      ctx.fillRect(x0, ya, unit * at.t, h);
+      E.axis.coordinate(axis, buy, at);
+      // The taker-buy subset: a neutral inset inside the row's bar, on the same axis (not a signed arm, not a second colour).
+      const inset = Math.max(1, Math.min(3, h * 0.36));
+      ctx.fillStyle = colors.ink;
+      ctx.globalAlpha = 0.6;
+      ctx.fillRect(x0, ya + (h - inset) / 2, unit * at.t, inset);
     }
     ctx.globalAlpha = 1;
-    axis.clipped.low = low;
-    axis.clipped.high = high;
-    axis.clipped.count = low + high;
-    axis.clipped.total = query.rows.length;
-    axisChipWrite(axis);
-    if (S.level !== null) {
-      const y = Math.round(G.Y(S.level)) + 0.5;
-      ctx.setLineDash([6, 4]);
-      line(px, y, px + pw + 3, y, colors.ink, 1.3, 0.9);
-      ctx.setLineDash([]);
-    }
-    const hr = pointerRow();
-    if (hr !== null) {
-      const ya = G.Y((hr + 1) * ps),
-        yb = G.Y(hr * ps);
-      ctx.strokeStyle = colors.ink;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(px + 0.5, ya + 0.5, pw + 2, Math.max(1, yb - ya - 1));
-    }
     if (S.area && va) {
       const high = G.Y(Math.min(va.r1 * ps, b[3])),
         low = G.Y(Math.max(va.r0 * ps, b[2]));
-      markLine(px + pw + 2, high, px + pw + 2, low, colors.muted, 1, 0.6);
-      markLine(px, high, px + pw + 3, high, colors.muted, 1, 0.6);
-      markLine(px, low, px + pw + 3, low, colors.muted, 1, 0.6);
-      labels.push(
-        { symbol: "H", y: high, color: colors.muted },
-        { symbol: "L", y: low, color: colors.muted },
-      );
+      markLine(x0 + TRACK_BARS + 2, high, x0 + TRACK_BARS + 2, low, colors.muted, 1, 0.6);
+      markLine(x0, high, x0 + TRACK_BARS + 3, high, colors.muted, 1, 0.6);
+      markLine(x0, low, x0 + TRACK_BARS + 3, low, colors.muted, 1, 0.6);
+      labels.push({ symbol: "H", y: high, color: colors.muted }, { symbol: "L", y: low, color: colors.muted });
     }
     if (S.poc) {
-      for (const [row, symbol, color] of [
-        [query.poc, "P", colors.poc],
-        [query.bpoc, "B", colors.legacyBuy],
-      ]) {
+      for (const [row, symbol, buy] of [[query.poc, "P", false], [query.bpoc, "B", true]]) {
         if (row === null) continue;
         const y = G.Y((row + 0.5) * ps);
-        markLine(px, y, px + pw + 3, y, color, 1.5, 0.95);
-        labels.push({ symbol, y, color });
+        ctx.setLineDash(buy ? [3, 2] : []);
+        markLine(x0, y, x0 + TRACK_BARS + 1, y, colors.poc, 1.5, 0.95);
+        ctx.setLineDash([]);
+        labels.push({ symbol, y, color: colors.poc, glyph: buy ? "buy" : "poc" });
       }
     }
-    const visible = labels
-      .filter((x) => x.y >= G.y && x.y <= G.y + G.h)
-      .sort((a, b) => a.y - b.y);
-    // A line of room between labels, as on the chart.
-    for (let i = 0; i < visible.length; i++)
-      visible[i].ly = Math.max(
-        G.y + 7,
-        visible[i].y,
-        i ? visible[i - 1].ly + 15 : G.y + 7,
-      );
-    if (visible.length && visible.at(-1).ly > G.y + G.h - 7) {
-      visible.at(-1).ly = G.y + G.h - 7;
-      for (let i = visible.length - 2; i >= 0; i--)
-        visible[i].ly = Math.min(visible[i].ly, visible[i + 1].ly - 15);
-    }
-    for (const label of visible) {
-      markLine(
-        px + pw + 3,
-        label.y,
-        px + pw + 7,
-        label.ly,
-        label.color,
-        1,
-        0.7,
-      );
-      text(label.symbol, px + pw + 9, label.ly, colors.ink, "left", 11);
-    }
+    if (shared && plan.state !== "ok") text(plan.state === "undefined" ? "Undefined" : "No window", x0, G.y + 10, colors.muted, "left");
+    else if (axis && axis.typed === "none" && state !== "pending" && state !== "failed") text(E.text.axis.none, x0, G.y + 10, colors.muted, "left");
+    gutterLabels(labels, x0 + TRACK_BARS + 1, G.y, G.y + G.h);
     ctx.restore();
-    // While the cube measures the rectangle, the profile waits for it.
+    // The heading: what the track is, and while the cube measures the rectangle, that it waits.
+    ctx.font = `${TYPE.s}px ${FONT}`;
     text(
-      state === "pending"
-        ? "Measuring…"
-        : state === "failed"
-          ? "Not measured"
-          : S.selection
-            ? "Selected"
-            : "Profile",
-      px,
+      state === "pending" ? "Measuring…" : state === "failed" ? "Not measured" : fitText(S.selection ? "Sel. volume" : "Volume", TRACK_BARS + TRACK_GUTTER),
+      x0,
       G.y - 5,
       colors.muted,
       "left",
     );
+  }
+  // The reference track: the Rows measure over its period on its own axis (or the shared one), with the period's POC and 70% area, which stay
+  // Volume-derived under Delta and Time at price.
+  function paintReferenceTrack(u, b, plan, axis, unit, sc, count) {
+    const x0 = G.tx[1],
+      shared = plan.mode !== "independent",
+      kind = u.kind,
+      diverging = kind === "delta" || kind === "relvol",
+      relvol = kind === "relvol" ? u.relvol : null,
+      read = referenceRead(kind),
+      lut = sc?.lut,
+      // The constant bar colour of the active appearance and the two arms; the legacy ink if the scale display is off.
+      bar = lut ? lut.bar.css : colors.ink,
+      // (the scale display off leaves two neutral arms: ink above the centre line, the state ink below)
+      arms = lut ? [lut.positive.css[255], lut.negative.css[255]] : [colors.ink, colors.state],
+      at = { t: 0, clip: 0 },
+      mid = x0 + TRACK_BARS / 2,
+      bands = u.bands,
+      labels = [];
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0, G.y, TRACK_BARS + TRACK_GUTTER + 2, G.h);
+    ctx.clip();
+    if (bands && axis) {
+      const ps = 2 ** (shared && plan.m !== null ? plan.m : bands.m),
+        drawable = axis.typed !== "none" && (kind !== "relvol" || relvol?.state === "ok") && (!shared || plan.state === "ok");
+      if (drawable) {
+        if (shared) {
+          for (const x of plan.ref) {
+            const ya = G.Y((x.r + 1) * ps),
+              h = Math.max(0.1, G.Y(x.r * ps) - ya - 0.7);
+            E.axis.coordinate(axis, x.t, at);
+            count.drawn++;
+            if (at.clip === E.scale.CLIP.LOW) count.low++;
+            else if (at.clip === E.scale.CLIP.HIGH) count.high++;
+            if (!(at.t > 0)) continue;
+            ctx.fillStyle = bar;
+            ctx.globalAlpha = 0.55;
+            ctx.fillRect(x0, ya, unit * at.t, h);
+          }
+        } else {
+          let [i, hi] = rowsInView(bands.rows, ps);
+          for (; i < bands.rows.length && bands.rows[i].r <= hi; i++) {
+            const x = bands.rows[i],
+              ya = G.Y((x.r + 1) * ps),
+              h = Math.max(0.1, G.Y(x.r * ps) - ya - 0.7);
+            let value;
+            if (kind === "relvol") {
+              const typed = relvol.at(x.r);
+              if (typed.tag !== "finite") continue;
+              value = typed.value;
+            } else value = read(x);
+            E.axis.coordinate(axis, value, at);
+            count.drawn++;
+            if (at.clip === E.scale.CLIP.LOW) count.low++;
+            else if (at.clip === E.scale.CLIP.HIGH) count.high++;
+            if (!diverging) {
+              if (!(at.t > 0)) continue;
+              ctx.fillStyle = bar;
+              ctx.globalAlpha = 0.55;
+              ctx.fillRect(x0, ya, unit * at.t, h);
+              continue;
+            }
+            if (!at.t) continue;
+            const w = (unit / 2) * Math.abs(at.t);
+            ctx.fillStyle = at.t > 0 ? arms[0] : arms[1];
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(at.t > 0 ? mid : mid - w, ya, w, h);
+          }
+        }
+        ctx.globalAlpha = 1;
+      } else if (shared && plan.state !== "ok") text(plan.state === "undefined" ? "Undefined" : "No window", x0, G.y + 10, colors.muted, "left");
+      else if (axis.typed === "none") text(kind === "relvol" && relvol?.state !== "ok" ? "No ratio" : E.text.axis.none, x0, G.y + 10, colors.muted, "left");
+      if (diverging && !shared) markLine(mid, G.y, mid, G.y + G.h, colors.line, 1, 0.9);
+      // The period's own POC and 70% area: Volume-derived whatever the track shows
+      const vb = u.volBands;
+      if (vb?.va) {
+        const vps = 2 ** vb.m,
+          ya = G.Y(vb.va.r1 * vps),
+          yb = G.Y(vb.va.r0 * vps);
+        ctx.fillStyle = colors.ink;
+        ctx.globalAlpha = 0.4;
+        ctx.fillRect(x0, ya, 2, yb - ya);
+        ctx.globalAlpha = 1;
+      }
+      if (vb?.poc != null) {
+        const y = G.Y((vb.poc + 0.5) * 2 ** vb.m);
+        markLine(x0, y, x0 + TRACK_BARS + 1, y, colors.poc, 1.5, 0.95);
+        labels.push({ symbol: "P", y, color: colors.poc, glyph: "poc" });
+      }
+    } else {
+      text(u.res.state === "failed" ? "Not read" : "Reading…", x0, G.y + 10, colors.muted, "left");
+    }
+    gutterLabels(labels, x0 + TRACK_BARS + 1, G.y, G.y + G.h);
+    ctx.restore();
+    ctx.font = `${TYPE.s}px ${FONT}`;
+    text(fitText(`${ROWS_INFO[kind].name.replace("Relative volume", "Rel. vol.").replace("Time at price", "Time")} · ${u.period}`, TRACK_BARS + TRACK_GUTTER), x0, G.y - 5, colors.muted, "left");
+  }
+  // The domain of each track under it (one shared label across both when they share). A heading names the track; the domain is the number that
+  // the length of its bars is read against.
+  function paintProfileDomains(plan, curAxis, refAxis, state, under) {
+    const y = G.y + G.h + 11,
+      label = (rec) => profileDomainText(rec);
+    if (plan.mode !== "independent") {
+      if (G.tracks !== 2) return;
+      const x = G.tx[0] + (G.tx[1] + TRACK_BARS - G.tx[0]) / 2;
+      text(`${label(curAxis)} · shared`, x, y, colors.muted, "center");
+      return;
+    }
+    text(label(curAxis), G.tx[0], y, colors.muted, "left");
+    if (G.tracks === 2 && refAxis && under) text(label(refAxis), G.tx[1], y, colors.muted, "left");
   }
   // The price row under the pointer, over the prices or the profile, at the
   // drawn row size: outlined across both.
@@ -7477,6 +8216,63 @@
   // whole chart behind the cells, so they show where the view has no cells: the
   // heavy levels it never visited. Each is painted through the Rows frame (see
   // bandPaint), at the fixed Rows alpha.
+  // The Rows strip (PRD-0002 S2): the row values at full strength in a fixed 12 px column immediately right of the
+  // heatmap, one block per row of the EFFECTIVE row size (a coarse recorded row is one tall block, never eight
+  // pretend 125 USDT ones). It is the authoritative Rows display: cells, the lens and the references never cover
+  // it, and it takes the registered Rows mapping, so its colours are the legend's.
+  function paintRowsStrip(u, frame, sc) {
+    if (!G.sw) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(G.sx, G.y, G.sw, G.h);
+    ctx.clip();
+    ctx.fillStyle = colors.surface;
+    ctx.fillRect(G.sx, G.y, G.sw, G.h);
+    const relvol = u?.kind === "relvol" ? u.relvol : null;
+    if (u?.bands && frame && !(u.kind === "relvol" && relvol?.state !== "ok")) {
+      const ps = 2 ** u.bands.m,
+        block = (x) => {
+          frame.encode(x, ENC);
+          const ya = G.Y((x.r + 1) * ps),
+            yb = G.Y(x.r * ps),
+            h = Math.max(0.5, yb - ya);
+          if (ENC.role === rowsRole.PATTERN) {
+            if (ENC.tag === rowsTag["negative-infinite"]) {
+              ctx.fillStyle = colors.state;
+              ctx.fillRect(G.sx, ya, G.sw, h);
+            } else if (ENC.tag === rowsTag["no-reference"]) {
+              ctx.strokeStyle = colors.state;
+              ctx.lineWidth = 1;
+              ctx.setLineDash([1, 2]);
+              ctx.beginPath();
+              ctx.moveTo(G.sx + G.sw / 2, ya);
+              ctx.lineTo(G.sx + G.sw / 2, ya + h);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
+            return;
+          }
+          if (ENC.css === null || ENC.role === rowsRole.ZERO) return;
+          // The bands' raw Volume/Time ramp is for the 16% blend; the strip is opaque, so it takes the unsigned ramp at
+          // the same entry.
+          ctx.fillStyle = ENC.role === rowsRole.ROWS && sc?.lut?.unsigned ? sc.lut.unsigned.css[ENC.idx] : ENC.css;
+          ctx.fillRect(G.sx, ya, G.sw, h);
+        };
+      if (relvol) {
+        const [lo, hi] = rowsBinRange(relvol, ps);
+        for (let j = lo; j <= hi; j++) {
+          rowsBin.r = j;
+          block(rowsBin);
+        }
+      } else {
+        const rows = u.bands.rows;
+        let [i, hi] = rowsInView(rows, ps);
+        for (; i < rows.length && rows[i].r <= hi; i++) block(rows[i]);
+      }
+    }
+    ctx.restore();
+    line(G.sx + 0.5, G.y, G.sx + 0.5, G.y + G.h, colors.line, 1);
+  }
   function paintBands(u, frame) {
     if (!u.bands || !frame) return;
     const relvol = u.kind === "relvol" ? u.relvol : null;
@@ -7497,100 +8293,6 @@
       for (; i < rows.length && rows[i].r <= hi; i++) bandPaint(u, rows[i], frame, ENC);
     }
     ctx.globalAlpha = 1;
-  }
-  // The underlay's second profile, behind the view's: each row's value over
-  // its period, on the length axis of its own (registered as
-  // profile.reference.<measure>: the exact maximum of the rows in view, or the
-  // fixed -2 to +2 of Relative volume), apart from the current profile's.
-  // Volume and time at price run from the strip's edge in the constant bar
-  // colour; delta and relative volume diverge from a centre line in the two
-  // arms. The period's POC is a dashed line across the strip, and its 70% value
-  // area a bar down the strip's edge.
-  function underProfile(u, px, pw, sc) {
-    const b = u.bands,
-      ps = 2 ** b.m,
-      mid = px + pw / 2,
-      rows = b.rows,
-      kind = u.kind,
-      diverging = kind === "delta" || kind === "relvol",
-      relvol = kind === "relvol" ? u.relvol : null,
-      id = "profile.reference." + kind,
-      read = kind === "volume" ? rowsV : kind === "delta" ? rowsDelta : rowsW,
-      lut = sc?.lut,
-      // The constant bar colour of the active appearance and the two arms; the legacy ink if the scale display is off.
-      bar = lut ? lut.bar.css : colors.ink,
-      arms = lut ? [lut.positive.css[255], lut.negative.css[255]] : [colors.legacyBuy, colors.legacySell],
-      at = { t: 0, clip: 0 };
-    let [i, hi] = rowsInView(rows, ps);
-    const first = i,
-      axis = axisFrame(
-        id,
-        kind === "relvol"
-          ? { sign: "ratio", eligible: true, sig: "fixed" }
-          : {
-              sign: diverging ? "signed-symmetric" : "unsigned",
-              eligible: u.res.state === "ready" && !u.stale,
-              sig: [scaleWorkspace(), id, objId(rows), b.m, first, hi].join("|"),
-              summary: () => rowsScan(rows, first, hi, read),
-            },
-      );
-    let low = 0,
-      high = 0,
-      drawn = 0;
-    // "No data" draws no bar, and a whole-result status of Relative volume has none to draw.
-    if (axis.typed !== "none" && (kind !== "relvol" || relvol?.state === "ok"))
-      for (; i < rows.length && rows[i].r <= hi; i++) {
-        const x = rows[i],
-          ya = G.Y((x.r + 1) * ps),
-          h = Math.max(0.1, G.Y(x.r * ps) - ya - 0.7);
-        let value;
-        if (kind === "relvol") {
-          const typed = relvol.at(x.r);
-          if (typed.tag !== "finite") continue;
-          value = typed.value;
-        } else value = read(x);
-        E.axis.coordinate(axis, value, at);
-        drawn++;
-        if (at.clip === E.scale.CLIP.LOW) low++;
-        else if (at.clip === E.scale.CLIP.HIGH) high++;
-        if (!diverging) {
-          if (!(at.t > 0)) continue;
-          ctx.fillStyle = bar;
-          ctx.globalAlpha = kind === "volume" ? 0.16 : 0.28;
-          ctx.fillRect(px, ya, pw * at.t, h);
-          ctx.globalAlpha = 0.6;
-          ctx.fillRect(px + pw * at.t - 1, ya, 1, h);
-          continue;
-        }
-        if (!at.t) continue;
-        const w = (pw / 2) * Math.abs(at.t);
-        ctx.fillStyle = at.t > 0 ? arms[0] : arms[1];
-        ctx.globalAlpha = 0.35;
-        ctx.fillRect(at.t > 0 ? mid : mid - w, ya, w, h);
-      }
-    ctx.globalAlpha = 1;
-    axis.clipped.low = low;
-    axis.clipped.high = high;
-    axis.clipped.count = low + high;
-    axis.clipped.total = drawn;
-    axisChipWrite(axis);
-    if (diverging) markLine(mid, G.y, mid, G.y + G.h, colors.line, 1, 0.9);
-    const vb = u.volBands;
-    if (vb?.va) {
-      const vps = 2 ** vb.m,
-        ya = G.Y(vb.va.r1 * vps),
-        yb = G.Y(vb.va.r0 * vps);
-      ctx.fillStyle = colors.ink;
-      ctx.globalAlpha = 0.4;
-      ctx.fillRect(px, ya, 2, yb - ya);
-      ctx.globalAlpha = 1;
-    }
-    if (vb?.poc != null) {
-      const y = G.Y((vb.poc + 0.5) * 2 ** vb.m);
-      ctx.setLineDash([3, 2]);
-      markLine(px, y, px + pw, y, colors.ink, 1, 0.6);
-      ctx.setLineDash([]);
-    }
   }
   // How the underlay's rows stand for its period where they aren't its own
   // exactly (the recorded snapshot): from coarser rows, its 1,000 USDT ones,
@@ -7820,7 +8522,7 @@
         family: "average",
         group: "1w",
         name: "Bull market support band",
-        desc: "The 20-week SMA and 21-week EMA, the space between them filled",
+        desc: "The 20-week SMA and 21-week EMA, as two lines",
         tier: "long",
         live: true,
       },
@@ -7848,7 +8550,7 @@
         family: "average",
         group: "bb",
         name: "Bollinger · 4 h",
-        desc: "The same on 4-hour bars; squeezes filled, bandwidth below its 10th percentile of the last 500 bars",
+        desc: "The same on 4-hour bars; squeezes are intervals in the event strip, bandwidth below its 10th percentile of the last 500 bars",
         tier: "short",
         live: true,
       },
@@ -7856,7 +8558,7 @@
         family: "average",
         group: "bb",
         name: "Bollinger · 1D",
-        desc: "The same on daily bars; squeezes filled, bandwidth at its lowest of the last 182 days",
+        desc: "The same on daily bars; squeezes are intervals in the event strip, bandwidth at its lowest of the last 182 days",
         tier: "medium",
         live: true,
       },
@@ -7871,7 +8573,7 @@
       cme: {
         family: "clock",
         name: "CME close and reopen",
-        desc: "Friday 16:00 and Sunday 17:00 Chicago; live, the spot gap between them is shaded until a trade reaches the Friday close",
+        desc: "Friday 16:00 and Sunday 17:00 Chicago; live, the spot gap between them is outlined until the hourly bar in which a trade reaches the Friday close ends",
       },
       deribit: { family: "clock", name: "Deribit expiry", desc: "Fridays 08:00 UTC; heavier on the month's last and at a quarter's end" },
     },
@@ -7910,7 +8612,9 @@
       const t = colors.tiers[tier] || colors.tiers.long,
         c = d3.lch(colors.family[family]);
       c.c *= t.chroma;
-      style = { colour: c.formatHex(), width: t.width };
+      // An ordinary reference stroke is 1.5 px whatever its timeframe (the timeframe shows in its tag and the
+      // tier's saturation); a weighted or focused line may reach 2.5, whose 1 px casing each side totals 4.5.
+      style = { colour: c.formatHex(), width: REFERENCE_STROKE };
       styleMemo.set(key, style);
       while (styleMemo.size > 64) styleMemo.delete(styleMemo.keys().next().value);
     }
@@ -8732,7 +9436,10 @@
         sun = after.close;
       if (fri === sun) continue;
       const up = sun > fri,
-        j = firstReach(index(open.t), fri, up);
+        j = firstReach(index(open.t), fri, up),
+        fillEnd = j >= 0 ? (bars[j].c + 1) * step : null;
+      // `openBar`: the hourly bar whose close is the spot at the reopen; `fillBar`: the one that first traded back through the Friday close. The gap
+      // is FILLED only once that bar is complete; while it forms the gap reads open and the bar is the record's candidate (E.readout.events.cmeGap).
       out.push({
         close: close.t,
         open: open.t,
@@ -8740,7 +9447,9 @@
         sun,
         lo: Math.min(fri, sun),
         hi: Math.max(fri, sun),
-        filled: j >= 0 ? Math.min((bars[j].c + 1) * step, series.end) : null,
+        openBar: [after.c * step, (after.c + 1) * step],
+        fillBar: j >= 0 ? [bars[j].c * step, fillEnd] : null,
+        filled: fillEnd !== null && fillEnd <= series.end ? fillEnd : null,
       });
     }
     hit = out;
@@ -8872,13 +9581,19 @@
   }
   // A list's bars with where each starts and ends: days from the calendar
   // (the 8-hour bar holding each one's high and low), or bars of a timeframe.
-  function swingsOf(list, atr, endOf, extremeAt, end) {
+  // Each swing also keeps the bar that confirmed it as that bar is (`cs`..`ce`, its own end even while it is still forming) and where its extreme's
+  // supported bar ends (`xe`): `bar` = {start(x), len}. `confirmed` stays the clamped time the lines are drawn from.
+  function swingsOf(list, atr, endOf, extremeAt, end, bar) {
     const beyond = blockExtremes(list),
       out = zigzag(list, atr).map((s) => {
-        const j = beyond(s.ci + 1, s.price, s.kind === "high");
+        const j = beyond(s.ci + 1, s.price, s.kind === "high"),
+          at = extremeAt(list[s.i], s.kind);
         return {
           ...s,
-          t: extremeAt(list[s.i], s.kind),
+          t: at,
+          xe: at + bar.len,
+          cs: bar.start(list[s.ci]),
+          ce: endOf(list[s.ci]),
           confirmed: Math.min(endOf(list[s.ci]), end),
           broken: j < 0 ? null : Math.min(endOf(list[j]), end),
         };
@@ -8900,7 +9615,7 @@
     if (!hit) {
       const step = series8.step,
         bars = series8.bars;
-      hit = swingsOf(bars, atrSeries(bars), (x) => (x.c + 1) * step, (x) => x.c * step, series8.end);
+      hit = swingsOf(bars, atrSeries(bars), (x) => (x.c + 1) * step, (x) => x.c * step, series8.end, { start: (x) => x.c * step, len: step });
       fourHourMemo.set(series8, hit);
     }
     return hit;
@@ -8933,7 +9648,7 @@
       if (deep) out.pch = { price: deep.peak.high, t: partAt(deep.peak, "high"), day: deep.peak, low: deep.day };
     }
     // Daily swings on the days, with the daily ATR, and 4-hour swings on the 4-hour bars.
-    out.daily = swingsOf(days, atrSeries(days), (d) => d.z, partAt, end);
+    out.daily = swingsOf(days, atrSeries(days), (d) => d.z, partAt, end, { start: (d) => d.t, len: series9.step });
     if (series8?.state === "ready") out.fourHour = fourHourSwings(series8);
     // Retracements: the moves over the last 30 and 90 sessions, and the last daily swing.
     const dNow = Math.floor(Math.max(0, end - 1e-6) / DAYS),
@@ -9148,6 +9863,8 @@
       closes: Float64Array.from(bars, (x) => x.close),
       starts: Float64Array.from(bars, (x) => x.t),
       ends: Float64Array.from(bars, (x) => Math.min(endOf(x), end)),
+      // each bar's own end, before the data's edge cuts it: a bar still forming is the one whose own end is past the edge
+      raws: Float64Array.from(bars, endOf),
       end,
       memo: new Map(),
     };
@@ -9350,11 +10067,6 @@
           on,
         });
       }
-      if (spec.fill) {
-        const [a, b] = curves.slice(-2),
-          first = Math.max(a.r.points[0]?.[2] ?? Infinity, b.r.points[0]?.[2] ?? Infinity);
-        if (Number.isFinite(first)) fills.push({ key, frame, a: a.values, b: b.values, i0: first, i1: frame.closes.length - 1, tier, alpha: 0.16 });
-      }
       if (spec.bands) {
         const bb = indicator(frame, "bb", 20);
         for (const [part, values, weight] of [
@@ -9391,38 +10103,6 @@
     }
     return { curves, fills, crosses };
   }
-  // A fill between two of a frame's series from bar i0 to i1, over the view,
-  // one point to a pixel column.
-  function drawFill(f, right) {
-    const ends = f.frame.ends,
-      i0 = Math.max(f.i0, endAt(ends, S.tA) - 1),
-      i1 = Math.min(f.i1, endAt(ends, S.tB) + 1);
-    if (i1 <= i0) return;
-    const xs = [],
-      top = [],
-      bottom = [];
-    let lastX = -Infinity;
-    for (let i = i0; i <= i1; i++) {
-      if (!Number.isFinite(f.a[i]) || !Number.isFinite(f.b[i])) continue;
-      const x = G.X(ends[i]);
-      if (x - lastX < 1 && xs.length && i < i1) continue;
-      xs.push(x);
-      top.push(G.Y(f.a[i] / PR));
-      bottom.push(G.Y(f.b[i] / PR));
-      lastX = x;
-      if (x > right + 2) break;
-    }
-    if (xs.length < 2) return;
-    ctx.beginPath();
-    ctx.moveTo(xs[0], top[0]);
-    for (let i = 1; i < xs.length; i++) ctx.lineTo(xs[i], top[i]);
-    for (let i = xs.length - 1; i >= 0; i--) ctx.lineTo(xs[i], bottom[i]);
-    ctx.closePath();
-    ctx.fillStyle = lineStyle("average", f.tier).colour;
-    ctx.globalAlpha = f.alpha;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
   // A frame's bar nearest time t: the one whose end, where its value is
   // drawn, is closest, the later one on a tie; -1 without bars.
   function barNear(frame, t) {
@@ -9445,7 +10125,9 @@
     const usd = (v) => `${price(Math.round(100 * v) / 100)} USDT`;
     if (l.kind === "cross") {
       const c = l.c,
-        slow = indicator(c.frame, "sma", 200)[c.x.i];
+        slow = indicator(c.frame, "sma", 200)[c.x.i],
+        crossRec = crossRecord(c.frame, c.x.i);
+      tip.dataset.event = `${crossRec.kind}|${crossRec.label}`;
       tipRows(
         tip,
         `${c.golden ? "Golden" : "Death"} cross · ${usd(c.v)}`,
@@ -9454,6 +10136,7 @@
           ["50 SMA", usd(c.v)],
           ["200 SMA", usd(slow)],
           ["Timeframe", "1 day"],
+          ...knownRows(crossRec),
         ],
         c.golden ? "The 50-day SMA crossed above the 200-day SMA" : "The 50-day SMA crossed below the 200-day SMA",
       );
@@ -9469,7 +10152,10 @@
       tf = TF_NAMES[f.tf];
     if (l.what === "bb") {
       const bb = l.bb,
-        squeezed = AVERAGE_SPECS[l.key].squeeze && frameSqueezes(f).some(([a, z]) => at >= a && at <= z);
+        run = AVERAGE_SPECS[l.key].squeeze ? frameSqueezes(f).find(([a, z]) => at >= a && at <= z) : undefined,
+        squeezed = run !== undefined,
+        runRec = squeezed ? squeezeRecord(f, run) : null;
+      if (runRec) tip.dataset.event = `${runRec.kind}|${runRec.label}`;
       tipRows(
         tip,
         `${l.name} · ${usd(bb.mid[at])}`,
@@ -9480,6 +10166,7 @@
           ["Lower", usd(bb.lower[at])],
           ["Bandwidth", `${(100 * bb.width[at]).toFixed(2)}%`],
           ...(AVERAGE_SPECS[l.key].squeeze ? [["Squeeze", squeezed ? "yes" : "no"]] : []),
+          ...(runRec ? knownRows(runRec) : []),
         ],
         AVERAGE_SPECS[l.key].squeeze
           ? f.tf === "1d"
@@ -9634,7 +10321,7 @@
     ctx.rect(G.x, top, G.w, h);
     ctx.clip();
     const xc = clamp(G.X(cut), G.x, right);
-    if (S.replay) hatchRect(xc, top, right - xc, h, colors.line, 11, 0.45);
+    if (S.replay) hatchRect(xc, top, right - xc, h, colors.state, 11, 0.3);
     else {
       ctx.fillStyle = colors.bg;
       ctx.fillRect(xc, top, right - xc, h);
@@ -9767,7 +10454,11 @@
           for (const d of o.divergences) {
             if (d.b.confirmed > cut || f.ends[d.b.i] < S.tA || f.ends[d.a.i] > S.tB) continue;
             const colour = d.bearish ? colors.legacySell : colors.legacyBuy;
+            // A divergence whose later swing is only a candidate (the bar that reversed is still forming) is dashed: not confirmed yet
+            // (E.readout.events.rsiDivergence)
+            if (d.b.ce > f.end) ctx.setLineDash([3, 3]);
             line(G.X(f.ends[d.a.i]), y(d.r0), G.X(f.ends[d.b.i]), y(d.r1), colour, 2, 0.95);
+            ctx.setLineDash([]);
             for (const [s, r] of [
               [d.a, d.r0],
               [d.b, d.r1],
@@ -9844,7 +10535,10 @@
     scaleRt.tipReadout = null;
     if (paneShown.key === "macd1d") {
       const x = o.crosses.find((c) => c.i === i),
-        axis = paneAxisTipRows(rec, o.macd[i]);
+        axis = paneAxisTipRows(rec, o.macd[i]),
+        crossRec = x ? crossRecord(f, i) : null,
+        known = crossRec ? knownRows(crossRec) : [];
+      if (crossRec) tip.dataset.event = `${crossRec.kind}|${crossRec.label}`;
       tipRows(
         tip,
         head,
@@ -9855,6 +10549,7 @@
           ["Histogram", two(o.hist[i])],
           ["Close", `${price(Math.round(100 * f.closes[i]) / 100)} USDT`],
           ...axis.rows,
+          ...known,
         ],
         Number.isFinite(o.signal[i]) ? "EMA(12) − EMA(26) of the daily closes in USDT; its signal the EMA(9) of it" : "From its first full window: the 34th day",
       );
@@ -9866,12 +10561,17 @@
           Number.isFinite(o.hist[i]) ? { field: "histogram", canonical: o.hist[i] } : null,
           { field: "close", canonical: f.closes[i] },
           ...axis.meta,
+          ...known.map(() => null),
         ],
         readout,
       );
     }
     const d = o.divergences.find((x) => x.b.i === i && x.b.confirmed <= last.cut),
-      axis = paneAxisTipRows(rec, o.rsi[i]);
+      axis = paneAxisTipRows(rec, o.rsi[i]),
+      daily = paneShown.key === "rsi1d",
+      divRec = d ? E.readout.events.rsiDivergence(swingRecord(d.a, daily), swingRecord(d.b, daily)) : null,
+      known = divRec ? knownRows(divRec) : [];
+    if (divRec) tip.dataset.event = `${divRec.kind}|${divRec.label}`;
     tipRows(
       tip,
       head,
@@ -9881,6 +10581,7 @@
         ["Close", `${price(Math.round(100 * f.closes[i]) / 100)} USDT`],
         ...(d ? [["RSI at the swing before", two(d.r0)]] : []),
         ...axis.rows,
+        ...known,
       ],
       Number.isFinite(o.rsi[i]) ? "Wilder's smoothing of gains and losses over 14 bars" : "From its first full window: the 15th bar",
     );
@@ -9891,6 +10592,7 @@
         { field: "close", canonical: f.closes[i] },
         ...(d ? [{ field: "rsiBefore", canonical: d.r0 }] : []),
         ...axis.meta,
+        ...known.map(() => null),
       ],
       readout,
     );
@@ -10894,9 +11596,10 @@
       };
     items.sort((a, b) => b.to - b.from - (a.to - a.from));
     for (const l of items) {
+      if (occlusion.off.has(l.id)) continue;
       const style = lineStyle(l.family, l.tier),
         hot = hover?.line === l.id,
-        width = style.width * (l.weight || 1) + (hot ? 1 : 0),
+        width = Math.min(style.width * (l.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX),
         y = Math.round(G.Y(l.at)) + 0.5,
         xa = clamp(G.X(l.from), G.x - 2, right),
         xb = clamp(G.X(l.to), G.x - 2, right),
@@ -10908,7 +11611,7 @@
       lineHits.push({ key: l.key, id: l.id, y, xa: xl, xb: xe, item: l, colour: style.colour });
       if (y < G.y - 4 || y > G.y + G.h + 4 || xe <= G.x) continue;
       // The halo, then the span solid and the rest of the way dashed.
-      haloAt(width + 3, xl, y, xe);
+      haloAt(width + 2, xl, y, xe);
       if (xa > xl) stroke(style.colour, Math.max(1, width * 0.8), "1,3", 0.9, xl, y, xa);
       if (xb > xa) stroke(style.colour, width, "", 1, xa, y, xb);
       if (l.on && right > xb) stroke(style.colour, Math.max(1, width * 0.7), "5,4", 0.85, xb, y, right);
@@ -10919,18 +11622,18 @@
     ctx.beginPath();
     ctx.rect(G.x, G.y, G.w, G.h);
     ctx.clip();
-    // Under the lines, the support band's fill and the squeezes'; then the
-    // VWAPs and the averages: haloed, one point to a pixel column, and on at
-    // their latest value to the right edge.
-    for (const f of fills) drawFill(f, right);
+    // The VWAPs and the averages: haloed, one point to a pixel column, and on at
+    // their latest value to the right edge. The support band and the squeezes draw no area over the cells: the
+    // band is its two boundary curves, and a squeeze is an interval of the event strip.
     for (const c of curves) {
+      if (occlusion.off.has(c.id)) continue;
       const style = lineStyle(c.family || "vwap", c.tier),
         hot = hover?.line === c.id,
-        { xs, ys, vals } = curveVertices(c.r.points, right);
+        { xs, ys, vals } = occlusion.vertices.get(c.id) ?? curveVertices(c.r.points, right);
       if (!xs.length) continue;
       c.colour = style.colour;
       c.at = vals[vals.length - 1] / PR;
-      const width = style.width * (c.weight || 1) + (hot ? 1 : 0),
+      const width = Math.min(style.width * (c.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX),
         path = () => {
           ctx.beginPath();
           ctx.moveTo(xs[0], ys[0]);
@@ -10938,7 +11641,7 @@
         };
       ctx.strokeStyle = colors.surface;
       ctx.globalAlpha = 0.85;
-      ctx.lineWidth = width + 3;
+      ctx.lineWidth = width + 2;
       path();
       ctx.stroke();
       ctx.globalAlpha = 1;
@@ -11004,7 +11707,7 @@
           k = m.size,
           tip = up ? y + 3 : y - 3;
         if (x < G.x - k || x > right + k) continue;
-        if (m.s.equal) {
+        if (m.s.equal && !occlusion.off.has(`${m.key}|eq|${m.s.i}`)) {
           const x0 = G.X(m.s.equal.t),
             y0 = G.Y(m.s.equal.price / PR);
           markLine(x0, y0, x, y, colors.surface, 3, 0.85);
@@ -11013,6 +11716,7 @@
           chartLabel(m.s.kind === "high" ? "EQH" : "EQL", x + 6, up ? y + 16 : y - 8, colour);
           lineHits.push({ key: m.key, id: `${m.key}|eq|${m.s.i}`, eq: [x0, y0, x, y], item: { kind: "equal", s: m.s, frame: m.frame }, colour });
         }
+        if (occlusion.off.has(`${m.key}|mark|${m.s.i}`)) continue;
         ctx.beginPath();
         ctx.moveTo(x, tip);
         ctx.lineTo(x - k, up ? tip + 1.6 * k : tip - 1.6 * k);
@@ -11043,6 +11747,7 @@
         y = G.Y(c.v / PR),
         colour = lineStyle("average", c.tier).colour;
       if (x < G.x - 6 || x > right + 6 || y < G.y - 6 || y > G.y + G.h + 6) continue;
+      if (occlusion.off.has(`gdcross|${c.x.i}`)) continue;
       ctx.beginPath();
       ctx.arc(x, y, 4.5, 0, 2 * Math.PI);
       ctx.fillStyle = c.golden ? colour : colors.surface;
@@ -11092,6 +11797,152 @@
     deribit: { dash: [2, 2], width: 1 },
   };
   let clockHits = [];
+  // The calendar events of a kind that are far enough apart to draw at this zoom.
+  function clockShown(kind) {
+    return spaced(CLOCK[kind].gap)
+      ? clockEvents(kind, S.tA, S.tB)
+      : kind === "deribit"
+        ? clockEvents(kind, S.tA, S.tB).filter((e) => spaced(e.weight === 3 ? 91 * DAYS : 28 * DAYS) && e.weight > 1)
+        : [];
+  }
+  // ---- The occlusion budget (PRD-0002 S2) ----
+  // Persistent reference strokes, their casings and their tag plates may cover at most OCCLUSION_BUDGET of the
+  // price pane, each cell counted once. The plan runs before anything is drawn: marks are taken in priority
+  // order into a 2 px occupancy grid (rebuilt when the geometry changes, bounded by the pane's size, no pixel
+  // scan), and a mark that would pass the budget is suppressed and counted, unless it is the focused one. The
+  // Lines menu still lists every line; the count of what shows is on the canvas (data-occlusion) and on the chart.
+  const OCCLUSION_BUDGET = 0.2,
+    OCC_CELL = 2,
+    OCC_PRIORITY = { profile: 1, session: 2, structure: 3, average: 4, vwap: 5 };
+  let occlusion = { off: new Set(), vertices: new Map(), shown: 0, eligible: 0, focusOver: false };
+  // The temporary region replacements of this draw (the lens; a tooltip or popover is DOM and outside the canvas).
+  // They are exempt from the occlusion budget, named on the canvas (data-temporary) so a pixel test can mask
+  // exactly their rectangles, and cover no persistent mark that the budget counted.
+  let temporaryRegions = [];
+  function noteTemporary(kind, x, y, w, h) {
+    temporaryRegions.push({ kind, x, y, w, h });
+  }
+  function occlusionPlan(cut) {
+    const vertices = new Map();
+    occlusion = { off: new Set(), vertices, shown: 0, eligible: 0, focusOver: false };
+    if (!G.w || !G.h) return;
+    const right = G.x + G.w,
+      candidates = [];
+    const items = S.lines.length ? lineItems(cut) : [];
+    for (const l of items) {
+      if (l.kind === "swing" || l.eq) continue;
+      const style = lineStyle(l.family, l.tier),
+        hot = hover?.line === l.id,
+        width = Math.min(style.width * (l.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX) + 2,
+        y = Math.round(G.Y(l.at)) + 0.5,
+        xe = l.on ? right : clamp(G.X(l.to), G.x - 2, right),
+        xl = l.lead === undefined ? clamp(G.X(l.from), G.x - 2, right) : clamp(G.X(l.lead), G.x - 2, right);
+      if (y < G.y - 4 || y > G.y + G.h + 4 || xe <= G.x) continue;
+      // The tag plate at the line's end: about 70 by 16 px
+      candidates.push({ id: l.id, hot, rank: OCC_PRIORITY[l.family] ?? 6, rects: [[xl, y - width / 2, xe, y + width / 2], [right - 70, y - 8, right, y + 8]] });
+    }
+    for (const c of items.curves || []) {
+      const { xs, ys, vals } = curveVertices(c.r.points, right);
+      vertices.set(c.id, { xs, ys, vals });
+      if (!xs.length) continue;
+      const style = lineStyle(c.family || "vwap", c.tier),
+        hot = hover?.line === c.id,
+        half = (Math.min(style.width * (c.weight || 1) + (hot ? 1 : 0), REFERENCE_STROKE_MAX) + 2) / 2,
+        rects = [];
+      for (let i = 1; i < xs.length; i++) {
+        const steps = Math.max(1, Math.ceil(Math.max(Math.abs(xs[i] - xs[i - 1]), Math.abs(ys[i] - ys[i - 1])) / OCC_CELL));
+        for (let k = 0; k <= steps; k++) {
+          const x = xs[i - 1] + ((xs[i] - xs[i - 1]) * k) / steps,
+            y = ys[i - 1] + ((ys[i] - ys[i - 1]) * k) / steps;
+          rects.push([x - half, y - half, x + half, y + half]);
+        }
+      }
+      rects.push([right - 70, ys[ys.length - 1] - 8, right, ys[ys.length - 1] + 8]);
+      candidates.push({ id: c.id, hot, rank: OCC_PRIORITY[c.family || "vwap"] ?? 5, rects });
+    }
+    // Swings, equal highs and lows, golden and death crosses and the CME gaps are automatic persistent marks of the lines that are on, each a stroke or a glyph with a casing and
+    // a label's box (PR #52 review): each is a candidate like a line, so its coverage is inside the 20% and in the shown/eligible count, and one that is held back is not drawn.
+    // The swing's triangle and an equal pair (its segment and its label) are two candidates, as they are two marks.
+    ctx.font = `500 ${TYPE.s}px ${FONT}`;
+    for (const m of items.marks ?? []) {
+      const x = G.X(m.s.t),
+        y = G.Y(m.s.price / PR),
+        up = m.s.kind === "low",
+        k = m.size,
+        tip = up ? y + 3 : y - 3,
+        base = up ? tip + 1.6 * k : tip - 1.6 * k;
+      if (x < G.x - k || x > right + k) continue;
+      if (m.s.equal) {
+        const x0 = G.X(m.s.equal.t),
+          y0 = G.Y(m.s.equal.price / PR),
+          steps = Math.max(1, Math.ceil(Math.max(Math.abs(x - x0), Math.abs(y - y0)) / OCC_CELL)),
+          rects = [];
+        for (let i = 0; i <= steps; i++) {
+          const px = x0 + ((x - x0) * i) / steps,
+            py = y0 + ((y - y0) * i) / steps;
+          rects.push([px - 1.5, py - 1.5, px + 1.5, py + 1.5]);
+        }
+        const w = ctx.measureText(m.s.kind === "high" ? "EQH" : "EQL").width + 6,
+          ly = y + (up ? 16 : -8);
+        rects.push([x + 3, ly - 8, x + 3 + w, ly + 8]);
+        candidates.push({ id: `${m.key}|eq|${m.s.i}`, hot: false, rank: OCC_PRIORITY.structure, rects });
+      }
+      candidates.push({ id: `${m.key}|mark|${m.s.i}`, hot: false, rank: OCC_PRIORITY.structure, rects: [[x - k - 2, Math.min(tip, base) - 2, x + k + 2, Math.max(tip, base) + 2]] });
+    }
+    for (const c of items.crosses ?? []) {
+      const x = G.X(c.t),
+        y = G.Y(c.v / PR);
+      if (x < G.x - 6 || x > right + 6 || y < G.y - 6 || y > G.y + G.h + 6) continue;
+      const w = ctx.measureText(c.golden ? "Golden cross" : "Death cross").width + 6;
+      candidates.push({ id: `gdcross|${c.x.i}`, hot: false, rank: OCC_PRIORITY.average, rects: [[x - 6.5, y - 6.5, x + 6.5, y + 6.5], [x + 5, y - 18, x + 5 + w + 3, y - 2]] });
+    }
+    if (S.lines.includes("cme") && PACK.live) {
+      const s = barSeries(6);
+      if (s.state === "ready")
+        for (const g of cmeGaps(s)) {
+          const x0 = G.X(g.open),
+            x1 = G.X(g.filled ?? Math.min(s.end, cut)),
+            y0 = G.Y(g.hi / PR),
+            y1 = G.Y(g.lo / PR);
+          if (x1 < G.x || x0 > G.x + G.w || y1 < G.y || y0 > G.y + G.h) continue;
+          const wide = Math.max(1, x1 - x0),
+            tall = Math.max(1, y1 - y0),
+            rects = [[x0 - 1, y0 - 1, x0 + wide + 1, y0 + 2], [x0 - 1, y0 + tall - 2, x0 + wide + 1, y0 + tall + 1], [x0 - 1, y0 - 1, x0 + 2, y0 + tall + 1], [x0 + wide - 2, y0 - 1, x0 + wide + 1, y0 + tall + 1]];
+          if (wide > 62 && tall > 16) rects.push([x0 + 1, y0 + 4, x0 + 7 + ctx.measureText("CME gap · open").width, y0 + 20]);
+          candidates.push({ id: `cmegap|${g.open}`, hot: false, rank: 7, rects });
+        }
+    }
+    for (const kind of S.lines.filter((k) => CLOCK[k])) {
+      const look = CLOCK_LOOK[kind],
+        rects = clockShown(kind).map((e) => {
+          const x = G.X(e.t);
+          return [x - look.width, G.y, x + look.width, G.y + G.h];
+        });
+      if (rects.length) candidates.push({ id: "clock|" + kind, hot: false, rank: 7, rects });
+    }
+    // The planner is the module's (E.role.occlusion): the grid, the order, the focused mark that is never thinned.
+    const plan = E.role.occlusion(candidates, { x: G.x, y: G.y, w: G.w, h: G.h }, { budget: OCCLUSION_BUDGET, cell: OCC_CELL });
+    occlusion.off = plan.off;
+    occlusion.shown = plan.shown;
+    occlusion.eligible = plan.eligible;
+    occlusion.focusOver = plan.focusOver;
+  }
+  // What the budget left out, said where it happened: the canvas carries the counts (for a reader of the page and a
+  // test) and a label at the pane's top right names them. The focused mark alone over the budget is said too,
+  // never hidden by a wider casing.
+  function occlusionNotice() {
+    const held = occlusion.eligible - occlusion.shown,
+      value = held > 0 || occlusion.focusOver ? `${occlusion.shown}/${occlusion.eligible}${occlusion.focusOver ? "!" : ""}` : "";
+    if (canvas.dataset.occlusion !== value) {
+      if (value) canvas.dataset.occlusion = value;
+      else delete canvas.dataset.occlusion;
+    }
+    if (!value || !G.w) return;
+    // TEXT(S1): the occlusion budget's count
+    const words = held > 0 ? `${occlusion.shown} of ${occlusion.eligible} reference marks shown · 20% budget` : "The focused mark alone passes the 20% budget";
+    ctx.font = `${TYPE.s}px ${FONT}`;
+    chartLabel(words, G.x + G.w - ctx.measureText(words).width - 14, G.y + G.h - 10);
+  }
   function drawClock(cut) {
     if (clockHits.length) clockHits = [];
     if (!S.lines.length) return;
@@ -11111,27 +11962,30 @@
             y0 = G.Y(g.hi / PR),
             y1 = G.Y(g.lo / PR);
           if (x1 < G.x || x0 > G.x + G.w || y1 < G.y || y0 > G.y + G.h) continue;
-          ctx.fillStyle = colour;
-          ctx.globalAlpha = 0.16;
-          ctx.fillRect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0));
+          if (occlusion.off.has(`cmegap|${g.open}`)) continue;
+          // The gap is the rectangle between its reopen and spot prices, from its reopen to where it was traded
+          // back through (or the latest data): an outline and a name, never a tint over the cells under it. Its
+          // interval is in the event strip.
+          const wide = Math.max(1, x1 - x0),
+            tall = Math.max(1, y1 - y0);
+          ctx.strokeStyle = colour;
+          ctx.globalAlpha = 0.7;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x0 + 0.5, y0 + 0.5, wide - 1, tall - 1);
           ctx.globalAlpha = 1;
-          markLine(x0, y0, x1, y0, colour, 1, 0.7);
-          markLine(x0, y1, x1, y1, colour, 1, 0.7);
+          if (wide > 62 && tall > 16) chartLabel(g.filled === null || g.filled === undefined ? "CME gap · open" : "CME gap", x0 + 4, y0 + 12);
           clockHits.push({ gap: g, box: [x0, Math.min(y0, y1 - 3), x1, Math.max(y1, y0 + 3)] });
         }
     }
     for (const kind of kinds) {
+      if (occlusion.off.has("clock|" + kind)) continue;
       const look = CLOCK_LOOK[kind],
-        events = spaced(CLOCK[kind].gap)
-          ? clockEvents(kind, S.tA, S.tB)
-          : kind === "deribit"
-            ? clockEvents(kind, S.tA, S.tB).filter((e) => spaced(e.weight === 3 ? 91 * DAYS : 28 * DAYS) && e.weight > 1)
-            : [];
+        events = clockShown(kind);
       for (const weight of [1, 2, 3]) {
         const drawn = events.filter((e) => (e.weight || 1) === weight);
         if (!drawn.length) continue;
         ctx.strokeStyle = colour;
-        ctx.lineWidth = look.width * (weight === 3 ? 2 : weight === 2 ? 1.5 : 1);
+        ctx.lineWidth = Math.min(look.width * (weight === 3 ? 2 : weight === 2 ? 1.5 : 1), REFERENCE_STROKE_MAX);
         ctx.globalAlpha = 0.6;
         ctx.setLineDash(look.dash);
         ctx.beginPath();
@@ -11162,7 +12016,9 @@
   function clockTip(tip, h) {
     if (h.gap) {
       const g = h.gap,
-        size = g.hi - g.lo;
+        size = g.hi - g.lo,
+        rec = gapRecord(g);
+      tip.dataset.event = `${rec.kind}|${rec.label}`;
       tipRows(
         tip,
         `CME gap · ${price(Math.round(size))} USDT`,
@@ -11170,9 +12026,15 @@
         [
           ["Friday close", `${price(g.fri)} USDT · ${when(g.close)} UTC`],
           ["Sunday reopen", `${price(g.sun)} USDT · ${when(g.open)} UTC`],
-          ["Traded back", g.filled === null ? "not yet" : `by ${when(g.filled)} UTC`],
+          [
+            "Traded back",
+            rec.fill === null ? "not yet" : rec.fill.final ? `by ${when(rec.fill.knownAt)} UTC` : "so far: the hourly bar that crossed is still forming",
+            "fillKnownAt",
+            rec.fill === null ? "null" : rec.fill.knownAt,
+          ],
+          ...knownRows(rec),
         ],
-        "The spot price at each: the last trade before it. Shaded until a trade reaches the Friday close",
+        "The spot price at each: the last trade before it. Outlined until the hourly bar in which a trade reaches the Friday close ends",
       );
       return;
     }
@@ -11181,8 +12043,112 @@
       tip,
       h.events.map((x) => x.what).join(" · "),
       `${d3.utcFormat("%a")(date(e.t))} ${when(e.t)} UTC`,
-      [],
+      knownRowsOf(E.readout.events.clock({ scheduled: e.t }), tip).slice(0, 2),
       h.events.map(clockNote).filter(Boolean),
+    );
+  }
+  // ---- The event strip ----
+  // Which event kinds have a lane: the squeeze of each Bollinger timeframe that is on, and the CME spot gap.
+  function eventKinds() {
+    const kinds = [];
+    if (S.lines.includes("bb4h")) kinds.push("squeeze4h");
+    if (S.lines.includes("bb1d")) kinds.push("squeeze1d");
+    if (S.lines.includes("cme") && PACK.live) kinds.push("cmegap");
+    return kinds;
+  }
+  const EVENT_NAMES = {
+    squeeze4h: { name: "4h squeeze", long: "Bollinger squeeze on 4-hour bars" },
+    squeeze1d: { name: "1D squeeze", long: "Bollinger squeeze on daily bars" },
+    cmegap: { name: "CME gap", long: "CME spot gap" },
+  };
+  let eventHits = [];
+  // The intervals of each lane, merged where two of one kind overlap (the marks draw the union; the readout keeps
+  // each event): {id, events: [{t0, t1, open, what}], spans: [{t0, t1, events}]}.
+  function eventLanes(cut) {
+    const kinds = eventKinds();
+    if (!kinds.length) return [];
+    const lanes = kinds.map((id) => ({ id, events: [], spans: [], pending: false }));
+    const lane = (id) => lanes.find((l) => l.id === id);
+    const fills = S.lines.length ? lineItems(cut).fills || [] : [];
+    for (const f of fills) {
+      const l = f.squeeze && lane(f.key === "bb4h" ? "squeeze4h" : f.key === "bb1d" ? "squeeze1d" : "");
+      if (!l) continue;
+      const ends = f.frame.ends,
+        [i0, i1] = f.squeeze;
+      l.events.push({ t0: ends[Math.max(0, i0 - 1)], t1: ends[i1], open: false, what: "Squeeze", rec: squeezeRecord(f.frame, f.squeeze) });
+    }
+    const gapLane = lane("cmegap");
+    if (gapLane) {
+      const s = barSeries(6);
+      if (s.state === "ready")
+        for (const g of cmeGaps(s)) gapLane.events.push({ t0: g.open, t1: g.filled ?? Math.min(s.end, cut), open: g.filled === null || g.filled === undefined, what: "CME gap", gap: g, rec: gapRecord(g) });
+      else gapLane.pending = true;
+    }
+    for (const l of lanes) {
+      l.spans = E.role.unionSpans(l.events);
+      l.events.sort((a, b) => a.t0 - b.t0);
+    }
+    return lanes;
+  }
+  // The strip under the price pane: a lane per kind, its marks opaque and of one fixed role (the state ink), drawn as
+  // the union of the lane's events, the lane's name beside it in the price labels' column.
+  function paintEvents(cut) {
+    eventHits = [];
+    if (!G.eh) return;
+    const lanes = eventLanes(cut);
+    if (!lanes.length) return;
+    ctx.save();
+    if (G.ecollapsed) {
+      // TEXT(S1): the disclosure of a strip with no room for its lanes: each kind and how many events it holds
+      const words = lanes.map((l) => `${EVENT_NAMES[l.id].name} ${l.events.length}`).join(" · ");
+      text(`${words} · lanes need a taller chart`, G.x + 4, G.ey + EVENT_LANE / 2, colors.muted, "left");
+      eventHits.push({ lane: "all", box: [G.x, G.ey, G.x + G.w, G.ey + G.eh], lanes });
+      ctx.restore();
+      return;
+    }
+    lanes.forEach((l, i) => {
+      const y = G.ey + i * EVENT_LANE,
+        yc = y + EVENT_LANE / 2;
+      line(G.x, y + EVENT_LANE - 0.5, G.x + G.w, y + EVENT_LANE - 0.5, colors.line, 1);
+      // The lane's name in the price labels' column, right edge 2 px off the plot so the longest name (4h squeeze) stays on the canvas.
+      text(EVENT_NAMES[l.id].name, G.x - 2, yc, colors.muted, "right");
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(G.x, y, G.w, EVENT_LANE);
+      ctx.clip();
+      ctx.fillStyle = colors.state;
+      for (const span of l.spans) {
+        const x0 = G.X(span.t0),
+          x1 = G.X(span.t1);
+        if (x1 < G.x || x0 > G.x + G.w) continue;
+        ctx.fillRect(Math.max(G.x, x0), y + 3, Math.max(2, Math.min(G.x + G.w, x1) - Math.max(G.x, x0)), EVENT_LANE - 6);
+        eventHits.push({ lane: l.id, box: [x0, y, Math.max(x1, x0 + 2), y + EVENT_LANE], span });
+      }
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+  function inStrip(p) {
+    return G.eh > 0 && p.x >= G.x - 60 && p.x <= G.x + G.w && p.y >= G.ey && p.y <= G.ey + G.eh;
+  }
+  function eventAt(p) {
+    return eventHits.find((h) => p.x >= h.box[0] && p.x <= h.box[2] && p.y >= h.box[1] && p.y <= h.box[3]) || null;
+  }
+  function eventTip(tip, h) {
+    if (h.lane === "all") {
+      tipRows(tip, "Events", "The chart is too short to show its lanes", h.lanes.map((l) => [EVENT_NAMES[l.id].name, String(l.events.length)]), "");
+      return;
+    }
+    const span = h.span,
+      // a run that is not final (it may continue, or its last bar forms) ends "so far", not at a time it has not reached
+      fmt = (e) => `${when(e.t0)} → ${e.open ? "open" : e.rec && !e.rec.final && e.rec.kind === "squeeze" ? "so far" : when(e.t1)} UTC`;
+    tip.dataset.event = span.events.map((e) => `${e.rec.kind}|${e.rec.label}`).join(",");
+    tipRows(
+      tip,
+      EVENT_NAMES[h.lane].long,
+      span.events.length > 1 ? `${span.events.length} events merged in this mark` : fmt(span.events[0]),
+      span.events.length > 1 ? span.events.map((e) => [e.what, fmt(e) + (e.rec.final ? "" : " · " + EVENT_LABELS[e.rec.label].toLowerCase())]) : knownRows(span.events[0].rec),
+      "An interval of the source bars, known once the bar that ends it has closed",
     );
   }
   function clockNote(e) {
@@ -11341,7 +12307,9 @@
         approx = r.exact ? "" : "≈ ",
         periodEnd = Math.min(r.span[1], activeCutoff()),
         key = l.kind === "poc" ? l.key : l.period,
-        area = l.kind === "va" ? l.va : null;
+        area = l.kind === "va" ? l.va : null,
+        // a period line runs from its start to the edge that closes the data (lineSpan), so as defined it ends at the cutoff
+        period = E.readout.events.period({ span: [r.span[0], periodEnd], cutoff: activeCutoff(), granularity: "the period's rows" });
       tipRows(
         tip,
         l.kind === "poc"
@@ -11360,6 +12328,7 @@
               ]
             : [["In the row", `${compact(r.volume)} USDT · ${r.total ? ((100 * r.volume) / r.total).toFixed(1) : "0"}%`]]),
           ["Period volume", `${compact(r.total)} USDT`],
+          ...knownRowsOf(period, tip),
         ],
         r.stale
           ? "Updating to the latest data…"
@@ -11383,6 +12352,7 @@
           ["POC", `${usdtAt(p.poc + 0.5)} · ${compact(top?.v || 0)} USDT`],
           ...(p.va ? [["Value area", `${price(p.va.r0 * PR)}–${price(p.va.r1 * PR)} USDT · ${(100 * p.va.share).toFixed(1)}%`]] : []),
           ["Day volume", `${compact(p.v)} USDT`],
+          ...knownRowsOf(E.readout.events.period({ span: [l.d * DAYS, (l.d + 1) * DAYS], cutoff: activeCutoff(), granularity: "the day's rows" }), tip),
         ],
         "The day's POC and 70% value area, per 125 USDT row",
       );
@@ -11402,6 +12372,7 @@
           ["Distance", `${signed(u.atrs, (x) => x.toFixed(2))} daily ATRs · ${signed(u.usd, (x) => price(Math.round(x)))} USDT`],
           ["Latest price", `${price(l.list.latest)} USDT`],
           ["Daily ATR", `${price(Math.round(l.list.atr))} USDT, 14 days, Wilder's`],
+          ...knownRowsOf(E.readout.events.untested({ origin: [u.from, u.to], asOf: l.list.end, granularity: "8-hour bars' highs and lows" }), tip),
         ],
         `No trade since has come within 125 USDT of it${S.replay ? " before the replay's edge" : ""}`,
       );
@@ -11437,6 +12408,70 @@
         "Exact, from the cube's own highs, lows and closes",
       );
   }
+  // ---- Known-at in the readouts (PRD-0002 #47 section 6; E.readout.events) ----
+  // The words of an annotation record's label.
+  const EVENT_LABELS = {
+      confirmed: "Confirmed",
+      "so far": "So far, not confirmed",
+      final: "Final",
+      filled: "Filled",
+      open: "Open",
+      "as of": "As of this edge",
+      retrospective: "A retrospective summary",
+      "at anchor": "At its anchor",
+      calendar: "A calendar definition, not a measured trade event",
+    },
+    // The bars an annotation is computed from, in words, by the frame's timeframe.
+    FRAME_BARS = {
+      "1d": "daily bars (built from 8-hour bars)",
+      "1w": "weekly bars (built from 8-hour bars)",
+      "4h": "4-hour bars",
+      "1h": "hourly bars",
+      "15m": "15-minute bars",
+      "3m": "3.75-minute bars",
+    };
+  // The rows a tooltip adds for an annotation's record: from when it is known (a structural time, not a read's arrival), whether it is final (a
+  // candidate says it is still forming and what it waits for) and the source bars. Each carries its field and canonical value for a test to read.
+  function knownRows(rec) {
+    const at = (t) => `${when(t)} UTC`,
+      waiting = rec.source.complete || rec.source.barEnd === null ? "" : `, its last bar still forming until ${at(rec.source.barEnd)}`;
+    return [
+      ["Known at", rec.knownAt !== null ? at(rec.knownAt) : rec.measured === false ? "a calendar definition" : "not yet", "knownAt", rec.knownAt],
+      ["Status", rec.final || rec.label === "as of" ? EVENT_LABELS[rec.label] : `${EVENT_LABELS[rec.label]}: ${rec.reason}`, "finality", rec.label],
+      ...(rec.source.granularity ? [["Source", rec.source.granularity + waiting]] : []),
+    ];
+  }
+  // The same for a record that may not exist (its source has not begun at the edge). `tip` is named after the record (data-event) when there is one.
+  function knownRowsOf(rec, tip = null) {
+    if (rec === null) return [];
+    if (tip) tip.dataset.event = `${rec.kind}|${rec.label}`;
+    return knownRows(rec);
+  }
+  // A swing's record on its timeframe: the daily swings are of the days built from the 8-hour bars (the extreme placed in its 8-hour bar), the
+  // 4-hour swings of the 4-hour bars; the edge is that series' own.
+  function swingRecord(s, daily) {
+    return E.readout.events.swing({
+      extreme: [s.t, s.xe],
+      confirm: [s.cs, s.ce],
+      edge: barSeries(daily ? 9 : 8).end,
+      granularity: daily ? FRAME_BARS["1d"] + ", the extreme placed in its 8-hour bar" : FRAME_BARS["4h"],
+    });
+  }
+  // A frame's crossing at bar i (an average pair or MACD with its signal).
+  function crossRecord(f, i) {
+    return E.readout.events.cross({ bar: [f.starts[i], f.raws[i]], edge: f.end, granularity: FRAME_BARS[f.tf] });
+  }
+  // A squeeze run's record on its frame: the qualifying bars, the bar after the run if there is one, the frame's edge.
+  function squeezeRecord(f, run) {
+    const bars = [];
+    for (let k = run[0]; k <= run[1]; k++) bars.push([f.starts[k], f.raws[k]]);
+    const n = run[1] + 1;
+    return E.readout.events.squeeze({ bars, after: n < f.starts.length ? [f.starts[n], f.raws[n]] : null, edge: f.end, granularity: FRAME_BARS[f.tf] });
+  }
+  // A CME gap's record: known at the reopen, its fill known at the end of the hourly bar that crossed.
+  function gapRecord(g) {
+    return E.readout.events.cmeGap({ close: g.close, reopen: g.open, reopenBar: g.openBar, fill: g.fillBar, edge: barSeries(6).end, granularity: FRAME_BARS["1h"] });
+  }
   // Structure's and the VWAPs' tooltips: the line's name, timeframe and
   // price, and a swing's confirmation. False for any other line.
   function structureTip(tip, h, l) {
@@ -11462,14 +12497,16 @@
       const s = l.s,
         daily = l.frame === "1D",
         high = s.kind === "high",
-        name = `${daily ? "Daily" : "4-hour"} swing ${high ? "high" : "low"}`;
+        name = `${daily ? "Daily" : "4-hour"} swing ${high ? "high" : "low"}`,
+        rec = l.kind === "equal" ? E.readout.events.equalSwings(swingRecord(s.equal, daily), swingRecord(s, daily)) : swingRecord(s, daily);
+      tip.dataset.event = `${rec.kind}|${rec.label}`;
       tipRows(
         tip,
         l.kind === "equal" ? `Equal ${high ? "highs" : "lows"} · ${price(s.equal.price)} and ${price(s.price)} USDT` : `${name} · ${price(s.price)} USDT`,
         daily ? `On ${day(s.t)}` : `In the 4 hours from ${at(s.t)}`,
         [
           ["Timeframe", daily ? "1 day" : "4 hours"],
-          ["Confirmed", `by ${at(s.confirmed)}`],
+          ...knownRows(rec),
           ["Traded through", s.broken === null ? "not yet" : `by ${at(s.broken)}`],
           ...(s.equal ? [["Equal to", `${price(s.equal.price)} USDT, ${daily ? day(s.equal.t) : at(s.equal.t)}`]] : []),
         ],
@@ -11601,7 +12638,15 @@
     if (key === "swing1d" || key === "swing4h") {
       const list = key === "swing1d" ? st.daily : st.fourHour,
         s = list?.[list.length - 1];
-      return { text: s ? `${s.kind === "high" ? "H" : "L"} ${price(s.price)}` : "none yet" };
+      if (!s) return { text: "none yet" };
+      // The latest swing, and whether a bar still forming is all that has confirmed it (E.readout.events.swing).
+      const rec = swingRecord(s, key === "swing1d");
+      return {
+        text: `${s.kind === "high" ? "H" : "L"} ${price(s.price)}${rec.candidate ? " · so far" : ""}`,
+        title: `${EVENT_LABELS[rec.label]}: ${rec.reason}`,
+        finality: rec.label,
+        knownAt: rec.knownAt,
+      };
     }
     if (key.startsWith("fib")) {
       const m = st[key];
@@ -11730,6 +12775,11 @@
             : { text: "" };
       if (value.textContent !== shown.text) value.textContent = shown.text;
       if (value.title !== (shown.title || "")) value.title = shown.title || "";
+      // What a row says about the record it shows (a swing's finality and known-at), for a reader of the page.
+      for (const [name, text] of [["finality", shown.finality], ["knownAt", shown.knownAt === undefined || shown.knownAt === null ? undefined : String(shown.knownAt)]]) {
+        if (text === undefined) delete value.dataset[name];
+        else if (value.dataset[name] !== text) value.dataset[name] = text;
+      }
     }
     // Each family's head: whether it is open, its dot and how many are on.
     const open = familiesOpen();
@@ -12187,7 +13237,7 @@
     ctx.clip();
     // After the cutoff, as above: hidden in replay, otherwise plain.
     const xc = clamp(G.X(cut), G.x, G.x + G.w);
-    if (S.replay) hatchRect(xc, top, G.x + G.w - xc, h, colors.line, 11, 0.45);
+    if (S.replay) hatchRect(xc, top, G.x + G.w - xc, h, colors.state, 11, 0.3);
     else {
       ctx.fillStyle = colors.bg;
       ctx.fillRect(xc, top, G.x + G.w - xc, h);
@@ -12270,14 +13320,18 @@
       }
     }
     ctx.globalAlpha = 1;
-    // A ratio's columns whose parent runs past the data are unfinished, like the open column: hatched.
+    // A ratio's columns whose parent runs past the data are unfinished, like the open column: the same neutral cap.
     if (measure.ratio) {
       const span = 2 * ts,
         at = Math.floor(cut / span) * span;
       if (cut % span !== 0 && cols.some((x) => x.state === "open")) {
         const xa = Math.max(G.x, G.X(at));
-        hatchRect(xa, top, Math.min(G.x + G.w, G.X(cut)) - xa, h, colors.poc, 7, 0.25);
+        STROKE.open(ctx, xa, top, Math.min(G.x + G.w, G.X(cut)) - xa);
       }
+    } else if (cut % ts !== 0 && cols.some((x) => x.c * ts < cut && (x.c + 1) * ts > cut)) {
+      // Open but already measured: the value stays as it is, with the same neutral cap across the open column's top.
+      const xa = Math.max(G.x, G.X(Math.floor(cut / ts) * ts));
+      STROKE.open(ctx, xa, top, Math.min(G.x + G.w, G.X(cut)) - xa);
     }
     ctx.restore();
     paneShown = { key, measure, cols, axis: rec, frame, model, ts, counts };
@@ -12782,6 +13836,17 @@
     el("anchor-time").textContent = e.error
       ? ""
       : `${when((e.a + 1) * stepT())} UTC · ${dur(BASE * stepT() * S.horizon)} ahead`;
+    // The continuation's record (E.readout.events.continuation): known at its anchor, from the cases that had ended by then; below 30 cases the
+    // percentages and boxes are withheld. Named on the anchor line for a reader of the page.
+    const known = e.error || !sample ? null : E.readout.events.continuation({ anchor: (e.a + 1) * stepT(), horizon: stepT() * S.horizon, samples: sample.n, edge: (e.a + 1) * stepT(), granularity: "the cube's cases at this grid" });
+    el("anchor-time").title = known ? `${EVENT_LABELS[known.label]}: ${known.reason}` : "";
+    if (known) {
+      el("anchor-time").dataset.knownAt = String(known.knownAt);
+      el("anchor-time").dataset.withheld = String(known.withheld);
+    } else {
+      delete el("anchor-time").dataset.knownAt;
+      delete el("anchor-time").dataset.withheld;
+    }
     el("state").textContent =
       e.error ||
       [
@@ -13050,21 +14115,16 @@
           [innerTop, innerBottom] = rows(q, 1, 3),
           median = G.Y((e.poc + Math.round(q[2]) + 0.5) * ps),
           chosen = h === S.horizon;
-        if (key === "all") {
-          ctx.strokeStyle = color;
-          ctx.lineWidth = chosen ? 1.5 : 1;
-          ctx.globalAlpha = chosen ? 0.9 : 0.55;
-          ctx.strokeRect(left, outerTop + 0.5, width, outerBottom - outerTop - 1);
-          ctx.fillStyle = color;
-          ctx.globalAlpha = 0.14;
-          ctx.fillRect(left, innerTop, width, innerBottom - innerTop);
-        } else {
-          ctx.fillStyle = color;
-          ctx.globalAlpha = 0.22;
-          ctx.fillRect(left, outerTop, width, outerBottom - outerTop);
-          ctx.globalAlpha = 0.45;
-          ctx.fillRect(left, innerTop, width, innerBottom - innerTop);
-        }
+        // The empirical 80% range (outer) and 50% range (inner) are outlines, never a tint over the cells: the
+        // counts and the percentages are in the inspector.
+        ctx.strokeStyle = color;
+        ctx.lineWidth = chosen ? 1.5 : 1;
+        ctx.globalAlpha = chosen ? 0.9 : 0.6;
+        ctx.strokeRect(left, outerTop + 0.5, width, outerBottom - outerTop - 1);
+        ctx.setLineDash([2, 2]);
+        ctx.globalAlpha = chosen ? 0.8 : 0.5;
+        ctx.strokeRect(left, innerTop + 0.5, width, innerBottom - innerTop - 1);
+        ctx.setLineDash([]);
         ctx.globalAlpha = 1;
         line(left, median, left + width, median, color, chosen ? 2.5 : 2, 0.9);
         ends[key] = { x: xb, y: median };
@@ -13259,7 +14319,7 @@
   }
   function navGeometry() {
     const r = canvas.getBoundingClientRect();
-    return layout(r.width, r.height);
+    return layoutNow(r.width, r.height);
   }
   function autoLevel() {
     if (!S.auto || !(S.tB > S.tA) || !(S.pB > S.pA)) return false;
@@ -13348,6 +14408,9 @@
   function tileRead(t, label, lens = false) {
     return {
       key: ["tile", live.generation, t.id].join("|"),
+      // the tile this read is for: its range and level, which outlive the pack's generation (a failure belongs to THIS, see noted)
+      id: t.id,
+      label: lens ? "Lens tile" : "Cube tile",
       path: `/cube/tile?n=${t.n}&m=${t.m}&b0=${t.b0}&b1=${t.b1}`,
       loading: label,
       start: () => {
@@ -13368,11 +14431,20 @@
         tile.lens = lens;
         sources[t.id] = tile;
         loadState[t.id] = "ready";
+        // the only thing that resolves a failure of this tile is this tile arriving
+        noted.delete(t.id);
         trimTiles([t.id, S.dataset, lensSource]);
       },
     };
   }
   // The view's tile, when no loaded block can show the view at its level.
+  // The tile the view needs while no loaded block shows it (reading or not): its identity, whatever the state of its read.
+  function viewTileSpec() {
+    const [n, m] = viewLevel();
+    if (resolutionReadiness(n, m).status === "ready") return null;
+    const [a, b] = viewRange();
+    return tileSpec(n, m, a, b);
+  }
   function tileWant() {
     const [n, m] = viewLevel();
     if (resolutionReadiness(n, m).status !== "unavailable") return null;
@@ -13461,6 +14533,47 @@
   // cube's new data; one that fails is not asked again until new data arrives.
   const CUBE_KINDS = ["measure", "tile", "lens", "touched", "lines", "days", "history"],
     cube = { busy: null, stale: false, timer: 0, failed: new Map() };
+  // ---- The loading line (PRD-0002 S2, #29) ----
+  // One line under the toolbar says what the page is waiting for or which read it could not make. What it says is DERIVED from state each time,
+  // never written by whichever piece finished last, which is how the startup loop used to hide an alert that a failed read had just written.
+  //   * A failure belongs to the tile it was for (its range and level, not the pack's generation) and is kept in `noted`. It shows while that tile is
+  //     what the view (or the open lens) needs and nothing has replaced it: leaving for another tile that measures hides it, coming back shows it again
+  //     at once from what is noted (nothing is asked again), a pack that replaced the old one makes the page ask again and the failure stays up until
+  //     the tile arrives, and a retry that fails is a failure again. Startup progress, an unrelated success or a caption of a read in flight never clears
+  //     it or shows in its place.
+  //   * Startup blocks that could not be read show while the view cannot be drawn without them; a fatal start failure shows for good.
+  //   * Without a failure the line is the caption of a read in flight, else the startup caption, else the stopped-updates notice, else it is hidden.
+  const loadingLine = { startup: "Loading the last seven days…", reads: new Map(), blocks: new Map(), live: "", fatal: "" },
+    noted = new Map();
+  function activeFailures() {
+    if (loadingLine.fatal) return [loadingLine.fatal];
+    const out = [];
+    for (const [id, message] of loadingLine.blocks)
+      if (loadState[id] === "unavailable" && resolutionReadiness(renderN(), renderM()).status !== "ready") out.push(`${id} unavailable: ${message}`);
+    if (PACK.live && ready) {
+      const seen = new Set();
+      for (const t of [viewTileSpec(), lensTile()]) {
+        const failure = t && !seen.has(t.id) ? noted.get(t.id) : null;
+        if (failure) out.push(`${failure.label} unavailable: ${failure.message}`);
+        if (t) seen.add(t.id);
+      }
+    }
+    return out;
+  }
+  function renderLoading() {
+    const node = el("loading"),
+      failures = activeFailures(),
+      text = failures.length ? failures.join(" · ") : loadingLine.live || [...loadingLine.reads.values()][0] || loadingLine.startup;
+    if (!text) {
+      if (!node.hidden) node.hidden = true;
+      return;
+    }
+    if (node.textContent !== text) node.textContent = text;
+    if (failures.length) {
+      if (node.getAttribute("role") !== "alert") node.setAttribute("role", "alert");
+    } else if (node.hasAttribute("role")) node.removeAttribute("role");
+    if (node.hidden) node.hidden = false;
+  }
   function scheduleCube() {
     if (!PACK.live || !ready) return;
     clearTimeout(cube.timer);
@@ -13491,9 +14604,8 @@
     cube.busy = want;
     want.start?.();
     if (want.loading) {
-      el("loading").textContent = want.loading;
-      el("loading").removeAttribute("role");
-      el("loading").hidden = false;
+      loadingLine.reads.set(want.key, want.loading);
+      renderLoading();
     }
     requestDraw();
     try {
@@ -13525,7 +14637,6 @@
       const decoded = await want.decode(body);
       if (generation === live.generation) want.apply(decoded);
       else want.drop?.();
-      if (want.loading) el("loading").hidden = true;
     } catch (error) {
       want.drop?.();
       // The server's own words end a sentence the page continues.
@@ -13536,13 +14647,12 @@
             ? "the server can't be reached"
             : error.message
       ).replace(/\.+$/, "");
-      if (!cube.stale) cube.failed.set(want.key, message);
-      if (want.loading || want.kind === "tile") {
-        el("loading").textContent = `Cube tile unavailable: ${message}`;
-        el("loading").setAttribute("role", "alert");
-        el("loading").hidden = false;
+      if (!cube.stale) {
+        cube.failed.set(want.key, message);
+        if (want.id) noted.set(want.id, { label: want.label, message });
       }
     }
+    loadingLine.reads.delete(want.key);
     cube.busy = null;
     if (cube.stale) pollLive();
     update();
@@ -13950,13 +15060,25 @@
     BOX.yb = yb;
     return true;
   }
-  // A cell with trades is filled; one the price only moved through or held in
-  // is outlined in its colour, or filled pale where too small to outline.
-  function motionMark(colour, traded, xa, ya, w, h, gap) {
+  // A cell with trades is filled; one the price only moved through or held in is outlined in its value's colour on a neutral interior (1.5 px
+  // core, up to 3.5 px of surface backing, inset), or, where a side is 3 px or less and no honest outline fits, a neutral occupancy mark that the
+  // footer keys as "detail unresolved" and counts. Nothing is filled at a fraction of alpha to look like a smaller value, no finer cells are
+  // invented and the resolution is not changed.
+  function motionMark(colour, traded, xa, ya, w, h, gap, tally = markTally) {
     if (traded) {
       ctx.fillStyle = colour;
       ctx.fillRect(xa + gap / 2, ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
     } else if (w > 3 && h > 3) {
+      STROKE.moved(ctx, xa + gap / 2, ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap), colour);
+      if (tally) markCount.moved++;
+    } else {
+      STROKE.detail(ctx, xa, ya, Math.max(0.1, w), Math.max(0.1, h));
+      if (tally) markCount.detail++;
+    }
+  }
+  // A zero (an unsigned zero or an occupied Geometry cell) in the occupancy ink: a 1 px outline, or a flat stand-in where the role table says.
+  function motionZero(colour, xa, ya, w, h, gap) {
+    if (w > 3 && h > 3) {
       ctx.strokeStyle = colour;
       ctx.lineWidth = 1;
       ctx.strokeRect(xa + 1, ya + 1, w - 2, h - 2);
@@ -13999,8 +15121,9 @@
           ctx.fillRect(BOX.xa + gap / 2, BOX.ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
         } else {
           // Outlined: a cell the price only moved through or held in (in the colour of its value), or a
-          // zero (in the occupancy ink). motionMark sets both colours itself.
-          motionMark(ENC.css, false, BOX.xa, BOX.ya, w, h, gap);
+          // zero (in the occupancy ink). Each sets its own colours.
+          if (ENC.role === ROLE_ZERO || ENC.role === ROLE_OCCUPANCY) motionZero(ENC.css, BOX.xa, BOX.ya, w, h, gap);
+          else motionMark(ENC.css, false, BOX.xa, BOX.ya, w, h, gap);
           passFill = passStroke = null;
         }
       }
@@ -14068,6 +15191,7 @@
     for (let n = 0; n <= N_MAX; n++)
       frag.append(label(n % 4 === 0 ? String(n) : ""));
     el("plane").replaceChildren(frag);
+    buildPlaneKey();
   }
   // The plane is one tab stop: arrow keys move through it, Enter chooses.
   function planeButton(n, m) {
@@ -14096,6 +15220,34 @@
   }
   // Cell size for the plane's hover text: whole pixels, or words at the extremes,
   // per axis when the two disagree (a sliver can be taller than the view).
+  // The size class of one side of a cell: under 6 css px is small, over 32 large, else usable.
+  function planeSize(px) {
+    return px < 6 ? "small" : px > 32 ? "large" : "usable";
+  }
+  // The plane's key, from the same facts the buttons carry and painted by the same CSS (the sample is a button-sized tile with the same
+  // attributes), so a key cannot say what the plane does not.
+  const PLANE_KEY = [
+    ["avail", "pending", "Pending: the read is under way"],
+    ["avail", "unavailable", "Unavailable: coarser cells are shown"],
+    ["avail", "ready", "Ready"],
+    ["size", "small", "Small: a side under 6 px"],
+    ["size", "usable", "Usable: 6 to 32 px each way"],
+    ["size", "large", "Large: a side over 32 px"],
+    ["path", "true", "On the diagonal"],
+    ["current", "true", "Current level"],
+  ];
+  function buildPlaneKey() {
+    const nodes = PLANE_KEY.map(([fact, value, label]) => {
+      const span = document.createElement("span"),
+        tile = document.createElement("i");
+      tile.dataset[fact] = value;
+      tile.setAttribute("aria-hidden", "true");
+      span.append(tile, document.createTextNode(label));
+      span.dataset.planeKey = `${fact}:${value}`;
+      return span;
+    });
+    root.querySelector(".ol-plane-key").replaceChildren(...nodes);
+  }
   function cellPixels(px, py, g) {
     const wide =
         px >= g.w
@@ -14141,6 +15293,9 @@
         py = (2 ** m * g.h) / (S.pB - S.pA),
         r = resolutionReadiness(n, m),
         onPath = m === diagonalM(n),
+        avail = r.status === "loading" ? "pending" : r.status === "ready" ? "ready" : "unavailable",
+        widthClass = planeSize(px),
+        heightClass = planeSize(py),
         kind =
           r.status === "loading"
             ? "loading"
@@ -14151,10 +15306,14 @@
                 : px > 32 || py > 32
                   ? "large"
                   : "ready",
-        text = `n ${n} · m ${m} · ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT · ${cellPixels(px, py, g)} · ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}${onPath ? " · on the diagonal" : ""}`,
+        text = `n ${n} · m ${m} · ${dur(BASE * 2 ** n)} by ${price(PR * 2 ** m)} USDT · ${cellPixels(px, py, g)} · ${r.status === "loading" ? "loading" : r.status === "unavailable" ? "detail unavailable; coarser cells shown" : kind === "small" ? "ready, too small" : kind === "large" ? "ready, too large" : "ready, usable"}${onPath ? " · on the diagonal" : ""} · width ${widthClass}, height ${heightClass}`,
         className =
           "cursor-interaction ol-plane-" + kind + (onPath ? " ol-plane-path" : "");
       if (b.className !== className) b.className = className;
+      // The state as two separate facts, drawn as two separate glyphs (availability, size) with the diagonal and the current level beside them:
+      // none of them replaces another. The five-kind class above is only the summary (small before large) for what reads the class.
+      const facts = { avail, w: widthClass, h: heightClass, size: heightClass === "small" || widthClass === "small" ? "small" : heightClass === "large" || widthClass === "large" ? "large" : "usable", path: String(onPath) };
+      for (const [key, value] of Object.entries(facts)) if (b.dataset[key] !== value) b.dataset[key] = value;
       const pressed = String(S.n === n && S.m === m);
       if (b.getAttribute("aria-pressed") !== pressed)
         b.setAttribute("aria-pressed", pressed);
@@ -15893,9 +17052,10 @@
       }
     }
     ctx.restore();
-    ctx.strokeStyle = colors.accent;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    // The lens is a region replacement, named as one: a solid two-tone frame (1.5 ink in a 3.5 casing) and, under it, its
+    // caption. It lies inside the heatmap and never over the external Rows strip.
+    twoTone(() => ctx.rect(x + 0.5, y + 0.5, w - 1, h - 1));
+    noteTemporary("lens", x, y, w, h);
     lensCaption(x, y, h, [
       [label, colors.ink],
       [sub, colors.muted],
@@ -15940,7 +17100,7 @@
       lens.encode(z, ENC, lensBounds);
       // a fill role keeps the movement outline geometry of the chart; any other role is drawn as itself
       if (ENC.role >= LENS_ROLE.UNSIGNED && ENC.role <= LENS_ROLE.MIDPOINT)
-        motionMark(ENC.css, z.ct > 0 || q.map.has(z.c + "," + z.r), xa, ya, xb - xa, yb - ya, 0.6);
+        motionMark(ENC.css, z.ct > 0 || q.map.has(z.c + "," + z.r), xa, ya, xb - xa, yb - ya, 0.6, false);
       else lensMark(xa, ya, xb, yb);
       lensTallyMark(xa, ya, xb, yb);
     }
@@ -15970,9 +17130,9 @@
       top = y - h >= G.y + 4 ? y - h : y + lensHeight - 1;
     ctx.fillStyle = colors.surface;
     ctx.fillRect(left, top, w, h);
-    ctx.strokeStyle = colors.accent;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(left + 0.5, top + 0.5, w - 1, h);
+    twoTone(() => ctx.rect(left + 0.5, top + 0.5, w - 1, h));
+    // the tab is a part of the lens and covers the heatmap as the lens does: a named temporary region, never a persistent plate
+    noteTemporary("lens-caption", left, top, w, h + 1);
     fitted.forEach(([s, color], i) =>
       text(s, left + 7, top + 11.5 + 15 * i, color, "left", 11),
     );
@@ -16940,15 +18100,14 @@
     live.state = state;
     title();
     // The loading line says it once, where assistive technology hears it.
-    const note = el("loading");
     if (state === "stopped") {
-      note.textContent = `Live updates stopped: ${live.error}. The page keeps asking.`;
-      note.hidden = false;
+      loadingLine.live = `Live updates stopped: ${live.error}. The page keeps asking.`;
       live.notice = true;
     } else if (live.notice) {
-      note.hidden = true;
+      loadingLine.live = "";
       live.notice = false;
     }
+    renderLoading();
   }
   function startLive() {
     if (!PACK.live) return;
@@ -17017,12 +18176,13 @@
       requestAnimationFrame(() => requestAnimationFrame(resolve)),
     );
     for (const id of ["overview", "reference"]) {
-      el("loading").textContent =
-        `Loading ${id === "overview" ? "the full history" : "the 30-day archive"}${PACK.live ? " from the cube" : ""}…`;
+      loadingLine.startup = `Loading ${id === "overview" ? "the full history" : "the 30-day archive"}${PACK.live ? " from the cube" : ""}…`;
+      renderLoading();
       try {
         sources[id] = await unpack(PACK.blocks[id], id);
         delete PACK.blocks[id].gzip_base64;
         loadState[id] = "ready";
+        loadingLine.blocks.delete(id);
         // Lines summed from coarser blocks are summed again from finer ones.
         lineResults.clear();
         lineLatest.clear();
@@ -17034,18 +18194,17 @@
         scaleArm();
       } catch (error) {
         loadState[id] = "unavailable";
-        el("loading").textContent = `${id} unavailable: ${error.message}`;
-        el("loading").setAttribute("role", "alert");
+        loadingLine.blocks.set(id, error.message);
+        renderLoading();
       }
       await new Promise(requestAnimationFrame);
     }
-    if (Object.values(loadState).every((x) => x === "ready"))
-      el("loading").hidden = true;
+    // Startup is over: its caption goes. What stays on the line is decided by the failures that still matter, not by this loop.
+    loadingLine.startup = "";
+    renderLoading();
     startLive();
   } catch (error) {
-    el("loading").textContent =
-      (PACK.live ? "Cube data unavailable: " : "Recorded data unavailable: ") +
-      error.message;
-    el("loading").setAttribute("role", "alert");
+    loadingLine.fatal = (PACK.live ? "Cube data unavailable: " : "Recorded data unavailable: ") + error.message;
+    renderLoading();
   }
 })();

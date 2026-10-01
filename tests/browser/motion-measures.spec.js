@@ -20,7 +20,7 @@
 // What this does NOT cover: the Amount/Intensity and the Path basis choices (a menu, package U), Intensity of cut cells on the
 // `uniform` profile (needs that choice), the legend and the warnings (S, U), the readouts (T).
 const { test, expect, probeTools } = require("./fixtures.js");
-const { addRecorder, lastDraw, openView, pageColours, rectOf, boxOf, opsOfBox } = require("./cells-support.js");
+const { addRecorder, lastDraw, openView, pageColours, rectOf, boxOf, opsOfBox, expectMovementMark } = require("./cells-support.js");
 const E = require("../support/enc.js");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -54,17 +54,16 @@ function explore(values) {
 
 // What each hand cell must be painted as: a traded cell with a value is a fill, a zero an outline in the occupancy ink, a cell
 // only crossed or held in an outline in the colour of its value.
-function expectMark(ops, z, value, index, colours, what) {
+function expectMark(draw, box, z, value, index, colours, what) {
+  if (value !== 0 && !(z.ct > 0)) return expectMovementMark(expect, draw, box, colours.unsigned[index(value)], colours.surface, `${what}: a cell the price only crossed or held in is the movement mark, in its own colour`);
+  const ops = opsOfBox(draw, box);
   expect(ops, `${what}: painted once`).toHaveLength(1);
   if (value === 0) {
     expect(ops[0].op, `${what}: zero is an outline`).toBe("strokeRect");
     expect(ops[0].style, `${what}: in the occupancy ink`).toBe(colours.lutOccupancy);
-  } else if (z.ct > 0) {
+  } else {
     expect(ops[0].op, `${what}: a traded cell is a fill`).toBe("fillRect");
     expect(ops[0].style, `${what}: value ${value}`).toBe(colours.unsigned[index(value)]);
-  } else {
-    expect(ops[0].op, `${what}: a cell the price only crossed or held in is an outline`).toBe("strokeRect");
-    expect(ops[0].style, `${what}: value ${value}, in its own colour`).toBe(colours.unsigned[index(value)]);
   }
 }
 
@@ -79,7 +78,7 @@ test.describe("B17 Path and Dwell on the canvas", () => {
     // Hand check of the fit: six cells at 0.5 and four at 1 (the zeros do not count), so U = 1 and the median k = 0.5.
     expect(index(1), "the largest value takes the last entry").toBe(255);
     expect(index(0.5), "t = log1p(0.5 / 0.5) / log1p(1 / 0.5) = 0.6309").toBe(161);
-    cells.forEach((z, i) => expectMark(opsOfBox(draw, boxOf(draw.plot, rectOf(VIEW), 0, 0, z.c, z.r)), z, spans[i], index, colours, `cell ${z.c}:${z.r}`));
+    cells.forEach((z, i) => expectMark(draw, boxOf(draw.plot, rectOf(VIEW), 0, 0, z.c, z.r), z, spans[i], index, colours, `cell ${z.c}:${z.r}`));
   });
 
   test("a motion read that ends early: the cohort stops at its end and the unread traded cells are the pending pattern", async ({ freshContext, fakeFor }) => {
@@ -94,7 +93,7 @@ test.describe("B17 Path and Dwell on the canvas", () => {
     const draw = await lastDraw(page);
     const { index } = explore(spans);
     expect(index(0.5), "log1p(0.5 / 0.75) / log1p(1 / 0.75)").toBe(154);
-    read.forEach((z, i) => expectMark(opsOfBox(draw, boxOf(draw.plot, rectOf(VIEW), 0, 0, z.c, z.r)), z, spans[i], index, colours, `cell ${z.c}:${z.r}`));
+    read.forEach((z, i) => expectMark(draw, boxOf(draw.plot, rectOf(VIEW), 0, 0, z.c, z.r), z, spans[i], index, colours, `cell ${z.c}:${z.r}`));
     const unread = all.cells["0:0"].filter((z) => z.c >= 4);
     expect(unread.length, "the fixture has traded cells after the end").toBeGreaterThan(0);
     for (const z of unread) {
@@ -112,7 +111,7 @@ test.describe("B17 Path and Dwell on the canvas", () => {
     const draw = await lastDraw(page);
     const shares = cells.map((z) => z.w / COLUMN_SECONDS);
     expect(shares[1], "hand value of column 1").toBeCloseTo(0.0667, 4);
-    cells.forEach((z, i) => expectMark(opsOfBox(draw, boxOf(draw.plot, rectOf(VIEW), 0, 0, z.c, z.r)), z, shares[i], (v) => entry(v), colours, `cell ${z.c}:${z.r}`));
+    cells.forEach((z, i) => expectMark(draw, boxOf(draw.plot, rectOf(VIEW), 0, 0, z.c, z.r), z, shares[i], (v) => entry(v), colours, `cell ${z.c}:${z.r}`));
   });
 
   test("a material negative dwell is a failed input drawn as the crosshatch, not clamped to zero or to a colour", async ({ freshContext, fakeFor }) => {

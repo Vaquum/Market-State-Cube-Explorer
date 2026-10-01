@@ -34,7 +34,7 @@
           <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
         </svg>
       </button>
-      <div
+      <div data-temporary="popover"
         class="ol-pop ol-menu"
         id="ol-window-menu"
         role="menu"
@@ -97,12 +97,12 @@
               <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
             </svg>
             <span id="ol-res-text" class="ol-num">15 min × 125</span
-            ><i class="ol-res-coarse" aria-hidden="true"></i>
+            ><i class="ol-res-coarse ol-data-key ol-glyph" data-stroke-role="partial" aria-hidden="true"></i>
             <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
               <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
             </svg>
           </button>
-          <div
+          <div data-temporary="popover"
             class="ol-pop ol-res-pop"
             id="ol-res-pop"
             role="dialog"
@@ -122,6 +122,7 @@
                 Auto level
               </button>
             </div>
+            <div class="ol-steppers" role="group" aria-label="Resolution steppers, large targets: finer or coarser time and price cells">
             <div class="ol-step">
               <div class="ol-step-label">
                 <span>Time · <span id="ol-n">n 4</span></span
@@ -186,21 +187,15 @@
                 </svg>
               </button>
             </div>
+            </div>
             <div class="ol-plane-cap">Resolution plane · m price ↑ · n time →</div>
             <div
               class="ol-plane"
               id="ol-plane"
               role="group"
-              aria-label="Time and price resolution lattice; arrow keys move, Enter chooses; the outlined cells are the diagonal"
+              aria-label="Time and price resolution lattice, a dense chooser; arrow keys move, Enter chooses; the steppers above are the large-target alternative; a corner badge marks the diagonal and a frame the current level"
             ></div>
-            <div class="ol-plane-key">
-              <span><i class="ol-plane-ready"></i>Ready · usable</span
-              ><span><i class="ol-plane-small"></i>Too small</span
-              ><span><i class="ol-plane-large"></i>Too large</span
-              ><span><i class="ol-plane-unavailable"></i>Detail unavailable</span
-              ><span><i class="ol-plane-loading"></i>Loading</span
-              ><span><i class="ol-plane-path"></i>Diagonal</span>
-            </div>
+            <div class="ol-plane-key" aria-label="Key to the resolution plane"></div>
             <div class="ol-plane-status" id="ol-plane-status" role="status"></div>
           </div>
         </div>
@@ -221,7 +216,7 @@
               <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
             </svg>
           </button>
-          <div
+          <div data-temporary="popover"
             class="ol-pop ol-menu ol-follow-menu"
             id="ol-follow-menu"
             role="menu"
@@ -253,7 +248,7 @@
             <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
           </svg>
         </button>
-        <div
+        <div data-temporary="popover"
           class="ol-pop ol-lines-pop"
           id="ol-lines-pop"
           role="dialog"
@@ -628,7 +623,7 @@
             <path d="M4.5 2.5h7v11L8 11l-3.5 2.5z" /></svg
           ><span class="ol-label">Views and history</span>
         </button>
-        <div
+        <div data-temporary="popover"
           class="ol-pop ol-pop-end ol-views-pop"
           id="ol-hist-pop"
           role="dialog"
@@ -743,7 +738,7 @@
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
               </svg>
             </button>
-            <div
+            <div data-temporary="popover"
               class="ol-pop ol-menu ol-mode-menu"
               id="ol-mode-menu"
               role="menu"
@@ -773,7 +768,7 @@
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
               </svg>
             </button>
-            <div
+            <div data-temporary="popover"
               class="ol-pop ol-menu ol-mode-menu"
               id="ol-pane-menu"
               role="menu"
@@ -803,7 +798,7 @@
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
               </svg>
             </button>
-            <div
+            <div data-temporary="popover"
               class="ol-pop ol-menu ol-mode-menu"
               id="ol-rows-menu"
               role="menu"
@@ -832,7 +827,7 @@
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
               </svg>
             </button>
-            <div
+            <div data-temporary="popover"
               class="ol-pop ol-lines-pop ol-period-pop"
               id="ol-period-pop"
               role="dialog"
@@ -879,11 +874,31 @@
             <canvas class="ol-ramp" id="ol-rows-ramp" width="36" height="8" aria-hidden="true"></canvas>
             <span id="ol-rows-legend-text" class="ol-num"></span>
           </button>
-          <div
+          <div data-temporary="popover"
             class="ol-pop ol-legend-pop"
             id="ol-rows-legend-pop"
             role="dialog"
             aria-label="Rows scale details"
+            tabindex="-1"
+            hidden
+          ></div>
+          <button
+            type="button"
+            class="ol-legend ol-legend-chip ol-profile-chip cursor-interaction"
+            id="ol-profile-chip"
+            data-channel="profile"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="ol-profile-pop"
+            aria-label="Profile tracks"
+          >
+            <span id="ol-profile-chip-text" class="ol-num"></span>
+          </button>
+          <div data-temporary="popover"
+            class="ol-pop ol-legend-pop"
+            id="ol-profile-pop"
+            role="dialog"
+            aria-label="Profile tracks"
             tabindex="-1"
             hidden
           ></div>
@@ -915,7 +930,7 @@
           <span id="ol-legend-text" class="ol-num">USDT per cell · log</span>
         </button>
         <span id="ol-legend-marker-text" class="ol-sr" hidden></span>
-        <div
+        <div data-temporary="popover"
           class="ol-pop ol-pop-end ol-legend-pop"
           id="ol-legend-pop"
           role="dialog"
@@ -931,7 +946,7 @@
           role="application"
           aria-label="Time by price grid with real traded volume, point of control and linked volume profile"
         ></canvas>
-        <div class="ol-tip" id="ol-tip" role="tooltip" hidden></div>
+        <div class="ol-tip" id="ol-tip" role="tooltip" data-temporary="tooltip" hidden></div>
         <button
           type="button"
           class="ol-legend ol-legend-chip ol-axis-chip cursor-interaction"
@@ -945,7 +960,7 @@
         >
           <span id="ol-axis-chip-text" class="ol-num"></span>
         </button>
-        <div
+        <div data-temporary="popover"
           class="ol-pop ol-pop-end ol-legend-pop ol-axis-pop"
           id="ol-axis-pop"
           role="dialog"
@@ -956,6 +971,7 @@
         <div
           class="ol-transport"
           id="ol-transport"
+          data-temporary="replay-controls"
           role="group"
           aria-label="Replay"
           hidden
@@ -1020,6 +1036,7 @@
         <div
           class="ol-lensbar"
           id="ol-lensbar"
+          data-temporary="lens-controls"
           role="group"
           aria-label="Lens"
           hidden
@@ -1345,25 +1362,42 @@
       <footer class="ol-status">
         <div class="ol-status-keys" aria-label="Key">
           <span id="ol-key-zero"
-            ><i class="ol-data-key zero" aria-hidden="true"></i>Zero trades</span
+            ><i class="ol-data-key ol-glyph" data-stroke-role="empty" aria-hidden="true"></i>Zero trades</span
           ><span id="ol-key-open"
-            ><i class="ol-data-key unfinished" aria-hidden="true"></i
-            >Unfinished</span
+            ><i class="ol-data-key ol-glyph" data-stroke-role="open" aria-hidden="true"></i
+            >Open (unfinished)</span
           ><span id="ol-key-unavailable"
-            ><i class="ol-data-key unavailable" aria-hidden="true"></i
+            ><i class="ol-data-key ol-glyph" data-stroke-role="unavailable" aria-hidden="true"></i
             >Unavailable / hidden</span
           ><span id="ol-data-coarse" hidden
-            ><i class="ol-data-key coarse" aria-hidden="true"></i>Coarser than
+            ><i class="ol-data-key ol-glyph" data-stroke-role="partial" aria-hidden="true"></i>Coarser than
             requested</span
           ><span id="ol-key-moved" hidden
-            ><i class="ol-data-key moved" aria-hidden="true"></i>Moved through, no
+            ><i class="ol-data-key ol-glyph" data-stroke-role="moved" aria-hidden="true"></i>Moved through, no
             trade</span
+          ><span id="ol-key-detail" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="detail" aria-hidden="true"></i
+            ><span id="ol-key-detail-text">Detail unresolved</span></span
           ><span id="ol-key-plain" hidden
-            ><i class="ol-data-key plain" aria-hidden="true"></i>Not measured
+            ><i class="ol-data-key ol-glyph" data-stroke-role="pending" aria-hidden="true"></i>Not measured
             yet</span
+          ><span id="ol-key-provisional" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="provisional" aria-hidden="true"></i
+            >Provisional edge</span
+          ><span id="ol-key-selection" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="selection" aria-hidden="true"></i
+            >Selection</span
+          ><span id="ol-key-hover" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="hover" aria-hidden="true"></i
+            >Linked cell</span
+          ><span id="ol-key-inspect" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="inspect" aria-hidden="true"></i
+            >Inspect focus</span
           ><span id="ol-keys-scale" class="ol-keys-scale"></span
-          ><span id="ol-key-poc">P · total POC</span
-          ><span id="ol-key-bpoc">B · buy POC</span
+          ><span id="ol-key-poc"
+            ><i class="ol-data-key ol-glyph" data-stroke-role="poc" aria-hidden="true"></i>P · total POC</span
+          ><span id="ol-key-bpoc"
+            ><i class="ol-data-key ol-glyph" data-stroke-role="bpoc" aria-hidden="true"></i>B · buy POC</span
           ><span id="ol-key-area" hidden>H/L · composite 70%</span
           ><span id="ol-ray-count" hidden></span>
         </div>
@@ -1626,7 +1660,7 @@
                 <path d="M8 7.3V11M8 5v.01" />
               </svg>
             </button>
-            <div
+            <div data-temporary="popover"
               class="ol-pop ol-pop-end ol-evidence-more"
               id="ol-evidence-more"
               role="dialog"
@@ -1649,7 +1683,7 @@
       </div>
     </aside>
   </div>
-  <dialog class="ol-keys" id="ol-keys" aria-labelledby="ol-keys-title">
+  <dialog class="ol-keys" id="ol-keys" data-temporary="modal" aria-labelledby="ol-keys-title">
     <div class="ol-keys-body">
       <div class="ol-keys-head">
         <h2 id="ol-keys-title">Keyboard shortcuts</h2>

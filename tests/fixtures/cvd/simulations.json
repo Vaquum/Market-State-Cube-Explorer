@@ -1,0 +1,7 @@
+{
+  "note": "The published colour-vision simulations the composed fixtures apply to a screenshot, each a 3 x 3 matrix on LINEAR sRGB. protanopia, deuteranopia and tritanopia: Machado, Oliveira and Fernandes, 'A Physiologically-based Model for Simulation of Color Vision Deficiency', IEEE TVCG 15(6), 2009, severity 1.0. grayscale: the relative-luminance weights of ITU-R BT.709 / WCAG 2.x (0.2126, 0.7152, 0.0722) applied to linear sRGB and written back to all three channels. Nothing here is computed by the page.",
+  "protanopia": [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+  "deuteranopia": [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]],
+  "tritanopia": [[1.255528, -0.076749, -0.178779], [-0.078411, 0.930809, 0.147602], [0.004733, 0.691367, 0.303900]],
+  "grayscale": [[0.2126, 0.7152, 0.0722], [0.2126, 0.7152, 0.0722], [0.2126, 0.7152, 0.0722]]
+}

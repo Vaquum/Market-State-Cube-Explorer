@@ -8036,6 +8036,10 @@
     // The roles an encode can give a mark that is an outline rather than a fill (E.readout.ROLE).
     ROLE_OCCUPANCY = E.readout.ROLE.OCCUPANCY,
     ROLE_ZERO = E.readout.ROLE.ZERO,
+    // The signed roles, whose cells carry a sign mark where they are big enough (E.role.SIGN).
+    ROLE_POSITIVE = E.readout.ROLE.POSITIVE,
+    ROLE_NEGATIVE = E.readout.ROLE.NEGATIVE,
+    ROLE_MIDPOINT = E.readout.ROLE.MIDPOINT,
     // The glyphs that mark a cell whose motion has not been read yet, and one whose read failed.
     MOTION_PENDING = E.role.glyphFor("pending"),
     MOTION_FAILED = E.role.glyphFor("failed"),
@@ -8254,7 +8258,31 @@
     } else {
       if (ENC.css !== passFill) ctx.fillStyle = passFill = ENC.css;
       ctx.fillRect(xa + gap / 2, ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
+      if (ENC.role === ROLE_POSITIVE || ENC.role === ROLE_NEGATIVE || ENC.role === ROLE_MIDPOINT) signMark(ENC.role, ENC.css, xa, ya, w, h);
     }
+  }
+  // The sign mark of a signed cell (E.role.SIGN): a plus, a minus or a ring at the centre of a cell that is at least MIN_PX across each way, in ink or
+  // the surface colour, whichever contrasts more with the fill. The fill is kept as it is; the mark is the only thing drawn over it, and it is counted
+  // for the key (once per mark of the pass the tally follows). `role` is the readout's ROLE code, `css` the fill the cell was painted with.
+  const signInks = new Map();
+  function signMark(role, css, xa, ya, w, h) {
+    const min = E.role.SIGN.MIN_PX;
+    if (w < min || h < min) {
+      // too small to mark: the sign is in the readout, the table and Inspect, and the key says how many cells are left to them
+      if (markTally) markCount.signSmall++;
+      return;
+    }
+    const shape = E.role.signShape(role === ROLE_POSITIVE ? "positive" : role === ROLE_NEGATIVE ? "negative" : role === ROLE_MIDPOINT ? "midpoint" : "");
+    if (shape === null) return;
+    const key = css + "|" + colors.ink + "|" + colors.surface;
+    let ink = signInks.get(key);
+    if (ink === undefined) {
+      if (signInks.size > 600) signInks.clear();
+      ink = E.role.signInk(css, colors.ink, colors.surface) === "ink" ? colors.ink : colors.surface;
+      signInks.set(key, ink);
+    }
+    STROKE.sign(ctx, xa, ya, w, h, ink, shape);
+    if (markTally) markCount.sign++;
   }
   function markLine(x1, y1, x2, y2, color, width = 1, alpha = 1) {
     ctx.save();
@@ -8293,7 +8321,7 @@
   // How many of each mark the last draw painted: the footer shows the key of each that is on the plot, and says how many of the tiny moved-through
   // cells could not be resolved.
   let markTally = false;
-  const markCount = { empty: 0, open: 0, partial: 0, provisional: 0, moved: 0, detail: 0, selection: 0, hover: 0, unavailable: 0, cone: 0, inspect: 0, buyinset: 0 };
+  const markCount = { empty: 0, open: 0, partial: 0, provisional: 0, moved: 0, detail: 0, selection: 0, hover: 0, unavailable: 0, cone: 0, inspect: 0, buyinset: 0, sign: 0, signSmall: 0 };
   // What each enabled reference did in this frame (PRD-0002 S3, section 2), by the key of its menu row: how many of its marks were drawn, were
   // held back by the budget, were outside the plot or too close to draw. The inventory below turns it into one status for each reference.
   const refTally = new Map();
@@ -8415,6 +8443,31 @@
       c.stroke();
       pocGlyph(c, x + w - 6, y + h / 2, "poc");
     },
+    // The sign of a signed cell, said a second time without hue: a plus, a minus or a ring, E.role.SIGN's marks, centred in the box it is given (in
+    // the upper half of a tall one, so that a line through the row's centre misses it)
+    // `ink` (the key swatch passes its own). The bars are whole css px, so every pixel of one is the full ink; the canvas state is saved and
+    // restored, so the cell pass's cached fill and stroke stay true.
+    sign(c, x, y, w, h, ink, shape = "plus") {
+      const S = E.role.SIGN,
+        cx = Math.round(x + w / 2),
+        cy = Math.round(y + (h >= S.RAISE_PX ? h / 4 : h / 2)),
+        arm = S.SIZE / 2,
+        bar = S.STROKE / 2;
+      c.save();
+      c.beginPath();
+      if (shape === "zero") {
+        c.strokeStyle = ink;
+        c.lineWidth = S.STROKE;
+        c.arc(cx, cy, S.RING_RADIUS, 0, 2 * Math.PI);
+        c.stroke();
+      } else {
+        c.rect(cx - arm, cy - bar, S.SIZE, S.STROKE);
+        if (shape === "plus") c.rect(cx - bar, cy - arm, S.STROKE, S.SIZE);
+        c.fillStyle = ink;
+        c.fill();
+      }
+      c.restore();
+    },
     // The taker-buy part of a profile row: a neutral ink inset in the row's bar, on the same axis. It is a part of the volume, not a signed role, so
     // it never borrows the positive blue.
     buyinset(c, x, y, w, h) {
@@ -8508,6 +8561,7 @@
     va: { body: false },
     untested: { body: false },
     buyinset: { body: false },
+    sign: { body: true, colour: () => colors.ink },
     inspect: { body: true, box: [2.5, 2.5, 6, 6] },
   };
   const strokeKeys = { epoch: -1, dpr: 0 };
@@ -8552,6 +8606,17 @@
     show("key-hover", markCount.hover > 0);
     show("key-inspect", markCount.inspect > 0);
     show("key-buyinset", markCount.buyinset > 0);
+    show("key-sign", markCount.sign > 0 || markCount.signSmall > 0);
+    if (markCount.sign > 0 || markCount.signSmall > 0) {
+      const min = E.role.SIGN.MIN_PX,
+        text =
+          markCount.sign === 0
+            ? `Sign not marked under ${min} px: read it in the readout, the table or Inspect`
+            : markCount.signSmall === 0
+              ? "+ above, − below, ring at the midpoint"
+              : `+ above, − below, ring at the midpoint · ${integer(markCount.signSmall)} cells under ${min} px unmarked`;
+      if (el("key-sign-text").textContent !== text) el("key-sign-text").textContent = text;
+    }
     if (markCount.detail > 0) {
       const text = `Detail unresolved: ${markCount.detail} of ${markCount.detail + markCount.moved} moved-through cells`;
       if (el("key-detail-text").textContent !== text) el("key-detail-text").textContent = text;
@@ -17972,6 +18037,11 @@
     }
     ctx.fillStyle = role === LENS_ROLE.PATTERN ? patternFor(ENC.pattern) : ENC.css;
     ctx.fillRect(xa + 0.3, ya + 0.3, Math.max(0.5, w - 0.6), Math.max(0.5, h - 0.6));
+    if (role === LENS_ROLE.POSITIVE || role === LENS_ROLE.NEGATIVE || role === LENS_ROLE.MIDPOINT) {
+      markTally = true;
+      signMark(role, ENC.css, xa, ya, w, h);
+      markTally = false;
+    }
   }
   // What the tally counts of one mark the lens drew: an occupied mark with a defined value, with the clipping
   // the mapping gave it; negative infinity and a missing reference are their own counts.

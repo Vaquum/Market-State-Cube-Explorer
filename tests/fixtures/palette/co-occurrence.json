@@ -1,0 +1,82 @@
+{
+  "note": "The inventory of what meets on the chart, for the colour co-occurrence matrix of PRD-0002 S3 (#48 section 4). Hand-authored from docs/visual-contract.md's consumer rows and from the role tables of src/encoding.js; tests/unit/color-matrix.test.js checks that it is complete against those tables (every reference family, every signed role, every state ink) and that every claim of `forms` is true of the live tables, and tests/reference/color-matrix.js turns it into docs/color-matrix.md.",
+  "threshold": 8,
+  "kinds": {
+    "area": "a filled cell or band: identified by its place on the chart, the legend and the readout",
+    "stroke": "a reference line or a drawn mark: identified by its label, its pattern and its endpoint glyph",
+    "outline": "an outline, a bracket or a pattern drawn on its own opaque ground (the surface)",
+    "plate": "a control or plane tile: identified by its glyph, its label and its position"
+  },
+  "forms": {
+    "label": "a name on the chart or in the control, in ink on an opaque plate",
+    "pattern": "a dash, dot or hatch pattern keyed in the footer",
+    "glyph": "an endpoint, a corner bracket, a shape painted in the mark's own ink",
+    "sign": "the plus, minus and ring of E.role.SIGN where the cell is 12 px or more",
+    "legend": "the generated legend: its ramp, its ticks and its marker",
+    "number": "the exact value in the readout, the table and Inspect",
+    "position": "where the mark is (the Rows strip, the profile track, the plane's cell)"
+  },
+  "roleCodes": {
+    "note": "The target-role codes of docs/visual-contract.md's Target role column and the carriers each stands for: every code of the inventory is here, and every code here is in the inventory (tests/unit/color-matrix.test.js). CHR is the text and the chrome on opaque plates, which has contrast rows (U19, B43) and no hue pair.",
+    "REF:Profile": ["ref.profile"],
+    "REF:Price levels": ["ref.level"],
+    "REF:Averages": ["ref.average"],
+    "REF:VWAP": ["ref.vwap"],
+    "REF:Clock": ["ref.clock"],
+    "REF:User Level": ["ref.user"],
+    "REF:Historical comparison": ["ref.compare"],
+    "UM": ["fill.unsigned.low", "fill.unsigned.high", "mark.movement"],
+    "+/-/mid": ["fill.positive", "fill.negative", "fill.midpoint"],
+    "OCC": ["mark.occupancy"],
+    "RP": ["fill.rows"],
+    "STATE": ["mark.state"],
+    "IX": ["mark.focus"],
+    "CHR": []
+  },
+  "carriers": [
+    { "id": "fill.unsigned.low", "name": "Unsigned fill, low entry", "kind": "area", "source": { "lut": "unsigned", "idx": 40 }, "forms": ["position", "legend", "number"], "identity": "the plot, the legend ramp and the readout of the cell", "tests": ["B23", "B44"] },
+    { "id": "fill.unsigned.high", "name": "Unsigned fill, high entry", "kind": "area", "source": { "lut": "unsigned", "idx": 220 }, "forms": ["position", "legend", "number"], "identity": "the plot, the legend ramp and the readout of the cell", "tests": ["B23", "B44"] },
+    { "id": "fill.positive", "name": "Signed fill, positive arm", "kind": "area", "source": { "lut": "positive", "idx": 255 }, "forms": ["sign", "legend", "number"], "signRole": "positive", "identity": "the plus mark, the legend's signed ramp, the signed readout", "tests": ["B23", "B44", "B50"] },
+    { "id": "fill.negative", "name": "Signed fill, negative arm", "kind": "area", "source": { "lut": "negative", "idx": 255 }, "forms": ["sign", "legend", "number"], "signRole": "negative", "identity": "the minus mark, the legend's signed ramp, the signed readout", "tests": ["B23", "B44", "B50"] },
+    { "id": "fill.midpoint", "name": "Signed fill, midpoint", "kind": "area", "source": { "lut": "midpoint" }, "forms": ["sign", "legend", "number"], "signRole": "midpoint", "identity": "the ring mark, the legend's midpoint, the signed readout", "tests": ["B23", "B44", "B50"] },
+    { "id": "fill.rows", "name": "Rows band (16% composite)", "kind": "area", "source": { "lut": "rows", "idx": 192 }, "forms": ["position", "legend", "number"], "identity": "the strip at the right edge, its legend and its Rows readout", "tests": ["B28", "B44"] },
+    { "id": "fill.bar", "name": "Profile bar", "kind": "area", "source": { "lut": "bar" }, "forms": ["position", "number"], "identity": "the profile track's row and its readout", "tests": ["B25", "B44"] },
+    { "id": "ref.profile", "name": "Volume-profile references", "kind": "stroke", "family": "profile", "source": { "token": "--ol-line-poc" }, "forms": ["label", "pattern", "glyph"], "identity": "the tag at the line's end, its Lines menu row and the Inspect References detail", "tests": ["B40", "B44"] },
+    { "id": "ref.level", "name": "Price levels", "kind": "stroke", "family": "level", "source": { "token": "--ol-line-level" }, "forms": ["label", "pattern"], "identity": "the tag at the line's end, its Lines menu row and the Inspect References detail", "tests": ["B40", "B44"] },
+    { "id": "ref.average", "name": "Averages and Bollinger", "kind": "stroke", "family": "average", "source": { "token": "--ol-line-average" }, "forms": ["label", "pattern"], "identity": "the tag at the line's end, its Lines menu row and the Inspect References detail", "tests": ["B40", "B44"] },
+    { "id": "ref.vwap", "name": "VWAP", "kind": "stroke", "family": "vwap", "source": { "token": "--ol-line-vwap" }, "forms": ["label", "pattern"], "identity": "the tag at the line's end, its Lines menu row and the Inspect References detail", "tests": ["B40", "B44"] },
+    { "id": "ref.clock", "name": "Clock", "kind": "stroke", "family": "clock", "source": { "token": "--ol-line-clock" }, "forms": ["label", "pattern"], "identity": "the event label, its keyed pattern and its Lines menu row", "tests": ["B40", "B44"] },
+    { "id": "ref.user", "name": "User Level", "kind": "stroke", "family": "user", "source": { "token": "--ol-ink" }, "forms": ["label", "pattern", "glyph"], "identity": "the Level label, the endpoint diamond and the Lines menu row", "tests": ["B40", "B44"] },
+    { "id": "ref.compare", "name": "Historical comparison", "kind": "stroke", "family": "compare", "source": { "token": "--ol-line-compare" }, "forms": ["label", "pattern", "glyph"], "identity": "the interval track's label, the median marker's shape and the Evidence tab", "tests": ["B41", "B44"] },
+    { "id": "mark.focus", "name": "Selection, hover and Inspect focus (two-tone)", "kind": "outline", "source": { "token": "--ol-ink" }, "forms": ["glyph", "position"], "identity": "the footer's keyed brackets and the readout of the cell", "tests": ["B37", "B44"] },
+    { "id": "mark.state", "name": "State ink: patterns, ticks, open cap", "kind": "outline", "source": { "token": "--ol-state" }, "forms": ["pattern", "glyph"], "stateRoles": ["pattern-dots", "pattern-slate", "pattern-cross", "pattern-slash", "infinity", "tick", "diamond"], "identity": "the footer's key for each pattern and the readout's tag", "tests": ["B30", "B38"] },
+    { "id": "mark.occupancy", "name": "Occupancy outline (Geometry, unsigned zero)", "kind": "outline", "source": { "token": "--ol-occupancy" }, "forms": ["glyph", "number"], "identity": "the footer's Occupied and Zero keys and the readout's tag", "tests": ["B16", "B38"] },
+    { "id": "mark.movement", "name": "Moved-through outline (movement)", "kind": "outline", "source": { "lut": "unsigned", "idx": 160 }, "forms": ["glyph", "legend", "number"], "identity": "the footer's Moved through key and the readout of the cell", "tests": ["B26", "B36"] },
+    { "id": "mark.inset", "name": "Taker-buy inset of a profile row", "kind": "outline", "source": { "token": "--ol-ink" }, "forms": ["position", "label"], "identity": "the footer's Taker-buy volume key and the profile row's readout", "tests": ["B25", "B40"] },
+    { "id": "plane.panel", "name": "Resolution plane, unavailable or resting tile", "kind": "plate", "source": { "token": "--ol-panel" }, "forms": ["glyph", "position", "label"], "identity": "the tile's glyph and name, and the stepper routes", "tests": ["B29", "B31"] },
+    { "id": "plane.on", "name": "Resolution plane, selected tile", "kind": "plate", "source": { "token": "--ol-on" }, "forms": ["glyph", "position", "label"], "identity": "the tile's glyph and name, and the stepper routes", "tests": ["B29", "B31"] },
+    { "id": "plane.hover", "name": "Menu row, hover and focus", "kind": "plate", "source": { "token": "--ol-hover" }, "forms": ["label", "position"], "identity": "the row's name and the focus ring", "tests": ["B23", "B29"] },
+    { "id": "plane.border", "name": "Control and plane border", "kind": "plate", "source": { "token": "--ol-border" }, "forms": ["glyph", "position"], "identity": "the control's own boundary and its label", "tests": ["B29", "B31"] }
+  ],
+  "contexts": [
+    { "id": "cells-refs", "name": "Cells under the reference lines", "members": ["fill.unsigned.low", "fill.unsigned.high", "fill.positive", "fill.negative", "fill.midpoint", "ref.profile", "ref.level", "ref.average", "ref.vwap", "ref.clock", "ref.user", "ref.compare"], "pairs": "between", "between": [["fill.unsigned.low", "fill.unsigned.high", "fill.positive", "fill.negative", "fill.midpoint"], ["ref.profile", "ref.level", "ref.average", "ref.vwap", "ref.clock", "ref.user", "ref.compare"]] },
+    { "id": "refs", "name": "References that cross one another", "members": ["ref.profile", "ref.level", "ref.average", "ref.vwap", "ref.clock", "ref.user", "ref.compare"], "pairs": "all" },
+    { "id": "signed", "name": "The two arms and their midpoint in one signed frame", "members": ["fill.positive", "fill.negative", "fill.midpoint"], "pairs": "all" },
+    { "id": "cells-rows", "name": "Cells beside the Rows strip", "members": ["fill.rows", "fill.unsigned.low", "fill.unsigned.high", "fill.positive", "fill.negative", "fill.midpoint"], "pairs": "between", "between": [["fill.rows"], ["fill.unsigned.low", "fill.unsigned.high", "fill.positive", "fill.negative", "fill.midpoint"]] },
+    { "id": "marks-cells", "name": "Focus, state, Geometry and movement marks over the cells", "members": ["mark.focus", "mark.state", "mark.occupancy", "mark.movement", "fill.unsigned.low", "fill.unsigned.high", "fill.positive", "fill.negative", "fill.midpoint"], "pairs": "between", "between": [["mark.focus", "mark.state", "mark.occupancy", "mark.movement"], ["fill.unsigned.low", "fill.unsigned.high", "fill.positive", "fill.negative", "fill.midpoint"]] },
+    { "id": "marks", "name": "The marks among themselves, and with the references", "members": ["mark.focus", "mark.state", "mark.occupancy", "mark.movement", "ref.profile", "ref.level", "ref.average", "ref.vwap", "ref.clock", "ref.user", "ref.compare"], "pairs": "between", "between": [["mark.focus", "mark.state", "mark.occupancy", "mark.movement"], ["mark.focus", "mark.state", "mark.occupancy", "mark.movement", "ref.profile", "ref.level", "ref.average", "ref.vwap", "ref.clock", "ref.user", "ref.compare"]] },
+    { "id": "profiles", "name": "The profile track: bar, inset, POC and the state ink", "members": ["fill.bar", "mark.inset", "ref.profile", "mark.state", "ref.compare"], "pairs": "all" },
+    { "id": "plane", "name": "The resolution plane, the menus and the controls", "members": ["plane.panel", "plane.on", "plane.hover", "plane.border"], "pairs": "all" }
+  ],
+  "callouts": [
+    { "name": "scalar fills versus references", "pairs": [["fill.unsigned.high", "ref.user"], ["fill.positive", "ref.profile"], ["fill.negative", "ref.level"]] },
+    { "name": "historical comparison versus positive and negative", "pairs": [["ref.compare", "fill.positive"], ["ref.compare", "fill.negative"]] },
+    { "name": "gold and clay", "pairs": [["ref.profile", "fill.negative"]] },
+    { "name": "olive and rust", "pairs": [["ref.average", "ref.vwap"]] },
+    { "name": "olive and clay", "pairs": [["ref.average", "fill.negative"]] },
+    { "name": "focus, state, Geometry and movement", "pairs": [["mark.focus", "mark.state"], ["mark.focus", "mark.occupancy"], ["mark.state", "mark.movement"], ["mark.occupancy", "mark.movement"]] },
+    { "name": "menus and tags", "pairs": [["plane.hover", "plane.border"], ["plane.panel", "plane.hover"]] },
+    { "name": "profiles", "pairs": [["fill.bar", "mark.inset"], ["ref.profile", "fill.bar"]] },
+    { "name": "the resolution plane", "pairs": [["plane.panel", "plane.on"], ["plane.on", "plane.border"]] }
+  ]
+}

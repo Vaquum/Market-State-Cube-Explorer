@@ -189,6 +189,7 @@ The footer key strip is hand-authored at the baseline (F-01 to F-10); S1 adds ge
 | F-14 | Footer key `#ol-key-hover` "Linked cell" | src/view.html; shown while a cell is linked by the pointer or a table row; new in S2 | Canvas mark: the inset two-tone boundary | `IX` ink core, surface casing, swatch from `STROKE.hover` | STATE | #47 | B26 | done |
 | F-15 | Footer key `#ol-key-inspect` "Inspect focus" | src/view.html; hidden, shown by #48's Inspect cursor; new in S2 | Canvas mark: none yet; the bracket painter is `STROKE.inspect` (2 px ink core in 4 px of surface, corner brackets) so #48 draws it without a new painter | `IX` ink core, surface casing | STATE | #47, #48 | B26 | done |
 | F-16 | Footer key `#ol-key-buyinset` "Taker-buy volume (inset)" | src/view.html (new in S3); the `buyinset` role of `STROKE`; shown while a profile track draws its bars | Did not exist: the taker-buy inset of a profile row was unlabelled | `STATE` neutral ink: the inset is a part of the volume, never a signed role | `buyinset()` painter shared with `paintCurrentTrack()` | #48 | B40 | done |
+| F-17 | Footer key `#ol-key-sign` "+ above, − below, ring at the midpoint" | src/view.html (new in S3); the `sign` role of `STROKE`; shown while a signed measure draws sign marks | Did not exist: a signed cell was a hue and nothing else | `STATE` ink: the sign said a second time without hue (E.role.SIGN) | `sign()` painter shared with `signMark()`; the key also counts the cells under 12 px left unmarked and says where their sign is read | #48 | B50, U59 | done |
 
 ### 3.5 Readout, number and prose consumers (R-)
 
@@ -310,6 +311,7 @@ A Wave-2 package that adds a NEW top-level helper reading `colors.*` under a nam
 | N-45 | Focus and Show all, the inventory of references and each Lines row's reason | src/explorer.js: `focusKey()`, `focusClear()`, `referenceInventoryCommit()`, `renderReferenceStatus()`, `inspectReferencesNow()` | a hover thickened a line and nothing said what was left out | `CHR`, no colour of its own | MENU, CHART | #48 | B42 | done |
 | N-46 | Labels on opaque neutral plates and the tags as ink-on-surface plates, laid out once for the plan of the budget and for the drawing | src/explorer.js: `chartLabel()`, `drawLineTags()`, `tagLayout()`, `occlusionPlan()` | text on whatever lay under it; a tag's name in white or dark by the lightness of its hue | `CHR`: the text is the ink or the muted ink on the surface (4.5:1 or better), a hue is a bar | PLOT | #48 | B43, B35 | done |
 | N-47 | Inspect: the cursor, its navigator, readout, detail, chooser and the mark on the plot; the Cells table's roving rows | src/explorer.js: `inspectEnter()`, `inspectRender()`, `inspectPaint()`, `inspectTap()`, `bindInspect()`; src/view.html `#ol-inspect`; the table body's keys | none | `IX`: the strongest persistent interaction mark (`STROKE.inspect`), the same readout record as the hover | PLOT, TABLE | #48 | B44 | done |
+| N-48 | The sign mark of a signed cell: a plus, a minus or a ring at the centre of a cell at least 12 css px across each way, in the ink or the surface colour that contrasts more with the fill | src/explorer.js: `signMark()`, `fillCell()`, `lensMark()`, `STROKE.sign`; src/encoding.js: `E.role.SIGN`, `signShape`, `signCoverage`, `signInk` (new in S3) | none: sign was the hue of the fill and the readout | `STATE`: a mark, never a value; the fill keeps the number | CELL, LENS | #48 | B50, U59 | done |
 
 ## 4. The retired-role ratchet
 
@@ -680,6 +682,11 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | U56 | `tests/unit/masks.test.js` | the mask helper of the pixel specs on synthetic frames: footprints from recorded operations, the multiset of what an overlay adds, the union of the footprints, and the limits an oversized halo fails | #47 |
 | U57 | `tests/unit/state-ink.test.js` | no state mark, key or rule is drawn in a market hue: only the profile's POC roles are gold, the Volume green and the evidence violet are gone | #47 |
 | U58 | `tests/unit/reference-roles.test.js` | the reference language table: seven roles, hues, patterns [5,4], [1,3], [8,3,2,3], the 1.5 px stroke, 3:1 on the surface in both themes, and the inventory vocabulary | #48 |
+| U59 | `tests/unit/sign-marks.test.js` | the sign mark's table: its three shapes, the 12 px threshold, its largest coverage held to a fifth of the smallest cell that carries it, and its ink at 3:1 or better over every entry of both signed arms in both themes | #48 |
+| U60 | `tests/unit/color-matrix.test.js` | the colour co-occurrence matrix: the pinned colour-vision matrices, the inventory complete against the role codes and tables, the D11 pair screen under normal vision, grayscale and protan, deutan and tritan at 0.5 and 1.0, and `docs/color-matrix.md` equal to what the generator gives | #48 |
+| U61 | `tests/unit/states-without-hue.test.js` | every declared state obtainable without hue: marks in the neutral inks, declared overlaps told apart by their words, missing never drawn as zero, readout-only states with words of their own, the state ink at 3:1 under every simulation | #48 |
+| U62 | `tests/unit/palette-record.test.js` | section 13's palette record equal to `E.lut`: version, ids, hashes, byte layout, constants, the screens' numbers row by row, and the notice for an appearance this page cannot build | #48 |
+| U63 | `tests/unit/operator-protocol.test.js` | the 24-case operator protocol: coverage, three groups of critical cases, every data-derived answer recomputed from the reference calculator, balanced choices, the scorer's gate and its refusals, the palette comparison and its balanced order | #48 |
 | B01 | `tests/browser/boot.spec.js` | boot in recorded and live mode, the 29 module keys, production globals | H7b |
 | B02 | `tests/browser/recorded-snapshot.spec.js` | real recorded blocks through the page | K |
 | B03 | `tests/browser/readout-agreement.spec.js` | tooltip, table row, legend marker and pixel agree for every measure | T |
@@ -729,6 +736,8 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B47 | `tests/browser/inspect-touch.spec.js` | coarse-pointer taps and holds with Inspect, the chooser for several references, and every DOM control a 44 px target | S3 |
 | B48 | `tests/browser/help-motion.spec.js` | the key list, the tool buttons' keys, E in a text field, and reduced motion changed during the session in the canvas and the stylesheet | S3 |
 | B49 | `tests/browser/keyboard-matrix.spec.js` | every documented shortcut against the original's, each holder of the focus consuming its own keys, Enter and Space with a lens, a replay and Inspect | S3 |
+| B50 | `tests/browser/sign-marks.spec.js` | a signed measure draws one mark for each signed cell of 12 px or more and none below, the mark sits at the cell's centre over an unchanged fill and is measured as occlusion, and its key appears only with it | S3 |
+| B51 | `tests/browser/operator-cases.spec.js` | each data case of the operator protocol opened on the real page: what Inspect says about the named cells is what the predetermined answer says; the scale cases read from the page's own mapping ids | S3 |
 
 ## 10. Migration status per slice
 
@@ -739,10 +748,10 @@ Rendered from the Status column at S2's convergence: `done` is the work of S1 an
 | T | 35 | 17 | 0 | 0 | 0 | 18 |
 | C | 48 | 2 | 0 | 0 | 0 | 46 |
 | D | 21 | 7 | 0 | 0 | 0 | 14 |
-| F | 16 | 0 | 0 | 0 | 0 | 16 |
+| F | 17 | 0 | 0 | 0 | 0 | 17 |
 | R | 15 | 0 | 0 | 0 | 0 | 15 |
-| N | 38 | 0 | 0 | 0 | 0 | 38 |
-| all | 173 | 26 | 0 | 0 | 0 | 147 |
+| N | 39 | 0 | 0 | 0 | 0 | 39 |
+| all | 175 | 26 | 0 | 0 | 0 | 149 |
 
 ## 11. Contributor checklist
 
@@ -764,6 +773,7 @@ A new visual feature states each of the following before it merges, in its PR an
 - The role of every mark (quantitative fill or outline, positive or negative arm, midpoint, occupancy, state, reference, interaction) from the role table, never a market hue chosen locally; the retired rendering roles (buy, sell, neutral, time as colours) must not come back.
 - The glyph or pattern for each state the measurement can be in (zero, undefined, no reference, negative-infinite, finite under or overflow, pending, failed, unsupported, open, outside support) and that a number is never drawn for a missing value.
 - Contrast: text at least 4.5:1, essential boundaries at least 3:1 against the actual backdrop.
+- Its carrier in `tests/fixtures/palette/co-occurrence.json` and the contexts where it meets other carriers, and a regenerated `docs/color-matrix.md` (`node tests/support/color-matrix.js --write`): every pair under CIEDE2000 8 in grayscale or a colour-vision simulation needs an on-scene label, glyph, pattern, sign mark or place of its own and a route to its exact identity, and a line keeps its label even where hue would separate it.
 
 ### 11.4 Generated legend
 
@@ -788,3 +798,32 @@ A new visual feature states each of the following before it merges, in its PR an
 - **Auto resolution level** (the padlock beside the resolution button, key A) follows the cell size on screen. **Auto color** is a scale policy that refits a colour mapping after each settled change. They are unrelated; **Auto axis** is the same idea for a length axis.
 - **Comparison lock** is the scale policy that holds the mappings and Auto axes across resolutions and periods. The **padlock** is the resolution button's indicator of the locked level (Auto resolution level off). They are unrelated.
 - **Explore**, **Fit**, **Local contrast**: see section 11.2; **appearance** is the palette version (`slate2` here), separate from a **mapping id**.
+
+## 13. Palette record (appearance version 2)
+
+The palette the page ships, recorded in one place so that a link, a screenshot or a paper can say which one it was made with and every consumer above reuses it. It is **provisional**: the screens below are engineering screens on the 8-bit output (D11), and nothing here is human validation, which is the operator's (`docs/operator-protocol.md`). `tests/unit/palette-record.test.js` (U62) reads this section and fails if any value in it is not what `E.lut` gives now, so the record cannot drift from the code.
+
+| Property | Value |
+|---|---|
+| Appearance | `slate2`, appearance version 2, the default |
+| Appearance id | `slate2-8f7890f7`: the name and the first eight hex digits of the LUT hash (`E.lut.appearanceId`) |
+| LUT hash | `8f7890f7e400724c7191f42f31b9d2e9e0bf060ca619b003915fb6fbb418b672`: SHA-256 over 6162 bytes, being for the light then the dark theme the unsigned, positive and negative ramps (256 entries of three bytes each) and the midpoint, occupancy and state-ink colours (three bytes each), then the two Rows ramps |
+| Comparison appearance | `ramp1`, appearance version 1, id `ramp1-a53783c5`, hash `a53783c520ba0d228804ae64e898e110256e73d6b705268e2b58bf0cbb550289`: the baseline yellow-green-blue ramp, kept only as the named comparison for the operator's palette task; it makes no Rows-band claim |
+| Stops | nine equally spaced stops for each ramp in each theme (`lutAppearances` in `src/encoding.js`, API.md A.1); the positive and negative arms run from the shared midpoint to their end colour, `+` `#2d769c` / `#73b8d4` and `-` `#b3624b` / `#d89777` (light / dark) |
+| Interpolation | linear in CIE Lab between neighbouring stops, 256 entries a ramp; Lab is the d3-color convention (D50 white, Bradford-adapted sRGB matrices), so `d3.interpolateLab` is the independent oracle in the unit tests |
+| Output space | 8-bit sRGB, one byte triple per entry, rounded to the nearest; the legend and the canvas read the same bytes |
+| Gamut handling | none is silent: a channel that leaves 0 to 255 after conversion is counted as clipped, and the screens fail on any clipped channel; both appearances in both themes have 0 |
+| Rows band | its own table of stops, painted at 16% alpha (`E.lut.ROWS_ALPHA`) and screened on its composite over the surface |
+| Constant bar | unsigned entry 160 (`E.lut.build(...).bar`), the first entry whose composite reaches 3:1 in the light theme |
+| Screens (D11), after output conversion | the first unsigned entry is at least 5 CIEDE2000 from the surface; adjacent entries are at most 2 apart; lightness departs from the surface monotonically with a reversal of at most 0.2 L*; each signed arm starts at the midpoint and departs from it monotonically; the midpoint is at least 5 from the surface; zero, no-value and occupancy are separate marks and never manufactured low quantities |
+
+Measured on the shipped tables (`E.lut.screens`; the first column is the least CIEDE2000 of the first entry from the surface, then the largest step between adjacent entries and the lightness reversal; the arms give lightness departure from the midpoint in L*, the largest step and the reversal):
+
+| Appearance | Theme | First entry | Adjacent | Reversal | Positive arm | Negative arm | Midpoint | Rows composite | Clipped |
+|---|---|---|---|---|---|---|---|---|---|
+| slate2 | light | 6.22 | 0.878 | 0.000 | 31.2 / 0.715 / 0.000 | 26.7 / 1.093 / 0.079 | 15.26 | 5.42 / 0.795 / 0.000 | 0 |
+| slate2 | dark | 11.18 | 0.873 | 0.000 | 27.0 / 0.730 / 0.000 | 24.4 / 0.865 / 0.000 | 25.01 | 5.67 / 0.853 / 0.000 | 0 |
+| ramp1 | light | 17.22 | 0.927 | 0.000 | 31.2 / 0.715 / 0.000 | 26.7 / 1.093 / 0.079 | 15.26 | no claim | 0 |
+| ramp1 | dark | 9.25 | 1.013 | 0.000 | 27.0 / 0.730 / 0.000 | 24.4 / 0.865 / 0.000 | 25.01 | no claim | 0 |
+
+**A palette change is a new appearance, not an edit.** The appearance id changes if and only if a LUT byte changes, so a different palette never keeps the old id and never claims that an earlier appearance's colours are reproduced. A v2 portable payload (an address's `ap=`, a view code) carries the id it was made with. When this page cannot build exactly that appearance (an old id, or one it has never had), the running appearance stays and the page says so in the notice `appearance-mismatch` ("This link was made with appearance A; this page uses B. Mapping ids still match."): the mapping, which does not depend on the appearance, is honoured and no claim is made about the colours. The colour-vision and grayscale screens of the pairs that meet on the chart are `docs/color-matrix.md`.

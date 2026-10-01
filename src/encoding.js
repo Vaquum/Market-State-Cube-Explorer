@@ -4661,6 +4661,53 @@
     return { eligible: entries.length, shown: reasons.shown, reasons, byReason };
   }
 
+  // E.role.SIGN (PRD-0002 S3, section 4): the redundant sign mark of a signed cell. Where a signed cell is at least MIN_PX css px across in BOTH
+  // directions, a small mark at its centre says the sign a second time, without hue: a plus above the midpoint, a minus below it, a ring at it
+  // (the midpoint is a drawn fill, never the surface, so its mark is a zero and not an absence). The fill still carries the number; the mark
+  // replaces nothing. Below MIN_PX no mark is drawn and the sign is read from the readout, the table and Inspect, which say so in the key.
+  // The mark sits at the centre of the cell, except in a cell RAISE_PX tall or more, where it sits at the centre of the cell's upper half: a
+  // line that crosses a row (the volume profile's POC always crosses the centre of its row) then passes under the mark's own height and not through it.
+  // The bars are STROKE css px thick and SIZE long, snapped to whole css px so that every pixel of a bar is the full ink (a 1.5 px line at one
+  // pixel per css px would blend into its neighbours and lose a quarter of its contrast); the ring is STROKE thick at RING_RADIUS. The marks
+  // are ink or the surface colour, whichever has the higher contrast over the fill underneath, so the fill is the only background they need.
+  //   shapes     the mark each signed role has (`positive`, `negative`, `midpoint`); a role that is not signed has none
+  //   coverage   the css px area a mark covers (its stroke, counted once where arms cross), so that a test can hold the largest mark to a share of the
+  //              smallest cell that carries it
+  const rolSign = Object.freeze({
+    MIN_PX: 12,
+    RAISE_PX: 16,
+    SIZE: 6,
+    STROKE: 2,
+    RING_RADIUS: 2,
+    SHAPES: Object.freeze({ positive: "plus", negative: "minus", midpoint: "zero" }),
+    NAMES: Object.freeze({ plus: "plus: above the midpoint", minus: "minus: below it", zero: "ring: at it" }),
+  });
+  // E.role.signShape(role) -> "plus" | "minus" | "zero" for the roles positive, negative and midpoint (by name), else null.
+  function rolSignShape(role) {
+    return Object.prototype.hasOwnProperty.call(rolSign.SHAPES, role) ? rolSign.SHAPES[role] : null;
+  }
+  // E.role.signCoverage(shape) -> css px of the cell the mark covers: a plus is two arms that cross, a minus one arm, a ring the annulus of its stroke.
+  function rolSignCoverage(shape) {
+    const s = rolSign.SIZE,
+      w = rolSign.STROKE;
+    if (shape === "plus") return 2 * s * w - w * w;
+    if (shape === "minus") return s * w;
+    if (shape === "zero") {
+      const outer = rolSign.RING_RADIUS + w / 2,
+        inner = Math.max(0, rolSign.RING_RADIUS - w / 2);
+      return Math.PI * (outer * outer - inner * inner);
+    }
+    throw new RangeError("E.role.signCoverage: unknown shape " + String(shape));
+  }
+  // E.role.signInk(fill, ink, surface) -> "ink" | "surface": the colour a sign mark is drawn in over `fill`, the one with the higher WCAG contrast
+  // (ties go to ink). The three are css colour strings as the page reads them (or [r, g, b] triples).
+  function rolSignInk(fill, ink, surface) {
+    const rgb = (c) => (Array.isArray(c) ? c : API.lut.parseColor(c));
+    const f = rgb(fill);
+    if (f === null) throw new RangeError("E.role.signInk: not a colour: " + String(fill));
+    return API.lut.contrast(rgb(ink), f) >= API.lut.contrast(rgb(surface), f) ? "ink" : "surface";
+  }
+
   API.role = Object.freeze({
     ROLES: rolRoles,
     GLYPHS: rolGlyphs,
@@ -4674,6 +4721,10 @@
     referenceFamily: rolReferenceFamily,
     REASONS: rolReasons,
     inventory: rolInventory,
+    SIGN: rolSign,
+    signShape: rolSignShape,
+    signCoverage: rolSignCoverage,
+    signInk: rolSignInk,
   });
 
   // == §13-store ==

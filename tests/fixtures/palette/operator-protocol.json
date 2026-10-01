@@ -1,0 +1,1064 @@
+{
+  "version": 1,
+  "note": "The committed 24-case minimum operator protocol of D11 (PRD-0002 S3, #48 section 4). The tasks, their addresses on named fixtures and their predetermined answers are here; the sessions, the participants and the scores are the operator's and are NOT in this repository. tests/unit/operator-protocol.test.js recomputes every data-derived answer from the reference calculator and checks the coverage; tools/operator-score.js computes the gate from the operator's recorded responses.",
+  "gate": {
+    "critical": 1.0,
+    "overall": 0.9,
+    "minimumCases": 24,
+    "criticalGroups": [
+      "zero-unknown",
+      "scale-comparison",
+      "future-information"
+    ]
+  },
+  "fixtures": {
+    "standard": "node tests/support/cube-fake.js --profile standard --port 8790 (the seeded synthetic walk; not market history)",
+    "micro:mixed": "node tests/support/cube-fake.js --profile micro:mixed --port 8791 (eleven hand-made trades, tests/fixtures/trades/mixed.json)",
+    "micro:nonvalues": "node tests/support/cube-fake.js --profile micro:nonvalues --port 8792 (three hand-made trades, tests/fixtures/trades/nonvalues.json)",
+    "micro:balanced": "node tests/support/cube-fake.js --profile micro:balanced --port 8793 (two hand-made trades, tests/fixtures/trades/balanced.json)"
+  },
+  "required": [
+    "both-themes",
+    "raw",
+    "raw-intensity",
+    "known-zero-vs-unknown",
+    "same-calibration",
+    "scale-comparison",
+    "context-change",
+    "overflow",
+    "flow-activity",
+    "shared-local-lens",
+    "model-provenance",
+    "event-known-at",
+    "named-references",
+    "dense-signed",
+    "touch",
+    "keyboard",
+    "near-50-n4",
+    "near-50-n12"
+  ],
+  "cases": [
+    {
+      "id": "OP-01",
+      "title": "A cell that traded nothing, next to one that traded",
+      "categories": [
+        "known-zero-vs-unknown",
+        "raw"
+      ],
+      "critical": "zero-unknown",
+      "theme": "light",
+      "input": "mouse",
+      "fixture": "micro:nonvalues",
+      "address": "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24750~25500&r=0,0&mode=volume&vis=2&ap=slate2-8f7890f7",
+      "prompt": "Hover the cell at 00:00:56 to 00:01:52 UTC and the 25,000 to 25,125 USDT row (the empty cell right of the traded one). What does the chart say about it?",
+      "choices": [
+        "Its value is not known yet: the chart is still waiting for the cube",
+        "No trade happened there: a known zero, the chart measured it",
+        "Its data is unavailable: the chart could not read this part of the day"
+      ],
+      "answer": "No trade happened there: a known zero, the chart measured it",
+      "derive": {
+        "kind": "cell",
+        "fixture": "nonvalues",
+        "level": [
+          0,
+          0
+        ],
+        "cell": [
+          1,
+          200
+        ],
+        "expect": "no-trade"
+      },
+      "provenBy": [
+        "B16",
+        "B30",
+        "B51"
+      ],
+      "seconds": 90,
+      "page": {
+        "checks": [
+          {
+            "cell": [
+              1,
+              200
+            ],
+            "contains": [
+              "No trades in this cell"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "OP-02",
+      "title": "The column that is still open",
+      "categories": [
+        "known-zero-vs-unknown",
+        "keyboard"
+      ],
+      "critical": "zero-unknown",
+      "theme": "dark",
+      "input": "keyboard",
+      "fixture": "micro:nonvalues",
+      "address": "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24750~25500&r=0,0&mode=volume&vis=2&ap=slate2-8f7890f7",
+      "prompt": "With Inspect (E), move the cursor to the last column (starting 00:05:37) on the 25,000 USDT row. Is it a known zero?",
+      "choices": [
+        "Yes: nothing traded there, so it is a known zero like any empty cell",
+        "No: the column is still open (unfinished), so nothing can be said yet",
+        "No: the cube could not be read there, so the data is unavailable"
+      ],
+      "answer": "No: the column is still open (unfinished), so nothing can be said yet",
+      "derive": {
+        "kind": "open-column",
+        "fixture": "nonvalues",
+        "cell": [
+          6,
+          200
+        ]
+      },
+      "provenBy": [
+        "B38",
+        "B44",
+        "B51"
+      ],
+      "seconds": 120,
+      "page": {
+        "checks": [
+          {
+            "cell": [
+              6,
+              200
+            ],
+            "contains": [
+              "Still open: no trades yet"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "OP-03",
+      "title": "Balanced is not empty",
+      "categories": [
+        "known-zero-vs-unknown",
+        "dense-signed"
+      ],
+      "critical": "zero-unknown",
+      "theme": "light",
+      "input": "mouse",
+      "fixture": "micro:balanced",
+      "address": "#t=2021-01-01T00:00Z~2021-01-01T00:02Z&p=24750~25500&r=0,0&mode=delta&vis=2&ap=slate2-8f7890f7",
+      "prompt": "Delta is the buy volume minus the sell volume. The cell at 00:00 on the 25,000 USDT row is neither blue nor clay. Is it empty?",
+      "choices": [
+        "Its value is not known yet, so the chart has drawn a neutral colour for now",
+        "Yes: it is empty, nothing traded there and the chart left the surface colour",
+        "No: it traded and buyers matched sellers exactly (a drawn zero, not empty)"
+      ],
+      "answer": "No: it traded and buyers matched sellers exactly (a drawn zero, not empty)",
+      "derive": {
+        "kind": "balanced",
+        "fixture": "balanced",
+        "cell": [
+          0,
+          200
+        ]
+      },
+      "provenBy": [
+        "B16",
+        "B50",
+        "B51"
+      ],
+      "seconds": 90,
+      "page": {
+        "checks": [
+          {
+            "cell": [
+              0,
+              200
+            ],
+            "contains": [
+              "Color step | Midpoint",
+              "Trades | 2",
+              "Buy − sell | 0 USDT"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "OP-04",
+      "title": "The taker share of a cell with no trades",
+      "categories": [
+        "known-zero-vs-unknown",
+        "flow-activity"
+      ],
+      "critical": "zero-unknown",
+      "theme": "dark",
+      "input": "mouse",
+      "fixture": "micro:nonvalues",
+      "address": "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24750~25500&r=0,0&mode=flow&vis=2&ap=slate2-8f7890f7",
+      "prompt": "Taker share is buy volume over all volume. What is it for the empty cell at 00:00:56, 25,000 USDT row?",
+      "choices": [
+        "There is no share: the cell has no trades, and the readout says so",
+        "0%: nobody bought, so the share is nought, drawn at the bottom of the scale",
+        "50%: with no trades the chart shows the even share, at the midpoint"
+      ],
+      "answer": "There is no share: the cell has no trades, and the readout says so",
+      "derive": {
+        "kind": "undefined-share",
+        "fixture": "nonvalues",
+        "cell": [
+          1,
+          200
+        ]
+      },
+      "provenBy": [
+        "B16",
+        "B38",
+        "B51"
+      ],
+      "seconds": 90,
+      "page": {
+        "checks": [
+          {
+            "cell": [
+              1,
+              200
+            ],
+            "contains": [
+              "No trades in this cell"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "OP-05",
+      "title": "The window changes from 24 hours to all history",
+      "categories": [
+        "scale-comparison",
+        "context-change"
+      ],
+      "critical": "scale-comparison",
+      "theme": "light",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=24h&vis=2&ap=slate2-8f7890f7",
+      "prompt": "Note the colour of the busiest cell. Change the window to all history. The busiest cell is now a different colour. Is that colour comparable with the one before?",
+      "choices": [
+        "Yes: the same colour means the same volume in every view of this chart, whichever window is shown",
+        "No: the calibration changed with the window, so the two views' colours are not comparable",
+        "Only if both views use the same theme, since the theme alone decides which colour a volume gets"
+      ],
+      "answer": "No: the calibration changed with the window, so the two views' colours are not comparable",
+      "derive": {
+        "kind": "page"
+      },
+      "provenBy": [
+        "B05",
+        "B06",
+        "B51"
+      ],
+      "seconds": 120,
+      "page": {
+        "scale": "window-change"
+      }
+    },
+    {
+      "id": "OP-06",
+      "title": "Two views under one lock",
+      "categories": [
+        "scale-comparison",
+        "same-calibration"
+      ],
+      "critical": "scale-comparison",
+      "theme": "dark",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=7d&vis=2&ap=slate2-8f7890f7",
+      "prompt": "Lock the comparison on this view, then move to the 24-hour window. Is the colour of a cell comparable across the two views now?",
+      "choices": [
+        "No: the two windows differ, so the chart has fitted a new scale to each window separately",
+        "Yes: the lock holds one mapping, so the same colour means the same volume in both",
+        "Only for the unsigned measures such as Volume, since signed measures always refit their scale"
+      ],
+      "answer": "Yes: the lock holds one mapping, so the same colour means the same volume in both",
+      "derive": {
+        "kind": "rule",
+        "statement": "A Comparison lock keeps the locked mapping across levels and windows until it is unlocked"
+      },
+      "provenBy": [
+        "B07"
+      ],
+      "seconds": 120
+    },
+    {
+      "id": "OP-07",
+      "title": "The day that is not over",
+      "categories": [
+        "future-information",
+        "event-known-at"
+      ],
+      "critical": "future-information",
+      "theme": "light",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=7d&vis=2&lines=dpoc&ap=slate2-8f7890f7",
+      "prompt": "In replay at 2026-09-20 12:00 UTC, the Daily POC line of 2026-09-20 shows a price. Is that day's final POC known at that time?",
+      "choices": [
+        "It is hidden in replay, so no price is shown for that day at all",
+        "Yes: the line shows the day's POC, which the chart knows as soon as it is drawn",
+        "No: the day is not over, so the line shows the POC so far"
+      ],
+      "answer": "No: the day is not over, so the line shows the POC so far",
+      "derive": {
+        "kind": "day-incomplete",
+        "replayIso": "2026-09-20T12:00:00Z",
+        "dayIso": "2026-09-20"
+      },
+      "provenBy": [
+        "B33",
+        "B34"
+      ],
+      "seconds": 120
+    },
+    {
+      "id": "OP-08",
+      "title": "A model whose fit time is not known",
+      "categories": [
+        "future-information",
+        "model-provenance"
+      ],
+      "critical": "future-information",
+      "theme": "dark",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=7d&vis=2&pane=efficiency&ap=slate2-8f7890f7",
+      "prompt": "The Efficiency pane says 'Model timing unverified: estimated on 2026-09-24 data'. At a replay time before that date, may you treat the model's value as known then?",
+      "choices": [
+        "Only if the replay is paused at that time, since a moving replay hides it",
+        "Yes: the model was fitted before that date, which is what the label says",
+        "No: its fit time is not known, so it may be later information"
+      ],
+      "answer": "No: its fit time is not known, so it may be later information",
+      "derive": {
+        "kind": "text",
+        "path": "model.timingUnverified",
+        "contains": "Model timing unverified"
+      },
+      "provenBy": [
+        "B19"
+      ],
+      "seconds": 120
+    },
+    {
+      "id": "OP-09",
+      "title": "Raw volume or intensity across two levels",
+      "categories": [
+        "raw-intensity"
+      ],
+      "critical": null,
+      "theme": "light",
+      "input": "mouse",
+      "fixture": "micro:mixed",
+      "address": "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24750~25500&r=0,0&mode=volume&vis=2&ap=slate2-8f7890f7",
+      "prompt": "One fine cell (level 0,0) holds 300 USDT. One coarse cell (level 2,1: four columns by two rows) holds 450.75 USDT. Which cell is busier per minute and per 125-USDT price band (Intensity)?",
+      "choices": [
+        "The coarse one: it holds more volume, so it is the busier of the two",
+        "The fine one: per minute per price band it is far busier",
+        "Neither: Intensity divides by area, so the two always come out equal"
+      ],
+      "answer": "The fine one: per minute per price band it is far busier",
+      "derive": {
+        "kind": "intensity-compare",
+        "fixture": "mixed",
+        "a": {
+          "level": [
+            0,
+            0
+          ],
+          "cell": [
+            0,
+            200
+          ]
+        },
+        "b": {
+          "level": [
+            2,
+            1
+          ],
+          "cell": [
+            0,
+            100
+          ]
+        },
+        "expect": "a"
+      },
+      "provenBy": [
+        "B03",
+        "B05"
+      ],
+      "seconds": 120
+    },
+    {
+      "id": "OP-10",
+      "title": "Marks outside the scale",
+      "categories": [
+        "overflow"
+      ],
+      "critical": null,
+      "theme": "dark",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=24h&vis=2&mode=delta&ap=slate2-8f7890f7",
+      "prompt": "The legend says some occupied marks are outside the scale. What colour do those cells have, and where is their true value?",
+      "choices": [
+        "The end of the colour ramp with a triangle mark; the exact value is in the readout",
+        "The surface colour, as if the cell were empty; the exact value is only in the table",
+        "A third colour used only for these cells, which the key explains at the bottom"
+      ],
+      "answer": "The end of the colour ramp with a triangle mark; the exact value is in the readout",
+      "derive": {
+        "kind": "text",
+        "path": "warn.rangeDetail",
+        "contains": "outside the scale"
+      },
+      "provenBy": [
+        "B09",
+        "B16"
+      ],
+      "seconds": 120
+    },
+    {
+      "id": "OP-11",
+      "title": "A taker share near 50% at n=4",
+      "categories": [
+        "flow-activity",
+        "near-50-n4"
+      ],
+      "critical": null,
+      "theme": "light",
+      "input": "mouse",
+      "fixture": "micro:mixed",
+      "address": "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24750~25500&r=4,0&mode=flow&vis=2&ap=slate2-8f7890f7",
+      "prompt": "At this level, is the taker share of the cell on the 25,000 USDT row (00:00 UTC) above or below an even share?",
+      "choices": [
+        "Below an even share",
+        "Above an even share",
+        "Exactly even"
+      ],
+      "answer": "Below an even share",
+      "derive": {
+        "kind": "share",
+        "fixture": "mixed",
+        "level": [
+          4,
+          0
+        ],
+        "cell": [
+          0,
+          200
+        ],
+        "expect": "below"
+      },
+      "provenBy": [
+        "B03",
+        "B50",
+        "B51"
+      ],
+      "seconds": 90,
+      "page": {
+        "checks": [
+          {
+            "cell": [
+              0,
+              200
+            ],
+            "contains": [
+              "Taker flow | 47.1%"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "OP-12",
+      "title": "A taker share near 50% at n=12",
+      "categories": [
+        "flow-activity",
+        "near-50-n12"
+      ],
+      "critical": null,
+      "theme": "dark",
+      "input": "mouse",
+      "fixture": "micro:mixed",
+      "address": "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24750~25500&r=12,1&mode=flow&vis=2&ap=slate2-8f7890f7",
+      "prompt": "At this much coarser level, is the taker share of the single column's lower cell (rows 25,000 and 25,125 USDT) above or below an even share?",
+      "choices": [
+        "Exactly even",
+        "Below an even share",
+        "Above an even share"
+      ],
+      "answer": "Above an even share",
+      "derive": {
+        "kind": "share",
+        "fixture": "mixed",
+        "level": [
+          12,
+          1
+        ],
+        "cell": [
+          0,
+          100
+        ],
+        "expect": "above"
+      },
+      "provenBy": [
+        "B03",
+        "B50",
+        "B51"
+      ],
+      "seconds": 90,
+      "page": {
+        "checks": [
+          {
+            "cell": [
+              0,
+              100
+            ],
+            "contains": [
+              "Taker flow | 54.2%"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "OP-13",
+      "title": "More trades is not more volume",
+      "categories": [
+        "flow-activity"
+      ],
+      "critical": null,
+      "theme": "light",
+      "input": "mouse",
+      "fixture": "micro:mixed",
+      "address": "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24750~25500&r=0,0&mode=trades&vis=2&ap=slate2-8f7890f7",
+      "prompt": "In Trades, which cell holds more trades: the one at 00:00 on the 25,125 USDT row, or the one at 00:00 on the 25,000 USDT row?",
+      "choices": [
+        "The 25,125 row cell (3 trades)",
+        "The 25,000 row cell (2 trades)",
+        "The same count in both (the volumes decide it)"
+      ],
+      "answer": "The 25,125 row cell (3 trades)",
+      "derive": {
+        "kind": "compare",
+        "fixture": "mixed",
+        "measure": "trades",
+        "level": [
+          0,
+          0
+        ],
+        "a": [
+          0,
+          201
+        ],
+        "b": [
+          0,
+          200
+        ],
+        "expect": "a"
+      },
+      "provenBy": [
+        "B03",
+        "B51"
+      ],
+      "seconds": 90,
+      "page": {
+        "checks": [
+          {
+            "cell": [
+              0,
+              201
+            ],
+            "contains": [
+              "Trades | 3"
+            ]
+          },
+          {
+            "cell": [
+              0,
+              200
+            ],
+            "contains": [
+              "Trades | 2"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "OP-14",
+      "title": "The lens on its own scale",
+      "categories": [
+        "shared-local-lens"
+      ],
+      "critical": null,
+      "theme": "light",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=24h&vis=2&ap=slate2-8f7890f7",
+      "prompt": "Open the lens (L) and turn Local contrast on. Is a colour in the lens comparable with the same colour on the chart?",
+      "choices": [
+        "Only at the chart's own level, where the lens and the chart share a cell size",
+        "Yes: the lens always uses the chart's scale, whatever options are set on it",
+        "No: Local contrast gives the lens its own scale, so its colours do not compare"
+      ],
+      "answer": "No: Local contrast gives the lens its own scale, so its colours do not compare",
+      "derive": {
+        "kind": "text",
+        "path": "policy.local",
+        "contains": "Local contrast"
+      },
+      "provenBy": [
+        "B12",
+        "B46"
+      ],
+      "seconds": 120
+    },
+    {
+      "id": "OP-15",
+      "title": "The lens on the chart's scale",
+      "categories": [
+        "shared-local-lens"
+      ],
+      "critical": null,
+      "theme": "dark",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=24h&vis=2&ap=slate2-8f7890f7",
+      "prompt": "Open the lens (L) without Local contrast. The caption says Shared. Is a colour in the lens comparable with the same colour on the chart?",
+      "choices": [
+        "Only in the light theme, where the lens and the chart draw from a single table",
+        "No: the lens is always fitted to its own cells, whatever its caption says about it",
+        "Yes: the lens shares the chart's mapping, so the same colour means the same"
+      ],
+      "answer": "Yes: the lens shares the chart's mapping, so the same colour means the same",
+      "derive": {
+        "kind": "rule",
+        "statement": "Without Local contrast the lens shares the Cells mapping: one id, and its caption names Shared"
+      },
+      "provenBy": [
+        "B12"
+      ],
+      "seconds": 120
+    },
+    {
+      "id": "OP-16",
+      "title": "Where the model's value comes from",
+      "categories": [
+        "model-provenance"
+      ],
+      "critical": null,
+      "theme": "light",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=7d&vis=2&pane=efficiency&ap=slate2-8f7890f7",
+      "prompt": "The Efficiency pane draws a model diagonal. Where does the model come from?",
+      "choices": [
+        "It is an external model with its own provenance label that says when it was estimated",
+        "It is fitted live to the visible window, so it follows whatever you zoom or pan to",
+        "It is the average of the visible cells, drawn as a diagonal across the whole pane"
+      ],
+      "answer": "It is an external model with its own provenance label that says when it was estimated",
+      "derive": {
+        "kind": "text",
+        "path": "model.timingUnverified",
+        "contains": "estimated on"
+      },
+      "provenBy": [
+        "B19"
+      ],
+      "seconds": 120
+    },
+    {
+      "id": "OP-17",
+      "title": "An event after the replay edge",
+      "categories": [
+        "event-known-at",
+        "future-information"
+      ],
+      "critical": "future-information",
+      "theme": "dark",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=7d&vis=2&lines=swing4h&ap=slate2-8f7890f7",
+      "prompt": "In replay at 2026-09-20 12:00 UTC, a swing marker dated 2026-09-20 18:00 UTC is not on the chart. Is it hidden or missing?",
+      "choices": [
+        "Hidden in replay: it lies after the replay edge, so it is not known yet",
+        "Missing: the chart could not read it, and says so in its loading line at the foot",
+        "Unsupported at this level: the swing needs a closer zoom than the one in use"
+      ],
+      "answer": "Hidden in replay: it lies after the replay edge, so it is not known yet",
+      "derive": {
+        "kind": "event-after-edge",
+        "replayIso": "2026-09-20T12:00:00Z",
+        "eventIso": "2026-09-20T18:00:00Z",
+        "text": {
+          "path": "typed.hidden",
+          "contains": "Hidden in replay"
+        }
+      },
+      "provenBy": [
+        "B33",
+        "B38"
+      ],
+      "seconds": 120
+    },
+    {
+      "id": "OP-18",
+      "title": "Which line is the Level",
+      "categories": [
+        "named-references"
+      ],
+      "critical": null,
+      "theme": "dark",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=24h&vis=2&lines=1d,svwap&level=25200&ap=slate2-8f7890f7",
+      "prompt": "The chart is viewed in grayscale. Which line is your own Level?",
+      "choices": [
+        "The long dash-dot line ending in a diamond, labelled Level",
+        "The solid line in gold with a label POC at its end and a triangle",
+        "The dashed line that continues the VWAP, labelled VWAP at its right end"
+      ],
+      "answer": "The long dash-dot line ending in a diamond, labelled Level",
+      "derive": {
+        "kind": "table",
+        "checks": [
+          [
+            "role.REFERENCE.PATTERN.user",
+            [
+              8,
+              3,
+              2,
+              3
+            ]
+          ],
+          [
+            "role.referenceFamily('user').glyph.level",
+            "diamond"
+          ]
+        ]
+      },
+      "provenBy": [
+        "B40"
+      ],
+      "seconds": 90
+    },
+    {
+      "id": "OP-19",
+      "title": "Gold or olive, by name",
+      "categories": [
+        "named-references"
+      ],
+      "critical": null,
+      "theme": "light",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=24h&vis=2&lines=1d,sma50&ap=slate2-8f7890f7",
+      "prompt": "Two lines cross: one is tagged POC and one is tagged SMA 50. Which one is a volume-profile reference?",
+      "choices": [
+        "The one tagged SMA 50, an average of closing prices",
+        "The one tagged POC, a volume-profile reference",
+        "Neither of them: the profile is drawn only as bars at the edge"
+      ],
+      "answer": "The one tagged POC, a volume-profile reference",
+      "derive": {
+        "kind": "table",
+        "checks": [
+          [
+            "role.referenceFamily('profile').identification[0]",
+            "POC"
+          ],
+          [
+            "role.referenceFamily('average').name",
+            "Averages and Bollinger"
+          ]
+        ]
+      },
+      "provenBy": [
+        "B40"
+      ],
+      "seconds": 90
+    },
+    {
+      "id": "OP-20",
+      "title": "Sign in a dense view",
+      "categories": [
+        "dense-signed"
+      ],
+      "critical": null,
+      "theme": "light",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=24h&vis=2&mode=delta&ap=slate2-8f7890f7",
+      "prompt": "The cells here are narrow and carry no plus or minus marks. How do you find out whether one is net buying or net selling?",
+      "choices": [
+        "Count the plus and minus marks, which are drawn in every cell of the plot at any size",
+        "Read its colour only: blue means buying and clay means selling at every cell size",
+        "Read the signed readout (hover, the table, or Inspect with E): it says buyers or sellers"
+      ],
+      "answer": "Read the signed readout (hover, the table, or Inspect with E): it says buyers or sellers",
+      "derive": {
+        "kind": "table",
+        "checks": [
+          [
+            "role.SIGN.MIN_PX",
+            12
+          ]
+        ]
+      },
+      "provenBy": [
+        "B50",
+        "B44"
+      ],
+      "seconds": 90
+    },
+    {
+      "id": "OP-21",
+      "title": "What a minus mark says",
+      "categories": [
+        "dense-signed"
+      ],
+      "critical": null,
+      "theme": "dark",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=4h&vis=2&mode=delta&ap=slate2-8f7890f7",
+      "prompt": "A cell carries a minus mark. What does it say?",
+      "choices": [
+        "A cell with no trades: the minus stands for nothing being there at all",
+        "Net buying: above the midpoint (taker buy volume is larger)",
+        "Net selling: below the midpoint (taker sell volume is larger)"
+      ],
+      "answer": "Net selling: below the midpoint (taker sell volume is larger)",
+      "derive": {
+        "kind": "table",
+        "checks": [
+          [
+            "role.SIGN.NAMES.minus",
+            "minus: below it"
+          ],
+          [
+            "role.signShape('negative')",
+            "minus"
+          ]
+        ]
+      },
+      "provenBy": [
+        "B50"
+      ],
+      "seconds": 90
+    },
+    {
+      "id": "OP-22",
+      "title": "A tap in Inspect",
+      "categories": [
+        "touch"
+      ],
+      "critical": null,
+      "theme": "light",
+      "input": "touch",
+      "fixture": "standard",
+      "address": "#w=24h&vis=2&ap=slate2-8f7890f7",
+      "prompt": "Inspect is on. You tap a cell. What changes?",
+      "choices": [
+        "The anchor and the evidence tab, as a tap does when Inspect is off and Pan is the tool",
+        "Only the cursor and the readout: nothing the page keeps, no anchor, no replay edge",
+        "The replay edge moves to the tapped column, as a tap does when a replay is running"
+      ],
+      "answer": "Only the cursor and the readout: nothing the page keeps, no anchor, no replay edge",
+      "derive": {
+        "kind": "rule",
+        "statement": "Inside Inspect a tap is a reading and nothing else (no anchor, evidence tab, selection, replay edge or history entry)"
+      },
+      "provenBy": [
+        "B47"
+      ],
+      "seconds": 90
+    },
+    {
+      "id": "OP-23",
+      "title": "The key for Inspect and what closes first",
+      "categories": [
+        "keyboard"
+      ],
+      "critical": null,
+      "theme": "dark",
+      "input": "keyboard",
+      "fixture": "standard",
+      "address": "#w=24h&vis=2&ap=slate2-8f7890f7",
+      "prompt": "Which key enters Inspect, and when its detail is open what does Escape close first?",
+      "choices": [
+        "I; the whole inspector panel closes with the first Escape",
+        "E; the detail first, then Inspect",
+        "E; the selection first, and Inspect only with a second Escape"
+      ],
+      "answer": "E; the detail first, then Inspect",
+      "derive": {
+        "kind": "source",
+        "file": "src/view.html",
+        "contains": "Inspect (E)"
+      },
+      "provenBy": [
+        "B44",
+        "B48"
+      ],
+      "seconds": 90
+    },
+    {
+      "id": "OP-24",
+      "title": "The measure changes from Volume to Delta",
+      "categories": [
+        "context-change",
+        "same-calibration"
+      ],
+      "critical": null,
+      "theme": "dark",
+      "input": "mouse",
+      "fixture": "standard",
+      "address": "#w=24h&vis=2&ap=slate2-8f7890f7",
+      "prompt": "You change the measure from Volume to Delta. Does a given blue cell mean what a given dark cell meant before?",
+      "choices": [
+        "No: Delta is a signed measure with its own mapping, blue above the midpoint and clay below",
+        "Yes: colour means volume whichever measure is chosen, and only the legend's words change",
+        "Only if the window is unchanged, since changing the measure never alters the mapping used"
+      ],
+      "answer": "No: Delta is a signed measure with its own mapping, blue above the midpoint and clay below",
+      "derive": {
+        "kind": "page"
+      },
+      "provenBy": [
+        "B05",
+        "B06",
+        "B51"
+      ],
+      "seconds": 90,
+      "page": {
+        "scale": "measure-change"
+      }
+    }
+  ],
+  "palette": {
+    "note": "The balanced comparison of the candidate and the current unsigned palettes (D11): the same ordering tasks on the same fixture, each shown in both palettes, in an order that is balanced across participants. The candidate is slate2, the current (the checked baseline's) is ramp1. A participant sees all 16 trials; the order of the palettes alternates and the order of the pairs rotates (tools/operator-score.js assigns it).",
+    "fixture": "micro:mixed",
+    "level": [
+      0,
+      0
+    ],
+    "mode": "volume",
+    "candidate": "slate2-8f7890f7",
+    "current": "ramp1-a53783c5",
+    "tasks": [
+      {
+        "id": "PT-01",
+        "a": [
+          0,
+          200
+        ],
+        "b": [
+          1,
+          202
+        ],
+        "expect": "a"
+      },
+      {
+        "id": "PT-02",
+        "a": [
+          1,
+          201
+        ],
+        "b": [
+          2,
+          203
+        ],
+        "expect": "b"
+      },
+      {
+        "id": "PT-03",
+        "a": [
+          3,
+          199
+        ],
+        "b": [
+          4,
+          200
+        ],
+        "expect": "b"
+      },
+      {
+        "id": "PT-04",
+        "a": [
+          0,
+          201
+        ],
+        "b": [
+          1,
+          201
+        ],
+        "expect": "b"
+      },
+      {
+        "id": "PT-05",
+        "a": [
+          1,
+          202
+        ],
+        "b": [
+          2,
+          203
+        ],
+        "expect": "a"
+      },
+      {
+        "id": "PT-06",
+        "a": [
+          3,
+          199
+        ],
+        "b": [
+          0,
+          201
+        ],
+        "expect": "a"
+      },
+      {
+        "id": "PT-07",
+        "a": [
+          4,
+          200
+        ],
+        "b": [
+          1,
+          201
+        ],
+        "expect": "b"
+      },
+      {
+        "id": "PT-08",
+        "a": [
+          2,
+          203
+        ],
+        "b": [
+          3,
+          199
+        ],
+        "expect": "a"
+      }
+    ],
+    "prompt": "Which of the two marked cells holds more volume? Answer a or b."
+  }
+}

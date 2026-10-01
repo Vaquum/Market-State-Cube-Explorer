@@ -1,0 +1,9 @@
+{
+  "kind": "hand-computed",
+  "expectationSource": "hand-computed",
+  "generator": null,
+  "seed": null,
+  "source": "co-occurrence.json: the inventory of what meets on the chart (carriers, the contexts in which they meet, the PRD's named pairs) for the colour co-occurrence matrix of PRD-0002 S3 (#48 section 4), written by hand from the consumer rows of docs/visual-contract.md and the role tables of src/encoding.js. operator-protocol.json: the committed 24-case minimum operator protocol of D11.",
+  "extractedOn": "2026-10-01",
+  "notes": "Nothing here is a measurement: no colour value is stored, they are resolved at test time from src/explorer.css and the LUT. tests/unit/color-matrix.test.js refuses a stale inventory (a role code of the contract with no carrier, a carrier no context uses, a form a live table does not support). The operator protocol holds the tasks and their predetermined answers; the sessions that score it are the operator's and are not in this repository."
+}

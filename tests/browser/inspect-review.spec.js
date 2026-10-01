@@ -125,6 +125,31 @@ test.describe("B55 Inspect: the review of PR #53", () => {
     }
   });
 
+  test("an arrow on the navigator's own controls is consumed too: Up and Down on a focused surface tab pan nothing, and its own Left and Right still move the tabs", async ({ page, probe, fakeFor }) => {
+    const fake = await fakeFor("standard");
+    await open(page, fake, probe);
+    await page.keyboard.press("e");
+    const before = await hashOf(page);
+    const tab = page.locator('button[data-surface="cells"]');
+    await tab.focus();
+    await expect(tab).toBeFocused();
+    for (const key of ["ArrowUp", "ArrowDown"]) {
+      await page.evaluate(() => {
+        window.__tabKeys = [];
+        const note = (e) => window.__tabKeys.push([e.key, e.defaultPrevented]);
+        document.addEventListener("keydown", note, { once: true });
+      });
+      await page.keyboard.press(key);
+      await probe.waitForQuiet({ quietMs: 300, timeout: 30000 });
+      expect(await hashOf(page), `${key} on a tab: the view did not move`).toBe(before);
+      expect(await page.evaluate(() => document.activeElement?.dataset?.surface), `${key} on a tab: the focus stayed on it`).toBe("cells");
+    }
+    // the tablist's own keys are untouched by it
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator('button[data-surface="rows"]'), "Right is the next tab").toBeFocused();
+    expect(await hashOf(page)).toBe(before);
+  });
+
   test("Rows read prices only and Columns read time only: the axis a surface ignores neither blocks a step nor moves", async ({ page, probe, fakeFor }) => {
     const fake = await fakeFor("standard");
     await open(page, fake, probe);

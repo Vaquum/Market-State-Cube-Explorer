@@ -5388,9 +5388,9 @@
       // a native control inside the navigator (a tab, a button, the chooser) keeps its own keys, but Escape still leaves
       if (e.target !== nav2 && e.target.closest("button, select, input, [role=tab]") && e.key !== "Escape") {
         if (e.target.matches("[role=tab]") && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
-        // a native control of the navigator keeps its own keys; an arrow on a button is no key of the button's, and it is not the chart's either: it
-        // is consumed here, so that nothing pans from the navigator, and a select (the reference chooser) keeps its own arrows
-        if (e.key.startsWith("Arrow") && !e.target.matches("select, input") && !e.target.matches("[role=tab]")) {
+        // a native control of the navigator keeps its own keys; an arrow that is no key of the control's (Up and Down on a button or on a horizontal tab) is not the
+        // chart's either: it is consumed here, so that nothing pans from the navigator, and a select (the reference chooser) keeps its own arrows
+        if (e.key.startsWith("Arrow") && !e.target.matches("select, input")) {
           e.preventDefault();
           e.stopPropagation();
         }

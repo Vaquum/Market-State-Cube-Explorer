@@ -20,6 +20,7 @@ const S = require("./rows-support.js");
 const { EPOCH_MS } = require("../support/profiles.js");
 
 const RSI_CASES = require("../fixtures/indicators/rsi.json").cases;
+const MACD_CASES = require("../fixtures/indicators/macd.json").cases;
 const num = (x) => (x === "NaN" ? NaN : x);
 
 const test = base.extend({
@@ -69,6 +70,17 @@ async function dailyFake(fakeFor, closes) {
     for (let k = 0; k < 3; k++) bars.push({ col: 3 * day + k, open: close, high: close, low: close, close, volume: 1, takerBuyVolume: 0.5, baseVolume: 0.01, trades: 1 });
   });
   fake.overrideBars(9, bars);
+  return fake;
+}
+// the same with the 4-hour bars (level 8, six to a day) written out one close each: the page's 4-hour frame is the fixture's series exactly
+async function fourHourFake(fakeFor, closes) {
+  const cutoffIso = new Date(EPOCH_MS + (closes.length / 6) * DAY_MS).toISOString();
+  const trades = [
+    { t_ms: 1000, price: 2500000, qty: 400000, takerBuy: true },
+    { t_ms: (closes.length / 6) * DAY_MS - 60000, price: 2500000, qty: 400000, takerBuy: false },
+  ];
+  const fake = await fakeFor({ trades, cutoffIso });
+  fake.overrideBars(8, closes.map((close, col) => ({ col, open: close, high: close, low: close, close, volume: 1, takerBuyVolume: 0.5, baseVolume: 0.01, trades: 1 })));
   return fake;
 }
 const wholeHistory = (closes) => `#t=2021-01-01T00:00Z~${new Date(EPOCH_MS + closes.length * DAY_MS).toISOString().slice(0, 16)}Z&p=24000~26000&r=12,3`;
@@ -229,6 +241,63 @@ test.describe("B55 Inspect: the review of PR #53", () => {
     expect((await cell(page)).c).toBe(last.c);
   });
 
+  // an oscillator pane's columns are its bars whichever the oscillator: the step is one bar of its timeframe and the readout is the series' value there
+  test("MACD's columns are its daily bars, and the readout is the fixture's MACD, signal and histogram for the bar", async ({ page, probe, fakeFor }) => {
+    const walk = MACD_CASES.find((c) => c.name === "walk120"),
+      macd = walk.macd.map(num),
+      signal = walk.signal.map(num),
+      hist = walk.hist.map(num);
+    const fake = await dailyFake(fakeFor, walk.closes);
+    await page.setViewportSize({ width: 1500, height: 950 });
+    await page.goto(`${fake.url}/${wholeHistory(walk.closes)}&pane=macd1d`);
+    await S.atRest(page, fake, probe);
+    await probe.waitForQuiet({ quietMs: 500, timeout: 60000 });
+    await page.keyboard.press("e");
+    await surface(page, "columns");
+    await page.keyboard.press("Home");
+    const first = await cell(page);
+    expect(first.ts, "a day").toBe(DAY_MS / BASE_MS);
+    expect(await position(page)).toMatch(/^Bar /);
+    let at = first.c;
+    for (let i = 1; i <= 36; i++) {
+      await page.keyboard.press("ArrowRight");
+      at = (await cell(page)).c;
+      expect(at, `step ${i}: the next bar`).toBe(first.c + i);
+    }
+    // the 34th day is the first with a signal: bar 33 (counting from 0) reads the fixture's three values
+    const readout = page.locator("#ol-inspect-readout");
+    for (const d of [33, 34, 35, 36]) {
+      await page.keyboard.press("Home");
+      for (let i = 0; i < d; i++) await page.keyboard.press("ArrowRight");
+      expect((await cell(page)).c).toBe(first.c + d);
+      await expect(readout, `bar ${d}: MACD`).toContainText(macd[d].toFixed(2));
+      await expect(readout, `bar ${d}: signal`).toContainText(signal[d].toFixed(2));
+      await expect(readout, `bar ${d}: histogram`).toContainText(hist[d].toFixed(2));
+    }
+  });
+
+  test("RSI on the 4-hour bars steps by the 4-hour bar, six to a day, and reads the fixture's value", async ({ page, probe, fakeFor }) => {
+    const walk = RSI_CASES.find((c) => c.name === "walk120"),
+      rsi = walk.runs.find((r) => r.n === 14).expected.map(num);
+    const fake = await fourHourFake(fakeFor, walk.closes);
+    await page.setViewportSize({ width: 1500, height: 950 });
+    const end = new Date(EPOCH_MS + (walk.closes.length / 6) * DAY_MS).toISOString().slice(0, 16);
+    await page.goto(`${fake.url}/#t=2021-01-01T00:00Z~${end}Z&p=24000~26000&r=12,3&pane=rsi4h`);
+    await S.atRest(page, fake, probe);
+    await probe.waitForQuiet({ quietMs: 500, timeout: 60000 });
+    await page.keyboard.press("e");
+    await surface(page, "columns");
+    await page.keyboard.press("Home");
+    const first = await cell(page);
+    expect(first.ts, "four hours").toBe(DAY_MS / 6 / BASE_MS);
+    expect(await position(page)).toMatch(/^Bar /);
+    for (let i = 1; i <= 17; i++) {
+      await page.keyboard.press("ArrowRight");
+      expect((await cell(page)).c, `step ${i}: the next 4-hour bar`).toBe(first.c + i);
+      if (i >= 14) await expect(page.locator("#ol-inspect-readout"), `bar ${i}: the fixture's RSI`).toContainText(rsi[i].toFixed(2));
+    }
+  });
+
   // a view with many kinds of reference on: the three curves of two Bollinger bands, the days of the session VWAP, swings and their equal pairs, crosses, calendar lines
   const RICH = "#w=30d&vis=2&lines=bb4h,bb1d,svwap,swing4h,swing1d,gdcross,cme,7d,30d,cday,funding";
   async function openRich(page, fake, probe) {
@@ -246,7 +315,15 @@ test.describe("B55 Inspect: the review of PR #53", () => {
     const band = names.filter((n) => /^Bollinger/.test(n));
     expect(band.length, "three curves for each of two timeframes").toBe(6);
     for (const part of ["Upper", "Middle", "Lower"]) expect(band.filter((n) => n.includes(part)).length, `a ${part} curve for each timeframe`).toBe(2);
-    expect(names.filter((n) => /^Session VWAP/.test(n)).length, "a day each of a month").toBeGreaterThan(20);
+    // the session VWAP's days are told apart by their date: one for each UTC day the 30-day view reaches, from the cutoff's day back (the cutoff of the standard cube is
+    // 24 Sep 2026, 12:02 UTC), written as the page writes a day
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+      cutDay = Date.parse("2026-09-24T00:00:00Z"),
+      days = Array.from({ length: 31 }, (_, i) => {
+        const d = new Date(cutDay - (30 - i) * DAY_MS);
+        return `Session VWAP · ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+      });
+    expect(names.filter((n) => /^Session VWAP/.test(n)), "a day each of the month, named by its date").toEqual(days);
     // the position line and the announcement name the entry the cursor is on by the same name, entry by entry
     await page.keyboard.press("Home");
     const seen = new Set();
@@ -277,6 +354,27 @@ test.describe("B55 Inspect: the review of PR #53", () => {
       const text = await page.locator("#ol-inspect-readout").textContent();
       expect(text, `${name}: a record of its own, not the cell's or another line's`).toMatch(name.includes("equal") ? /Equal|equal/ : /50 SMA/);
       expect(text).toMatch(/Known at|Timeframe/);
+    }
+  });
+
+  test("the CME spot gaps are in the list, named by when they opened, and each reads as the gap it is", async ({ page, probe, fakeFor, pane }) => {
+    const fake = await fakeFor("standard");
+    await openRich(page, fake, probe);
+    const names = await options(page),
+      frame = await pane.last();
+    const drawn = frame.texts.filter((x) => /^CME gap/.test(x.text)).length;
+    expect(drawn, "the plot draws CME gaps").toBeGreaterThan(0);
+    const gaps = names.filter((n) => /^CME gap · /.test(n));
+    expect(gaps.length, "every gap drawn is a reference").toBeGreaterThanOrEqual(drawn);
+    expect(new Set(gaps).size, "named by their own opening").toBe(gaps.length);
+    for (const name of [gaps[0], gaps.at(-1)]) {
+      await page.locator("#ol-inspect-reference").selectOption({ label: name });
+      expect(await position(page)).toContain(name);
+      const readout = page.locator("#ol-inspect-readout");
+      await expect(readout, `${name}: the gap's own record`).toContainText(/Friday close/);
+      await expect(readout).toContainText(/Sunday reopen/);
+      await expect(readout).toContainText(/Traded back/);
+      expect(await page.locator("#ol-inspect-live").textContent(), "and it is announced").toContain("Friday close");
     }
   });
 
@@ -333,25 +431,30 @@ test.describe("B55 Inspect: the review of PR #53", () => {
     }
   });
 
+// the lens held over the column the cutoff is in (a hand-made trade list ending 20 minutes into an hour), Inspect on it
+async function holdLens(page, probe, fakeFor, pane, lines = "") {
+  const fake = await fakeFor({ trades: TRADES, cutoffIso: iso(CUT) });
+  await page.setViewportSize({ width: 1500, height: 950 });
+  const a = CUT - 10 * HOUR_MS,
+    b = CUT + 2 * HOUR_MS;
+  await page.goto(`${fake.url}/#t=${iso(a)}~${iso(b)}&p=24600~25400&r=6,3&vis=2${lines}`);
+  await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 120000 }).toBe(true);
+  await S.atRest(page, fake, probe);
+  await probe.waitForQuiet({ quietMs: 800, timeout: 60000 });
+  const layout = (await page.locator("#ol-canvas").getAttribute("data-layout")).split(",").map(Number),
+    box = await page.locator("#ol-canvas").boundingBox();
+  // the lens over the open column, a few minutes before the cutoff
+  await page.keyboard.press("l");
+  await page.mouse.move(box.x + layout[0] + layout[2] * ((CUT - 3 * 60000 - a) / (b - a)), box.y + layout[1] + layout[3] * 0.5);
+  await expect.poll(async () => (await pane.last()).texts.some((x) => /^Lens/.test(x.text)), { message: "the lens is drawn", timeout: 60000 }).toBe(true);
+  await probe.waitForQuiet({ quietMs: 600, timeout: 60000 });
+  await page.keyboard.press("e");
+  await expect(page.locator("#ol-inspect")).toHaveAttribute("data-surface", "lens");
+  await page.locator("#ol-inspect").focus();
+}
+
   test("the lens keeps the unfinished state: an empty finer cell of the open column is not a completed zero, and a measured one says its column is open", async ({ page, probe, fakeFor, pane }) => {
-    const fake = await fakeFor({ trades: TRADES, cutoffIso: iso(CUT) });
-    await page.setViewportSize({ width: 1500, height: 950 });
-    const a = CUT - 10 * HOUR_MS,
-      b = CUT + 2 * HOUR_MS;
-    await page.goto(`${fake.url}/#t=${iso(a)}~${iso(b)}&p=24600~25400&r=6,3&vis=2`);
-    await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 120000 }).toBe(true);
-    await S.atRest(page, fake, probe);
-    await probe.waitForQuiet({ quietMs: 800, timeout: 60000 });
-    const layout = (await page.locator("#ol-canvas").getAttribute("data-layout")).split(",").map(Number),
-      box = await page.locator("#ol-canvas").boundingBox();
-    // the lens over the open column, a few minutes before the cutoff
-    await page.keyboard.press("l");
-    await page.mouse.move(box.x + layout[0] + layout[2] * ((CUT - 3 * 60000 - a) / (b - a)), box.y + layout[1] + layout[3] * 0.5);
-    await expect.poll(async () => (await pane.last()).texts.some((x) => /^Lens/.test(x.text)), { message: "the lens is drawn", timeout: 60000 }).toBe(true);
-    await probe.waitForQuiet({ quietMs: 600, timeout: 60000 });
-    await page.keyboard.press("e");
-    await expect(page.locator("#ol-inspect")).toHaveAttribute("data-surface", "lens");
-    await page.locator("#ol-inspect").focus();
+    await holdLens(page, probe, fakeFor, pane);
     const readout = page.locator("#ol-inspect-readout");
     // the finer cell the lens starts on has trades in an hour that is not over
     await expect(readout, "a measured finer cell").toContainText("Taker buys");
@@ -366,5 +469,43 @@ test.describe("B55 Inspect: the review of PR #53", () => {
     expect(text, "an earlier column is over").not.toMatch(/Still open/);
     if (/Taker buys/.test(text)) expect(text).toMatch(/Column\s*Complete/);
     else expect(text).toContain("No trades in this finer cell");
+  });
+
+  test("choosing a reference from the lens surface reads it, and the lens is let go with Inspect on the reference", async ({ page, probe, fakeFor, pane }) => {
+    await holdLens(page, probe, fakeFor, pane, "&lines=7d");
+    const names = await options(page);
+    expect(names.length, "a reference is on").toBeGreaterThan(0);
+    await page.locator("#ol-inspect-reference").selectOption({ label: names[0] });
+    await expect(page.locator("#ol-inspect"), "the cursor is on the reference").toHaveAttribute("data-surface", "references");
+    expect(await position(page)).toContain(names[0]);
+    await expect(page.locator("#ol-inspect-readout")).toContainText(/Period|Known at/);
+    await expect(page.locator("#ol-lens-pin"), "the held lens is gone with the surface").toBeHidden();
+  });
+
+  test("a click on a reference line reads it at the time that was clicked, not at the previous cursor's", async ({ page, probe, fakeFor, pane }) => {
+    const fake = await fakeFor("standard");
+    await open(page, fake, probe, "#w=7d&vis=2&lines=7d&p=15000~35000");
+    const layout = (await page.locator("#ol-canvas").getAttribute("data-layout")).split(",").map(Number),
+      box = await page.locator("#ol-canvas").boundingBox(),
+      frame = await pane.last(),
+      colours = await pane.colours();
+    // the 7-day POC line: a horizontal 1.5 px stroke across the plot
+    const ys = [];
+    for (const k of frame.strokes.filter((k) => k.stroke === colours.poc && k.width === 1.5))
+      for (let i = 0; i + 1 < k.path.length; i += 2) if (k.path[i][1] === k.path[i + 1][1] && k.path[i + 1][0] - k.path[i][0] > 100) ys.push(k.path[i][1]);
+    expect(ys.length, "the POC line is on the plot").toBeGreaterThan(0);
+    await page.keyboard.press("e");
+    const at = (fx, y) => [box.x + layout[0] + layout[2] * fx, box.y + y];
+    // a first reading early in the view, then the line late in it
+    await page.mouse.click(...at(0.2, layout[1] + layout[3] * 0.05));
+    const early = await cell(page);
+    await page.mouse.click(...at(0.8, ys[0]));
+    await expect(page.locator("#ol-inspect"), "the line was read").toHaveAttribute("data-surface", "references");
+    const read = await cell(page);
+    expect(read.c, "at the time that was clicked: later than the first reading").toBeGreaterThan(early.c);
+    // the same time, read as a cell on a place with no reference
+    await page.mouse.click(...at(0.8, layout[1] + layout[3] * 0.02));
+    await expect(page.locator("#ol-inspect")).toHaveAttribute("data-surface", "cells");
+    expect(read.c, "the column of the click").toBe((await cell(page)).c);
   });
 });

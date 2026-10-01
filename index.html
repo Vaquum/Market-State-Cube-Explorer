@@ -32583,7 +32583,9 @@
     if (motion.sources[src.id]) return null;
     return {
       key: ["motion", live.generation, src.id].join("|"),
-      path: `/cube/tile?n=${src.n}&m=${src.m}&b0=${src.b0}&b1=${src.b1}&motion=1`,
+      // The tile's end as the cube reported it is the data cutoff when the tile reaches it, and a cutoff is not a whole base column: the cube is asked for the whole
+      // column that holds it, the same span the tile itself was read over (a fraction is no b1 to the cube: "b1 must be an integer").
+      path: `/cube/tile?n=${src.n}&m=${src.m}&b0=${src.b0}&b1=${Math.ceil(src.b1)}&motion=1`,
       decode: async (body) => ({ part: await unpack(body.block, "motion:" + src.id), body }),
       apply: ({ part, body }) => {
         // A tile let go meanwhile has no use for its path and dwell.

@@ -39,7 +39,7 @@ const ENV = { T0: 1609459200, BASE: 56.25, PR: 125, CUT: 3214083 };
 const VIEW_DEFAULTS = {
   window: "24h", tA: NaN, tB: NaN, pA: NaN, pB: NaN, auto: true, n: null, m: null, selection: null, anchor: null, replay: false,
   follow: "refit", mode: "volume", pane: "cells", rows: "off", period: "90d", level: null, poc: true, area: false, untested: false,
-  lines: [], tab: "context", evidenceKind: "poc", horizon: 1, barrier: 1, appearance: AP, scales: [], axes: [],
+  lines: [], tab: "context", evidenceKind: "poc", horizon: 1, barrier: 1, profileCmp: "independent", profileOpen: false, appearance: AP, scales: [], axes: [],
 };
 const SCALE_FIELDS = ["basis", "pathBasis", "transform", "curve", "rowsTransform", "cells", "rows", "local", "window", "lock"];
 const scaleDefaults = () => ({ basis: "amount", pathBasis: "spans", transform: "value", curve: "log", rowsTransform: "value", cells: "explore", rows: "explore", local: false, window: null, lock: false });
@@ -80,6 +80,8 @@ const LEGS = {
     [{ mode: "dwell" }, { window: [0.2, 0.6] }, "mode=dwell&sw=0.2~0.6"],
   ],
   "scale.lock": [[{}, { lock: false }, null], [{}, { lock: true }, "lk=1"]],
+  profileCmp: [[{ profileCmp: "independent" }, null, null], [{ profileCmp: "absolute" }, null, "pc=a"], [{ profileCmp: "share" }, null, "pc=s"]],
+  profileOpen: [[{ profileOpen: false }, null, null], [{ profileOpen: true }, null, "po=1"]],
 };
 
 test("(c) LEGS names every VISUAL_KEYS entry, and every scale field of VISUAL_KEYS is a field policy.persisted writes (and the reverse)", () => {

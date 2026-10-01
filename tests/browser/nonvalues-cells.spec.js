@@ -20,7 +20,7 @@
 // What this does NOT cover (other packages' spec or not yet in the tree): the legend keys and the chip (U, B23), the tooltip and
 // table readouts (T, B03), the tally and the warnings (S, B09), a measure's Amount/Intensity choice (U's menu).
 const { test, expect, probeTools } = require("./fixtures.js");
-const { addRecorder, lastDraw, openView, pageColours, rectOf, boxOf, opsOfBox } = require("./cells-support.js");
+const { addRecorder, lastDraw, openView, pageColours, rectOf, boxOf, opsOfBox, expectMovementMark } = require("./cells-support.js");
 const reference = require("../reference/index.js");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -213,6 +213,10 @@ test.describe("B16a zero, midpoint and outlines", () => {
       const box = boxOf(draw.plot, rect, 0, 0, z.c, z.r);
       const ops = opsOfBox(draw, box);
       const share = z.w / 56.25;
+      if (z.w !== 0 && !(z.ct > 0)) {
+        expectMovementMark(expect, draw, box, colours.unsigned[entry(share)], colours.surface, `cell ${z.c}:${z.r}: share ${share}, the movement mark in its own colour`);
+        continue;
+      }
       expect(ops, `cell ${z.c}:${z.r}: painted once`).toHaveLength(1);
       if (z.w === 0) {
         expect(ops[0].op, `cell ${z.c}:${z.r}: zero dwell is an outline`).toBe("strokeRect");
@@ -220,10 +224,6 @@ test.describe("B16a zero, midpoint and outlines", () => {
       } else if (z.ct > 0) {
         expect(ops[0].op, `cell ${z.c}:${z.r}: a traded cell is filled`).toBe("fillRect");
         expect(ops[0].style, `share ${share}`).toBe(colours.unsigned[entry(share)]);
-      } else {
-        expect(ops[0].op, `cell ${z.c}:${z.r}: a cell the price only crossed or held in is outlined`).toBe("strokeRect");
-        expect(ops[0].style, `share ${share}, in its own colour`).toBe(colours.unsigned[entry(share)]);
-        expect(ops[0].lineWidth).toBe(1);
       }
     }
   });

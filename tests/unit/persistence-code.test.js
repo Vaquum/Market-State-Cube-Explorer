@@ -564,24 +564,43 @@ test("descriptor validation, every branch: channel, policy, transform, formula a
   bad((p) => { delete p.scales[0].desc.id; }, /id is missing/, "descriptor id missing");
 });
 
-test("limits on read: 16 scales are accepted, 17 rejected; 19 axes accepted, 20 rejected; 4 models accepted, 5 rejected", () => {
+test("the profile tracks' choice and disclosure travel in a view code (S2) and come back; a bad value is refused; absent means independent and closed", async () => {
+  const withProfile = (cmp, open) => mutate((p) => { p.view.profileCmp = cmp; p.view.profileOpen = open; });
+  for (const [cmp, open] of [["absolute", false], ["share", true], ["independent", true]]) {
+    const code = await C.encodePortable(JSON.parse(JSON.stringify({ ...payload(), view: { ...payload().view, profileCmp: cmp, profileOpen: open } })), { deflate: zlibDeflate });
+    const decoded = await C.decodePortable(code, { inflate: zlibInflate });
+    const checked = C.validatePortable(decoded.payload, {});
+    assert.equal(checked.ok, true, checked.reasons.join("; "));
+    assert.equal(checked.value.view.profileCmp, cmp);
+    assert.equal(checked.value.view.profileOpen, open);
+  }
+  const plainView = C.validatePortable(seal(payload()), {});
+  assert.equal(plainView.ok, true);
+  assert.equal(plainView.value.view.profileCmp, "independent", "a code without the setting is independent");
+  assert.equal(plainView.value.view.profileOpen, false, "and closed");
+  assert.equal(C.validatePortable(withProfile("both", false), {}).ok, false, "an unknown comparison is refused");
+  assert.match(C.validatePortable(withProfile("both", false), {}).reasons[0], /independent, absolute or share/);
+  assert.match(C.validatePortable(withProfile("share", "yes"), {}).reasons[0], /true or false/);
+});
+
+test("limits on read: 16 scales are accepted, 17 rejected; 21 axes accepted, 22 rejected; 4 models accepted, 5 rejected", () => {
   const scalesOf = (n) => Array.from({ length: n }, (_, i) => plain(record("c", valueDesc(1000 + i, 10 + i, false), cellsCtx("volume", i % 16, Math.floor(i / 16)))));
   const axesOf = (n) => Array.from({ length: n }, (_, i) => ({ id: "pane.a" + i, domain: [0, 10 + i], policy: "frozen", through: null }));
   const modelsOf = (n) => Array.from({ length: n }, (_, i) => plain({ ...MODEL, id: "model" + i }));
   const ok = (extra) => C.validatePortable(seal({ ...payload({ scales: [], axes: [], models: [] }), ...extra }), {});
   assert.equal(ok({ scales: scalesOf(16) }).ok, true);
   assert.match(ok({ scales: scalesOf(17) }).reasons[0], /more than 16 active scales \(17\)/);
-  assert.equal(ok({ axes: axesOf(19) }).ok, true);
-  assert.match(ok({ axes: axesOf(20) }).reasons[0], /more than 19 frozen axes \(20\)/);
+  assert.equal(ok({ axes: axesOf(21) }).ok, true);
+  assert.match(ok({ axes: axesOf(22) }).reasons[0], /more than 21 frozen axes \(22\)/);
   assert.equal(ok({ models: modelsOf(4) }).ok, true);
   assert.match(ok({ models: modelsOf(5) }).reasons[0], /more than 4 models \(5\)/);
 });
 
-test("write-side limits: encodePortable refuses what a reader would refuse (17 scales, 20 axes, 256 knots, a bad descriptor), naming why", async () => {
+test("write-side limits: encodePortable refuses what a reader would refuse (17 scales, 22 axes, 256 knots, a bad descriptor), naming why", async () => {
   const scalesOf = (n) => Array.from({ length: n }, (_, i) => plain(record("c", valueDesc(1000 + i, 10 + i, false), cellsCtx("volume", i % 16, Math.floor(i / 16)))));
   await C.encodePortable(payload({ scales: scalesOf(16) }), { deflate: zlibDeflate });
   await assert.rejects(C.encodePortable(payload({ scales: scalesOf(17) }), { deflate: zlibDeflate }), (e) => e.name === "LimitError" && /more than 16 active scales/.test(e.reason) && e.code === "limit");
-  await assert.rejects(C.encodePortable(payload({ axes: Array.from({ length: 20 }, (_, i) => ({ id: "pane.a" + i, domain: [0, 10 + i], policy: "frozen", through: null })) })), (e) => e.name === "LimitError");
+  await assert.rejects(C.encodePortable(payload({ axes: Array.from({ length: 22 }, (_, i) => ({ id: "pane.a" + i, domain: [0, 10 + i], policy: "frozen", through: null })) })), (e) => e.name === "LimitError");
   const short = payload();
   short.scales[1].desc.params.knots = short.scales[1].desc.params.knots.slice(0, 256);
   await assert.rejects(C.encodePortable(short), (e) => e.name === "CodeError" && /257/.test(e.reason));

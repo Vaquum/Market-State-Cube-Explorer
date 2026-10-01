@@ -173,9 +173,13 @@ async function plotRect(page, { x, y }) {
     // The row that finds the coverage's edge must cross the plot above the data (no cell, no band): near its top.
     // (the last surface-coloured pixel of the row: its labels draw text that is not the background either)
     const row = c.getImageData(0, y0 + 8, canvas.width, 1).data;
+    // The page writes where the heatmap ends (data-layout: x, y, w, h of the plot, then the Rows strip and the tracks), so the scan stops
+    // there: the strip beside the plot is surface-coloured too and is not coverage.
+    const layout = (canvas.dataset.layout || "").split(",").map(Number);
+    const plotRight = layout.length >= 4 && layout.every(Number.isFinite) ? Math.round(layout[0] + layout[2]) : canvas.width;
     let x0 = -1;
     let covered = -1;
-    for (let k = 0; k < canvas.width; k++) {
+    for (let k = 0; k < plotRight; k++) {
       if (row[4 * k] === surface[0] && row[4 * k + 1] === surface[1] && row[4 * k + 2] === surface[2]) {
         if (x0 < 0) x0 = k;
         covered = k + 1;
@@ -183,7 +187,7 @@ async function plotRect(page, { x, y }) {
     }
     // The plot's right edge: a gridline crosses the whole plot, so a non-background pixel right of the coverage that belongs to a
     // long horizontal run of them is on one (a band or a vertical line is not).
-    const probeX = Math.min(covered + 150, canvas.width - 1);
+    const probeX = Math.min(covered + 150, plotRight - 1);
     const right = c.getImageData(probeX, 0, 1, canvas.height).data;
     let x1 = covered; // no gridline beyond the coverage: the coverage reaches the plot's edge
     for (let k = y0 + 2; k < y1; k++) {
@@ -194,7 +198,7 @@ async function plotRect(page, { x, y }) {
       while (a > 0 && !isBg(line, a - 1)) a--;
       while (b + 1 < canvas.width && !isBg(line, b + 1)) b++;
       if (b - a >= 200) {
-        x1 = b + 1;
+        x1 = Math.min(b + 1, plotRight);
         break;
       }
     }

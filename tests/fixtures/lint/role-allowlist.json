@@ -23,19 +23,6 @@
     },
     {
       "file": "src/explorer.js",
-      "pattern": "colors.volume",
-      "count": 1,
-      "rows": [
-        "C-05",
-        "C-11c",
-        "C-12a",
-        "C-25",
-        "T-07"
-      ],
-      "owner": "#47"
-    },
-    {
-      "file": "src/explorer.js",
       "pattern": "colors.evidence",
       "count": 5,
       "rows": [
@@ -56,34 +43,9 @@
       "owner": "#48"
     },
     {
-      "file": "src/explorer.js",
-      "pattern": "colors.line@state",
-      "count": 3,
-      "rows": [
-        "C-04",
-        "C-08d",
-        "C-16a",
-        "C-25",
-        "T-06"
-      ],
-      "owner": "#47"
-    },
-    {
-      "file": "src/explorer.js",
-      "pattern": "colors.poc@state",
-      "count": 9,
-      "rows": [
-        "C-12d",
-        "C-16b",
-        "C-17",
-        "T-10"
-      ],
-      "owner": "#47"
-    },
-    {
       "file": "src/explorer.css",
       "pattern": "--ol-evidence",
-      "count": 4,
+      "count": 3,
       "rows": [
         "T-11",
         "D-08",
@@ -95,58 +57,10 @@
     },
     {
       "file": "src/explorer.css",
-      "pattern": "--ol-line@state",
-      "count": 6,
-      "rows": [
-        "D-08",
-        "D-09",
-        "F-01",
-        "F-03",
-        "F-06"
-      ],
-      "owner": "#47"
-    },
-    {
-      "file": "src/explorer.css",
-      "pattern": "--ol-poc@state",
-      "count": 4,
-      "rows": [
-        "D-07",
-        "D-08",
-        "D-09",
-        "F-02",
-        "F-04",
-        "T-10"
-      ],
-      "owner": "#47"
-    },
-    {
-      "file": "src/explorer.css",
       "pattern": "--ol-tier-*",
       "count": 6,
       "rows": [
         "T-19"
-      ],
-      "owner": "#48"
-    },
-    {
-      "file": "src/explorer.css",
-      "pattern": "--ol-volume",
-      "count": 4,
-      "rows": [
-        "T-07",
-        "D-01",
-        "D-08",
-        "D-09"
-      ],
-      "owner": "#47"
-    },
-    {
-      "file": "docs/data-and-semantics.md",
-      "pattern": "prose:buy-sell-colour",
-      "count": 1,
-      "rows": [
-        "R-14"
       ],
       "owner": "#48"
     }

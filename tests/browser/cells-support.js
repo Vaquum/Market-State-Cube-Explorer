@@ -181,4 +181,31 @@ function opsOfBox(draw, box, tol = 1.6) {
   return draw.ops.filter((op) => near(op.x, box.x0) && near(op.y, box.y0) && near(op.x + op.w, box.x1) && near(op.y + op.h, box.y1));
 }
 
-module.exports = { addRecorder, lastDraw, openView, pageColours, baseOfStamp, rowOfPrice, rectOf, boxOf, opsOfBox, PRICE_ROW };
+// The movement-only mark of the stroke-role table (PRD-0002 S2): a neutral interior, then up to 3.5 px of surface backing and a core of up to
+// 1.5 px in the value's colour, both inset from the cell and on the one rectangle. A thin stroke is antialiased, so the core is found by its
+// style and width rather than by a pixel. Where the cell is at least 8 px each way the widths are the table's own, 1.5 and 3.5.
+function expectMovementMark(expect, draw, box, style, surface, what) {
+  const loose = opsOfBox(draw, box, 2.4),
+    fills = loose.filter((o) => o.op === "fillRect"),
+    strokes = loose.filter((o) => o.op === "strokeRect"),
+    side = Math.min(box.x1 - box.x0, box.y1 - box.y0);
+  expect(fills, `${what}: one neutral interior`).toHaveLength(1);
+  expect(fills[0].style, `${what}: the interior is the surface`).toBe(surface);
+  expect(strokes, `${what}: a casing and a core`).toHaveLength(2);
+  const [casing, core] = strokes;
+  expect(casing.style, `${what}: the backing is the surface colour`).toBe(surface);
+  expect(core.style, `${what}: the core is the colour of the pinned Lut`).toBe(style);
+  expect([casing.x, casing.y, casing.w, casing.h], `${what}: on one rectangle`).toEqual([core.x, core.y, core.w, core.h]);
+  expect(core.lineWidth, `${what}: a core of at most 1.5 px`).toBeLessThanOrEqual(1.5);
+  expect(core.lineWidth, `${what}: and at least 1 px`).toBeGreaterThanOrEqual(1);
+  expect(casing.lineWidth, `${what}: backing of at most 3.5 px`).toBeLessThanOrEqual(3.5);
+  expect(casing.lineWidth, `${what}: wider than the core`).toBeGreaterThan(core.lineWidth);
+  expect(core.x - box.x0 - 0.5, `${what}: inset by half the backing`).toBeCloseTo(casing.lineWidth / 2, 1);
+  if (side >= 8) {
+    expect(core.lineWidth, `${what}: the table's 1.5 px core`).toBe(1.5);
+    expect(casing.lineWidth, `${what}: the table's 3.5 px backing`).toBe(3.5);
+  }
+  expect(core.alpha, `${what}: at alpha 1`).toBe(1);
+}
+
+module.exports = { addRecorder, lastDraw, openView, pageColours, baseOfStamp, rowOfPrice, rectOf, boxOf, opsOfBox, expectMovementMark, PRICE_ROW };

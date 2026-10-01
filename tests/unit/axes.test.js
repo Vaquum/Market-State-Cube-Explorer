@@ -38,7 +38,7 @@ function input(over) {
 
 // ---- catalogue ------------------------------------------------------------------------------------------
 
-test("catalogue: the 19 registered axes of B.12, ids with dots, each with its sign, default policy, natural domain and unit", () => {
+test("catalogue: the 21 registered axes (the 19 of B.12 and the two shared profile domains of S2), ids with dots, each with its sign, default policy, natural domain and unit", () => {
   const expected = {
     "pane.volume": ["columns", "unsigned", "auto", null, "usdt"],
     "pane.trades": ["columns", "unsigned", "auto", null, "trades"],
@@ -57,12 +57,14 @@ test("catalogue: the 19 registered axes of B.12, ids with dots, each with its si
     "profile.reference.time": ["reference", "unsigned", "auto", null, "seconds"],
     "profile.reference.delta": ["reference", "signed-symmetric", "auto", null, "usdt"],
     "profile.reference.relvol": ["reference", "ratio", "fixed", [-2, 2], "log2-ratio"],
+    "profile.shared.absolute": ["profile", "unsigned", "auto", null, "usdt"],
+    "profile.shared.share": ["profile", "unsigned", "auto", null, "share"],
     "nav.time": ["navigation", "unsigned", "navigation", null, "time"],
     "nav.price": ["navigation", "unsigned", "navigation", null, "usdt"],
   };
   const got = plain(E.axis.CATALOGUE);
   assert.deepEqual(Object.keys(got).sort(), Object.keys(expected).sort());
-  assert.equal(Object.keys(expected).length, E.LIMITS.AXES_MAX, "19 axes: the import limit of B.12");
+  assert.equal(Object.keys(expected).length, E.LIMITS.AXES_MAX, "21 axes: the import limit");
   for (const id of Object.keys(expected)) {
     const [channel, sign, policy, natural, unit] = expected[id];
     assert.equal(got[id].id, id);
@@ -80,7 +82,7 @@ test("catalogue: the 19 registered axes of B.12, ids with dots, each with its si
 });
 
 test("namespace shape", () => {
-  assert.deepEqual(Object.keys(E.axis).sort(), ["CATALOGUE", "coordinate", "domain", "registry", "ticks"]);
+  assert.deepEqual(Object.keys(E.axis).sort(), ["CATALOGUE", "coordinate", "domain", "profile", "registry", "ticks"]);
   assert.ok(Object.isFrozen(E.axis));
   const r = E.axis.registry();
   assert.deepEqual(Object.keys(r).sort(), ["drop", "frame", "freeze", "get", "hasPending", "list", "nextWake", "unfreeze"]);

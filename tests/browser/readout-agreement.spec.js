@@ -330,13 +330,14 @@ test.describe("B03 readout agreement", () => {
     await expect(page.locator("tr[data-cell-key]").first()).toBeVisible();
     const levels = await page.evaluate(() => [...new Set([...document.querySelectorAll("#ol-table-body tr")].map((tr) => tr.dataset.level))]);
     expect(levels, "every row of the table is at the level the chart draws").toEqual([`${n}:${m}`]);
-    // Hover the first row: its cell is outlined on the chart at the row's own level (a 2 px ink stroke).
+    // Hover the first row: its cell is linked on the chart at the row's own level by the two-tone boundary of the stroke table (1 px of ink
+    // in 3 px of surface, inside the cell).
     await probe.reset();
     await page.locator("tr[data-cell-key]").first().hover();
     await probe.waitForDrawFrames(1);
     const frames = await probe.frames();
-    const outlined = frames.some((frame) => frame.styles.some((s) => s.op === "strokeRect" && s.lineWidth === 2));
-    expect(outlined, "a 2 px outline was drawn for the hovered row").toBe(true);
+    const linked = frames.some((frame) => frame.styles.some((s) => s.op === "stroke" && s.lineWidth === 3) && frame.styles.some((s) => s.op === "stroke" && s.lineWidth === 1));
+    expect(linked, "a 3 px casing and a 1 px core were stroked for the hovered row").toBe(true);
     // Let every read finish before the fake goes: a request cut off by the teardown is a console error.
     await fake.idle({ quietMs: 600, timeoutMs: 30000 });
   });

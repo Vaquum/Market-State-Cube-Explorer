@@ -21,6 +21,11 @@ function install(canvasId) {
   const frames = [];
   let cur = null;
   let path = [];
+  // where each subpath of the path begins and whether it is closed: a stroke's footprint is its subpaths' segments, not the line through every point
+  let subs = [];
+  // the clip in force (the box of the rectangles clipped to, intersected) and the saved ones: an operation paints only inside it
+  let clip = null;
+  let clipStack = [];
   const d = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "width");
   Object.defineProperty(HTMLCanvasElement.prototype, "width", {
     configurable: true,
@@ -30,7 +35,9 @@ function install(canvasId) {
     },
     set(v) {
       if (this.id === canvasId) {
-        cur = { rects: [], strokeRects: [], strokes: [], fills: [], texts: [], patterns: 0 };
+        cur = { rects: [], strokeRects: [], strokes: [], fills: [], texts: [], arcs: [], roundRects: [], patterns: 0, seq: 0 };
+        clip = null;
+        clipStack = [];
         frames.push(cur);
         if (frames.length > KEEP) frames.shift();
       }
@@ -48,27 +55,60 @@ function install(canvasId) {
   };
   wrap("beginPath", () => {
     path = [];
+    subs = [];
   });
   wrap("moveTo", ([x, y]) => {
+    subs.push([path.length, 0]);
     path.push([x, y]);
   });
   wrap("lineTo", ([x, y]) => {
+    if (!subs.length) subs.push([path.length, 0]);
     path.push([x, y]);
   });
+  wrap("save", () => {
+    clipStack.push(clip);
+  });
+  wrap("restore", () => {
+    clip = clipStack.length ? clipStack.pop() : null;
+  });
+  wrap("clip", () => {
+    if (!path.length) return;
+    const xs = path.map((p) => p[0]),
+      ys = path.map((p) => p[1]),
+      box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+    clip = clip ? [Math.max(clip[0], box[0]), Math.max(clip[1], box[1]), Math.min(clip[2], box[2]), Math.min(clip[3], box[3])] : box;
+  });
+  const inClip = () => (clip ? clip.slice() : null);
+  wrap("closePath", () => {
+    if (subs.length) subs[subs.length - 1][1] = 1;
+  });
+  // a rectangle path is its four corners, so a two-tone boundary drawn with ctx.rect can be located
+  wrap("rect", ([x, y, w, h]) => {
+    subs.push([path.length, 1]);
+    path.push([x, y], [x + w, y], [x + w, y + h], [x, y + h]);
+  });
   wrap("fillRect", function ([x, y, w, h]) {
-    cur.rects.push({ x, y, w, h, fill: style(this.fillStyle), alpha: this.globalAlpha });
+    cur.rects.push({ x, y, w, h, fill: style(this.fillStyle), alpha: this.globalAlpha, clip: inClip(), seq: cur.seq++ });
   });
   wrap("strokeRect", function ([x, y, w, h]) {
-    cur.strokeRects.push({ x, y, w, h, stroke: style(this.strokeStyle), width: this.lineWidth, alpha: this.globalAlpha });
+    cur.strokeRects.push({ x, y, w, h, stroke: style(this.strokeStyle), width: this.lineWidth, alpha: this.globalAlpha, clip: inClip(), seq: cur.seq++ });
   });
   wrap("stroke", function () {
-    cur.strokes.push({ stroke: style(this.strokeStyle), width: this.lineWidth, dash: this.getLineDash(), alpha: this.globalAlpha, path: path.slice() });
+    cur.strokes.push({ stroke: style(this.strokeStyle), width: this.lineWidth, dash: this.getLineDash(), alpha: this.globalAlpha, path: path.slice(), subs: subs.map((x) => x.slice()), clip: inClip(), seq: cur.seq++ });
   });
   wrap("fill", function () {
-    cur.fills.push({ fill: style(this.fillStyle), alpha: this.globalAlpha, path: path.slice() });
+    cur.fills.push({ fill: style(this.fillStyle), alpha: this.globalAlpha, path: path.slice(), subs: subs.map((x) => x.slice()), clip: inClip(), seq: cur.seq++ });
   });
   wrap("fillText", function ([text, x, y]) {
-    cur.texts.push({ text: String(text), x, y, fill: style(this.fillStyle), align: this.textAlign });
+    cur.texts.push({ text: String(text), x, y, fill: style(this.fillStyle), align: this.textAlign, width: this.measureText(String(text)).width, clip: inClip(), seq: cur.seq++ });
+  });
+  // a circle (a cross's marker, a divergence's dot) and a rounded rectangle (a tag's plate) are kept apart from the paths: their fills and strokes
+  // are not one of the straight-line shapes the specs count
+  wrap("arc", function ([x, y, r]) {
+    cur.arcs.push({ x, y, r, clip: inClip(), seq: cur.seq++ });
+  });
+  wrap("roundRect", function ([x, y, w, h]) {
+    cur.roundRects.push({ x, y, w, h, clip: inClip(), seq: cur.seq++ });
   });
   wrap("createPattern", () => {
     cur.patterns++;
@@ -155,7 +195,8 @@ const textsOf = (frame) => frame.texts.map((t) => t.text);
 // The glyphs of the role table as the recorded paths show them (E.role.paint draws each as one path): hollow diamonds are stroked
 // closed four-vertex paths, triangles filled three-vertex paths (the apex up for "above range", down for "below range"), zero ticks
 // stroked horizontal segments, all in the ink given. Returns the centre of each, in drawing order.
-function glyphsOf(frame, ink, { size = 6 } = {}) {
+// `area` (the pane's rectangle) keeps a tick to the pane: the open column's cap on the plot is the same 1.5 px stroke in the state ink.
+function glyphsOf(frame, ink, { size = 6, area = null } = {}) {
   const close = (a, b) => Math.abs(a - b) < 1e-6;
   const out = { diamond: [], triUp: [], triDown: [], tick: [] };
   for (const s of frame.strokes) {
@@ -165,7 +206,7 @@ function glyphsOf(frame, ink, { size = 6 } = {}) {
       const xs = p.map((v) => v[0]);
       const ys = p.map((v) => v[1]);
       if (close(Math.max(...xs) - Math.min(...xs), size) && close(Math.max(...ys) - Math.min(...ys), size)) out.diamond.push([(Math.max(...xs) + Math.min(...xs)) / 2, (Math.max(...ys) + Math.min(...ys)) / 2]);
-    } else if (s.width === 1.5 && p.length === 2 && close(p[0][1], p[1][1])) out.tick.push([(p[0][0] + p[1][0]) / 2, p[0][1], p[1][0] - p[0][0]]);
+    } else if (s.width === 1.5 && p.length === 2 && close(p[0][1], p[1][1]) && (area === null || (p[0][1] >= area.y && p[0][1] <= area.y + area.h))) out.tick.push([(p[0][0] + p[1][0]) / 2, p[0][1], p[1][0] - p[0][0]]);
   }
   for (const f of frame.fills) {
     if (f.fill !== ink || f.path.length !== 3) continue;

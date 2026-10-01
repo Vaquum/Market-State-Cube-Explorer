@@ -51,14 +51,17 @@ test.describe("Rows non-value marks on the canvas", () => {
     // the text "−∞"), because the rows are 35 px tall here.
     const ink = colours.stateInk;
     const ticks = (frame) => countStyles(frame, (s) => s.op === "fillRect" && s.fillStyle === ink && s.alpha === 1);
-    expect(ticks(on) - ticks(off), "one tick for each row only the period traded").toBe(negativeInfinite.length);
+    // Twice: the tick at the plot's edge and the block of the same row in the 12 px Rows strip, which repeats every non-value mark.
+    expect(ticks(on) - ticks(off), "one tick for each row only the period traded, and its block in the Rows strip").toBe(2 * negativeInfinite.length);
     const plates = (frame) => countStyles(frame, (s) => s.op === "strokeRect" && s.strokeStyle === ink && s.lineWidth === 1 && s.alpha === 1);
     expect(plates(on) - plates(off), "and its plate").toBe(negativeInfinite.length);
-    expect(on.ops.fillText - off.ops.fillText, "with the infinity text in it").toBe(negativeInfinite.length);
+    // The three texts Rows adds besides the infinity marks: the reference track's heading and its domain, and the period's POC letter.
+    const REFERENCE_TRACK_TEXTS = 3;
+    expect(on.ops.fillText - off.ops.fillText, "with the infinity text in it").toBe(negativeInfinite.length + REFERENCE_TRACK_TEXTS);
 
     // No reference: one dotted 1 px tick for the row only the rectangle traded.
     const dotted = (frame) => countStyles(frame, (s) => s.op === "stroke" && s.strokeStyle === ink && s.lineWidth === 1 && s.dash === "1,2" && s.alpha === 1);
-    expect(dotted(on) - dotted(off), "one dotted tick for each row only the rectangle traded").toBe(noReference.length);
+    expect(dotted(on) - dotted(off), "one dotted tick for each row only the rectangle traded, and its dotted mark in the Rows strip").toBe(2 * noReference.length);
 
     // The bands: one, for the row both traded, at the fixed alpha and in the top of the positive arm; none for the typed rows.
     const bands = on.styles.filter((s) => s.op === "fillRect" && s.alpha === colours.alpha);

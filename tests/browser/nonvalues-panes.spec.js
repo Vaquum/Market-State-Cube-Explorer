@@ -157,7 +157,7 @@ test.describe("B16c: a measured zero is a tick on the baseline", () => {
     expect(bars.length, "one positive bar per positive column").toBe(positives.length);
     for (const bar of bars) expect(bar.h, "each is the maximum").toBeCloseTo(area.h / 2 - 4, 9);
 
-    const glyphs = paneCanvas.glyphsOf(frame, colours.state);
+    const glyphs = paneCanvas.glyphsOf(frame, colours.state, { area });
     expect(glyphs.tick.length, "one tick for the one zero column").toBe(zeros.length);
     const [x, y, width] = glyphs.tick[0];
     expect(y, "on the centre line of a signed axis").toBeCloseTo(area.y + area.h / 2, 9);
@@ -172,7 +172,7 @@ test.describe("B16c: a measured zero is a tick on the baseline", () => {
     const frame = await pane.last();
     const colours = await pane.colours();
     const area = paneCanvas.paneRect(frame, colours.surface);
-    expect(paneCanvas.glyphsOf(frame, colours.state).tick.length, "the balanced column is a zero tick").toBe(1);
+    expect(paneCanvas.glyphsOf(frame, colours.state, { area }).tick.length, "the balanced column is a zero tick").toBe(1);
     expect(paneCanvas.textsOf(frame)).toContain("0");
     expect(paneCanvas.barsOf(frame, area, { fill: colours.positive, alpha: 0.65 }).length + paneCanvas.barsOf(frame, area, { fill: colours.negative, alpha: 0.65 }).length, "and no bar").toBe(0);
   });

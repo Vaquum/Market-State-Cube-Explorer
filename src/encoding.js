@@ -44,7 +44,7 @@
     DEPTH_MAX: 8,
     TOMBSTONES_MAX: 64,
     HELD_MAX: 8,
-    AXES_MAX: 19,
+    AXES_MAX: 21,
     MODELS_MAX: 4,
   });
   // Milliseconds. SETTLE_MS and AUTO_MS are D4's 200 ms and 500 ms; RETRY_MS is the safety-net poll a
@@ -4446,6 +4446,76 @@
     return out;
   }
 
+  // E.role.occlusion(candidates, plot, opts) (PRD-0002 S2, the occlusion budget): persistent reference strokes, their backings and their label plates
+  // may cover at most `budget` (20%) of the measured heatmap rectangle `plot` {x, y, w, h}, the overlaps counted once. The cover is held on a bounded
+  // occupancy grid of `cell` css px squares (2), built from the marks' screen rectangles, so a frame never scans history or pixels. A candidate is
+  // {id, hot, rank, rects: [[x0, y0, x1, y1], ...]} (the rectangles its marks cover, backing and plate included). The focused ones (`hot`) come first,
+  // then by ascending `rank` (lower is kept longer), ties in the order given; a candidate that would take the cover past the budget is OFF unless it is
+  // focused: the focused mark is never thinned or widened, and when it alone needs more than the budget the answer says so (`focusOver`).
+  // -> {off: Set of ids, shown, eligible, used (grid cells), limit, cells, focusOver}
+  function rolOcclusion(candidates, plot, opts) {
+    const budget = opts && opts.budget !== undefined ? opts.budget : 0.2;
+    const size = opts && opts.cell !== undefined ? opts.cell : 2;
+    const off = new Set();
+    const out = { off, shown: 0, eligible: 0, used: 0, limit: 0, cells: 0, focusOver: false };
+    if (!(plot.w > 0) || !(plot.h > 0)) return out;
+    const cols = Math.ceil(plot.w / size);
+    const rows = Math.ceil(plot.h / size);
+    const grid = new Uint8Array(cols * rows);
+    out.cells = cols * rows;
+    out.limit = Math.floor(cols * rows * budget);
+    // A candidate's rectangles are claimed together: a cell already taken, or already claimed by an earlier rectangle of the same candidate, costs
+    // nothing (overlaps once, inside a mark and between marks); the claim stands if the mark is kept and is given back if it is not.
+    const claimed = [];
+    const claim = (x0, y0, x1, y1) => {
+      const c0 = Math.max(0, Math.floor((x0 - plot.x) / size));
+      const c1 = Math.min(cols - 1, Math.floor((x1 - plot.x) / size));
+      const r0 = Math.max(0, Math.floor((y0 - plot.y) / size));
+      const r1 = Math.min(rows - 1, Math.floor((y1 - plot.y) / size));
+      for (let r = r0; r <= r1; r++)
+        for (let c = c0; c <= c1; c++) {
+          const k = r * cols + c;
+          if (grid[k] === 0) {
+            grid[k] = 2;
+            claimed.push(k);
+          }
+        }
+    };
+    const order = candidates.slice().sort((a, b) => Number(b.hot) - Number(a.hot) || a.rank - b.rank);
+    for (const m of order) {
+      claimed.length = 0;
+      for (const r of m.rects) claim(r[0], r[1], r[2], r[3]);
+      const cost = claimed.length;
+      out.eligible++;
+      const refuse = !m.hot && out.used + cost > out.limit;
+      if (m.hot && out.used + cost > out.limit) out.focusOver = true;
+      for (let i = 0; i < claimed.length; i++) grid[claimed[i]] = refuse ? 0 : 1;
+      if (refuse) {
+        off.add(m.id);
+        continue;
+      }
+      out.used += cost;
+      out.shown++;
+    }
+    return out;
+  }
+
+  // E.role.unionSpans (PRD-0002 S2, event strip): the intervals of one event kind merged for drawing where they overlap or touch, each
+  // span keeping the events that make it up (in order of their start) so an inspection still reads every constituent. The marks of a lane are
+  // the union, never overlapping translucent marks, so nothing darker means more events. `events` are {t0, t1, ...}; input order is free.
+  function rolUnionSpans(events) {
+    const sorted = events.slice().sort((a, b) => a.t0 - b.t0 || a.t1 - b.t1),
+      spans = [];
+    for (const e of sorted) {
+      const last = spans.length ? spans[spans.length - 1] : null;
+      if (last !== null && e.t0 <= last.t1) {
+        if (e.t1 > last.t1) last.t1 = e.t1;
+        last.events.push(e);
+      } else spans.push({ t0: e.t0, t1: e.t1, events: [e] });
+    }
+    return spans;
+  }
+
   API.role = Object.freeze({
     ROLES: rolRoles,
     GLYPHS: rolGlyphs,
@@ -4453,6 +4523,8 @@
     tile: rolTile,
     glyphFor: rolGlyphFor,
     keyEntries: rolKeyEntries,
+    occlusion: rolOcclusion,
+    unionSpans: rolUnionSpans,
   });
 
   // == §13-store ==
@@ -5905,6 +5977,8 @@
     "profile.reference.time": axsEntry("profile.reference.time", "reference", "unsigned", "auto", null, "seconds", null),
     "profile.reference.delta": axsEntry("profile.reference.delta", "reference", "signed-symmetric", "auto", null, "usdt", null),
     "profile.reference.relvol": axsEntry("profile.reference.relvol", "reference", "ratio", "fixed", [-2, 2], "log2-ratio", null),
+    "profile.shared.absolute": axsEntry("profile.shared.absolute", "profile", "unsigned", "auto", null, "usdt", null),
+    "profile.shared.share": axsEntry("profile.shared.share", "profile", "unsigned", "auto", null, "share", null),
     "nav.time": axsEntry("nav.time", "navigation", "unsigned", "navigation", null, "time", null),
     "nav.price": axsEntry("nav.price", "navigation", "unsigned", "navigation", null, "usdt", null),
   });
@@ -6373,12 +6447,152 @@
     return Object.freeze({ frame, freeze: freezeAxis, unfreeze: unfreezeAxis, get, list, drop, nextWake, hasPending });
   }
 
+  // E.axis.profile (PRD-0002 S2 section 3): how the adjacent profile tracks are compared. The CURRENT track is the view's (or the
+  // selection's) Volume with its taker-buy subset; the REFERENCE track is the chosen Rows measure over its period. Rows are the page's
+  // price rows: row r of exponent m spans the base rows [r 2^m, (r + 1) 2^m), each list sorted by r.
+  //   independent  each track on an axis of its own (the default): this function has nothing to add.
+  //   absolute     one domain for both, the same pixels per unit. Needs the SAME measure and basis (Volume against Volume) and an exact
+  //                common partition: the finer side is coarsened by exact summation onto the coarser exponent, a coarse row is never split,
+  //                and only the bins wholly inside the view are shown (a bin that straddles the view's edge has rows one side never measured).
+  //   share        each row's share of the total of the same window W (the bins wholly inside the view and inside the reference's
+  //                support), both denominators reported. Needs two nonnegative distributions (Volume, Time at price); a signed Delta and a
+  //                ratio are not distributions. A zero total is "undefined", never a share of 0.
+  // A mode that is not offered is reported with its reason and the plan falls back to independent; the choice itself is the caller's
+  // to keep.
+  function axsBinsOf(rows, m, lo, hi, out) {
+    // The rows of a list at exponent `m` that overlap the base-row range [lo, hi), by binary search on the sorted list.
+    const size = Math.pow(2, m),
+      first = Math.floor(lo / size),
+      last = Math.ceil(hi / size) - 1;
+    let a = 0,
+      b = rows.length;
+    while (a < b) {
+      const mid = (a + b) >> 1;
+      if (rows[mid].r < first) a = mid + 1;
+      else b = mid;
+    }
+    for (let i = a; i < rows.length && rows[i].r <= last; i++) out.push(rows[i]);
+    return out;
+  }
+
+  // The rows coarsened by exact summation from exponent `from` onto the exponent `to` (to >= from): one bin per covering row of the
+  // coarser partition, the amounts `read` names summed in the order of the rows. Both names are carried: the total and the subset.
+  function axsCoarsen(rows, from, to, totalOf, subsetOf) {
+    const k = Math.pow(2, to - from),
+      out = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = Math.floor(rows[i].r / k),
+        at = out.length ? out[out.length - 1] : null;
+      if (at !== null && at.r === r) {
+        at.v += totalOf(rows[i]);
+        at.bv += subsetOf(rows[i]);
+      } else out.push({ r, v: totalOf(rows[i]), bv: subsetOf(rows[i]) });
+    }
+    return out;
+  }
+
+  const axsProfileTotal = { volume: (x) => x.v, time: (x) => x.w || 0 };
+
+  function axsProfileOffers(cur, ref) {
+    const why = (code) => ({ ok: false, reason: code });
+    let absolute, share;
+    if (!cur || cur.ready === false) absolute = share = why("current-not-ready");
+    else if (!ref) absolute = share = why("no-reference");
+    else if (ref.ready === false) absolute = share = why("reference-not-ready");
+    else if (!Number.isInteger(ref.m) || !Number.isInteger(cur.m)) absolute = share = why("not-aligned");
+    else {
+      absolute = ref.kind === "volume" ? { ok: true, reason: null } : why("unlike-measure");
+      share = ref.kind === "volume" || ref.kind === "time" ? { ok: true, reason: null } : why(ref.kind === "delta" ? "signed" : "unlike-measure");
+    }
+    return { independent: { ok: true, reason: null }, absolute, share };
+  }
+
+  // E.axis.profile(input) -> the plan of the two tracks: input {mode, cur: {rows, m, ready}, ref: {kind, rows, m, ready} | null, view: {lo, hi}}.
+  function axsProfile(input) {
+    if (!axsIsObject(input)) throw new TypeError("axis profile needs an input object");
+    const asked = input.mode === "absolute" || input.mode === "share" ? input.mode : "independent",
+      cur = input.cur ?? null,
+      ref = input.ref ?? null,
+      view = input.view;
+    if (!axsIsObject(view) || !axsFiniteNumber(view.lo) || !axsFiniteNumber(view.hi) || !(view.hi > view.lo)) throw new RangeError("axis profile needs a view range lo < hi (base rows)");
+    const offers = axsProfileOffers(cur, ref),
+      plan = { asked, mode: "independent", offers, m: null, state: "independent", reason: null, cur: null, ref: null, window: null, denominators: null, summary: null };
+    if (asked === "independent") return plan;
+    if (!offers[asked].ok) {
+      plan.reason = offers[asked].reason;
+      return plan;
+    }
+    const m = Math.max(cur.m, ref.m),
+      size = Math.pow(2, m),
+      total = axsProfileTotal[ref.kind],
+      // The partition's bins wholly inside the view: a bin that straddles an edge of the view holds rows of one side that the other side never measured, so it is
+      // shown on neither (the same support rule both comparisons use). Every row of such a bin lies inside the view, so coarsening a side onto the partition sums
+      // ALL the rows of each bin it keeps: a coarse row on one side and the fine rows that make it up on the other cover the same price support.
+      viewFirst = Math.ceil(view.lo / size),
+      viewLast = Math.floor(view.hi / size) - 1,
+      binsOf = (rows, from, read, buy) => axsCoarsen(axsBinsOf(rows, from, viewFirst * size, (viewLast + 1) * size, []), from, m, read, buy);
+    plan.mode = asked;
+    plan.m = m;
+    plan.state = "ok";
+    const none = () => {
+      plan.state = "none";
+      plan.reason = "no-window";
+      plan.summary = { count: 0, max: -Infinity, min: Infinity };
+      return plan;
+    };
+    if (!(viewLast >= viewFirst)) return none();
+    const curBins = binsOf(cur.rows, cur.m, axsProfileTotal.volume, (x) => x.bv || 0),
+      refBins = binsOf(ref.rows, ref.m, total, () => 0);
+    if (asked === "absolute") {
+      plan.window = { first: viewFirst, last: viewLast, bins: viewLast - viewFirst + 1 };
+      plan.cur = curBins.map((x) => ({ r: x.r, v: x.v, bv: x.bv, t: x.v, tb: x.bv }));
+      plan.ref = refBins.map((x) => ({ r: x.r, v: x.v, bv: 0, t: x.v, tb: 0 }));
+    } else {
+      // W: the bins wholly inside the view (every one has support on the current side, a row without trades being a known zero) and inside
+      // the reference's support, its first to its last row, in the partition's rows.
+      const refFirst = ref.rows.length ? Math.floor(ref.rows[0].r / Math.pow(2, m - ref.m)) : Infinity,
+        refLast = ref.rows.length ? Math.floor(ref.rows[ref.rows.length - 1].r / Math.pow(2, m - ref.m)) : -Infinity,
+        first = Math.max(viewFirst, refFirst),
+        last = Math.min(viewLast, refLast);
+      if (!(last >= first)) return none();
+      const inside = (x) => x.r >= first && x.r <= last,
+        curW = curBins.filter(inside),
+        refW = refBins.filter(inside);
+      let dc = 0,
+        dr = 0;
+      for (const x of curW) dc += x.v;
+      for (const x of refW) dr += x.v;
+      plan.window = { first, last, bins: last - first + 1 };
+      plan.denominators = { cur: dc, ref: dr };
+      if (!(dc > 0) || !(dr > 0)) {
+        plan.state = "undefined";
+        plan.reason = "zero-total";
+        plan.summary = { count: 0, max: -Infinity, min: Infinity };
+        return plan;
+      }
+      plan.cur = curW.map((x) => ({ r: x.r, v: x.v, bv: x.bv, t: x.v / dc, tb: x.bv / dc }));
+      plan.ref = refW.map((x) => ({ r: x.r, v: x.v, bv: 0, t: x.v / dr, tb: 0 }));
+    }
+    let count = 0,
+      max = -Infinity,
+      min = Infinity;
+    for (const side of [plan.cur, plan.ref])
+      for (const x of side) {
+        count++;
+        if (x.t > max) max = x.t;
+        if (x.t < min) min = x.t;
+      }
+    plan.summary = { count, max, min };
+    return plan;
+  }
+
   API.axis = Object.freeze({
     CATALOGUE: axsCatalogue,
     domain: axsDomain,
     registry: axsRegistry,
     coordinate: axsCoordinate,
     ticks: axsTicks,
+    profile: axsProfile,
   });
 
   // == §17-warn ==
@@ -7147,7 +7361,7 @@
       const startMs = API.time.baseToMs(z.c * ts, T0, geom.BASE);
       const endMs = Math.max(startMs, API.time.baseToMs(Math.min((z.c + 1) * ts, cutBase), T0, geom.BASE));
       const finality = cs.open ? "open" : cs.partial ? "partial" : "complete";
-      const when = { eventStartMs: startMs, eventEndMs: endMs, knownAtMs: null, knownAtReason: "defined by #47" };
+      const when = rdoEvInterval(startMs, endMs, finality);
       const base = { v: VERSION.readout, key, consumer: "cells", level: { n: level.n, m: level.m }, observation };
       if (geometry) {
         return Object.assign(base, {
@@ -7414,7 +7628,7 @@
         support: { time: null, price: [band.r * stepRows, (band.r + 1) * stepRows], portion: false, open: false, partial: false },
         exposure: null,
         state: rdoStateBlock(typed, observation, "complete", map.state, ex),
-        when: { eventStartMs: null, eventEndMs: null, knownAtMs: null, knownAtReason: "defined by #47" },
+        when: rdoEvSummary(spec.info, observation),
         model: spec.model !== undefined ? spec.model : null,
         rows: spec.info !== undefined && spec.info !== null ? spec.info : null,
         level2: null,
@@ -7650,7 +7864,7 @@
         support: null,
         exposure: null,
         state: rdoStateBlock(typed, observation, "complete", axisState, ex),
-        when: { eventStartMs: null, eventEndMs: null, knownAtMs: null, knownAtReason: "defined by #47" },
+        when: ex !== null && Array.isArray(ex.interval) ? rdoEvInterval(ex.interval[0], ex.interval[1], ex.interval[2]) : rdoEvInterval(null, null, "unknown"),
         model: spec.model !== undefined ? spec.model : null,
         level2: null,
       };
@@ -7713,11 +7927,291 @@
     });
   }
 
+  // == the event and known-at table (PRD-0002 #47 section 6) ==
+  // One row for each annotation the chart draws from source bars or from the calendar: where the event sits on the time axis, from when it is known,
+  // and how to read it. Known-at is STRUCTURAL: the end of the source bar that completes the condition (or the calendar, reopen, anchor or cutoff
+  // instant the row names), never the moment a read arrived. A bar still forming at the data edge (live: the latest one so far; replay: the bar at
+  // the edge, up to it) can satisfy a condition only as a CANDIDATE: the record says so, has no known-at and reads "so far" until the bar completes.
+  // The formulas are the page's and are not touched here: these functions only place the instants its calculations found. Times are numbers in one
+  // unit of the caller's choosing (the page: base columns; a readout: milliseconds); they are ordered and compared, never converted.
+  const rdoEvRows = [
+    ["swing", "Confirmed swing", "The extreme's supported bar or time", "The end of the bar that confirmed the reversal; the lead-in to it is retrospective"],
+    ["equalSwings", "Equal swing pair", "The two extremes", "The later swing's confirmation"],
+    ["rsiDivergence", "RSI divergence", "The compared swings' locations", "The later swing's confirmation; the RSI extrema were known earlier and do not date it"],
+    ["cross", "Moving-average or MACD crossing", "The crossing bar's end", "That complete bar's end; a crossing seen on a bar still forming is a candidate, labelled so far, not confirmed"],
+    ["squeeze", "Bollinger squeeze", "The interval of the qualifying bars", "Each bar's available close, final at the bar's completion; a fill drawn from the preceding point is keyed as retrospective interpolation"],
+    ["cmeGap", "CME spot gap", "The reopen and the spot prices at the boundaries", "The gap at the reopen, given the available closes; its fill no earlier than the end of the source bar that establishes the crossing"],
+    ["period", "Period POC and value area", "The stated period's span", "A retrospective summary as of its measurement cutoff, not known when the period started"],
+    ["untested", "Untested level", "The original POC's period", "A status as of the current or replay edge; a later test cannot rewrite an earlier replay status"],
+    ["continuation", "Historical continuation range", "The anchor and the horizon", "An empirical sample summary available at the anchor under the existing sample rules, not a forecast later observed"],
+    ["clock", "Clock", "The scheduled calendar time", "A calendar definition, not a measured trade event"],
+  ];
+  const rdoEvTable = Object.freeze(rdoEvRows.map(([kind, name, location, knownAt]) => Object.freeze({ kind, name, location, knownAt })));
+  const rdoEvByKind = Object.freeze(Object.fromEntries(rdoEvTable.map((r) => [r.kind, r])));
+  // The source a record was computed from: its granularity in words, the bar that completes the condition and whether it had completed at the edge.
+  function rdoEvSource(granularity, bar, edge) {
+    return Object.freeze({
+      granularity: granularity === undefined ? null : granularity,
+      barStart: bar === null ? null : bar[0],
+      barEnd: bar === null ? null : bar[1],
+      through: edge,
+      complete: bar === null ? true : bar[1] <= edge,
+    });
+  }
+  // A record: the row's name, the instants, the known-at (null while a candidate or for a calendar definition) and the flags a readout shows.
+  // `final`: nothing later can change it; `candidate`: it exists only on a bar still forming; `retrospective`: what is drawn reaches back before it
+  // was known; `measured`: false for the clock, which is a definition and not an event of the trades.
+  function rdoEvRecord(kind, fields) {
+    const base = { v: 1, kind, name: rdoEvByKind[kind].name, retrospective: false, measured: true };
+    return Object.freeze(Object.assign(base, fields));
+  }
+  // A swing: {extreme: [start, end] of its supported bar, confirm: [start, end] of the bar that reversed from it, edge, granularity}. The bar that
+  // reversed is the one that confirms it; while that bar is still forming at the edge the swing is a candidate. null before that bar began.
+  function rdoEvSwing(o) {
+    const c = o.confirm;
+    if (!(o.edge > c[0])) return null;
+    const complete = c[1] <= o.edge;
+    return rdoEvRecord("swing", {
+      eventStart: o.extreme[0],
+      eventEnd: o.extreme[1],
+      knownAt: complete ? c[1] : null,
+      final: complete,
+      candidate: !complete,
+      retrospective: true,
+      leadIn: Object.freeze([o.extreme[0], complete ? c[1] : o.edge]),
+      label: complete ? "confirmed" : "so far",
+      reason: complete
+        ? "Confirmed at the end of the bar that reversed from it; the line from the extreme to there is retrospective"
+        : "The reversal is seen on a bar still forming: a candidate, not confirmed until that bar ends",
+      source: rdoEvSource(o.granularity, c, o.edge),
+    });
+  }
+  // Two swings (their records) and what compares them: known at the LATER swing's confirmation, a candidate while either is one.
+  function rdoEvLater(kind, a, b, words) {
+    const later = b.eventStart >= a.eventStart ? b : a;
+    const known = a.knownAt !== null && b.knownAt !== null;
+    return rdoEvRecord(kind, {
+      eventStart: Math.min(a.eventStart, b.eventStart),
+      eventEnd: Math.max(a.eventEnd, b.eventEnd),
+      knownAt: known ? later.knownAt : null,
+      final: known,
+      candidate: !known,
+      label: known ? "confirmed" : "so far",
+      reason: known ? words.known : words.candidate,
+      source: later.source,
+    });
+  }
+  // Two equal swings of one kind (records of rdoEvSwing).
+  function rdoEvEqual(a, b) {
+    return rdoEvLater("equalSwings", a, b, {
+      known: "Known at the later swing's confirmation",
+      candidate: "The later swing is a candidate on a bar still forming: the pair is not confirmed",
+    });
+  }
+  // An RSI divergence between two swings (records of rdoEvSwing).
+  function rdoEvDivergence(a, b) {
+    return rdoEvLater("rsiDivergence", a, b, {
+      known: "Known at the later swing's confirmation, not when the RSI's extrema occurred",
+      candidate: "The later swing is a candidate on a bar still forming: the divergence is not confirmed",
+    });
+  }
+  // A crossing of two averages: {bar: [start, end], edge, granularity}. Drawn at the bar's end (at the edge while the bar is forming).
+  function rdoEvCross(o) {
+    const b = o.bar;
+    if (!(o.edge > b[0])) return null;
+    const complete = b[1] <= o.edge;
+    const at = complete ? b[1] : o.edge;
+    return rdoEvRecord("cross", {
+      eventStart: at,
+      eventEnd: at,
+      knownAt: complete ? b[1] : null,
+      final: complete,
+      candidate: !complete,
+      label: complete ? "confirmed" : "so far",
+      reason: complete ? "Known at the end of the bar on which the averages crossed" : "Seen on a bar still forming: so far, not confirmed until that bar ends",
+      source: rdoEvSource(o.granularity, b, o.edge),
+    });
+  }
+  // A squeeze: {bars: [[start, end], ...] the qualifying bars in order, after: the first bar after the run or null, edge, granularity, fillFrom:
+  // where a fill drawn from the preceding point would begin, or undefined}. Each bar qualifies at its own close; the run is final once a complete
+  // bar after it does not qualify. A fill that began before the first qualifying bar is retrospective interpolation and is keyed as such.
+  function rdoEvSqueeze(o) {
+    const bars = o.bars;
+    if (bars.length === 0 || !(o.edge > bars[0][0])) return null;
+    const last = bars[bars.length - 1];
+    let knownAt = null;
+    for (const b of bars) if (b[1] <= o.edge && (knownAt === null || b[1] > knownAt)) knownAt = b[1];
+    const complete = last[1] <= o.edge;
+    const closed = complete && o.after !== undefined && o.after !== null && o.after[1] <= o.edge;
+    const interpolated = o.fillFrom !== undefined && o.fillFrom !== null && o.fillFrom < bars[0][0];
+    return rdoEvRecord("squeeze", {
+      eventStart: bars[0][0],
+      eventEnd: Math.min(last[1], o.edge),
+      knownAt,
+      final: closed,
+      candidate: !complete,
+      retrospective: interpolated,
+      geometry: interpolated ? "retrospective interpolation" : "qualifying bars",
+      label: closed ? "final" : "so far",
+      reason: closed
+        ? "Each bar qualified at its own close; a later complete bar did not, so the run is final"
+        : complete
+          ? "Each bar qualified at its own close; the run may still continue"
+          : "The last bar is still forming: its qualification is so far, not final",
+      source: rdoEvSource(o.granularity, last, o.edge),
+    });
+  }
+  // A CME spot gap: {close, reopen, reopenBar: [start, end] of the bar whose close is the spot at the reopen, fill: [start, end] of the bar that first
+  // traded back through the Friday close or null, edge, granularity}. -> null before the reopen's close is in; else the gap, known at the reopen,
+  // with its `fill`: null while not traded back, else known no earlier than the end of the crossing bar (a candidate while that bar is forming).
+  function rdoEvGap(o) {
+    const known = Math.max(o.reopen, o.reopenBar[1]);
+    if (!(o.edge >= known)) return null;
+    let fill = null;
+    if (o.fill !== undefined && o.fill !== null && o.edge > o.fill[0]) {
+      const complete = o.fill[1] <= o.edge;
+      fill = Object.freeze({
+        knownAt: complete ? o.fill[1] : null,
+        final: complete,
+        candidate: !complete,
+        label: complete ? "filled" : "so far",
+        reason: complete
+          ? "Traded back through the Friday close: known at the end of the bar that did"
+          : "The crossing is seen on a bar still forming: so far, not a fill until that bar ends",
+        source: rdoEvSource(o.granularity, o.fill, o.edge),
+      });
+    }
+    return rdoEvRecord("cmeGap", {
+      eventStart: o.close,
+      eventEnd: o.reopen,
+      knownAt: known,
+      final: true,
+      candidate: false,
+      label: fill === null ? "open" : fill.label,
+      reason: "Known at the reopen, from the closes available then",
+      fill,
+      source: rdoEvSource(o.granularity, o.reopenBar, o.edge),
+    });
+  }
+  // A period's POC or value area: {span: [start, end], cutoff}. A retrospective summary as of the cutoff it was measured at: final once the period
+  // has ended by then, so far while it is still open. null before the period began.
+  function rdoEvPeriod(o) {
+    if (!(o.cutoff > o.span[0])) return null;
+    const final = o.span[1] <= o.cutoff;
+    return rdoEvRecord("period", {
+      eventStart: o.span[0],
+      eventEnd: o.span[1],
+      knownAt: o.cutoff,
+      final,
+      candidate: false,
+      retrospective: true,
+      label: final ? "retrospective" : "so far",
+      reason: final ? "A summary of the whole period, as of the cutoff it was measured at" : "The period is still open: a summary so far, as of the cutoff",
+      source: rdoEvSource(o.granularity, null, o.cutoff),
+    });
+  }
+  // An untested level: {origin: [start, end] of the POC's period, asOf}. A status as of the edge it is asked at, never rewritten by a later test
+  // when the edge is earlier. null while the origin period has not ended by then.
+  function rdoEvUntested(o) {
+    if (!(o.asOf >= o.origin[1])) return null;
+    return rdoEvRecord("untested", {
+      eventStart: o.origin[0],
+      eventEnd: o.origin[1],
+      knownAt: o.asOf,
+      final: false,
+      candidate: false,
+      label: "as of",
+      reason: "Untested as of this edge; a later test changes the status from then on, not at this edge",
+      source: rdoEvSource(o.granularity, null, o.asOf),
+    });
+  }
+  // A historical continuation range: {anchor, horizon, samples, minSample (30), edge}. Known at the anchor, from the sample as it stood there; below
+  // the sample floor its percentages and boxes are withheld (`withheld`). null before the anchor.
+  function rdoEvContinuation(o) {
+    if (!(o.edge >= o.anchor)) return null;
+    const floor = o.minSample === undefined ? 30 : o.minSample;
+    return rdoEvRecord("continuation", {
+      eventStart: o.anchor,
+      eventEnd: o.anchor + o.horizon,
+      knownAt: o.anchor,
+      final: true,
+      candidate: false,
+      label: "at anchor",
+      samples: o.samples,
+      withheld: o.samples < floor,
+      reason: o.samples < floor ? `Fewer than ${floor} cases: its percentages and boxes are withheld` : "An empirical sample summary as it stood at the anchor, not a forecast",
+      source: rdoEvSource(o.granularity, null, o.edge),
+    });
+  }
+  // The clock: {scheduled}. A calendar definition: no known-at, not a measured event.
+  function rdoEvClock(o) {
+    return rdoEvRecord("clock", {
+      eventStart: o.scheduled,
+      eventEnd: o.scheduled,
+      knownAt: null,
+      final: true,
+      candidate: false,
+      measured: false,
+      label: "calendar",
+      reason: "A calendar definition, not a measured trade event",
+      source: rdoEvSource("calendar", null, o.scheduled),
+    });
+  }
+  // The `when` block of a readout for an interval of the measured grid (a cell, a column): the interval's instants and, when it is complete, the end of
+  // it as its structural known-at; an open or cut interval has none yet.
+  function rdoEvInterval(startMs, endMs, finality) {
+    const done = finality === "complete";
+    return {
+      eventStartMs: startMs,
+      eventEndMs: endMs,
+      knownAtMs: done ? endMs : null,
+      knownAtReason: done
+        ? "the end of the interval it measures"
+        : finality === "open"
+          ? "the interval is still open: known at its end"
+          : finality === "partial"
+            ? "the interval is cut by the data's edge: known at its end once complete"
+            : "the interval is not stated",
+    };
+  }
+  // The `when` block of a Rows band: the period it summarises (from its start to what it was read to, as `info` says in base columns) and, as its
+  // known-at, the measurement cutoff the summary is as of: a retrospective summary, not known when the period started. Without `info` it has none.
+  function rdoEvSummary(info, observation) {
+    const none = { eventStartMs: null, eventEndMs: null, knownAtMs: null, knownAtReason: "the period the rows summarise is not stated" };
+    if (info === undefined || info === null || !Number.isFinite(info.fromBase) || !Number.isFinite(info.throughBase)) return none;
+    const startMs = API.time.baseToMs(info.fromBase, LATTICE.T0, LATTICE.BASE);
+    const endMs = API.time.baseToMs(info.throughBase, LATTICE.T0, LATTICE.BASE);
+    const cutoff = observation !== undefined && observation !== null && Number.isFinite(observation.cutoffMs) ? observation.cutoffMs : null;
+    return {
+      eventStartMs: startMs,
+      eventEndMs: endMs,
+      knownAtMs: cutoff !== null && cutoff > startMs ? cutoff : null,
+      knownAtReason: "a summary of the period as of the cutoff it was measured at, not known when the period started",
+    };
+  }
+  // E.readout.events: the table, the records of each annotation and the readout's `when` for a measured interval.
+  const rdoEvents = Object.freeze({
+    TABLE: rdoEvTable,
+    swing: rdoEvSwing,
+    equalSwings: rdoEvEqual,
+    rsiDivergence: rdoEvDivergence,
+    cross: rdoEvCross,
+    squeeze: rdoEvSqueeze,
+    cmeGap: rdoEvGap,
+    period: rdoEvPeriod,
+    untested: rdoEvUntested,
+    continuation: rdoEvContinuation,
+    clock: rdoEvClock,
+    interval: rdoEvInterval,
+    summary: rdoEvSummary,
+  });
+
   API.readout = Object.freeze({
     ROLE: rdoRole,
     cellsFrame: rdoCellsFrame,
     rowsFrame: rdoRowsFrame,
     paneFrame: rdoPaneFrame,
+    events: rdoEvents,
   });
 
   // == §20-legend ==
@@ -9254,6 +9748,28 @@
       why: (raw, out) => cdcWindowProblem(cdcPathGet(raw, "scale.window"), out.mode) || "not a window",
     },
     cdcScaleFlag("lock", "lk"),
+    // The profile tracks (PRD-0002 S2): how the two are compared (independent is the default and is not written), and whether the tracks
+    // are shown on a chart too narrow for them (the disclosure; closed is the default). Top-level fields of the view, not scale preferences.
+    {
+      id: "profileCmp",
+      param: "pc",
+      fields: ["profileCmp"],
+      legacy: false,
+      defaults: { profileCmp: "independent" },
+      read: (text) => ({ profileCmp: text === undefined ? "independent" : text === "a" ? "absolute" : text === "s" ? "share" : "?" + text }),
+      check: (raw) => ({ profileCmp: raw.profileCmp === "absolute" || raw.profileCmp === "share" ? raw.profileCmp : "independent" }),
+      write: (view) => (view.profileCmp === "absolute" ? "a" : view.profileCmp === "share" ? "s" : null),
+    },
+    {
+      id: "profileOpen",
+      param: "po",
+      fields: ["profileOpen"],
+      legacy: false,
+      defaults: { profileOpen: false },
+      read: (text) => ({ profileOpen: text === undefined ? false : text === "1" ? true : "?" + text }),
+      check: (raw) => ({ profileOpen: raw.profileOpen === true }),
+      write: (view) => (view.profileOpen === true ? "1" : null),
+    },
   ];
   const cdcVisualKeys = Object.freeze(
     cdcKeys.map((entry) => {
@@ -10002,7 +10518,7 @@
   const cdcAllowed = Object.freeze({
     "": ["visualVersion", "kind", "id", "query", "view", "appearance", "scales", "axes", "models", "observation"],
     query: ["t1", "t2", "p1", "p2", "tR", "pR"],
-    view: ["mode", "pane", "poc", "area", "untested", "rows", "period", "level", "lines", "tab", "replay", "anchor", "horizon", "evidenceKind", "barrier", "follow", "auto", "window", "viewport", "selection", "scale"],
+    view: ["mode", "pane", "poc", "area", "untested", "rows", "period", "level", "lines", "tab", "replay", "anchor", "horizon", "evidenceKind", "barrier", "follow", "auto", "window", "viewport", "selection", "scale", "profileCmp", "profileOpen"],
     "view.scale": ["basis", "pathBasis", "transform", "curve", "rowsTransform", "cells", "rows", "local", "window", "lock"],
     appearance: ["id"],
     "scales[]": ["channel", "policy", "external", "origin", "desc", "ctx", "cohort", "obsEndMs", "cutMs", "canonicalThroughMs", "token"],
@@ -10369,6 +10885,8 @@
     if (view.lines !== undefined && (!Array.isArray(view.lines) || !view.lines.every((s) => typeof s === "string"))) return fail("view.lines is a list of text");
     for (const name of ["mode", "pane", "rows", "period", "tab", "evidenceKind", "follow"]) if (view[name] !== undefined && typeof view[name] !== "string") return fail("view." + name + " is text");
     if (view.follow !== undefined && cdcFollows.indexOf(view.follow) < 0) return fail("unknown follow mode");
+    if (view.profileCmp !== undefined && view.profileCmp !== "independent" && view.profileCmp !== "absolute" && view.profileCmp !== "share") return fail("view.profileCmp is independent, absolute or share");
+    if (view.profileOpen !== undefined && typeof view.profileOpen !== "boolean") return fail("view.profileOpen is true or false");
     if (view.tab !== undefined && view.tab !== "evidence" && view.tab !== "context") return fail("unknown tab");
     if (view.evidenceKind !== undefined && view.evidenceKind !== "poc" && view.evidenceKind !== "barrier") return fail("unknown evidence kind");
     if (view.horizon !== undefined && [1, 2, 4, 8].indexOf(view.horizon) < 0) return fail("view.horizon is 1, 2, 4 or 8");
@@ -10439,6 +10957,8 @@
         evidenceKind: view.evidenceKind,
         horizon: view.horizon === undefined ? 1 : view.horizon,
         barrier: view.barrier === undefined ? 1 : view.barrier,
+        profileCmp: view.profileCmp === undefined ? "independent" : view.profileCmp,
+        profileOpen: view.profileOpen === true,
         scale: settings,
         appearance: p.appearance === undefined ? null : p.appearance.id,
       },

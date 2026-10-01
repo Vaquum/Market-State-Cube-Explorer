@@ -63,15 +63,6 @@
         "T-19"
       ],
       "owner": "#48"
-    },
-    {
-      "file": "docs/data-and-semantics.md",
-      "pattern": "prose:buy-sell-colour",
-      "count": 1,
-      "rows": [
-        "R-14"
-      ],
-      "owner": "#48"
     }
   ]
 }

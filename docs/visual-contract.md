@@ -662,6 +662,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | U53 | `tests/unit/occlusion-budget.test.js` | the 20% union-area occlusion budget: overlaps once, priority, the focused mark, against a set-based replay | #47 |
 | U54 | `tests/unit/plane-glyphs.test.js` | the plane's glyphs reach 3:1 on their tiles in both themes and use no market hue | #47 |
 | U55 | `tests/unit/events-table.test.js` | the event and known-at table and each annotation's record replayed edge by edge: not before its bar began, a candidate while it forms, known at its end, unchanged after | #47 |
+| U56 | `tests/unit/masks.test.js` | the mask helper of the pixel specs on synthetic frames: footprints from recorded operations, the multiset of what an overlay adds, the union of the footprints, and the limits an oversized halo fails | #47 |
 | B01 | `tests/browser/boot.spec.js` | boot in recorded and live mode, the 29 module keys, production globals | H7b |
 | B02 | `tests/browser/recorded-snapshot.spec.js` | real recorded blocks through the page | K |
 | B03 | `tests/browser/readout-agreement.spec.js` | tooltip, table row, legend marker and pixel agree for every measure | T |
@@ -696,6 +697,9 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B32 | `tests/browser/failure-relevance.spec.js` | issue #29: the loading line keeps a failed read's alert while its tile is needed, through startup, view changes, the lens, a replaced pack and retries; the original build is the control | S2 |
 | B33 | `tests/browser/events-known-at.spec.js` | a 4-hour swing, an RSI divergence with its equal pair, a CME gap, golden and MACD crossings and a 4-hour squeeze run replayed on the page before, while forming, at and after the bar that completes them, against the reference bars, zigzag and indicators | S2 |
 | B34 | `tests/browser/events-readouts.spec.js` | the readouts of a period's POC, a day's POC and value area, an untested POC, a clock line and a continuation (known at its anchor, the 30-case floor kept on both sides) | S2 |
+| B35 | `tests/browser/overlay-pixels.spec.js` | the fill core of a cell under a selection, each Rows mode, the bands, the gap, an anchor, a transient lens and all of them: unoccluded cores are the cell's colour, the cells are the same, what is painted over them is within the PRD's geometry and 20% | S2 |
+| B36 | `tests/browser/movement-cores.spec.js` | the only-carrier movement stroke: every pixel across its 1.5 px core and 3.5 px backing against the coverage arithmetic, and unchanged under a selection | S2 |
+| B37 | `tests/browser/two-tone-pixels.spec.js` | the selection's two-tone boundary in composed pixels over fills, empty cells and the replay hatch, and where it is the same line as a Geometry outline, a movement stroke, an open cap or the Level line | S2 |
 
 ## 10. Migration status per slice
 

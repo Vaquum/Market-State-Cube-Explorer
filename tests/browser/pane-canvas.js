@@ -21,6 +21,11 @@ function install(canvasId) {
   const frames = [];
   let cur = null;
   let path = [];
+  // where each subpath of the path begins and whether it is closed: a stroke's footprint is its subpaths' segments, not the line through every point
+  let subs = [];
+  // the clip in force (the box of the rectangles clipped to, intersected) and the saved ones: an operation paints only inside it
+  let clip = null;
+  let clipStack = [];
   const d = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "width");
   Object.defineProperty(HTMLCanvasElement.prototype, "width", {
     configurable: true,
@@ -31,6 +36,8 @@ function install(canvasId) {
     set(v) {
       if (this.id === canvasId) {
         cur = { rects: [], strokeRects: [], strokes: [], fills: [], texts: [], arcs: [], roundRects: [], patterns: 0, seq: 0 };
+        clip = null;
+        clipStack = [];
         frames.push(cur);
         if (frames.length > KEEP) frames.shift();
       }
@@ -48,39 +55,60 @@ function install(canvasId) {
   };
   wrap("beginPath", () => {
     path = [];
+    subs = [];
   });
   wrap("moveTo", ([x, y]) => {
+    subs.push([path.length, 0]);
     path.push([x, y]);
   });
   wrap("lineTo", ([x, y]) => {
+    if (!subs.length) subs.push([path.length, 0]);
     path.push([x, y]);
+  });
+  wrap("save", () => {
+    clipStack.push(clip);
+  });
+  wrap("restore", () => {
+    clip = clipStack.length ? clipStack.pop() : null;
+  });
+  wrap("clip", () => {
+    if (!path.length) return;
+    const xs = path.map((p) => p[0]),
+      ys = path.map((p) => p[1]),
+      box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+    clip = clip ? [Math.max(clip[0], box[0]), Math.max(clip[1], box[1]), Math.min(clip[2], box[2]), Math.min(clip[3], box[3])] : box;
+  });
+  const inClip = () => (clip ? clip.slice() : null);
+  wrap("closePath", () => {
+    if (subs.length) subs[subs.length - 1][1] = 1;
   });
   // a rectangle path is its four corners, so a two-tone boundary drawn with ctx.rect can be located
   wrap("rect", ([x, y, w, h]) => {
+    subs.push([path.length, 1]);
     path.push([x, y], [x + w, y], [x + w, y + h], [x, y + h]);
   });
   wrap("fillRect", function ([x, y, w, h]) {
-    cur.rects.push({ x, y, w, h, fill: style(this.fillStyle), alpha: this.globalAlpha, seq: cur.seq++ });
+    cur.rects.push({ x, y, w, h, fill: style(this.fillStyle), alpha: this.globalAlpha, clip: inClip(), seq: cur.seq++ });
   });
   wrap("strokeRect", function ([x, y, w, h]) {
-    cur.strokeRects.push({ x, y, w, h, stroke: style(this.strokeStyle), width: this.lineWidth, alpha: this.globalAlpha, seq: cur.seq++ });
+    cur.strokeRects.push({ x, y, w, h, stroke: style(this.strokeStyle), width: this.lineWidth, alpha: this.globalAlpha, clip: inClip(), seq: cur.seq++ });
   });
   wrap("stroke", function () {
-    cur.strokes.push({ stroke: style(this.strokeStyle), width: this.lineWidth, dash: this.getLineDash(), alpha: this.globalAlpha, path: path.slice(), seq: cur.seq++ });
+    cur.strokes.push({ stroke: style(this.strokeStyle), width: this.lineWidth, dash: this.getLineDash(), alpha: this.globalAlpha, path: path.slice(), subs: subs.map((x) => x.slice()), clip: inClip(), seq: cur.seq++ });
   });
   wrap("fill", function () {
-    cur.fills.push({ fill: style(this.fillStyle), alpha: this.globalAlpha, path: path.slice(), seq: cur.seq++ });
+    cur.fills.push({ fill: style(this.fillStyle), alpha: this.globalAlpha, path: path.slice(), subs: subs.map((x) => x.slice()), clip: inClip(), seq: cur.seq++ });
   });
   wrap("fillText", function ([text, x, y]) {
-    cur.texts.push({ text: String(text), x, y, fill: style(this.fillStyle), align: this.textAlign, width: this.measureText(String(text)).width, seq: cur.seq++ });
+    cur.texts.push({ text: String(text), x, y, fill: style(this.fillStyle), align: this.textAlign, width: this.measureText(String(text)).width, clip: inClip(), seq: cur.seq++ });
   });
   // a circle (a cross's marker, a divergence's dot) and a rounded rectangle (a tag's plate) are kept apart from the paths: their fills and strokes
   // are not one of the straight-line shapes the specs count
   wrap("arc", function ([x, y, r]) {
-    cur.arcs.push({ x, y, r, seq: cur.seq++ });
+    cur.arcs.push({ x, y, r, clip: inClip(), seq: cur.seq++ });
   });
   wrap("roundRect", function ([x, y, w, h]) {
-    cur.roundRects.push({ x, y, w, h, seq: cur.seq++ });
+    cur.roundRects.push({ x, y, w, h, clip: inClip(), seq: cur.seq++ });
   });
   wrap("createPattern", () => {
     cur.patterns++;

@@ -17067,6 +17067,8 @@
     ctx.fillStyle = colors.surface;
     ctx.fillRect(left, top, w, h);
     twoTone(() => ctx.rect(left + 0.5, top + 0.5, w - 1, h));
+    // the tab is a part of the lens and covers the heatmap as the lens does: a named temporary region, never a persistent plate
+    noteTemporary("lens-caption", left, top, w, h + 1);
     fitted.forEach(([s, color], i) =>
       text(s, left + 7, top + 11.5 + 15 * i, color, "left", 11),
     );

@@ -2119,6 +2119,7 @@
   #origo-lens .ol-step button {
     min-width: 44px;
   }
+
   #origo-lens .ol-query-body textarea,
   #origo-lens input[type="text"],
   #origo-lens input[type="date"] {
@@ -2443,4 +2444,38 @@
 #origo-lens .ol-table tbody tr:focus-visible {
   outline: 2px solid var(--ol-accent);
   outline-offset: -2px;
+}
+
+@media (pointer: coarse) {
+  /* A target is 44 px each way: the icon buttons were 44 high and 28 to 32 wide, the legend chips 24 high, a summary 24. The resolution plane's buttons
+     (they keep their compact size) and the canvas's own marks are the documented dense visuals, each with a large-target route: the steppers and the plane's keys, the
+     Inspect navigator with its steppers, chooser and tabs. */
+  #origo-lens .ol-bar .ol-seg .ol-icon-button,
+  #origo-lens button.ol-icon-button.ol-icon-button.ol-icon-button,
+  #origo-lens button.ol-s.ol-s {
+    min-width: 44px;
+  }
+  #origo-lens .ol-legend,
+  #origo-lens .ol-legend-chip {
+    height: auto;
+    min-height: 44px;
+  }
+  #origo-lens summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* Reduced motion, in the stylesheet as in the canvas: where the preference is on (and the moment it is turned on in a running session, which the
+   media query follows by itself) nothing of the page moves: no transition, no animation, no smooth scroll. */
+@media (prefers-reduced-motion: reduce) {
+  #origo-lens,
+  #origo-lens *,
+  #origo-lens *::before,
+  #origo-lens *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
 }

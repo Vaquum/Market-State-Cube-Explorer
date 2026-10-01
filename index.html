@@ -2136,6 +2136,7 @@
   #origo-lens .ol-step button {
     min-width: 44px;
   }
+
   #origo-lens .ol-query-body textarea,
   #origo-lens input[type="text"],
   #origo-lens input[type="date"] {
@@ -2460,6 +2461,40 @@
 #origo-lens .ol-table tbody tr:focus-visible {
   outline: 2px solid var(--ol-accent);
   outline-offset: -2px;
+}
+
+@media (pointer: coarse) {
+  /* A target is 44 px each way: the icon buttons were 44 high and 28 to 32 wide, the legend chips 24 high, a summary 24. The resolution plane's buttons
+     (they keep their compact size) and the canvas's own marks are the documented dense visuals, each with a large-target route: the steppers and the plane's keys, the
+     Inspect navigator with its steppers, chooser and tabs. */
+  #origo-lens .ol-bar .ol-seg .ol-icon-button,
+  #origo-lens button.ol-icon-button.ol-icon-button.ol-icon-button,
+  #origo-lens button.ol-s.ol-s {
+    min-width: 44px;
+  }
+  #origo-lens .ol-legend,
+  #origo-lens .ol-legend-chip {
+    height: auto;
+    min-height: 44px;
+  }
+  #origo-lens summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* Reduced motion, in the stylesheet as in the canvas: where the preference is on (and the moment it is turned on in a running session, which the
+   media query follows by itself) nothing of the page moves: no transition, no animation, no smooth scroll. */
+@media (prefers-reduced-motion: reduce) {
+  #origo-lens,
+  #origo-lens *,
+  #origo-lens *::before,
+  #origo-lens *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
 }
 
     </style>
@@ -3573,6 +3608,15 @@
           ></span
           ><button
             type="button"
+            id="ol-lens-inspect"
+            class="ol-s cursor-interaction"
+            aria-label="Inspect the lens"
+            data-hint="Hold the lens still and move a cursor through its finer cells with the keys (E)"
+          >
+            Inspect
+          </button
+          ><button
+            type="button"
             id="ol-lens-pin"
             class="ol-s cursor-interaction"
             aria-label="Pin lens"
@@ -4331,8 +4375,8 @@
           <h3 id="ol-keys-tools">Tools</h3>
           <dl>
             <div>
-              <dt>Pan, select, lens</dt>
-              <dd><kbd>V</kbd> <kbd>S</kbd> <kbd>L</kbd></dd>
+              <dt>Pan, select, lens, inspect</dt>
+              <dd><kbd>V</kbd> <kbd>S</kbd> <kbd>L</kbd> <kbd>E</kbd></dd>
             </div>
             <div>
               <dt>Lens depth</dt>
@@ -4347,8 +4391,37 @@
               <dd><kbd>Enter</kbd></dd>
             </div>
             <div>
-              <dt>Close; clear the selection; then back to pan</dt>
+              <dt>Close; close an inspected record; leave Inspect; clear the selection; then back to pan</dt>
               <dd><kbd>Esc</kbd></dd>
+            </div>
+          </dl>
+        </section>
+        <section aria-labelledby="ol-keys-inspect">
+          <h3 id="ol-keys-inspect">Inspect (E)</h3>
+          <dl>
+            <div>
+              <dt>Cells and lens: previous or next time cell; next higher or lower price row</dt>
+              <dd><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dd>
+            </div>
+            <div>
+              <dt>Rows: next higher or lower row. Columns: previous or next column</dt>
+              <dd><kbd>↑</kbd> <kbd>↓</kbd> and <kbd>←</kbd> <kbd>→</kbd></dd>
+            </div>
+            <div>
+              <dt>References: previous or next reference in the list</dt>
+              <dd><kbd>↑</kbd> <kbd>↓</kbd></dd>
+            </div>
+            <div>
+              <dt>First or last visible item</dt>
+              <dd><kbd>Home</kbd> <kbd>End</kbd></dd>
+            </div>
+            <div>
+              <dt>Open or close the record's detail (nothing else: no anchor, Pin or Play)</dt>
+              <dd><kbd>Enter</kbd> or <kbd>Space</kbd></dd>
+            </div>
+            <div>
+              <dt>Read a point (a tap changes nothing but the cursor)</dt>
+              <dd>Click or tap</dd>
             </div>
           </dl>
         </section>
@@ -16078,7 +16151,17 @@
     CASE_SORTS = ["date", "outcome", "change", "poc", "excursion", "buy"];
   const canvas = el("canvas"),
     ctx = canvas.getContext("2d"),
-    reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    reduceQuery = matchMedia("(prefers-reduced-motion: reduce)");
+  // The preference is read again when it changes during the session: the canvas's morphs stop at once (one in flight ends where it is) and the
+  // stylesheet's own media query follows by itself.
+  let reduce = reduceQuery.matches;
+  reduceQuery.addEventListener("change", (e) => {
+    reduce = e.matches;
+    if (reduce && typeof transition !== "undefined" && transition) {
+      transition = null;
+      requestDraw();
+    }
+  });
   // The canvas's share of the design tokens: its type sizes, and the plot's
   // margins. The gutter is the page's; the widest price label ("120,000")
   // fills the label column, so it starts on the same edge as every band.
@@ -18272,7 +18355,7 @@
     }
     // The lens's controls sit at the plot's top left while it is the tool.
     let lensRight = 0;
-    if (S.lens) {
+    if (S.lens || inspect.lens !== null) {
       const bar = el("lensbar");
       bar.style.left = G.x + 4 + "px";
       lensRight = G.x + 4 + bar.offsetWidth;
@@ -19863,7 +19946,17 @@
       cellRows.set(cellKey(c.c, c.r), { tr, z: c, readout });
       frag.append(tr);
     }
+    // A rebuild (a refresh, a sort, a page) must not take the keyboard away from the row that has it: the row with the same cell is given it back, or else the
+    // first row, and it is the table's tab stop
+    const held = document.activeElement && el("table-body").contains(document.activeElement) ? document.activeElement.dataset.cellKey : null;
     el("table-body").replaceChildren(frag);
+    if (held !== null) {
+      const same = [...el("table-body").children].find((r) => r.dataset.cellKey === held) ?? el("table-body").firstElementChild;
+      if (same) {
+        for (const r of el("table-body").children) r.tabIndex = r === same ? 0 : -1;
+        same.focus({ preventScroll: true });
+      }
+    }
     hoverRow = null;
     // The rows are new: a row the pointer is on keeps its marker on the legend.
     if (tableHover) rowMarker();
@@ -20816,7 +20909,8 @@
     (id === "columns" && Boolean(paneShown) && G.ah > 0) ||
     (id === "references" && inspectReferences().length > 0) ||
     (id === "lens" && inspectLensOn());
-  const inspectLensOn = () => Boolean(inspect.lens) || S.lens || nav.alt || nav.hold;
+  // The lens surface is always there to choose: it holds a lens still at the cursor (or where the lens tool had it), and says so where there are no finer cells.
+  const inspectLensOn = () => G.w > 0;
   // The enabled references in a stable order (the menu's families, then each family's own order), whether the budget drew them or not: the
   // lines, the curves, the clock's kinds and the user's Level. Each entry has what the tooltip's builders take as a hit.
   function inspectReferences() {
@@ -21007,6 +21101,7 @@
   function inspectEnter() {
     if (inspect.on) return;
     inspect.prev = S.lens ? "lens" : S.select ? "select" : "pan";
+    const lensWas = S.lens || nav.alt || nav.hold;
     inspect.on = true;
     S.select = false;
     S.lens = false;
@@ -21019,7 +21114,21 @@
     inspect.surface = "cells";
     inspect.boundary = "";
     inspect.detail = false;
+    inspect.lens = null;
     el("inspect").hidden = false;
+    // a lens that is on the plot (the tool, or a peek) is held still where it is, and the cursor starts in it: the lens's finer record is what it reads
+    if (lensWas) {
+      const f = lensFrame();
+      if (f?.src) {
+        inspect.lens = { t: f.p.t, p: f.p.p };
+        inspect.surface = "lens";
+        const sp = inspectSpan("lens");
+        if (sp.lens) {
+          inspect.t = (Math.floor(clamp(f.p.t, sp.lens.lensBounds[0], Math.max(sp.lens.lensBounds[0], sp.lens.lensBounds[1] - 1e-6)) / sp.ts) + 0.5) * sp.ts;
+          inspect.p = (Math.floor(clamp(f.p.p, sp.lens.lensBounds[2], Math.max(sp.lens.lensBounds[2], sp.lens.lensBounds[3] - 1e-6)) / sp.ps) + 0.5) * sp.ps;
+        }
+      }
+    }
     update();
     inspectRender(true);
     el("inspect").focus();
@@ -21045,14 +21154,17 @@
     if (inspect.detail) inspectDetail(false, false);
     // the Lens surface freezes the lens frame where it is, so the cursor can move inside it while the pointer is elsewhere
     if (id === "lens" && !inspect.lens) {
-      const f = lensFrame();
-      if (f) inspect.lens = { t: f.p.t, p: f.p.p };
+      // where the lens tool had the lens, else at the cursor
+      const f = lensShown() ? lensFrame() : null;
+      inspect.lens = f ? { t: f.p.t, p: f.p.p } : { t: inspect.t, p: inspect.p };
       const sp = inspectSpan("lens");
       inspect.t = (Math.floor(clamp(inspect.t, sp.lens?.lensBounds[0] ?? inspect.t, sp.lens?.lensBounds[1] ?? inspect.t) / sp.ts) + 0.5) * sp.ts;
       inspect.p = (Math.floor(clamp(inspect.p, sp.lens?.lensBounds[2] ?? inspect.p, sp.lens?.lensBounds[3] ?? inspect.p) / sp.ps) + 0.5) * sp.ps;
     } else if (id !== "lens") inspect.lens = null;
     inspect.surface = id;
     inspect.boundary = "";
+    // the lens's controls come and go with the held lens
+    update();
     inspectRender(true);
   }
   // One step of the cursor: the surface's own keys. Returns whether the key means something here.
@@ -21305,8 +21417,13 @@
       // a native control inside the navigator (a tab, a button, the chooser) keeps its own keys, but Escape still leaves
       if (e.target !== nav2 && e.target.closest("button, select, input, [role=tab]") && e.key !== "Escape") {
         if (e.target.matches("[role=tab]") && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
-        if (!["ArrowUp", "ArrowDown"].includes(e.key)) return;
-        if (e.target.matches("select")) return;
+        // a native control of the navigator keeps its own keys; an arrow on a button is no key of the button's, and it is not the chart's either: it
+        // is consumed here, so that nothing pans from the navigator, and a select (the reference chooser) keeps its own arrows
+        if (e.key.startsWith("Arrow") && !e.target.matches("select, input") && !e.target.matches("[role=tab]")) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
       }
       if (e.key === "Escape") {
         e.preventDefault();
@@ -21449,7 +21566,8 @@
     qsa("[data-tool]").forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.tool === tool())),
     );
-    el("lensbar").hidden = !S.lens;
+    // the lens controls stay (Pin among them) while Inspect holds the lens frame still
+    el("lensbar").hidden = !(S.lens || inspect.lens !== null);
     setCursor();
     el("clear").hidden = !S.selection;
     for (const t of ["context", "evidence"]) {
@@ -34090,6 +34208,8 @@
     if (S.diagonal && changed && f.m !== diagonalM(f.n)) S.diagonal = false;
     S.auto = false;
     S.lens = false;
+    inspect.lens = null;
+    if (inspect.on && inspect.surface === "lens") inspect.surface = "cells";
     S.window = "";
     nav.alt = false;
     nav.hold = false;
@@ -34294,6 +34414,11 @@
     });
     el("lens-pin").addEventListener("click", () => {
       pinLens();
+    });
+    // Inspect the lens: the lens frame is held still where it is and the cursor moves in its finer cells; Pin is unchanged and still pins
+    el("lens-inspect").addEventListener("click", () => {
+      if (inspect.on) inspectSurface("lens");
+      else inspectEnter();
     });
     const leavePlane = () => {
       nav.planeHover = false;

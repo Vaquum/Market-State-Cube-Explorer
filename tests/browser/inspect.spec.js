@@ -244,4 +244,36 @@ test.describe("B44 Inspect: its own cursor, moved by the keys of each surface", 
     await expect(page.locator("#ol-inspect-detail")).toBeHidden();
     await expect(page.locator("#ol-focus-chip"), "the previous focus is back").toHaveText("Focus: 30 days · Show all");
   });
+
+  test("the cursor's record is reachable without a hover: a visible signed readout, the legend's marker, and an announcement only for a deliberate move", async ({ page, probe, fakeFor }) => {
+    const fake = await fakeFor("standard");
+    await open(page, fake, probe, "#w=24h&vis=2&mode=delta");
+    await page.keyboard.press("e");
+    // walk to a cell that has trades: its readout carries a signed delta, the tip and the legend's marker name the same record
+    let record = null;
+    for (let step = 0; step < 120 && !record; step++) {
+      const value = page.locator("#ol-inspect-readout dd[data-field='value']");
+      if (await value.count()) record = await value.first().getAttribute("data-canonical");
+      else await page.keyboard.press(step % 9 === 8 ? "ArrowUp" : "ArrowRight");
+    }
+    expect(record, "a measured cell is under the cursor").not.toBeNull();
+    expect(Number.isFinite(Number(record)), "its value is a number, signed (the taker-buy minus taker-sell amount)").toBe(true);
+    await expect(page.locator("#ol-inspect-readout")).toContainText(/[+−-]\s?[\d,.]+/);
+    const readout = await page.locator("#ol-tip").getAttribute("data-readout");
+    expect(readout, "the record has a name").toBeTruthy();
+    await expect(page.locator("#ol-legend-marker"), "the legend marks it without the pointer anywhere").toHaveAttribute("data-readout", readout);
+    await expect(page.locator("#ol-legend-marker")).toBeVisible();
+    // announcements: a deliberate move says it; a redraw from the page's own business does not
+    const live = () => page.locator("#ol-inspect-live").evaluate((n) => ({ text: n.textContent, at: n.dataset.at }));
+    await page.locator("#ol-inspect").focus();
+    await page.keyboard.press("ArrowRight");
+    const spoken = await live();
+    expect(spoken.text, "the move is announced").toMatch(/UTC/);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await probe.waitForQuiet({ quietMs: 800, timeout: 30000 });
+    expect(await live(), "a resize and a theme change announce nothing").toEqual(spoken);
+    await page.keyboard.press("ArrowLeft");
+    expect((await live()).at, "the next deliberate move is announced").not.toBe(spoken.at);
+  });
 });

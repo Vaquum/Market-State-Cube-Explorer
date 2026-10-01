@@ -1105,6 +1105,15 @@
           ></span
           ><button
             type="button"
+            id="ol-lens-inspect"
+            class="ol-s cursor-interaction"
+            aria-label="Inspect the lens"
+            data-hint="Hold the lens still and move a cursor through its finer cells with the keys (E)"
+          >
+            Inspect
+          </button
+          ><button
+            type="button"
             id="ol-lens-pin"
             class="ol-s cursor-interaction"
             aria-label="Pin lens"
@@ -1863,8 +1872,8 @@
           <h3 id="ol-keys-tools">Tools</h3>
           <dl>
             <div>
-              <dt>Pan, select, lens</dt>
-              <dd><kbd>V</kbd> <kbd>S</kbd> <kbd>L</kbd></dd>
+              <dt>Pan, select, lens, inspect</dt>
+              <dd><kbd>V</kbd> <kbd>S</kbd> <kbd>L</kbd> <kbd>E</kbd></dd>
             </div>
             <div>
               <dt>Lens depth</dt>
@@ -1879,8 +1888,37 @@
               <dd><kbd>Enter</kbd></dd>
             </div>
             <div>
-              <dt>Close; clear the selection; then back to pan</dt>
+              <dt>Close; close an inspected record; leave Inspect; clear the selection; then back to pan</dt>
               <dd><kbd>Esc</kbd></dd>
+            </div>
+          </dl>
+        </section>
+        <section aria-labelledby="ol-keys-inspect">
+          <h3 id="ol-keys-inspect">Inspect (E)</h3>
+          <dl>
+            <div>
+              <dt>Cells and lens: previous or next time cell; next higher or lower price row</dt>
+              <dd><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dd>
+            </div>
+            <div>
+              <dt>Rows: next higher or lower row. Columns: previous or next column</dt>
+              <dd><kbd>↑</kbd> <kbd>↓</kbd> and <kbd>←</kbd> <kbd>→</kbd></dd>
+            </div>
+            <div>
+              <dt>References: previous or next reference in the list</dt>
+              <dd><kbd>↑</kbd> <kbd>↓</kbd></dd>
+            </div>
+            <div>
+              <dt>First or last visible item</dt>
+              <dd><kbd>Home</kbd> <kbd>End</kbd></dd>
+            </div>
+            <div>
+              <dt>Open or close the record's detail (nothing else: no anchor, Pin or Play)</dt>
+              <dd><kbd>Enter</kbd> or <kbd>Space</kbd></dd>
+            </div>
+            <div>
+              <dt>Read a point (a tap changes nothing but the cursor)</dt>
+              <dd>Click or tap</dd>
             </div>
           </dl>
         </section>

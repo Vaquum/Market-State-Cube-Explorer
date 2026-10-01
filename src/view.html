@@ -704,6 +704,21 @@
           Reload
         </button>
       </div>
+      <div id="ol-notice" class="ol-loading ol-update ol-notice" role="status" hidden>
+        <span id="ol-notice-text" class="ol-notice-text"></span
+        ><button
+          type="button"
+          id="ol-notice-more"
+          class="ol-action ol-s cursor-interaction"
+          aria-expanded="false"
+          aria-controls="ol-note-details"
+          hidden
+        >
+          Details</button
+        ><button type="button" id="ol-notice-dismiss" class="ol-action ol-s cursor-interaction">
+          Dismiss
+        </button>
+      </div>
       <div class="ol-chart-head">
         <div class="ol-surfaces">
           <div class="ol-group ol-mode-group">
@@ -850,10 +865,28 @@
               <div class="ol-lines-status" id="ol-period-status" role="status"></div>
             </div>
           </div>
-          <span class="ol-legend ol-rows-legend" id="ol-rows-legend" hidden
-            ><i class="ol-ramp" id="ol-rows-ramp" aria-hidden="true"></i
-            ><span id="ol-rows-legend-text" class="ol-num"></span
-          ></span>
+          <button
+            type="button"
+            class="ol-legend ol-legend-chip ol-rows-legend cursor-interaction"
+            id="ol-rows-legend"
+            data-channel="rows"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="ol-rows-legend-pop"
+            aria-label="Rows scale"
+            hidden
+          >
+            <canvas class="ol-ramp" id="ol-rows-ramp" width="36" height="8" aria-hidden="true"></canvas>
+            <span id="ol-rows-legend-text" class="ol-num"></span>
+          </button>
+          <div
+            class="ol-pop ol-legend-pop"
+            id="ol-rows-legend-pop"
+            role="dialog"
+            aria-label="Rows scale details"
+            tabindex="-1"
+            hidden
+          ></div>
         </div>
         <div class="ol-marks" role="group" aria-label="Overlays">
           <label title="Each column's point of control, and the profile's (P and B) · Shift+P"
@@ -864,10 +897,32 @@
             ><input type="checkbox" id="ol-untested" />Untested</label
           >
         </div>
-        <span class="ol-legend"
-          ><i class="ol-ramp" id="ol-ramp" aria-hidden="true"></i
-          ><span id="ol-legend-text" class="ol-num">USDT per cell · log</span></span
+        <button
+          type="button"
+          class="ol-legend ol-legend-chip cursor-interaction"
+          id="ol-legend"
+          data-channel="cells"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="ol-legend-pop"
+          aria-describedby="ol-legend-marker-text"
+          aria-label="Scale"
         >
+          <span class="ol-ramp-wrap"
+            ><canvas class="ol-ramp" id="ol-ramp" width="64" height="8" aria-hidden="true"></canvas
+            ><i class="ol-legend-marker" id="ol-legend-marker" data-coordinate="" data-readout="" aria-hidden="true" hidden></i
+          ></span>
+          <span id="ol-legend-text" class="ol-num">USDT per cell · log</span>
+        </button>
+        <span id="ol-legend-marker-text" class="ol-sr" hidden></span>
+        <div
+          class="ol-pop ol-pop-end ol-legend-pop"
+          id="ol-legend-pop"
+          role="dialog"
+          aria-label="Scale details"
+          tabindex="-1"
+          hidden
+        ></div>
       </div>
       <div class="ol-plot">
         <canvas
@@ -877,6 +932,27 @@
           aria-label="Time by price grid with real traded volume, point of control and linked volume profile"
         ></canvas>
         <div class="ol-tip" id="ol-tip" role="tooltip" hidden></div>
+        <button
+          type="button"
+          class="ol-legend ol-legend-chip ol-axis-chip cursor-interaction"
+          id="ol-axis-chip"
+          data-channel="axis"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="ol-axis-pop"
+          aria-label="Axis"
+          hidden
+        >
+          <span id="ol-axis-chip-text" class="ol-num"></span>
+        </button>
+        <div
+          class="ol-pop ol-pop-end ol-legend-pop ol-axis-pop"
+          id="ol-axis-pop"
+          role="dialog"
+          aria-label="Axis details"
+          tabindex="-1"
+          hidden
+        ></div>
         <div
           class="ol-transport"
           id="ol-transport"
@@ -961,6 +1037,15 @@
             <option value="2" selected>2 levels finer</option>
             <option value="3">3 levels finer</option>
             <option value="4">4 levels finer</option></select
+          ><label class="ol-lens-local" id="ol-lens-local-label"
+            ><input type="checkbox" id="ol-lens-local" />Local contrast</label
+          ><span
+            id="ol-lens-status"
+            class="ol-sr"
+            role="status"
+            data-channel="lens"
+            data-state="no-calibration"
+          ></span
           ><button
             type="button"
             id="ol-lens-pin"
@@ -1276,6 +1361,7 @@
           ><span id="ol-key-plain" hidden
             ><i class="ol-data-key plain" aria-hidden="true"></i>Not measured
             yet</span
+          ><span id="ol-keys-scale" class="ol-keys-scale"></span
           ><span id="ol-key-poc">P · total POC</span
           ><span id="ol-key-bpoc">B · buy POC</span
           ><span id="ol-key-area" hidden>H/L · composite 70%</span

@@ -1,0 +1,9 @@
+{
+  "kind": "published",
+  "expectationSource": "published-table",
+  "generator": null,
+  "seed": null,
+  "source": "sharma2005.json: the 34 CIEDE2000 test pairs of Sharma, Wu and Dalal, Color Research and Application 30(1), 2005, supplementary test data. known-lab.json: sRGB primaries in CIE Lab at D50 (Bradford), as published by Bruce Lindbloom's colour calculator.",
+  "extractedOn": "2026-09-30",
+  "notes": "Both files were transcribed by the W1-D engineer from memory of the published tables, WITHOUT access to the paper or the site during the work, so they are flagged (TESTPLAN.md 8.3 item 3). They are not derived from the code under test: tests/reference/color.js (an independent CIEDE2000) reproduces all 34 Sharma values to 4 decimals, which a wrong transcription of any pair would not, and the module's own implementation agrees with it. A reviewer with the paper at hand should compare the 34 rows once; a mismatch is a transcription error in the fixture, not in the code."
+}

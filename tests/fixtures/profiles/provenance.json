@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "expectationSource": "self-pin",
+  "generator": "tests/support/profiles.js",
+  "seed": 20260924,
+  "source": "Determinism pins of the synthetic trade profiles the fake cube serves (mini, standard, deep, uniform, skew): trade count, base-cell count, cell count and decoded size of each tier, and the sha256 of the decoded recent block. Not market data.",
+  "extractedOn": "2026-09-30",
+  "notes": "The only permitted self-referential fixture: it pins that the generator is stable and is never an expected value elsewhere. The injected pack's compressed length is deliberately NOT pinned (gzip output depends on the zlib version); its decoded payload sizes are. Rewrite with UPDATE_PINS=1 node --test tests/unit/fake-routes.test.js after a deliberate change of profiles.js, trades.js or rng.js."
+}

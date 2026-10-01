@@ -1,0 +1,19 @@
+{
+  "name": "market-state-cube-explorer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Development tooling only. The explorer runs from index.html and has no runtime npm dependencies.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test --test-reporter=spec \"tests/unit/**/*.test.js\"",
+    "test:ci": "node -e \"require('fs').mkdirSync('reports',{recursive:true})\" && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=reports/unit.xml \"tests/unit/**/*.test.js\"",
+    "build:tmp": "python3 tools/build.py --out reports/page/index.html && node -e \"require('fs').cpSync('vendor','reports/page/vendor',{recursive:true})\"",
+    "test:browser": "playwright test --config tests/browser/playwright.config.js",
+    "golden:check": "python3 tests/reference/golden.py --check && python3 tests/reference/wire_golden.py --check",
+    "golden:write": "python3 tests/reference/golden.py --write && python3 tests/reference/wire_golden.py --write",
+    "fake": "node tests/support/cube-fake.js --profile standard --port 8790",
+    "benchmark": "node tools/benchmark_navigation.mjs --config tools/benchmark/navigation.v1.json --out reports/benchmark",
+    "benchmark:smoke": "node tools/benchmark_navigation.mjs --config tools/benchmark/navigation.v1.json --out reports/benchmark-smoke --smoke --browser-mode headless-shell"
+  },
+  "devDependencies": { "@playwright/test": "1.63.0" }
+}

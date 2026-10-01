@@ -1,0 +1,1172 @@
+{
+  "schemaVersion": 1,
+  "kind": "navigation-benchmark",
+  "createdAtUtc": "2026-09-30T12:00:00Z",
+  "label": "sample",
+  "smoke": false,
+  "config": {
+    "path": "tools/benchmark/navigation.v1.json",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "seed": 20260930
+  },
+  "environment": {
+    "os": "Sample OS 1.0 arm64",
+    "cpuModel": "Hand-made sample CPU",
+    "cores": 8,
+    "memoryGb": 16,
+    "node": "v22.0.0",
+    "playwright": "1.63.0",
+    "browser": {
+      "name": "Chromium",
+      "version": "153.0.8010.12",
+      "major": 153,
+      "mode": "headless-shell",
+      "args": []
+    },
+    "dpr": 1,
+    "viewport": {
+      "width": 1500,
+      "height": 950
+    },
+    "reducedMotion": "reduce",
+    "timerResolutionMs": 0.03125,
+    "ci": false,
+    "designated": null,
+    "cpuThrottle": null,
+    "nonDesignatedNotice": "Not a designated environment; not a precision certificate."
+  },
+  "roles": {
+    "original": "8c82ca1f03d80d3f35ff1ab6326902f4286f7b92",
+    "preceding": "8c82ca1f03d80d3f35ff1ab6326902f4286f7b92",
+    "candidate": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "builds": [
+    {
+      "label": "original/preceding",
+      "sha": "8c82ca1f03d80d3f35ff1ab6326902f4286f7b92",
+      "indexSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "vendorSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "protocol": 2
+    },
+    {
+      "label": "candidate",
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "indexSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "vendorSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "protocol": 2
+    }
+  ],
+  "data": {
+    "profile": "bench",
+    "seed": 20260924,
+    "packToken": "sample-pack-token",
+    "cutoff": "2026-09-24T12:02:00.000000Z"
+  },
+  "protocol": {
+    "aaPairs": 2,
+    "screeningPairs": 2,
+    "confirmationPairs": 2,
+    "heavyPairs": 1,
+    "bootstrapResamples": 100,
+    "alpha": 0.01,
+    "familySize": 2,
+    "floorPercentile": 0.95,
+    "floorMinMs": "measured timer resolution",
+    "environmentInconclusiveMeanDrawMs": 0.2,
+    "coreIds": [
+      "recorded-24h"
+    ],
+    "heavyIds": []
+  },
+  "budgets": {
+    "p95DrawMs": 10,
+    "p95FrameMs": 20,
+    "gestureIntervalOver33_3MsMaxShare": 0.01,
+    "p95InputToPaintMs": 50,
+    "drawOverMs": 16.7,
+    "frameOverMs": 50
+  },
+  "phases": {
+    "aa": {
+      "ran": true,
+      "pairs": 2,
+      "orders": [
+        "AB",
+        "BA"
+      ]
+    },
+    "screening": {
+      "ran": true,
+      "pairs": 2,
+      "orders": {
+        "original": [
+          "AB",
+          "BA"
+        ]
+      }
+    },
+    "confirmation": {
+      "ran": true,
+      "pairs": 2,
+      "reason": "screening signal",
+      "orders": {
+        "original": [
+          "BA",
+          "AB"
+        ]
+      }
+    },
+    "heavy": {
+      "ran": false,
+      "pairs": 0
+    }
+  },
+  "samples": [
+    {
+      "phase": "aa",
+      "vs": null,
+      "pair": 0,
+      "order": 1,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3,
+        3
+      ],
+      "frameIntervals": [
+        17.5,
+        17.5,
+        17.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "aa",
+      "vs": null,
+      "pair": 0,
+      "order": 1,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2,
+        2
+      ],
+      "frameIntervals": [
+        16.5,
+        16.5,
+        16.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "aa",
+      "vs": null,
+      "pair": 0,
+      "order": 2,
+      "arm": "B",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3.0625,
+        3.0625
+      ],
+      "frameIntervals": [
+        17.75,
+        17.75,
+        17.75
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "aa",
+      "vs": null,
+      "pair": 0,
+      "order": 2,
+      "arm": "B",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2.0625,
+        2.0625
+      ],
+      "frameIntervals": [
+        16.75,
+        16.75,
+        16.75
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "aa",
+      "vs": null,
+      "pair": 1,
+      "order": 1,
+      "arm": "B",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3.125,
+        3.125
+      ],
+      "frameIntervals": [
+        17.5,
+        17.5,
+        17.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "aa",
+      "vs": null,
+      "pair": 1,
+      "order": 1,
+      "arm": "B",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2.125,
+        2.125
+      ],
+      "frameIntervals": [
+        16.5,
+        16.5,
+        16.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "aa",
+      "vs": null,
+      "pair": 1,
+      "order": 2,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3,
+        3
+      ],
+      "frameIntervals": [
+        17.5,
+        17.5,
+        17.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "aa",
+      "vs": null,
+      "pair": 1,
+      "order": 2,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2,
+        2
+      ],
+      "frameIntervals": [
+        16.5,
+        16.5,
+        16.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "screening",
+      "vs": "original",
+      "pair": 0,
+      "order": 1,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3,
+        3
+      ],
+      "frameIntervals": [
+        17.5,
+        17.5,
+        17.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "screening",
+      "vs": "original",
+      "pair": 0,
+      "order": 1,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2,
+        2
+      ],
+      "frameIntervals": [
+        16.5,
+        16.5,
+        16.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "screening",
+      "vs": "original",
+      "pair": 0,
+      "order": 2,
+      "arm": "B",
+      "build": "candidate",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3.5,
+        3.5
+      ],
+      "frameIntervals": [
+        18,
+        18,
+        18
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": 3,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "screening",
+      "vs": "original",
+      "pair": 0,
+      "order": 2,
+      "arm": "B",
+      "build": "candidate",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2.5,
+        2.5
+      ],
+      "frameIntervals": [
+        17,
+        17,
+        17
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": 3,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "screening",
+      "vs": "original",
+      "pair": 1,
+      "order": 1,
+      "arm": "B",
+      "build": "candidate",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3.25,
+        3.25
+      ],
+      "frameIntervals": [
+        17.5,
+        17.5,
+        17.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": 3,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "screening",
+      "vs": "original",
+      "pair": 1,
+      "order": 1,
+      "arm": "B",
+      "build": "candidate",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2.25,
+        2.25
+      ],
+      "frameIntervals": [
+        16.5,
+        16.5,
+        16.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": 3,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "screening",
+      "vs": "original",
+      "pair": 1,
+      "order": 2,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3,
+        3
+      ],
+      "frameIntervals": [
+        17.5,
+        17.5,
+        17.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "screening",
+      "vs": "original",
+      "pair": 1,
+      "order": 2,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2,
+        2
+      ],
+      "frameIntervals": [
+        16.5,
+        16.5,
+        16.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "confirmation",
+      "vs": "original",
+      "pair": 0,
+      "order": 1,
+      "arm": "B",
+      "build": "candidate",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3.5,
+        3.5
+      ],
+      "frameIntervals": [
+        17.625,
+        17.625,
+        17.625
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": 3,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "confirmation",
+      "vs": "original",
+      "pair": 0,
+      "order": 1,
+      "arm": "B",
+      "build": "candidate",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2.5,
+        2.5
+      ],
+      "frameIntervals": [
+        16.625,
+        16.625,
+        16.625
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": 3,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "confirmation",
+      "vs": "original",
+      "pair": 0,
+      "order": 2,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3,
+        3
+      ],
+      "frameIntervals": [
+        17.5,
+        17.5,
+        17.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "confirmation",
+      "vs": "original",
+      "pair": 0,
+      "order": 2,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2,
+        2
+      ],
+      "frameIntervals": [
+        16.5,
+        16.5,
+        16.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "confirmation",
+      "vs": "original",
+      "pair": 1,
+      "order": 1,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3,
+        3
+      ],
+      "frameIntervals": [
+        17.5,
+        17.5,
+        17.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "confirmation",
+      "vs": "original",
+      "pair": 1,
+      "order": 1,
+      "arm": "A",
+      "build": "original",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2,
+        2
+      ],
+      "frameIntervals": [
+        16.5,
+        16.5,
+        16.5
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": null,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "confirmation",
+      "vs": "original",
+      "pair": 1,
+      "order": 2,
+      "arm": "B",
+      "build": "candidate",
+      "case": "recorded-24h",
+      "run": "cold",
+      "draws": [
+        3.5,
+        3.5
+      ],
+      "frameIntervals": [
+        17.625,
+        17.625,
+        17.625
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": 3,
+      "errors": 0,
+      "unexpected": 0
+    },
+    {
+      "phase": "confirmation",
+      "vs": "original",
+      "pair": 1,
+      "order": 2,
+      "arm": "B",
+      "build": "candidate",
+      "case": "recorded-24h",
+      "run": "steady",
+      "draws": [
+        2.5,
+        2.5
+      ],
+      "frameIntervals": [
+        16.625,
+        16.625,
+        16.625
+      ],
+      "inputToPaint": [
+        16,
+        24
+      ],
+      "unpainted": 0,
+      "reads": {},
+      "readOrder": [],
+      "fits": 3,
+      "errors": 0,
+      "unexpected": 0
+    }
+  ],
+  "analysis": {
+    "familySize": 2,
+    "tailProbability": 0.0025,
+    "level": 0.995,
+    "floors": {
+      "recorded-24h": {
+        "meanDrawMs": 0.125,
+        "meanFrameIntervalMs": 0.25
+      }
+    },
+    "environment": {
+      "gate": {
+        "ok": true,
+        "limitMs": 0.2,
+        "offending": []
+      },
+      "forced": false,
+      "timerResolutionMs": 0.03125
+    },
+    "comparisons": [
+      {
+        "vs": "preceding",
+        "coincidesWith": "original",
+        "screening": {
+          "cells": [
+            {
+              "case": "recorded-24h",
+              "metric": "meanDrawMs",
+              "pairs": 2,
+              "median": 0.375,
+              "floor": 0.125,
+              "exceedsFloor": true
+            },
+            {
+              "case": "recorded-24h",
+              "metric": "meanFrameIntervalMs",
+              "pairs": 2,
+              "median": 0.25,
+              "floor": 0.25,
+              "exceedsFloor": false
+            }
+          ],
+          "signal": true
+        },
+        "confirmation": {
+          "familySize": 2,
+          "level": 0.995,
+          "tail": 0.0025,
+          "intervals": [
+            {
+              "case": "recorded-24h",
+              "metric": "meanDrawMs",
+              "pairs": 2,
+              "meanDifference": 0.5,
+              "lower": 0.5,
+              "upper": 0.5,
+              "resamples": 100,
+              "tail": 0.0025,
+              "floor": 0.125,
+              "verdict": "blocking"
+            },
+            {
+              "case": "recorded-24h",
+              "metric": "meanFrameIntervalMs",
+              "pairs": 2,
+              "meanDifference": 0.125,
+              "lower": 0.125,
+              "upper": 0.125,
+              "resamples": 100,
+              "tail": 0.0025,
+              "floor": 0.25,
+              "verdict": "no-regression-detected-at-this-resolution"
+            }
+          ],
+          "verdict": "blocking"
+        },
+        "verdict": "blocking",
+        "budgets": [
+          {
+            "case": "recorded-24h",
+            "candidate": {
+              "runs": 4,
+              "drawCount": 8,
+              "frameCount": 12,
+              "inputCount": 8,
+              "p95DrawMs": 2.5,
+              "p95FrameMs": 17,
+              "gestureIntervalOver33_3MsShare": 0,
+              "p95InputToPaintMs": 24,
+              "drawsOverMs": 0,
+              "framesOverMs": 0,
+              "perRunP95DrawMs": [
+                2.5,
+                2.25,
+                2.5,
+                2.5
+              ]
+            },
+            "original": {
+              "runs": 4,
+              "drawCount": 8,
+              "frameCount": 12,
+              "inputCount": 8,
+              "p95DrawMs": 2,
+              "p95FrameMs": 16.5,
+              "gestureIntervalOver33_3MsShare": 0,
+              "p95InputToPaintMs": 24,
+              "drawsOverMs": 0,
+              "framesOverMs": 0,
+              "perRunP95DrawMs": [
+                2,
+                2,
+                2,
+                2
+              ]
+            },
+            "checks": [
+              {
+                "budget": "p95DrawMs",
+                "limit": 10,
+                "candidate": 2.5,
+                "original": 2,
+                "baselineMeets": true,
+                "candidateMeets": true,
+                "status": "meets"
+              },
+              {
+                "budget": "p95FrameMs",
+                "limit": 20,
+                "candidate": 17,
+                "original": 16.5,
+                "baselineMeets": true,
+                "candidateMeets": true,
+                "status": "meets"
+              },
+              {
+                "budget": "gestureIntervalOver33_3MsMaxShare",
+                "limit": 0.01,
+                "candidate": 0,
+                "original": 0,
+                "baselineMeets": true,
+                "candidateMeets": true,
+                "status": "meets"
+              },
+              {
+                "budget": "p95InputToPaintMs",
+                "limit": 50,
+                "candidate": 24,
+                "original": 24,
+                "baselineMeets": true,
+                "candidateMeets": true,
+                "status": "meets"
+              }
+            ]
+          }
+        ],
+        "heavy": [],
+        "cold": [
+          {
+            "case": "recorded-24h",
+            "original": {
+              "runs": 4,
+              "meanDrawMs": 3,
+              "drawCount": 8
+            },
+            "candidate": {
+              "runs": 4,
+              "meanDrawMs": 3.4375,
+              "drawCount": 8
+            }
+          }
+        ]
+      },
+      {
+        "vs": "original",
+        "coincidesWith": null,
+        "screening": {
+          "cells": [
+            {
+              "case": "recorded-24h",
+              "metric": "meanDrawMs",
+              "pairs": 2,
+              "median": 0.375,
+              "floor": 0.125,
+              "exceedsFloor": true
+            },
+            {
+              "case": "recorded-24h",
+              "metric": "meanFrameIntervalMs",
+              "pairs": 2,
+              "median": 0.25,
+              "floor": 0.25,
+              "exceedsFloor": false
+            }
+          ],
+          "signal": true
+        },
+        "confirmation": {
+          "familySize": 2,
+          "level": 0.995,
+          "tail": 0.0025,
+          "intervals": [
+            {
+              "case": "recorded-24h",
+              "metric": "meanDrawMs",
+              "pairs": 2,
+              "meanDifference": 0.5,
+              "lower": 0.5,
+              "upper": 0.5,
+              "resamples": 100,
+              "tail": 0.0025,
+              "floor": 0.125,
+              "verdict": "blocking"
+            },
+            {
+              "case": "recorded-24h",
+              "metric": "meanFrameIntervalMs",
+              "pairs": 2,
+              "meanDifference": 0.125,
+              "lower": 0.125,
+              "upper": 0.125,
+              "resamples": 100,
+              "tail": 0.0025,
+              "floor": 0.25,
+              "verdict": "no-regression-detected-at-this-resolution"
+            }
+          ],
+          "verdict": "blocking"
+        },
+        "verdict": "blocking",
+        "budgets": [
+          {
+            "case": "recorded-24h",
+            "candidate": {
+              "runs": 4,
+              "drawCount": 8,
+              "frameCount": 12,
+              "inputCount": 8,
+              "p95DrawMs": 2.5,
+              "p95FrameMs": 17,
+              "gestureIntervalOver33_3MsShare": 0,
+              "p95InputToPaintMs": 24,
+              "drawsOverMs": 0,
+              "framesOverMs": 0,
+              "perRunP95DrawMs": [
+                2.5,
+                2.25,
+                2.5,
+                2.5
+              ]
+            },
+            "original": {
+              "runs": 4,
+              "drawCount": 8,
+              "frameCount": 12,
+              "inputCount": 8,
+              "p95DrawMs": 2,
+              "p95FrameMs": 16.5,
+              "gestureIntervalOver33_3MsShare": 0,
+              "p95InputToPaintMs": 24,
+              "drawsOverMs": 0,
+              "framesOverMs": 0,
+              "perRunP95DrawMs": [
+                2,
+                2,
+                2,
+                2
+              ]
+            },
+            "checks": [
+              {
+                "budget": "p95DrawMs",
+                "limit": 10,
+                "candidate": 2.5,
+                "original": 2,
+                "baselineMeets": true,
+                "candidateMeets": true,
+                "status": "meets"
+              },
+              {
+                "budget": "p95FrameMs",
+                "limit": 20,
+                "candidate": 17,
+                "original": 16.5,
+                "baselineMeets": true,
+                "candidateMeets": true,
+                "status": "meets"
+              },
+              {
+                "budget": "gestureIntervalOver33_3MsMaxShare",
+                "limit": 0.01,
+                "candidate": 0,
+                "original": 0,
+                "baselineMeets": true,
+                "candidateMeets": true,
+                "status": "meets"
+              },
+              {
+                "budget": "p95InputToPaintMs",
+                "limit": 50,
+                "candidate": 24,
+                "original": 24,
+                "baselineMeets": true,
+                "candidateMeets": true,
+                "status": "meets"
+              }
+            ]
+          }
+        ],
+        "heavy": [],
+        "cold": [
+          {
+            "case": "recorded-24h",
+            "original": {
+              "runs": 4,
+              "meanDrawMs": 3,
+              "drawCount": 8
+            },
+            "candidate": {
+              "runs": 4,
+              "meanDrawMs": 3.4375,
+              "drawCount": 8
+            }
+          }
+        ]
+      }
+    ],
+    "assumptions": [
+      "Paired trials: each pair is one trial of each arm of one case; the pair is the unit that is resampled.",
+      "Percentile bootstrap of the mean paired difference, 100 resamples, committed seed 20260930, Type-7 quantiles.",
+      "Bonferroni over 2 comparisons (1 core cases x 2 metrics): two-sided level 0.995, tail 0.0025.",
+      "The A/A noise floor comes from the original build only and is shared by every comparison.",
+      "Screening without a signal is 'no regression detected at this resolution', not equality; an interval that spans the floor is 'inconclusive', not zero overhead."
+    ],
+    "verdict": "blocking",
+    "abVerdict": "blocking"
+  },
+  "verdict": "blocking",
+  "forcedInconclusive": false,
+  "warnings": [],
+  "limits": [
+    "B-L1: input-to-paint ends at the end of the page's draw callback; it excludes the compositor and the present latency of the display.",
+    "B-L2: the browser coarsens timers; the measured timer resolution is recorded and is the lowest value an A/A floor can take.",
+    "B-L3: a laptop or a shared runner is not the designated machine. A run on one is non-designated-environment evidence and cannot satisfy the operator's designated-machine requirement (O-01).",
+    "B-L4: with 20 confirmation pairs a 99 % family-wise interval is wide; 'inconclusive' is a likely outcome and is reported as such, needing an explanation or the operator's decision (O-02).",
+    "B-L5: headless shell and full Chrome differ; the mode is recorded and the operator's designated mode should match it.",
+    "B-L6: the canvas bitmap is reallocated on every draw (geometry() assigns canvas.width) in both builds, so it sits inside every draw sample; the A/A floor may often exceed 0.2 ms on a laptop and 'environment-inconclusive' is a likely outcome.",
+    "The fake cube serves synthetic trades; fake-live timing excludes network and server latency, and the recorded cases measure only the page."
+  ],
+  "statement": "Measured on Hand-made sample CPU (8 cores, 16 GB), Sample OS 1.0 arm64, Chromium 153.0.8010.12 (headless-shell), viewport 1500x950, DPR 1, reduced motion reduce. Not a designated environment; not a precision certificate. Preceding main and the original build are the same commit in this slice, so the comparison against preceding main is the comparison against the original build. Against preceding (same as original): blocking repeatable regression; the lower bound of the 99.5000 % family-wise interval is above the A/A floor for recorded-24h/meanDrawMs. Against original: blocking repeatable regression; the lower bound of the 99.5000 % family-wise interval is above the A/A floor for recorded-24h/meanDrawMs."
+}

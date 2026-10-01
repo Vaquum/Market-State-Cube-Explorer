@@ -1,0 +1,39 @@
+{
+  "trades": [{"t_ms": 10000, "price": 2500000, "qty": 400000, "takerBuy": true}, {"t_ms": 200000, "price": 2500000, "qty": 400000, "takerBuy": false}],
+  "gaps": [[60000, 120000], [150000, 175000]],
+  "cutoffIso": "2021-01-01T00:06:00Z",
+  "expected": {
+    "notes": "Two 100 USDT trades at the same price (no path) 190 s apart, with two intervals the cube did not observe: 60 s -> 120 s and 150 s -> 175 s. The price is assumed to hold between trades, but dwell inside a gap is not attributed to any cell: trade 1 holds 10 s -> 200 s minus the gaps = [10, 60) + [120, 150) + [175, 200), split at column edges 56.25 / 112.5 / 168.75 s: 46.25 s col 0, 3.75 s col 1, 30 s col 2, 25 s col 3. Trade 2 holds 200 s -> the read's edge 337.5 s (25 s col 3, 56.25 s col 4, 56.25 s col 5). Covered dwell per column (all rows): 46.25, 3.75, 30, 50, 56.25, 56.25: the remainder of each column is unattributed time (the first 10 s before the first trade, and the gaps), which a column's dwell share must not hide. Cutoff 360 s = base 6.4, closed 6.",
+    "rect": {"b0": 0, "cellsB1": 7, "motionB1": 6, "cutMs": 360000},
+    "cells": {
+      "0:0": [{"c": 0, "r": 200, "v": 100, "bv": 100, "ct": 1, "bt": 1, "d": 100}, {"c": 3, "r": 200, "v": 100, "bv": 0, "ct": 1, "bt": 0, "d": -100}]
+    },
+    "motion": {
+      "0:0": [
+        {"c": 0, "r": 200, "p": 0, "w": 46.25, "hi": 25000, "lo": 25000, "v": 100, "bv": 100, "ct": 1, "bt": 1},
+        {"c": 1, "r": 200, "p": 0, "w": 3.75, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 2, "r": 200, "p": 0, "w": 30, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 3, "r": 200, "p": 0, "w": 50, "hi": 25000, "lo": 25000, "v": 100, "bv": 0, "ct": 1, "bt": 0},
+        {"c": 4, "r": 200, "p": 0, "w": 56.25, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0},
+        {"c": 5, "r": 200, "p": 0, "w": 56.25, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0}
+      ]
+    },
+    "columnDwell": {"0": 46.25, "1": 3.75, "2": 30, "3": 50, "4": 56.25, "5": 56.25},
+    "bars": {
+      "2": [{"col": 0, "open": 25000, "high": 25000, "low": 25000, "close": 25000, "volume": 200, "takerBuyVolume": 100, "baseVolume": 0.008, "trades": 2}]
+    },
+    "summary": [
+      {
+        "rect": {"b0": 0, "b1": 7, "m": 0},
+        "volume": 200,
+        "takerBuyVolume": 100,
+        "trades": 2,
+        "takerBuyTrades": 1,
+        "pocRow": 200,
+        "poc": 25062.5,
+        "takerBuyPocRow": 200,
+        "takerBuyPoc": 25062.5
+      }
+    ]
+  }
+}

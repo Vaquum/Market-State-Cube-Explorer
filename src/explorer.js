@@ -4,6 +4,15 @@
     el = (id) => root.querySelector("#ol-" + id),
     qsa = (s) => root.querySelectorAll(s),
     PACK = JSON.parse(document.getElementById("origo-lens-data").textContent);
+  // The measurement module (src/encoding.js), inlined before this script. Everything the chart says about
+  // a value comes from it, so a page that lacks it says so in its own loading line and stops, where a
+  // missing module would otherwise surface as an error nobody sees. `E.text` cannot be used here: E is
+  // what is missing.
+  const E = window.explorerEncoding;
+  if (!E) {
+    el("loading").textContent = "The explorer's measurement module did not load. Reload the page.";
+    throw new Error("explorerEncoding is missing");
+  }
   const BASE = PACK.base_seconds,
     PR = PACK.base_price,
     T0 = PACK.t0,
@@ -23,9 +32,12 @@
   let CANON = canonOf(PACK);
   // Diagonal through the resolution lattice: least-squares fit of
   // log2(median column price range / 125) against n over the full history,
-  // n = 6..13, measured on the 2026-09-24 extraction (exponent 0.49).
-  const ISO_A = -1.06,
-    ISO_B = 0.486,
+  // n = 6..13, measured on the 2026-09-24 extraction (exponent 0.49). The two
+  // numbers are the recorded model's (E.model.PROVENANCE, which also says what
+  // is not known about the fit), so the diagonal chooser, the Efficiency
+  // baseline and every label about them read one record.
+  const ISO_A = E.model.PROVENANCE.ISO_A,
+    ISO_B = E.model.PROVENANCE.ISO_B,
     N_MAX = 20,
     M_MAX = 9,
     TILE_COLUMNS = 4096;
@@ -124,6 +136,9 @@
       cellDir: -1,
       caseSort: "date",
       caseDir: -1,
+      // What the person chose for the scales (Scale sections of the menus): raw preferences, never
+      // rewritten to fit the current measure; E.policy.effective says what they mean for it.
+      scale: structuredClone(E.policy.DEFAULTS),
     };
   let sources = {},
     G = {},
@@ -547,7 +562,6 @@
       bv: exactSum(cells.map((z) => z.bv)),
       ct,
       bt,
-      scales: {},
     };
   }
   // Path and dwell level by level (live only), summed like volume, each cell
@@ -648,7 +662,7 @@
         if (z.lo < col.lo) col.lo = z.lo;
       } else moved.push(z);
     }
-    return { n, m, cells, cols, map, moved, rows: null, p: null, w: null, scales: {} };
+    return { n, m, cells, cols, map, moved, rows: null, p: null, w: null };
   }
   // A motion summary's rows, path and dwell by price row summed exactly, and
   // its totals; the cube's own totals when it answered for the rectangle.
@@ -690,6 +704,9 @@
   // holds the latest trades (the cube's cutoff is a minute edge, not a base
   // one), or the replay's edge.
   const cutEdge = () => Math.ceil(activeCutoff());
+  // Anything kept with the colours (patterns, chip keys, per-row surfaces) is worked out again once the theme
+  // changes: this counts the themes the page has drawn in (themeChanged bumps it).
+  let colourEpoch = 0;
   function getColors() {
     const probe = document.createElement("span");
     root.append(probe);
@@ -701,15 +718,26 @@
       "muted",
       "line",
       "volume",
-      "buy",
-      "sell",
       "poc",
       "evidence",
-      "time",
       "accent",
-      "neutral",
     ]) {
       probe.style.color = `var(--ol-${key})`;
+      colors[key] = getComputedStyle(probe).color;
+    }
+    // The roles of visual version 2 (the tokens sit beside the old ones until every consumer has moved):
+    // positive, negative and midpoint for signed measures, occupancy and state for marks that carry no
+    // value, and the two interim names for the unsigned marks that still use the taker sides.
+    for (const [key, token] of [
+      ["positive", "positive"],
+      ["negative", "negative"],
+      ["midpoint", "midpoint"],
+      ["occupancy", "occupancy"],
+      ["state", "state"],
+      ["legacyBuy", "legacy-buy"],
+      ["legacySell", "legacy-sell"],
+    ]) {
+      probe.style.color = `var(--ol-${token})`;
       colors[key] = getComputedStyle(probe).color;
     }
     // The line families' colours, and each tier's weight and saturation.
@@ -726,7 +754,7 @@
         chroma: parseFloat(tokens.getPropertyValue(`--ol-tier-${tier}-chroma`)) || 1,
       };
     probe.remove();
-    buildRamp();
+    themeChanged();
   }
   function requestDraw() {
     if (!raf)
@@ -907,9 +935,745 @@
     line(G.x, G.y + G.h, G.x + G.w, G.y + G.h, colors.line);
     line(G.x, G.ay + G.ah, G.x + G.w, G.ay + G.ah, colors.line);
   }
-  function draw() {
-    if (!ready) return;
-    geometry();
+  // ---- The scale spine (PRD-0002 S1) ----
+  // The per-draw scale frame `sc` and the state behind it. Every consumer of a value's colour receives `sc`
+  // as its last argument and encodes through it; the measurement module (E) owns the arithmetic and this
+  // block owns the page: when a mapping is resolved, what is held, when the timers wake.
+  //
+  // Three clocks, kept apart. A DRAW resolves every channel's mapping by lookup only (one store read) and
+  // asks for what is missing; it never fits. The SETTLED TICK (`scaleTick`, one timer) is where everything
+  // that sorts or scans runs: coherence, the cohorts, the fits, the warnings pass, the axis wake; it runs
+  // only once a gesture has been quiet for the settle time, and it commits with `requestDraw()`, never
+  // `update()` (which restarts the read debounce). A PERSON'S ACTION (`scaleSet`) reduces into the raw
+  // preferences and asks for a fit; it never writes a value a measure cannot use (E.policy.effective reads
+  // what a measure means by the raw preference).
+  const scaleRt = {
+      // live and replay workspaces; replay is tab memory only
+      store: E.store.create(),
+      // settle 200 ms, Auto cap 500 ms, one want per channel
+      ctl: E.lifecycle.controller(),
+      axes: E.axis.registry(),
+      notices: E.notice.create({ now: () => Date.now() }),
+      // "appearance|theme" -> Lut; encoding builds, the page caches
+      lut: new Map(),
+      // "kind|colourEpoch|dpr" -> CanvasPattern
+      patterns: new Map(),
+      // the last SETTLED mapping of each channel ({id, key, ctx}), for the "Scale changed" disclosure
+      prev: { cells: null, rows: null, lens: null },
+      // "channel|workspace|cut|memoKey" -> what a fit found, so a view that was fitted before is not sorted
+      // again; cleared on a whole pack, never on a delta; at most FIT_MEMO_MAX entries
+      fitMemo: new Map(),
+      // {key, tally, keyCounts, report} per channel (the Columns pane is the channel "pane"), computed by the settled
+      // tick only; `keyCounts` counts the marks of each generated key (a zero outline, a pattern) the hook reported
+      warn: { cells: null, rows: null, lens: null, pane: null },
+      // the last domain, policy and typed state of each axis a draw framed ("id" -> string): a change owes the
+      // Columns pane a count
+      axisSig: new Map(),
+      // the last DOM write key of each legend, so an unchanged legend writes nothing
+      legendKey: { cells: "", rows: "", lens: "" },
+      // {causes, from, to}: what the last settle that changed a mapping changed, per channel, for the legend details;
+      // it stays until another change replaces it (a resize or a click is no reason to forget what changed)
+      note: { cells: null, rows: null, lens: null },
+      timer: 0,
+      lastGestureAt: -Infinity,
+      playing: false,
+      tipStamp: "",
+      tipReadout: null,
+      rowReadout: null,
+      appearance: E.lut.DEFAULT_APPEARANCE,
+      // the theme the surface colour belongs to, set by themeChanged
+      theme: "light",
+      // set by scaleFault: the scale display is off for the rest of the session
+      fault: false,
+      // The fixed descriptors (Taker share, Dwell, the log2 ratio), by kind and window: building one hashes
+      // it, so a draw takes it from here.
+      fixed: new Map(),
+      // The pending want of each channel {kind, key, ctx, ctxKey, memo, locked}: what the controller holds,
+      // with the context it was asked for, so a fit never lands on a context that has moved on.
+      ask: { cells: null, rows: null, lens: null },
+      // What the last resolution of each channel said {resolved, ctx, key, updating, ...}: the lock, the
+      // chips and the tick read it; it is rewritten by every draw.
+      cur: { cells: null, rows: null, lens: null },
+      // Calibration commits per channel: the page's data-fit-seq, which moves only when a fit lands. `axis` counts
+      // the Columns pane's axis domains that changed after they were first drawn (a refit, a freeze).
+      fitSeq: { cells: 0, rows: 0, lens: 0, axis: 0 },
+      // The memo key of the last fit of each channel, so Auto asks again only when the settled data changed.
+      fitKey: { cells: "", rows: "", lens: "" },
+      // "contextKey|memoKey" of a fit that found nothing to calibrate from, so an unchanged view is not asked twice.
+      noFit: { cells: "", rows: "", lens: "" },
+      // The context that was re-initialised after the store had let it go (the details say so).
+      evicted: { cells: "", rows: "", lens: "" },
+      // The axis ids the last draw displayed: what the Comparison lock freezes.
+      shown: new Set(),
+      // Why the next disclosure changed ("fit", "policy", "lock"), and the cause Pin sets.
+      hint: null,
+      pinCause: null,
+      // Where the Pin came from ({cellsKey, rowsKey, cellsId, rowsId, requested, effective}), set by the lens with
+      // pinCause: the settled draw that finds the new mappings reads the old ids from it and clears both.
+      pinBefore: null,
+      // The scale frame of the draw in progress (and then of the last draw): what the legend package reads for the
+      // parts of a chip only the spine knows (sc.chip[channel]: attributes, options, the fallback's words).
+      sc: null,
+      // True while the warnings pass runs a marks hook: a frame the hook builds must not owe a second count
+      // for the very key that is being counted, nor leave a trace (a want, a disclosure, a chip).
+      counting: false,
+      // A settled pass is owed (a disclosure, a warnings count): it arms the timer like a want does.
+      chase: false,
+      // The Local-contrast calibration of the lens (outside the store, which is the 64-context cache).
+      local: null,
+    },
+    // The ONE scratch object frame.encode fills for a mark (no allocation per mark). It has the shape the
+    // frames write, so every call sees the same object layout.
+    ENC = {
+      tag: 0,
+      value: NaN,
+      signed: false,
+      short: false,
+      reason: null,
+      denominator: null,
+      role: 0,
+      idx: -1,
+      clip: 0,
+      t: 0,
+      pattern: null,
+      css: null,
+    },
+    // What a fault leaves behind (scaleFault fills it): an occupancy-only chart and the legacy legend.
+    INERT_SC = { cells: null, cellsFull: null, rows: null, lens: null, stamp: "inert", cutMs: 0, lut: null },
+    SCALE_CHANNELS = ["cells", "rows", "lens"],
+    FIT_MEMO_MAX = 8;
+  // The read-only state a fit is authorised against: a fit reads it when it is requested and checks it again
+  // just before it commits, so no fit lands on a pack, cutoff or token that has moved on.
+  function acceptedState() {
+    return { generation: live.generation, token: PACK.state_token ?? null, cut: CUT, canon: CANON };
+  }
+  // Which workspace a lookup reads, at lookup time: replay never writes the live one.
+  function scaleWorkspace() {
+    return S.replay ? "replay" : "live";
+  }
+  // The Cells calibration context of what is drawn now, by its EFFECTIVE level and preferences (a measure that
+  // cannot use a preference reads it as its default, and the raw preference is never rewritten). Geometry
+  // has nothing to calibrate.
+  function cellsContext() {
+    if (S.mode === "geometry") return null;
+    const eff = E.policy.effective(S.scale, S.mode);
+    return E.context.cellsKey({
+      measure: S.mode,
+      basis: eff.basis,
+      pathBasis: eff.pathBasis,
+      transform: eff.transform,
+      curve: eff.curve,
+      n: renderN(),
+      m: renderM(),
+      workspace: scaleWorkspace(),
+      instrument: INSTRUMENT,
+    });
+  }
+  // The two callbacks every cells frame takes from the page. They forward to the consumer hooks so a frame
+  // built before those hooks exist still works: an unregistered `cellMeasured` counts every cell as
+  // measured, an unregistered `cascadeEntry` leaves a Cascade cell pending.
+  function scaleMeasured(z) {
+    return cellsMeasured(z);
+  }
+  function scaleCascade(z, out) {
+    cascadeInto(z, out);
+  }
+  // The key that says whether anything a readout or a legend was built from has changed: every channel's
+  // mapping id, the appearance, the theme epoch and the pack generation. Nothing in it is a timestamp.
+  function scaleStamp(sc) {
+    return [
+      sc.cells.mappingId,
+      sc.rows?.mappingId ?? "",
+      sc.lens?.mappingId ?? "",
+      sc.lut.id,
+      colourEpoch,
+      live.generation,
+    ].join("|");
+  }
+  // The fixed descriptor of a measure with a natural domain, built once per kind and window.
+  function scaleFixed(kind, win) {
+    const key = kind + "|" + (win ? win[0] + "~" + win[1] : "");
+    let desc = scaleRt.fixed.get(key);
+    if (!desc) scaleRt.fixed.set(key, (desc = E.scale.fixed(kind, win)));
+    return desc;
+  }
+  // Has the last gesture been quiet for the settle time? The same definition as `calibrationSettled`, without
+  // the allocation of `heldNow`: a draw runs on every pointer move of a pan.
+  function scaleQuiet() {
+    return heldCount() === 0 && performance.now() - scaleRt.lastGestureAt >= E.TIMING.SETTLE_MS;
+  }
+  // The cohort extractor for a channel (the lens has its own; nothing else is fitted from).
+  function scaleCohortHook(channel) {
+    return channel === "cells"
+      ? movementMode()
+        ? motionCohortInputs
+        : cellsCohortInputs
+      : channel === "rows"
+        ? rowsCohortInputs
+        : channel === "lens"
+          ? lensCohortInputs
+          : undefined;
+  }
+  // The memo key of the Cells data a fit would read: generation, measured rectangle, effective level,
+  // configuration and the measurement's state (and the cutoff when the rectangle reaches the open column).
+  // The pack token, the block id, the theme and the selection are not in it on purpose.
+  function scaleMemo(parts, eff) {
+    return E.lifecycle.memoKey({
+      generation: live.generation,
+      CUT,
+      bounds: parts.meas.b,
+      n: renderN(),
+      m: renderM(),
+      config: {
+        mode: S.mode,
+        basis: eff.basis,
+        pathBasis: eff.pathBasis,
+        // the curve is part of the transform: a linear fit must never answer for a log one
+        transform: eff.transform === "rank" ? "rank" : "value-" + eff.curve,
+        policy: S.scale.cells,
+        lock: S.scale.lock,
+        window: eff.window,
+      },
+      // Path and Dwell are read apart from the rectangle: a motion block that has arrived, or ended elsewhere,
+      // is other data than the same rectangle before it (the warnings pass counts the marks it draws).
+      cohortId: parts.meas.state + (parts.moving ? "|" + (parts.mv?.src ? parts.mv.end : "-") : ""),
+    });
+  }
+  // Ask the controller for a calibration of a channel and remember what it was asked for. True when this call
+  // created or changed the want (then the timer is armed); false when the same want was already pending or a
+  // pending explicit Fit was kept. A want another package made on the controller directly (Rows, the lens)
+  // has no record here yet: the first call that finds it pending takes it over, so the tick knows the context.
+  function scaleWant(channel, kind, key, info) {
+    const created = scaleRt.ctl.request(channel, kind, key);
+    if (!created) {
+      const pending = scaleRt.ctl.snapshot().wants[channel];
+      if (pending && !scaleRt.ask[channel] && pending.kind === kind) scaleRt.ask[channel] = { kind, key, ...info };
+      return false;
+    }
+    scaleRt.ask[channel] = { kind, key, ...info };
+    scaleArm();
+    return true;
+  }
+  // One colour channel's mapping for this frame, by LOOKUP ONLY: a cached context applies at once, an
+  // uncached one is "No calibration" (never another context's mapping, DR-06), and what is missing is asked
+  // for, not fitted here. spec = {ctx, kind ("unbounded" | "fixed" | "occupancy"), fixed, cutMs, memo (a
+  // function giving the memo key of the data a refit would read), meaningful, failed}. The consumer of a
+  // Rows channel calls it the way `scaleFrame` does for Cells. Returns the Resolved of E.policy.resolve,
+  // marked "updating" while a refit of the same context is pending; the rest of what the chip and the tick
+  // need goes to `scaleRt.cur[channel]`.
+  function scaleResolve(channel, spec) {
+    const { ctx: context, kind, cutMs } = spec,
+      key = context ? E.context.keyString(context) : "";
+    let resolved = E.policy.resolve({
+        channel: channel === "cells" ? "c" : "r",
+        kind,
+        ctx: context,
+        scale: S.scale,
+        store: scaleRt.store,
+        workspace: scaleWorkspace(),
+        cutMs,
+        fixed: spec.fixed ?? null,
+      }),
+      updating = false;
+    const ask = scaleRt.ask[channel],
+      // A channel whose package asks for its own calibrations (Rows) resolves here without asking: a second
+      // want with another key would replace the first on every draw. A frame built for the warnings count
+      // asks for nothing and cancels nothing.
+      hooked = kind === "unbounded" && !spec.passive && !scaleRt.counting && Boolean(scaleCohortHook(channel));
+    if (kind === "unbounded" && resolved.state === "no-calibration") {
+      // A fit for this very context is on its way; until it lands the chart draws occupancy only.
+      updating = spec.passive ? scaleAsked(channel) : Boolean(ask) && ask.ctxKey === key;
+      if (hooked && scaleRt.noFit[channel] !== key + "|" + (spec.memo?.() ?? ""))
+        scaleWant(channel, "init", key, { ctx: context, ctxKey: key, memo: spec.memo?.() ?? "" });
+    } else if (kind === "unbounded" && resolved.policy === "auto") {
+      // Auto colour refits the settled data when its memo key changed since the last fit.
+      const memo = spec.memo?.() ?? "";
+      if (hooked && memo !== scaleRt.fitKey[channel])
+        scaleWant(channel, "auto", key + "|" + memo, { ctx: context, ctxKey: key, memo });
+    }
+    // Explore initialises a context once: a first calibration that is still wanted after the context
+    // found a mapping (a replay edge that came back to an eligible record) is not wanted any more.
+    if (resolved.state === "ok" && ask?.kind === "init" && ask.ctxKey === key && !scaleRt.counting) {
+      scaleRt.ctl.cancel(channel);
+      scaleRt.ask[channel] = null;
+    }
+    // The retained mapping keeps drawing while a refit or an explicit Fit of the same context is pending
+    // (Auto waits while Play runs: then it is paused, not updating).
+    const again = scaleRt.ask[channel];
+    if (
+      resolved.state === "ok" &&
+      (spec.passive
+        ? scaleAsked(channel)
+        : again && again.ctxKey === key && (again.kind === "fit" || (again.kind === "auto" && !scaleRt.playing)))
+    ) {
+      resolved = Object.freeze({ ...resolved, state: "updating" });
+      updating = true;
+    }
+    const cur = {
+      resolved,
+      ctx: context,
+      key,
+      updating,
+      failed: Boolean(spec.failed),
+      meaningful: spec.meaningful ?? kind === "unbounded",
+      memo: spec.memo ?? null,
+      warnKey: "",
+    };
+    if (resolved.desc !== null && resolved.state !== "no-calibration" && kind !== "occupancy") {
+      const hook = channel === "cells" ? cellsMarks : rowsMarks;
+      // The warnings pass counts the drawn marks again when its key changed: a count is owed after a settle.
+      if (hook) {
+        cur.warnKey = [spec.memo?.() ?? "", S.tA, S.tB, S.pA, S.pB, G.w, G.h, resolved.id, resolved.state].join("|");
+        if (scaleRt.warn[channel]?.key !== cur.warnKey && !scaleRt.counting) scaleOwe();
+      }
+    }
+    // A frame the warnings pass builds for its count describes the mapping about to be drawn: it leaves no
+    // trace (no state for the chips, no disclosure) and so cannot disturb the draw that follows.
+    if (scaleRt.counting) return resolved;
+    scaleRt.cur[channel] = cur;
+    scaleDisclose(channel, cur);
+    return resolved;
+  }
+  // Is a calibration of this channel pending on the controller (asked by the page or by the channel's own package)?
+  function scaleAsked(channel) {
+    return scaleRt.ctl.hasWants() && Boolean(scaleRt.ctl.snapshot().wants[channel]);
+  }
+  // What a settle changed, for the legend details: when the settled mapping of a channel is another one than
+  // the last settled one, name the old and new ids and the cause (resolution, period, lock, pin, fit ...),
+  // once per settle. While a gesture runs nothing is written; a draw that sees the change owes a settled one.
+  function scaleDisclose(channel, cur) {
+    const { resolved } = cur,
+      id = resolved.id ?? "",
+      prev = scaleRt.prev[channel],
+      // The lens's Pin records the mappings it found before it moved the view (DR-53): where that says what a
+      // channel showed, it is the old side of the disclosure, ahead of the last settled one.
+      pin = scaleRt.pinCause || nav.scaleCause ? scaleRt.pinBefore : null,
+      before = pin?.[channel + "Id"] || prev?.id || "";
+    // Only a calibrated mapping can change; a fixed scale has nothing to disclose.
+    if (resolved.state === "no-calibration" || id === "" || resolved.policy === "fixed") return;
+    const changed = before !== "" && before !== id;
+    if (!scaleQuiet()) {
+      if (changed) scaleOwe();
+      return;
+    }
+    if (changed) {
+      const causes = [],
+        diff = E.context.diff(prev?.ctx, cur.ctx);
+      // Pin leads: it is what the person did, and the resolution or period change is what it brought.
+      if (scaleRt.pinCause || nav.scaleCause) causes.push(scaleRt.pinCause ?? nav.scaleCause);
+      if (diff.cause) causes.push(...diff.cause.split("/"));
+      if (scaleRt.hint) causes.push(scaleRt.hint);
+      if (!causes.length) causes.push("fit");
+      scaleRt.note[channel] = { causes: [...new Set(causes)], from: before, to: id };
+    }
+    scaleRt.prev[channel] = { id, key: cur.key, ctx: cur.ctx };
+  }
+  // A settled pass is owed (a disclosure, a warnings count): the timer is armed the way a want arms it.
+  function scaleOwe() {
+    if (scaleRt.chase) return;
+    scaleRt.chase = true;
+    scaleArm();
+  }
+  // The causes a disclosure reads are spent once a settled draw has seen them: not while a fit is still on
+  // its way, because the mapping it lands is what the cause explains.
+  function scaleSpendCauses() {
+    if (!scaleQuiet() || scaleRt.ctl.hasWants()) return;
+    scaleRt.hint = scaleRt.pinCause = scaleRt.pinBefore = nav.scaleCause = null;
+  }
+  // The chip of a channel as the legend package renders it: the D.18 attributes (every value a string, "" for
+  // empty), the options E.legend.build takes, and the pieces they were made from. Written by the same draw
+  // that paints, so the attributes and the colours come from one `sc`.
+  function scaleChip(channel, lut) {
+    const cur = scaleRt.cur[channel];
+    if (!cur) return null;
+    const { resolved, ctx: context, updating } = cur,
+      geometry = channel === "cells" && S.mode === "geometry",
+      warn = scaleRt.warn[channel],
+      note = scaleRt.note[channel],
+      base = context?.consumer === "lens" ? context.base : context,
+      // Play pauses Auto; the lock suspends it (only a preference that was Auto has anything suspended)
+      paused = S.scale.lock
+        ? S.scale.resume?.[channel] === "auto"
+          ? "lock"
+          : false
+        : resolved.policy === "auto" && scaleRt.playing
+          ? "play"
+          : false,
+      state = cur.failed
+        ? "failed"
+        : resolved.state === "no-calibration"
+          ? "no-calibration"
+          : resolved.state === "pending"
+            ? "pending"
+            : updating
+              ? "updating"
+              : geometry || resolved.desc === null
+                ? "outline"
+                : resolved.desc.kind === "zero-only"
+                  ? "zero-only"
+                  : paused
+                    ? "paused"
+                    : resolved.policy === "fixed"
+                      ? "fixed"
+                      : "ready",
+      counts = warn?.report?.counts,
+      keyCounts = warn?.keyCounts ?? {},
+      attrs = {
+        "data-state": state,
+        "data-policy": resolved.policy ?? "",
+        "data-mapping-id": resolved.id ?? "",
+        "data-appearance": lut.id,
+        "data-workspace": resolved.workspace,
+        "data-transform": base?.transform ?? "",
+        "data-basis": base?.basis ?? "",
+        "data-context": cur.key,
+        "data-effective-n": channel === "rows" ? "" : String(base?.n ?? ""),
+        "data-effective-m": channel === "rows" ? "" : String(base?.m ?? ""),
+        "data-row-size": channel === "rows" ? String(base?.rowSize ?? "") : "",
+        "data-quality": channel === "rows" ? (base?.quality ?? "") : "",
+        "data-fit-through": resolved.record ? String(resolved.record.obsEndMs) : "",
+        "data-fit-seq": String(scaleRt.fitSeq[channel]),
+        "data-override": resolved.external ? "external" : "",
+        "data-updating": String(updating),
+      };
+    return {
+      attrs,
+      // Everything a chip says, as one string: a legend is written again when it changes, so a change the
+      // mapping id alone does not show (a replay edge the held mapping now reaches past, a counter) is written too.
+      key: Object.values(attrs).join("|") + "|" + (resolved.external && S.replay) + "|" + (resolved.detail ?? "") + "|" + (note?.to ?? ""),
+      opts: {
+        channel,
+        updating,
+        failed: cur.failed,
+        paused,
+        // a held mapping that reaches past the replay edge
+        afterEdge: resolved.external && S.replay,
+        note: note ? { causes: note.causes, from: note.from, to: note.to } : undefined,
+        evicted: scaleRt.evicted[channel] !== "" && scaleRt.evicted[channel] === cur.key,
+        revisionStatus: nav.revision.kind,
+        // what the settled pass counted, by the key ids the legend uses
+        counts: counts
+          ? {
+              ...keyCounts,
+              "clip-low": counts.low,
+              "clip-high": counts.high,
+              "negative-infinite": counts.negInf,
+              "no-reference": counts.noRef,
+            }
+          : undefined,
+      },
+      resolved,
+      ctx: context,
+      fallback: resolved.detail,
+      warn: warn?.report ?? null,
+    };
+  }
+  // The Rows channel's own resolution, for the tick and the chip, when the Rows package drew its frame by
+  // itself (it asks for its calibrations on the controller): the same lookup, told of the pending want, with
+  // no want of its own (`passive`), so what the lock holds, the warnings count, the disclosure and the chip
+  // read one record per channel. Relative volume has its fixed log2 scale; Rows with no period read yet have
+  // nothing to resolve.
+  function scaleRowsCur(under, sc) {
+    if (scaleRt.cur.rows || !sc.rows) return;
+    const failed = under.res?.state === "failed";
+    if (under.kind === "relvol")
+      scaleResolve("rows", {
+        ctx: null,
+        kind: "fixed",
+        fixed: scaleFixed("log2-ratio"),
+        cutMs: sc.cutMs,
+        meaningful: false,
+        passive: true,
+        failed,
+      });
+    else {
+      const context = typeof rowsContext === "function" ? rowsContext(under) : null;
+      if (context)
+        scaleResolve("rows", {
+          ctx: context,
+          kind: "unbounded",
+          cutMs: sc.cutMs,
+          // what a count of the drawn bands depends on besides the mapping
+          memo: () => [under.kind, under.through, under.stale, under.bands?.m, S.period, under.rect.state].join(","),
+          passive: true,
+          failed,
+        });
+    }
+  }
+  // The chips as the legend package reads them by dataset name (camel-cased): what the spine knows that a
+  // frame cannot say, the calibration counters above all, written in the same draw that paints. What describes
+  // the measure (transform, basis, the level) is left to the frame's own words when the spine has none for it
+  // (a fixed Rows scale has no context to read them from).
+  function scaleChips(sc) {
+    const out = {},
+      ofFrame = new Set(["data-transform", "data-basis", "data-context", "data-effective-n", "data-effective-m", "data-row-size", "data-quality"]);
+    for (const channel of ["cells", "rows"]) {
+      const chip = sc.chip[channel];
+      if (!chip) continue;
+      const row = (out[channel] = {});
+      for (const [name, value] of Object.entries(chip.attrs))
+        if (value !== "" || !ofFrame.has(name)) row[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
+    }
+    return out;
+  }
+  // What observed data a readout was made from (B.2): the pack, the cutoffs, the token and what changed under it.
+  function scaleObservation(meas, cutMs) {
+    return {
+      source: PACK.source ?? null,
+      instrument: INSTRUMENT,
+      read: meas.state,
+      updating: Boolean(meas.updating),
+      cutoffMs: cutMs,
+      liveCutoffMs: E.time.baseToMs(CUT, T0, BASE),
+      canonicalThroughMs: CANON === null ? null : E.time.baseToMs(CANON, T0, BASE),
+      token: PACK.state_token ?? null,
+      generation: live.generation,
+      replay: S.replay,
+      coverage: "range",
+      revision: nav.revision.kind === "none" ? null : nav.revision,
+      provenance: [],
+    };
+  }
+  // The read state a motion measure's frame carries: the block it is drawn from cannot answer until its motion
+  // block is in (pending) or when that read failed. Everything else is null, because the state of the
+  // RECTANGLE's measurement feeds only the legend and the readouts: passing it would turn every loaded cell
+  // into a pattern on each pan of a live view.
+  function scaleMotionRead(mv) {
+    if (mv?.src) return null;
+    const why = motionIssue();
+    return { state: why ? "failed" : "pending", reason: why || "reading" };
+  }
+  // The per-draw resolution: one frame per colour channel, from what the page shows. `cut` was read before the
+  // measurement was built; the eligibility of a replay mapping is decided against the cutoff as it is HERE,
+  // once the level and the measurement are final (DR-16's second check), so no mapping fitted on later
+  // observations than the edge is ever painted.
+  function scaleFrame(cut, parts) {
+    const { meas, mv, moving } = parts,
+      edge = activeCutoff(),
+      eff = E.policy.effective(S.scale, S.mode),
+      info = E.measure.MODES[S.mode],
+      lut = lutFor(scaleRt.appearance, scaleRt.theme),
+      context = cellsContext(),
+      fixed = info.kind === "fixed";
+    if (edge !== cut) cut = edge;
+    const cutMs = E.time.baseToMs(cut, T0, BASE),
+      failed = meas.state === "failed" || (moving && !mv?.src && Boolean(motionIssue())),
+      resolved = context
+        ? scaleResolve("cells", {
+            ctx: context,
+            kind: fixed ? "fixed" : "unbounded",
+            fixed: fixed ? scaleFixed(info.fixed.kind, eff.window) : null,
+            cutMs,
+            memo: () => scaleMemo(parts, eff),
+            meaningful: !fixed || eff.window !== null,
+            failed,
+          })
+        : null,
+      read = moving ? scaleMotionRead(mv) : null,
+      observation = scaleObservation(meas, cutMs),
+      frameOf = (bounds) =>
+        E.readout.cellsFrame({
+          mode: S.mode,
+          basis: eff.basis,
+          pathBasis: eff.pathBasis,
+          level: { n: renderN(), m: renderM() },
+          bounds,
+          cut,
+          cutMs,
+          end: mv ? mv.end : Infinity,
+          geom: { BASE, PR },
+          CUT,
+          replay: S.replay,
+          mapping: resolved,
+          lut,
+          read,
+          measured: scaleMeasured,
+          cascade: scaleCascade,
+          contextKey: context ? E.context.keyString(context) : null,
+          observation,
+          t0: T0,
+        }),
+      cells = frameOf(meas.b),
+      sc = {
+        cells,
+        // the selection's faded full-range layer, over the whole block rather than the rectangle
+        cellsFull: S.selection ? frameOf(moving ? (mv?.fullBounds ?? meas.b) : null) : cells,
+        rows: null,
+        lens: null,
+        cutMs,
+        lut,
+        stamp: "",
+        // the chips and the mappings behind them, for the legend and the lens
+        chip: { cells: null, rows: null, lens: null },
+        chips: {},
+        map: { cells: resolved, rows: null, lens: null },
+      };
+    // A frame built for the warnings count (see `scaleRt.counting`) only encodes: what the chips say is the
+    // draw's, and a repeat call changes nothing the page keeps.
+    if (scaleRt.counting) {
+      sc.stamp = scaleStamp(sc);
+      return sc;
+    }
+    // Geometry has no mapping to resolve; its chip is the occupancy outline.
+    if (!context)
+      scaleRt.cur.cells = {
+        resolved: E.policy.resolve({ channel: "c", kind: "occupancy", workspace: scaleWorkspace() }),
+        ctx: null,
+        key: "",
+        updating: false,
+        failed: false,
+        meaningful: false,
+        memo: null,
+        warnKey: "",
+      };
+    sc.chip.cells = scaleChip("cells", lut);
+    sc.chips = scaleChips(sc);
+    sc.stamp = scaleStamp(sc);
+    return sc;
+  }
+  // The Lut of an appearance in a theme, built once: a theme flip is a lookup, never a refit or a fetch.
+  function lutFor(name, theme) {
+    const key = name + "|" + theme;
+    let lut = scaleRt.lut.get(key);
+    if (!lut) scaleRt.lut.set(key, (lut = E.lut.build(name, theme)));
+    return lut;
+  }
+  // The canvas pattern of a non-value kind ("pattern-dots", a typed tag such as "pending"): the module draws
+  // a tile in css px scaled to whole device pixels, and the pattern undoes the device scale so the tile
+  // keeps its css size. Cached per theme epoch and pixel ratio.
+  function patternFor(kind) {
+    const dpr = devicePixelRatio || 1,
+      key = kind + "|" + colourEpoch + "|" + dpr;
+    let pattern = scaleRt.patterns.get(key);
+    if (!pattern) {
+      const tile = E.role.tile(kind, {
+        dpr,
+        ink: colors.state,
+        ground: colors.surface,
+        font: `${TYPE.s}px ${FONT}`,
+        makeCanvas: (w, h) => Object.assign(document.createElement("canvas"), { width: w, height: h }),
+      });
+      pattern = ctx.createPattern(tile, "repeat");
+      pattern.setTransform(new DOMMatrix().scale(1 / dpr));
+      scaleRt.patterns.set(key, pattern);
+    }
+    return pattern;
+  }
+  // One glyph of the role table (a hollow diamond, a triangle, a zero tick, the negative-infinity plate),
+  // centred on (x, y), in the ink its row names: state ink for marks that say why there is no value,
+  // occupancy ink for outlines.
+  function paintGlyph(id, x, y, size, opts) {
+    const ink = E.role.GLYPHS[id]?.ink === "occupancy" ? colors.occupancy : colors.state;
+    E.role.paint(ctx, id, x, y, size, ink, { ground: colors.surface, font: `${TYPE.s}px ${FONT}`, ...opts });
+  }
+  // A new theme: a new epoch, the Lut for the new surface, no patterns and no legend written yet. Mapping
+  // ids, contexts and the stores do not depend on the theme, so nothing is fetched and nothing is refitted.
+  function themeChanged() {
+    colourEpoch++;
+    const rgb = E.lut.parseColor(colors.surface);
+    scaleRt.theme = rgb ? E.lut.themeOf(rgb) : d3.lab(colors.surface).l < 50 ? "dark" : "light";
+    scaleRt.patterns.clear();
+    Object.assign(scaleRt.legendKey, { cells: "", rows: "", lens: "" });
+    try {
+      lutFor(scaleRt.appearance, scaleRt.theme);
+    } catch (error) {
+      scaleFault(error);
+    }
+  }
+  // Something in the scale display threw: say so once and draw occupancy only, with the legacy legend, for
+  // the rest of the session. The frame below does not depend on E (E is what may be at fault).
+  function scaleFault(error) {
+    if (!scaleRt.fault) {
+      scaleRt.fault = true;
+      // Nothing is asked of a scale that is off: no want, no timer.
+      scaleRt.ctl.cancel();
+      scaleRt.ask.cells = scaleRt.ask.rows = scaleRt.ask.lens = null;
+      clearTimeout(scaleRt.timer);
+      scaleRt.timer = 0;
+      const inert = {
+        kind: "cells",
+        get mode() {
+          return S.mode;
+        },
+        mappingId: "",
+        mappingState: "no-calibration",
+        encode(z, out) {
+          out.css = colors.occupancy;
+          out.pattern = null;
+          out.tag = 0;
+          out.value = NaN;
+          out.signed = false;
+          out.short = false;
+          out.reason = null;
+          out.denominator = null;
+          out.role = 6;
+          out.idx = -1;
+          out.clip = 0;
+          out.t = 0;
+          return out;
+        },
+        readout: () => null,
+        legendInput: () => null,
+        fingerprint: () => "inert",
+      };
+      INERT_SC.cells = INERT_SC.cellsFull = inert;
+      postNotice({ code: "scale-fault", details: [String(error?.message ?? error)] });
+    }
+    return INERT_SC;
+  }
+  // A notice for the banner: queued, coalesced by the queue, shown by the DOM package when it is there.
+  function postNotice(input) {
+    const row = scaleRt.notices.post(input);
+    noticeShow();
+    return row;
+  }
+  // The stamp of a gesture (a pointer, a wheel tick, a key, a resize, a replay step, Play): when it was,
+  // and a wake, because a gesture's end is what lets a pending calibration settle. The page's own
+  // `gestureAt` and `gesturing()` stay as they are (they also gate continuations and the cutoff follow).
+  function noteGesture() {
+    scaleRt.lastGestureAt = performance.now();
+    scaleArm();
+  }
+  // DR-17's own settle predicate, apart from `gesturing()`.
+  function calibrationSettled() {
+    return E.lifecycle.settled({
+      now: performance.now(),
+      lastGestureAt: scaleRt.lastGestureAt,
+      held: heldNow(),
+      settleMs: E.TIMING.SETTLE_MS,
+    }).settled;
+  }
+  // What is held down right now, by name (for the settle predicate, tests and the chip details). It
+  // allocates, so it never runs on a per-move path; `heldCount` is the cheap form.
+  function heldNow() {
+    const names = [];
+    if (drag) names.push("drag");
+    if (nav.pinch) names.push("pinch");
+    if (nav.pointers.size) names.push("pointer");
+    if (nav.zoomKeys.size) names.push("zoomKey");
+    if (nav.zoomPending) names.push("zoomEnd");
+    return names;
+  }
+  // How many holds there are, without allocating: `update()` runs on every pointer move.
+  function heldCount() {
+    return (drag ? 1 : 0) + (nav.pinch ? 1 : 0) + nav.pointers.size + nav.zoomKeys.size + (nav.zoomPending ? 1 : 0);
+  }
+  // Is a read the view needs still outstanding? A read that failed is not: the wants keep returning after a
+  // failure (only `cube.failed` remembers it), and waiting for one would hold calibration back for good.
+  // The recorded page has no cube to ask (`scheduleCube` never starts a read there), so nothing is pending
+  // on it, whatever the wants say.
+  function viewReadPending() {
+    return (
+      Boolean(PACK.live) &&
+      (cube.stale ||
+        ["measure", "tile", "lens"].includes(cube.busy?.kind) ||
+        [measureWant(), tileWant(), lensWant()].some((want) => want && !cube.failed.has(want.key)))
+    );
+  }
+  // What the page derives from its state to draw one frame: the block shown, the cutoff, the aggregates and
+  // the measured rectangle, path and dwell. `draw()` destructures it; the cohorts and the marks hooks call
+  // it again when they fire, so what they count can never drift from what was drawn.
+  function viewParts() {
     const src = displaySource(),
       cut = activeCutoff(),
       // Under Path and Dwell the cells shade by their own motion, over the
@@ -930,16 +1694,488 @@
       // Path and dwell, while a movement view shows them.
       mv = movementOn() ? motionView(src, cut, meas) : null,
       ts = stepT(),
-      ps = stepP(),
+      ps = stepP();
+    return { src, cut, moving, sum, full, meas, b, query, shown, mv, ts, ps };
+  }
+  // The axis of a column pane, an oscillator or a profile, through the one registry: the ONE wrapper every
+  // consumer calls. spec = {sign, eligible, sig, summary: () => ({count, max, min}), fixed?, domain?}; the
+  // signature is the caller's (it knows its displayed range). An axis is Auto, or frozen by the Comparison
+  // lock, or fixed (RSI, the log2 ratio); a displayed axis the lock has no domain for is fitted once and
+  // then paused, so the lock never silently freezes a fresh fit of the moment.
+  function axisFrame(id, spec) {
+    const workspace = scaleWorkspace(),
+      held = S.scale.lock ? S.scale.frozen[id] : undefined;
+    scaleRt.shown.add(id);
+    // A frozen domain the lock (or a restored address) carries reaches the workspace it is shown in.
+    if (held && !scaleRt.axes.get(id, workspace))
+      scaleRt.axes.freeze(id, { workspace, domain: [held.lo, held.hi] });
+    const record = scaleRt.axes.frame(id, {
+      sign: spec?.sign,
+      workspace,
+      cutMs: E.time.baseToMs(activeCutoff(), T0, BASE),
+      now: performance.now(),
+      eligible: spec?.eligible ?? true,
+      held: { gesture: heldCount() > 0, play: scaleRt.playing || S.scale.lock },
+      lastGestureAt: scaleRt.lastGestureAt,
+      sig: spec?.sig,
+      summary: spec?.summary,
+      fixed: spec?.fixed,
+      domain: spec?.domain,
+      generation: live.generation,
+      token: PACK.state_token ?? null,
+    });
+    // The bars are counted again when the axis they are drawn against changed (its domain, policy or state),
+    // and the axis counter the chip shows moves when a domain the axis already had changes.
+    const domain = record.domain ? record.domain.join(",") : "",
+      sig = domain + "|" + record.policy + "|" + record.typed,
+      seen = scaleRt.axisSig.get(id);
+    if (seen !== sig) {
+      scaleRt.axisSig.set(id, sig);
+      if (seen !== undefined && domain !== seen.split("|")[0]) scaleRt.fitSeq.axis++;
+      scaleOwe();
+    }
+    // A draw that put an axis on hold behind a gesture, the settle time or the cap does not wake itself: the
+    // tick that refits it is armed here, the same O(1) call as every other wake (it does nothing while anything
+    // is held, and a gesture's end arms again). A hold Play or missing data put on has no timer: the pause
+    // and the data events wake those.
+    if (record.hold === "gesture" || record.hold === "settling" || record.hold === "cap") scaleArm();
+    return record;
+  }
+  // The id of the tile that would show the view, and whether a tile is the lens's alone: a lens tile is
+  // never the display source before Pin. Pure predicates, no state change.
+  function viewTileId() {
+    const [n, m] = viewLevel(),
+      [a, b] = viewRange();
+    return tileSpec(n, m, a, b)?.id ?? null;
+  }
+  function lensOnly(s, want = viewTileId()) {
+    return Boolean(s.lens) && s.id !== S.dataset && s.id !== want;
+  }
+  // The plain inputs of a channel's cohort, from the state at the moment it is asked (never from a frame
+  // kept from an earlier draw), through the consumer's hook. None registered: nothing to fit from.
+  function cohortInputs(channel, vp = viewParts()) {
+    const hook = scaleCohortHook(channel);
+    return hook ? hook(vp) : null;
+  }
+  // Wake the calibration clock, cheaply: it runs on every pointer move of a pan, so it only makes sure ONE
+  // timer exists, and only when something waits and nothing is held (a gesture's end calls noteGesture,
+  // which arms again). The expensive work (coherence, cohorts, fits) is scaleTick's.
+  function scaleArm() {
+    if (
+      scaleRt.timer ||
+      (!scaleRt.ctl.hasWants() && !(scaleRt.axes.hasPending() && !scaleRt.playing) && !scaleRt.chase) ||
+      heldCount() > 0
+    )
+      return;
+    scaleRt.timer = setTimeout(scaleTick, Math.max(0, E.TIMING.SETTLE_MS - (performance.now() - scaleRt.lastGestureAt)));
+  }
+  // Re-arm after the tick with an exact wait (the smallest any piece still has); never two timers.
+  function scaleAfter(ms) {
+    if (!scaleRt.timer) scaleRt.timer = setTimeout(scaleTick, ms);
+  }
+  // Is the data a channel would be fitted from coherent and complete? Every read the view needs has answered
+  // (a failed one is not outstanding), the displayed block covers the declared view, and the measurement is
+  // exact, recorded or from the cube and not being replaced. A fit from less would calibrate on a fragment.
+  // `inputs` are the hook inputs of Rows or the lens: Rows says itself whether its period's rows are whole.
+  function scaleCoherent(channel, vp, inputs) {
+    const [a, e] = S.selection ? [vp.meas.r[0], vp.meas.r[1]] : viewRange(),
+      [s0, s1] = sourceRange(vp.src);
+    return E.lifecycle.coherent({
+      ready,
+      viewReadPending: viewReadPending(),
+      readiness: resolutionReadiness(renderN(), renderM()).status,
+      coverage: channel === "cells" ? { ok: s0 <= a && s1 >= e } : undefined,
+      meas: channel === "cells" ? { state: vp.meas.state, updating: Boolean(vp.meas.updating) } : undefined,
+      motion:
+        channel === "cells" && vp.moving
+          ? { src: vp.mv?.src, state: vp.mv?.rect?.state, updating: Boolean(vp.mv?.rect?.updating) }
+          : undefined,
+      rows: channel === "rows" ? (inputs?.coherent ?? undefined) : undefined,
+    });
+  }
+  // The pieces that keep the stores and the active contexts of the frames: never evicted by a commit.
+  function scaleProtected() {
+    const keys = [scaleRt.cur.cells?.key, scaleRt.cur.rows?.key];
+    for (const held of Object.values(S.scale.held ?? {})) keys.push(held.key);
+    return keys.filter(Boolean);
+  }
+  // Run one due calibration: extract the cohort from the state as it is now, fit, and commit. "committed" (a
+  // record landed), "wait" (the data is not complete yet: the want stays) or "dropped" (nothing to fit from,
+  // or the context moved on: the want is gone, and a view that found nothing is not asked again). Rows and
+  // the lens ask for their own calibrations on the controller, so the context they mean comes with their
+  // cohort `inputs` (ctx, key), read from the state as it is now.
+  function scaleFit(channel, ask, vp, now, inputs) {
+    const workspace = scaleWorkspace(),
+      lens = channel === "lens",
+      hooked = lens || channel === "rows",
+      context = hooked ? (inputs?.ctx ?? null) : cellsContext(),
+      key = context ? E.context.keyString(context) : "",
+      cutMs = E.time.baseToMs(activeCutoff(), T0, BASE),
+      memo = !hooked
+        ? scaleMemo(vp, E.policy.effective(S.scale, S.mode))
+        : (ask.memo ?? [ask.key, inputs?.rows?.length ?? inputs?.cells?.length ?? 0, inputs?.res?.end ?? inputs?.end ?? ""].join("|")),
+      nothing = key + "|" + memo,
+      drop = (said) => {
+        scaleRt.ctl.cancel(channel);
+        scaleRt.ask[channel] = null;
+        if (said) scaleRt.noFit[channel] = nothing;
+        return "dropped";
+      },
+      // The context the want was made for must still be the one on screen (a want another package made names
+      // it only in its key: an initialisation's key is the context's, an Auto refit's starts with it).
+      moved = ask.ctxKey ? key !== ask.ctxKey : !(ask.key === key || ask.key.startsWith(key + "|"));
+    if (!context || moved) return drop(false);
+    // An initialisation only happens for a context that has no mapping for this cutoff.
+    if (ask.kind === "init" && !lens && scaleRt.store.lookup(workspace, key, cutMs)) return drop(false);
+    // The context is in the key besides the data: what was fitted for one context answers for no other.
+    const memoKey = [channel, workspace, S.replay ? cutMs : "", key, memo].join("|"),
+      hit = ask.kind === "fit" ? null : scaleRt.fitMemo.get(memoKey);
+    let found = hit ?? null;
+    if (!found) {
+      const given = hooked ? inputs : cohortInputs(channel, vp);
+      if (!given) return drop(true);
+      const cohort =
+        channel === "rows"
+          ? E.cohort.rows(given)
+          : lens
+            ? E.cohort.cells({ ...given, kind: "lens" })
+            : movementMode()
+              ? E.cohort.motionCells(given)
+              : E.cohort.cells(given);
+      if (cohort.ok === false) return cohort.reason === "failed" || cohort.reason === "unsupported" ? drop(true) : "wait";
+      const base = context.consumer === "lens" ? context.base : context,
+        signed = base.consumer === "rows" ? E.measure.ROWS[base.measure].signed : E.measure.MODES[base.measure].signed,
+        fit =
+          base.transform === "rank"
+            ? E.scale.fitRank(cohort)
+            : E.scale.fitValue(cohort, { signed, linear: base.transform === "value-linear" });
+      if (fit.state !== "ok") return drop(true);
+      found = {
+        desc: fit.descriptor,
+        cohort: {
+          kind: cohort.kind,
+          n: cohort.n,
+          zeros: cohort.zeros,
+          nonzero: cohort.nonzero,
+          excluded: cohort.excluded,
+          calibratedOn: cohort.calibratedOn,
+          bounds: cohort.bounds,
+          level: cohort.level,
+          quality: cohort.quality,
+          support: cohort.support,
+        },
+        obsEndMs: E.time.baseToMs(cohort.obsEndBase, T0, BASE),
+      };
+      scaleRt.fitMemo.delete(memoKey);
+      scaleRt.fitMemo.set(memoKey, found);
+      while (scaleRt.fitMemo.size > FIT_MEMO_MAX) scaleRt.fitMemo.delete(scaleRt.fitMemo.keys().next().value);
+    }
+    // Everything above ran in this one task, so nothing can have moved; the check keeps a later await honest.
+    const accepted = acceptedState();
+    if (accepted.generation !== live.generation || scaleWorkspace() !== workspace) return drop(false);
+    // A refit that differs only by last-bit jitter keeps the active mapping (and so its id).
+    const active = lens ? scaleRt.local : (scaleRt.store.lookup(workspace, key, cutMs)?.record ?? null),
+      desc = ask.kind === "auto" && active && E.scale.sameWithin(active.desc, found.desc) ? active.desc : found.desc,
+      record = {
+        v: 1,
+        key,
+        ctx: context,
+        desc,
+        policy: lens ? "local" : S.scale.lock || ask.kind !== "auto" ? (S.scale[channel] ?? "explore") : "auto",
+        origin: "fit",
+        workspace,
+        cohort: found.cohort,
+        obsEndMs: found.obsEndMs,
+        cutMs,
+        fittedAtMs: Date.now(),
+        canonicalThroughMs: CANON === null ? null : E.time.baseToMs(CANON, T0, BASE),
+        token: PACK.state_token ?? null,
+        algorithm: desc.algorithm,
+        seq: ++scaleRt.fitSeq[channel],
+      };
+    if (lens) scaleRt.local = Object.freeze(record);
+    else {
+      // A context the store had let go is re-initialised: the details say so.
+      if (ask.kind === "init" && scaleRt.store.wasEvicted(workspace, key)) scaleRt.evicted[channel] = key;
+      scaleRt.store.commit(workspace, record, scaleProtected);
+      // An explicit Fit under the lock replaces the held mapping and the lock stays on.
+      if (ask.kind === "fit" && S.scale.lock)
+        S.scale = E.policy.reduce(S.scale, { type: "hold", channel, record }, {}).scale;
+    }
+    scaleRt.ctl.ran(channel, ask.kind, now);
+    scaleRt.ask[channel] = null;
+    scaleRt.fitKey[channel] = memo;
+    scaleRt.noFit[channel] = "";
+    persistScale();
+    return "committed";
+  }
+  // The warnings pass (DR-11): count the marks the viewer sees through the consumers' hooks, once the
+  // gesture has settled and the morph is over, and only when what they count changed. A count never
+  // recolours, refits or changes a mapping. Returns {changed, wait}: a morph in flight asks for a later pass.
+  function scaleWarnPass(vp) {
+    let changed = false,
+      wait = null;
+    for (const channel of ["cells", "rows"]) {
+      const cur = scaleRt.cur[channel],
+        hook = channel === "cells" ? cellsMarks : rowsMarks,
+        held = scaleRt.warn[channel];
+      if (!hook || !cur || cur.warnKey === "") {
+        if (held) {
+          scaleRt.warn[channel] = null;
+          changed = true;
+        }
+        continue;
+      }
+      if (held?.key === cur.warnKey) continue;
+      if (transition && performance.now() - transition.start < 170) {
+        wait = 60;
+        continue;
+      }
+      const tally = held?.tally ?? E.warn.tally(),
+        b = vp.b,
+        keyCounts = {};
+      tally.reset();
+      // The hook may also count the marks of each generated key (zero outline, patterns) into `keyCounts`: an
+      // addition after the last parameter, so a hook that does not know it is unchanged. The frames it builds
+      // from the state as it is now (scaleFrame) leave no trace while `counting` is set.
+      scaleRt.counting = true;
+      try {
+        hook(
+          tally,
+          {
+            plot: { x0: G.x, y0: G.y, x1: G.x + G.w, y1: G.y + G.h },
+            meas: { x0: G.X(b[0]), y0: G.Y(b[3]), x1: G.X(b[1]), y1: G.Y(b[2]) },
+          },
+          vp,
+          keyCounts,
+        );
+      } finally {
+        scaleRt.counting = false;
+      }
+      scaleRt.warn[channel] = {
+        key: cur.warnKey,
+        tally,
+        keyCounts,
+        report: E.warn.evaluate(tally, { meaningful: cur.meaningful }),
+      };
+      changed = true;
+    }
+    // The bars of the Columns pane, against the axes the last draw framed: counts only, an axis has no
+    // "range exceeded" of its own (its overflow is the triangle and the count of the axis record).
+    {
+      const ids = [...scaleRt.shown].sort(),
+        key = [S.pane, S.tA, S.tB, live.generation, ...ids.map((id) => id + ":" + scaleRt.axisSig.get(id))].join("|");
+      if (scaleRt.warn.pane?.key !== key) {
+        const tally = scaleRt.warn.pane?.tally ?? E.warn.tally(),
+          keyCounts = {};
+        tally.reset();
+        scaleRt.counting = true;
+        try {
+          paneTally(tally, keyCounts);
+        } finally {
+          scaleRt.counting = false;
+        }
+        scaleRt.warn.pane = { key, tally, keyCounts, report: E.warn.evaluate(tally, { meaningful: false }) };
+        changed = true;
+      }
+    }
+    return { changed, wait };
+  }
+  // The axes the last draw did not show cannot be refitted by a draw, so a hold on one is let go.
+  function scaleDropHidden() {
+    const workspace = scaleWorkspace();
+    for (const rec of scaleRt.axes.list(workspace))
+      if (rec.policy === "auto" && rec.hold !== null && !scaleRt.shown.has(rec.id)) scaleRt.axes.drop(rec.id, workspace);
+  }
+  // The settled tick. Nothing here runs inside a draw, a read pump or applyLive: it is the one timer that
+  // sorts and scans. It fits what is due, counts the warnings, wakes the axes, commits with `requestDraw()`
+  // (never `update()`, which would restart the read debounce) and re-arms for the soonest thing still waiting.
+  function scaleTick() {
+    scaleRt.timer = 0;
+    try {
+      scaleRun();
+    } catch (error) {
+      scaleFault(error);
+    }
+  }
+  function scaleRun() {
+    if (!ready || scaleRt.fault) return;
+    // A draw is already owed: it resolves every channel again and asks for what the state now needs, so a fit
+    // made first could calibrate a context that is no longer the one on screen.
+    if (raf) return scaleAfter(16);
+    const now = performance.now(),
+      settled = calibrationSettled(),
+      vp = viewParts(),
+      held = heldNow(),
+      poll = !document.hidden && viewReadPending();
+    let wait = null,
+      redraw = false;
+    const soon = (ms) => {
+      if (ms !== null && (wait === null || ms < wait)) wait = ms;
+    };
+    const wants = scaleRt.ctl.hasWants() ? scaleRt.ctl.snapshot().wants : null;
+    for (const channel of SCALE_CHANNELS) {
+      const want = wants?.[channel];
+      let ask = scaleRt.ask[channel];
+      // A want that was cancelled elsewhere (the lens drops Local contrast) leaves no ask behind; one another
+      // package made on the controller (Rows, the lens) is taken over, its context coming with its cohort.
+      if (!want) ask = scaleRt.ask[channel] = null;
+      else if (!ask || ask.kind !== want.kind || ask.key !== want.key) ask = scaleRt.ask[channel] = { kind: want.kind, key: want.key };
+      if (!ask) continue;
+      const hooked = channel !== "cells",
+        inputs = hooked ? cohortInputs(channel, vp) : null,
+        due = scaleRt.ctl.due(channel, {
+          now,
+          lastGestureAt: scaleRt.lastGestureAt,
+          held,
+          playing: scaleRt.playing,
+          coherent: scaleCoherent(channel, vp, inputs),
+          poll,
+        });
+      if (!due.run) {
+        soon(due.waitMs);
+        continue;
+      }
+      const outcome = scaleFit(channel, ask, vp, now, inputs);
+      if (outcome === "committed") redraw = true;
+      else if (outcome === "wait") soon(poll ? E.TIMING.RETRY_MS : null);
+      // A view that found nothing to calibrate from changes what the chip says ("Updating" ends); Rows and the
+      // lens ask again from their own draws, so a redraw here would only ask again.
+      else if (!hooked && scaleRt.noFit[channel] !== "") redraw = true;
+    }
+    if (settled) {
+      const pass = scaleWarnPass(vp);
+      if (pass.changed) redraw = true;
+      soon(pass.wait);
+      // A settled draw is owed its disclosure.
+      if (scaleRt.chase) {
+        scaleRt.chase = false;
+        redraw = true;
+      }
+    } else if (scaleRt.chase) {
+      soon(E.lifecycle.settled({ now, lastGestureAt: scaleRt.lastGestureAt, held, settleMs: E.TIMING.SETTLE_MS }).waitMs);
+    }
+    // The axes refit at draw time; what a draw cannot do is wake itself after a gesture or the cap.
+    if (scaleRt.axes.hasPending()) {
+      scaleDropHidden();
+      const ms = scaleRt.axes.nextWake({ now, playing: scaleRt.playing });
+      if (ms === 0) redraw = true;
+      else soon(ms);
+    }
+    if (redraw) requestDraw();
+    if (wait !== null) scaleAfter(wait);
+  }
+  // A person's choice in a Scale control: reduced into the raw preferences, then the same redraw and save
+  // as any other control. Returns what the reducer said, so the control can show a refusal beside itself.
+  // The effects the reducer returns are executed here: a fit is asked for (and runs at the next settle), the
+  // lock freezes each displayed Auto axis, and releasing it lets them go. Raw preferences are never
+  // rewritten by a measure change.
+  function scaleSet(action) {
+    const out = E.policy.reduce(S.scale, action, {
+      mode: S.mode,
+      rows: S.rows === "off" ? "volume" : S.rows,
+      live: Boolean(PACK.live),
+      active: { cells: scaleRt.cur.cells?.resolved?.record ?? null, rows: scaleRt.cur.rows?.resolved?.record ?? null },
+      axes: scaleShownAxes(),
+      contexts: { cells: scaleRt.cur.cells?.ctx ?? null, rows: scaleRt.cur.rows?.ctx ?? null },
+      cutMs: E.time.baseToMs(activeCutoff(), T0, BASE),
+    });
+    if (out.rejected) return out;
+    S.scale = out.scale;
+    for (const notice of out.notices) postNotice(notice);
+    const workspace = scaleWorkspace();
+    for (const effect of out.effects) {
+      if (effect.type === "invalidate") {
+        for (const channel of effect.channel === "all" ? SCALE_CHANNELS : [effect.channel]) scaleRt.noFit[channel] = "";
+      } else if (effect.type === "request-fit") {
+        const asked = scaleRt.cur[effect.channel];
+        if (asked?.ctx) {
+          // Auto asks again from scratch: what was fitted last is not "the last fit of this data" any more.
+          if (effect.kind === "auto") scaleRt.fitKey[effect.channel] = "";
+          scaleWant(effect.channel, effect.kind, asked.key + "|" + effect.kind, {
+            ctx: asked.ctx,
+            ctxKey: asked.key,
+            memo: asked.memo?.() ?? "",
+            locked: Boolean(effect.locked),
+          });
+        }
+      } else if (effect.type === "freeze-axis") {
+        scaleRt.axes.freeze(effect.id, {
+          workspace,
+          domain: effect.domain,
+          through: effect.through,
+          generation: live.generation,
+          token: PACK.state_token ?? null,
+        });
+      } else if (effect.type === "unfreeze-axis") {
+        scaleRt.axes.unfreeze(effect.id, { workspace });
+      }
+    }
+    scaleRt.hint = action.type === "lock" || action.type === "unlock" ? "lock" : action.type === "policy" ? "policy" : null;
+    update();
+    save();
+    persistScale();
+    return out;
+  }
+  // The Auto axes the last draw displayed, with their domains: what the Comparison lock freezes.
+  function scaleShownAxes() {
+    const out = [];
+    for (const rec of scaleRt.axes.list(scaleWorkspace()))
+      if (rec.policy === "auto" && rec.domain && scaleRt.shown.has(rec.id))
+        out.push({ id: rec.id, domain: rec.domain, through: rec.provenance.through });
+    return out;
+  }
+
+  function draw() {
+    if (!ready) return;
+    geometry();
+    const { src, cut, moving, sum, full, meas, b, query, shown, mv, ts, ps } = viewParts(),
       u = transition
         ? clamp((performance.now() - transition.start) / 170, 0, 1)
         : 1;
-    prepareMeasures(full, shown, query, b, moving);
+    // The scale frame: one resolved mapping per colour channel. A fault in it is not the chart's: it leaves
+    // an occupancy-only chart and the legacy legend, and says so once (see scaleFault).
+    let sc;
+    // The lock freezes the axes this draw shows, so the set starts empty.
+    scaleRt.shown.clear();
+    try {
+      sc = scaleRt.fault ? INERT_SC : scaleFrame(cut, { src, full, meas, shown, mv, moving, u });
+    } catch (error) {
+      sc = scaleFault(error);
+    }
+    prepareMeasures(query);
     // Cascade's parents: the level one coarser in both time and price.
     if (S.mode === "cascade") levelCascade(full, src, sum);
-    // The row underlay, while it shows, scaled to its rows in view.
+    // The row underlay, while it shows.
     const under = underlayFrame(meas);
-    if (under?.bands) under.peak = underlayPeak(under);
+    // Rows' frame, from the package that owns it (none: no Rows frame). It resolves its mapping through
+    // `scaleResolve`, which leaves what it found in `scaleRt.cur.rows`; the stamp then names that mapping too.
+    if (sc !== INERT_SC) {
+      try {
+        scaleRt.cur.rows = null;
+        sc.rows = rowsScaleFrame(under, sc) ?? null;
+        if (sc.rows) {
+          scaleRowsCur(under, sc);
+          sc.map.rows = scaleRt.cur.rows?.resolved ?? null;
+          sc.chip.rows = scaleChip("rows", sc.lut);
+          sc.chips = scaleChips(sc);
+          sc.stamp = scaleStamp(sc);
+        }
+        scaleRt.sc = sc;
+        // The address carries the mappings the page is showing. A mapping restored from a link or the cache is
+        // shown without ever being committed, so the first draw that shows a different set of them writes the
+        // address (debounced, like every commit).
+        const shownIds = sc.cells.mappingId + "|" + (sc.rows?.mappingId ?? "") + "|" + (sc.lens?.mappingId ?? "");
+        if (shownIds !== persistRt.shown) {
+          persistRt.shown = shownIds;
+          persistScale();
+        }
+        // What this settled draw disclosed is told once.
+        scaleSpendCauses();
+      } catch (error) {
+        sc = scaleFault(error);
+      }
+    }
     labelsTaken = [];
     // Latest sits over the plot's top right when it shows, and the replay
     // transport on the replay line: labels keep clear of both.
@@ -980,11 +2216,11 @@
     ctx.clip();
     paintCoverage(b);
     grid();
-    if (under) paintBands(under);
+    if (under) paintBands(under, sc.rows);
     if (S.selection) {
       ctx.globalAlpha = 0.25;
-      if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u);
-      else for (const z of full.cells) fillCell(z, full, u);
+      if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u, sc.cellsFull);
+      else for (const z of full.cells) fillCell(z, full, u, sc.cellsFull);
       ctx.globalAlpha = 1;
     }
     ctx.save();
@@ -995,8 +2231,8 @@
     ctx.beginPath();
     ctx.rect(x1, y1, x2 - x1, y2 - y1);
     ctx.clip();
-    if (moving) paintMotion(shown, mv.shown, mv, b, u);
-    else for (const z of shown.cells) fillCell(z, full, u);
+    if (moving) paintMotion(shown, mv.shown, mv, b, u, sc.cells);
+    else for (const z of shown.cells) fillCell(z, full, u, sc.cells);
     ctx.restore();
     markings(shown, cut);
     paintUnfinished(shown);
@@ -1081,14 +2317,17 @@
     }
     // The cell of the table row under the pointer, outlined on the chart.
     if (tableHover) {
-      const { c, r } = tableHover;
+      // The row stands at the level it was listed at, which is the drawn one unless it says otherwise.
+      const { c, r } = tableHover,
+        tt = tableHover.n === undefined ? ts : 2 ** tableHover.n,
+        tp = tableHover.m === undefined ? ps : 2 ** tableHover.m;
       ctx.strokeStyle = colors.ink;
       ctx.lineWidth = 2;
       ctx.strokeRect(
-        G.X(c * ts) - 1,
-        G.Y((r + 1) * ps) - 1,
-        G.X((c + 1) * ts) - G.X(c * ts) + 2,
-        G.Y(r * ps) - G.Y((r + 1) * ps) + 2,
+        G.X(c * tt) - 1,
+        G.Y((r + 1) * tp) - 1,
+        G.X((c + 1) * tt) - G.X(c * tt) + 2,
+        G.Y(r * tp) - G.Y((r + 1) * tp) + 2,
       );
     }
     // The row under the pointer, over the prices or the profile, outlined
@@ -1105,20 +2344,28 @@
         ctx.globalAlpha = 1;
       }
     }
-    drawResolutionLens();
+    drawResolutionLens(sc);
     ctx.restore();
     const ro = readouts(cut);
     axes(ro);
-    profile(query, b, meas.state, under);
-    activity(shown, cut, mv, full);
+    profile(query, b, meas.state, under, sc);
+    activity(shown, cut, mv, full, sc);
     crosshair(ro);
     querySummary(meas, mv);
-    el("legend-text").textContent = legendText(full, mv);
-    el("legend-text").title =
-      LEGEND_TITLES[S.mode] +
-      (moving && !mv.src && motionIssue() ? ` They couldn't be read: ${motionIssue()}.` : "");
-    el("ramp").style.background = legendRamp();
-    underlayLegend(under);
+    // The legends: the chips when the DOM package has registered them; none after a fault, which turns the
+    // scale display off.
+    if (sc !== INERT_SC) {
+      try {
+        legendWrite(sc, under);
+      } catch (error) {
+        scaleFault(error);
+      }
+    } else {
+      // After a fault the scale display is off for the session and says so once (scaleFault's notice): the chip
+      // has nothing to map.
+      el("legend-text").textContent = "";
+      el("legend-text").title = "";
+    }
     const marks = marksReadout(b);
     el("ray-count").textContent = marks.rayCount + " untested levels";
     el("ray-count").hidden = !S.untested;
@@ -1126,10 +2373,16 @@
       marks.vaLow === null || meas.state === "pending" || meas.state === "failed"
         ? "—"
         : price(marks.vaLow) + "–" + price(marks.vaHigh);
-    last = { full, query, shown, meas, b, cut, mv, under };
+    last = { full, query, shown, meas, b, cut, mv, under, sc };
     if (transition) {
       if (u >= 1) transition = null;
       else requestDraw();
+    }
+    // The tooltip and the legend marker follow a mapping, theme or pack that changed under them.
+    try {
+      refreshTip();
+    } catch (error) {
+      scaleFault(error);
     }
   }
   // The crosshair's readouts where the pointer is on either pane, each rounded
@@ -1288,11 +2541,16 @@
   }
   // The block the view is drawn from: one that covers the view's time and can
   // show its level, the finest first; failing that, the finest that covers it.
+  // A tile the lens alone asked for is not a candidate before Pin (lensOnly): a
+  // peek must not change the level, the colours or the Rows the view is drawn
+  // with. The tile the view itself now asks for is a candidate even when the
+  // lens read it first.
   function chooseSource() {
     const [start, end] = viewRange(),
       [wn, wm] = viewLevel(),
+      want = viewTileId(),
       covering = Object.values(sources).filter(
-        (s) => s.b0 <= start && s.b1 >= end - 2 ** s.n,
+        (s) => !lensOnly(s, want) && s.b0 <= start && s.b1 >= end - 2 ** s.n,
       ),
       able = covering.filter((s) => s.n <= wn && s.m <= wm),
       pick = (able.length ? able : covering).sort((a, b) => a.n - b.n || a.m - b.m)[0];
@@ -1366,7 +2624,13 @@
   // The coarsest such block has the fewest cells to sum.
   function exactSource(r, n, m) {
     const end = Math.min(r[1], activeCutoff()),
-      blocks = Object.values(sources).concat(referenceView ? [referenceView] : []);
+      want = viewTileId(),
+      // A lens-only tile that is finer than the drawn level and tiles the rectangle
+      // would flip the measurement from pending to exact merely because the lens
+      // opened (a different memo key, a different state): it is not a candidate.
+      blocks = Object.values(sources)
+        .filter((s) => !lensOnly(s, want))
+        .concat(referenceView ? [referenceView] : []);
     return (
       blocks
         .filter((s) => {
@@ -1570,17 +2834,7 @@
     if (!ready) return;
     syncURL();
     saveHistory();
-    if (!window.explorerState) return;
-    try {
-      window.explorerState.save({
-        version: 5,
-        prefs: Object.fromEntries(PREFS.map((k) => [k, S[k]])),
-        view: viewHash(),
-      });
-    } catch (error) {
-      el("copy-status").textContent =
-        "This tab keeps the view; this browser's storage is unavailable.";
-    }
+    saveLastView();
   }
   function restorePrefs(x) {
     for (const k of ["sideOpen", "drawerOpen"])
@@ -1602,44 +2856,31 @@
       S.lensDepth = clamp(Math.round(x.lensDepth), 1, 4);
   }
   // The workspace and last view this browser saved; version 4 kept both in one
-  // object with the view as raw state.
-  function restore(x) {
-    if (!x || (x.version !== 4 && x.version !== 5)) return false;
+  // object with the view as raw state. The workspace always comes back. The view comes back only at a
+  // bare root (`skipView` false): a link owns the view, so the stored one is neither applied nor migrated
+  // nor reported. At a bare root a stored version-2 view restores silently, a stored legacy one restores
+  // with the legacy notice, and with nothing usable stored the default view shows with the one-time
+  // version-change notice (DR-14).
+  function restore(x, { skipView = false } = {}) {
+    if (!x || (x.version !== 4 && x.version !== 5)) {
+      if (!skipView) noteFirstVisit();
+      return false;
+    }
     restorePrefs(x.version === 5 ? x.prefs || {} : x);
+    if (skipView) return false;
     const view =
       x.version === 5
         ? typeof x.view === "string"
           ? readView(x.view)
           : null
-        : checkView({
-            window: x.window,
-            tA: x.tA,
-            tB: x.tB,
-            pA: x.pA,
-            pB: x.pB,
-            auto: x.auto !== false,
-            n: x.n,
-            m: x.m,
-            follow: x.diagonal
-              ? "diagonal"
-              : x.coupled
-                ? "coupled"
-                : x.refit === false
-                  ? "free"
-                  : "refit",
-            mode: x.mode,
-            poc: x.poc !== false,
-            area: x.area === true,
-            untested: x.untested === true,
-            selection: x.selection,
-            anchor: x.anchor,
-            replay: x.replay === true,
-            tab: x.tab,
-            evidenceKind: x.evidenceKind,
-            horizon: x.horizon,
-            barrier: x.barrier,
-          });
-    if (view) applyView(view);
+        : legacyStored(checkView(legacyRaw(x)), x);
+    if (view) {
+      applyView(view);
+      reportView(view);
+      // A legacy view is migrated once: it is stored as what it now is, so the next visit finds a
+      // version-2 view and owes no notice.
+      if (view.kind === "legacy") saveLastView();
+    } else noteFirstVisit();
     return Boolean(view);
   }
 
@@ -1697,7 +2938,7 @@
       coupled: { name: "Coupled", desc: "Zooming time zooms price by the same factor" },
       diagonal: {
         name: "Diagonal",
-        desc: "Zooming time by k zooms price by √k, and the price level follows the measured diagonal",
+        desc: `Zooming time by k zooms price by √k, and the price level follows the measured diagonal. ${E.text.model.diagonalUse}`,
         keys: "D",
       },
     },
@@ -1719,16 +2960,16 @@
     // live, also how the price moved inside each cell, its path and dwell.
     MODES = ["volume", "flow", "delta", "cascade", "trades", "flowtrades", "size", "path", "dwell", "geometry"],
     MODE_INFO = {
-      volume: { name: "Volume", desc: "USDT traded in each cell" },
-      flow: { name: "Taker flow", desc: "Share of each cell's USDT bought by takers" },
-      delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT in each cell" },
-      cascade: { name: "Cascade", desc: "How each cell's USDT splits within its parent, one level coarser in time and price" },
-      trades: { name: "Trades", desc: "Trades in each cell" },
-      flowtrades: { name: "Taker trades", desc: "Share of each cell's trades that were taker buys" },
+      volume: { name: "Volume", desc: "USDT traded in each cell (its Amount), shaded on a Value scale that Explore fits to the cells in view" },
+      flow: { name: "Taker flow", desc: "Share of each cell's USDT bought by takers, on a fixed scale from 0 to 1 about one half" },
+      delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT in each cell (its Amount), drawn about a midpoint of zero" },
+      cascade: { name: "Cascade", desc: "How each cell's USDT splits within its parent, one level coarser in time and price, on a fixed scale of log2 from -2 to +2" },
+      trades: { name: "Trades", desc: "Trades in each cell (its Amount), shaded on a Value scale that Explore fits to the cells in view" },
+      flowtrades: { name: "Taker trades", desc: "Share of each cell's trades that were taker buys, on a fixed scale from 0 to 1 about one half" },
       size: { name: "Trade size", desc: "Average USDT per trade in each cell" },
-      path: { name: "Path", desc: "How far the price travelled in each cell, in row heights" },
-      dwell: { name: "Dwell", desc: "Each cell's share of its column's time" },
-      geometry: { name: "Geometry", desc: "The grid's occupied cells" },
+      path: { name: "Path", desc: "How far the price travelled in each cell, in row spans of the drawn row size over the price span the cell covers" },
+      dwell: { name: "Dwell", desc: "Each cell's share of the covered time of its column: seconds the price rested in its rows over the column's covered seconds" },
+      geometry: { name: "Geometry", desc: "The grid's occupied cells, outlined, with no magnitude" },
     },
     MODE_GROUPS = [
       ["USDT", ["volume", "flow", "delta", "cascade"]],
@@ -1748,13 +2989,13 @@
       size: { name: "Trade size", desc: "Average USDT per trade in each column" },
       efficiency: {
         name: "Efficiency",
-        desc: "USDT per 125 USDT row each column's trades touched, against its parent column's",
+        desc: "USDT per 125 USDT row each column's trades touched, against its parent column's and the recorded model's expected ratio; the pane says how that model stands at the cutoff",
       },
       choppiness: { name: "Choppiness", desc: "How far the price travelled in each column, over its range" },
       perpath: { name: "Volume per path", desc: "USDT traded in each column per USDT the price moved" },
       rsi1d: { name: "RSI 14 · 1D", desc: "Wilder's RSI of the daily closes, with 70 and 30 guides and divergences between daily swings" },
       rsi4h: { name: "RSI 14 · 4h", desc: "The same on 4-hour bars, with divergences between 4-hour swings" },
-      macd1d: { name: "MACD · 1D", desc: "EMA(12) − EMA(26) of the daily closes, its signal EMA(9) and histogram, with crosses" },
+      macd1d: { name: "MACD · 1D", desc: "EMA(12) − EMA(26) of the daily closes in USDT, its signal EMA(9) and their histogram, on one axis symmetric about zero, with crosses" },
     },
     PANE_GROUPS = [
       ["Follow", ["cells"]],
@@ -1775,153 +3016,48 @@
   const stamp = (b) =>
       date(b).toISOString().replace(".000Z", "Z").replace(/:00Z$/, "Z"),
     usd = (p) => String(+(p * PR).toFixed(2));
+  // The address of the view as shown: the codec writes it (E.codec.formatAddress) from the visual state,
+  // always with vis=2 and ap=, every other default omitted, and within the address budget by its ladder.
+  // The part of the address that can change is addressOf's; these two keep the baseline's names.
   function viewParams() {
-    const out = [],
-      add = (k, v) => out.push(k + "=" + v);
-    if (S.window) add("w", S.window);
-    else {
-      add("t", stamp(S.tA) + "~" + stamp(S.tB));
-      add("p", usd(S.pA) + "~" + usd(S.pB));
-    }
-    if (!S.auto) add("r", S.n + "," + S.m);
-    if (followMode() !== "refit") add("f", followMode());
-    if (S.mode !== "volume") add("mode", S.mode);
-    if (S.pane !== "cells") add("pane", S.pane);
-    if (S.rows !== "off") add("rows", S.rows);
-    if (S.period !== "90d") add("period", S.period);
-    if (S.level !== null) add("level", usd(S.level));
-    const marks = ["poc", "area", "untested"].filter((k) => S[k]).join(",");
-    if (marks !== "poc") add("marks", marks || "none");
-    if (S.lines.length) add("lines", S.lines.join(","));
-    if (S.selection) {
-      const [a, b, p, q] = S.selection;
-      add("sel", `${stamp(a)}~${stamp(b)},${usd(p)}~${usd(q)}`);
-    }
-    if (S.anchor !== null) add("at", stamp(S.anchor));
-    if (S.replay) add("replay", "1");
-    if (S.tab === "evidence") add("tab", "continuations");
-    if (S.evidenceKind === "barrier") add("outcome", "barrier");
-    if (S.horizon !== 1) add("h", S.horizon);
-    if (S.barrier !== 1) add("dist", S.barrier);
-    return out.join("&");
+    return viewHash().slice(1);
   }
-  const viewHash = () => "#" + viewParams();
-  // A view from an address, or null when it names no window or rectangle.
-  // Anything unreadable falls back to its default rather than being guessed.
+  function viewHash() {
+    return addressOf().hash;
+  }
+  // The parse of an address, whole: what kind it is (v2, legacy, bare, or a version this page refuses),
+  // the view it names, its descriptors, and every part it had to leave out.
+  function readAddress(hash) {
+    return E.codec.parseAddress(hash, viewEnv());
+  }
+  // A view from an address, or null when it names no window or rectangle. Anything unreadable falls back
+  // to its default rather than being guessed, and the view says what it was: `kind`, the descriptors it
+  // carries (`records`), what was dropped, and the text it came from (for the once-per-payload notice).
   function readView(hash) {
-    const q = new Map();
-    for (const part of String(hash).replace(/^#/, "").split("&")) {
-      const i = part.indexOf("=");
-      try {
-        if (i > 0) q.set(part.slice(0, i), decodeURIComponent(part.slice(i + 1)));
-      } catch {
-        // A malformed escape leaves its parameter out.
-      }
-    }
-    const time = (s) => (Date.parse(s) / 1000 - T0) / BASE,
-      rows = (s) => (s === "" ? NaN : Number(s) / PR),
-      pair = (s, f) => {
-        const x = String(s ?? "").split("~").map(f);
-        return x.length === 2 ? x : [NaN, NaN];
-      },
-      marks = String(q.get("marks") ?? "poc").split(","),
-      level = /^(\d+),(\d+)$/.exec(q.get("r") || ""),
-      [selT, selP = ""] = String(q.get("sel") ?? "").split(",");
-    return checkView({
-      window: windowKey(q.get("w")),
-      ...Object.fromEntries(
-        [...pair(q.get("t"), time), ...pair(q.get("p"), rows)].map((v, i) => [
-          ["tA", "tB", "pA", "pB"][i],
-          v,
-        ]),
-      ),
-      auto: !level,
-      n: level ? Number(level[1]) : NaN,
-      m: level ? Number(level[2]) : NaN,
-      follow: q.get("f") || "refit",
-      mode: q.get("mode") || "volume",
-      pane: q.get("pane") || "cells",
-      rows: q.get("rows") || "off",
-      period: q.get("period") || "90d",
-      level: q.has("level") ? rows(q.get("level")) : null,
-      poc: marks.includes("poc"),
-      area: marks.includes("area"),
-      untested: marks.includes("untested"),
-      lines: String(q.get("lines") ?? "").split(",").filter(Boolean),
-      selection: q.has("sel")
-        ? [...pair(selT, time), ...pair(selP, rows)].map(Math.round)
-        : null,
-      anchor: q.has("at") ? Math.round(time(q.get("at"))) : null,
-      replay: q.get("replay") === "1",
-      tab: q.get("tab") === "continuations" ? "evidence" : "context",
-      evidenceKind: q.get("outcome") === "barrier" ? "barrier" : "poc",
-      horizon: Number(q.get("h") || 1),
-      barrier: Number(q.get("dist") || 1),
-    });
+    return viewOfAddress(readAddress(hash), hash);
   }
-  // A view whose every part can be shown here, or null without a window or a
-  // rectangle. Parts that can't be are dropped: a replay after this page's
-  // cutoff, a selection outside its history.
+  function viewOfAddress(res, hash) {
+    return res.view
+      ? {
+          ...res.view,
+          kind: res.kind,
+          records: res.sc,
+          axes: [],
+          dropped: res.dropped,
+          reasons: res.reasons,
+          text: String(hash),
+        }
+      : null;
+  }
+  // A view whose every part can be shown here, or null without a window or a rectangle. Parts that can't
+  // be are dropped: a replay after this page's cutoff, a selection outside its history. The rules are the
+  // codec's; the page supplies what only it knows (viewEnv).
   function checkView(v) {
-    const ok = (...x) => x.every(Number.isFinite),
-      w = windowKey(v.window);
-    if (
-      !w &&
-      !(
-        ok(v.tA, v.tB, v.pA, v.pB) &&
-        v.tB > v.tA &&
-        v.pB > v.pA &&
-        v.tA < CUT &&
-        v.pA >= 0
-      )
-    )
-      return null;
-    const sel = Array.isArray(v.selection) ? v.selection : [],
-      anchor =
-        Number.isFinite(v.anchor) && v.anchor > 0 && v.anchor <= CUT
-          ? v.anchor
-          : null,
-      locked = v.auto === false && ok(v.n, v.m);
-    return {
-      window: w,
-      tA: v.tA,
-      tB: v.tB,
-      pA: v.pA,
-      pB: v.pB,
-      auto: !locked,
-      n: locked ? clamp(Math.round(v.n), 0, N_MAX) : null,
-      m: locked ? clamp(Math.round(v.m), 0, M_MAX) : null,
-      follow: FOLLOWS.includes(v.follow) ? v.follow : "refit",
-      mode: modes().includes(v.mode) ? v.mode : "volume",
-      // Choppiness and volume per path need the live cube.
-      pane: panes().includes(v.pane) ? v.pane : "cells",
-      // Time at price needs the live cube.
-      rows: rowsChoices().includes(v.rows) ? v.rows : "off",
-      period: validPeriod(v.period) ? v.period : "90d",
-      level: Number.isFinite(v.level) && v.level > 0 ? v.level : null,
-      poc: v.poc !== false,
-      area: v.area === true,
-      untested: v.untested === true,
-      lines: normalizeLines(v.lines),
-      selection:
-        sel.length === 4 &&
-        ok(...sel) &&
-        sel[0] >= 0 &&
-        sel[1] > sel[0] &&
-        sel[0] < CUT &&
-        sel[2] >= 0 &&
-        sel[3] > sel[2]
-          ? [sel[0], Math.min(sel[1], Math.ceil(CUT)), sel[2], sel[3]]
-          : null,
-      anchor,
-      replay: v.replay === true && anchor !== null,
-      tab: v.tab === "evidence" ? "evidence" : "context",
-      evidenceKind: v.evidenceKind === "barrier" ? "barrier" : "poc",
-      horizon: [1, 2, 4, 8].includes(v.horizon) ? v.horizon : 1,
-      barrier: [1, 2, 4].includes(v.barrier) ? v.barrier : 1,
-    };
+    return E.codec.checkView(v, viewEnv());
   }
-  // Put a checked view in place.
+  // Put a checked view in place. Where it is (window or rectangle, level, selection, anchor, replay) is
+  // written here; how it is shown is one loop over the codec's table (applyVisual), so a setting added to
+  // the table is applied, written and read back by the same entry.
   function applyView(v) {
     if (v.window) setWindow(v.window);
     else {
@@ -1933,28 +3069,8 @@
       S.n = v.n;
       S.m = v.m;
     }
-    S.refit = v.follow === "refit";
-    S.coupled = v.follow === "coupled";
-    S.diagonal = v.follow === "diagonal";
-    for (const k of [
-      "mode",
-      "pane",
-      "rows",
-      "period",
-      "level",
-      "poc",
-      "area",
-      "untested",
-      "lines",
-      "selection",
-      "anchor",
-      "replay",
-      "tab",
-      "evidenceKind",
-      "horizon",
-      "barrier",
-    ])
-      S[k] = v[k];
+    for (const k of ["selection", "anchor", "replay"]) S[k] = v[k];
+    applyVisual(v);
     hover = null;
     el("tip").hidden = true;
     confine();
@@ -1984,12 +3100,38 @@
                 ? `The cube's answer to these six parameters, in ${level} (the finest this span shows at once); totals and POCs don't depend on the column width.`
                 : "The cube's answer to these six parameters.";
   }
-  async function copyText(textToCopy, label) {
+  // Copy text to the clipboard. `source` is the text, a promise of it, or a function that makes either (a
+  // view code is made asynchronously: it is compressed). The clipboard is asked at once, inside the click,
+  // with the promise as the item's content, because a browser keeps the click's permission only for the
+  // call made in it; a browser without that form gets the text after it is made. When the clipboard
+  // refuses, the text is put in the Query tab's field and selected for the person to copy, and that is
+  // said where it can be seen. Answers whether the clipboard took it.
+  async function copyText(source, label) {
+    const made = Promise.resolve(typeof source === "function" ? source() : source),
+      blob = made.then((text) => new Blob([text], { type: "text/plain" }));
+    // A text that cannot be made is reported below, once; neither promise may also raise an unhandled rejection.
+    made.catch(() => {});
+    blob.catch(() => {});
     try {
-      await navigator.clipboard.writeText(textToCopy);
+      if (typeof ClipboardItem === "function" && navigator.clipboard?.write)
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+      else await navigator.clipboard.writeText(await made);
       copyFallbackActive = false;
       el("copy-status").textContent = label + " copied";
+      return true;
     } catch (error) {
+      let textToCopy;
+      try {
+        textToCopy = await made;
+      } catch (reason) {
+        // There is nothing to copy: the text could not be made (a view over a limit, say).
+        el("copy-status").textContent = `${label} could not be made: ${reason?.reason ?? reason?.message ?? reason}`;
+        postNotice({
+          code: "import-rejected",
+          text: E.text.fill(PERSIST_TEXT.codeFailed, { what: label, reason: reason?.reason ?? reason?.message ?? String(reason) }),
+        });
+        return false;
+      }
       copyFallbackActive = true;
       el("query-text").value = textToCopy;
       S.drawer = "query";
@@ -1998,29 +3140,86 @@
       el("query-text").focus();
       el("query-text").select();
       el("copy-status").textContent = "Selected for copy · ⌘C / Ctrl+C";
+      postNotice({ code: "clipboard" });
+      return false;
     }
   }
-  // Pasted text as a query or view-code object; null when it is neither, so
-  // the parser's own error never reaches the status line.
-  function readImport(text) {
+  // A view code or query pasted into the Import field is decoded and checked WHOLE before anything
+  // changes (E.codec.decodePortable, then validatePortable for a version-2 code), off the click, so the
+  // page can be used meanwhile: one import at a time, and what was pasted and whether the page is ready
+  // are checked again after the wait. A version, integrity or limit failure rejects the whole code and
+  // says why, here and in the banner; the page is left as it was.
+  async function applyImportedView() {
+    if (importing) return;
+    const field = el("import-text"),
+      text = field.value.trim(),
+      status = (words) => {
+        el("copy-status").textContent = words;
+      };
+    importing = true;
+    el("import-apply").disabled = true;
     try {
-      const obj = JSON.parse(
-        text.startsWith("origo-cube:")
-          ? decodeURIComponent(text.slice(11))
-          : text,
-      );
-      return obj && typeof obj === "object" ? obj : null;
-    } catch {
-      return null;
+      let decoded;
+      try {
+        decoded = await E.codec.decodePortable(text, { inflate: inflateBounded });
+      } catch (error) {
+        // A text that is not a code at all keeps the baseline's words; the rest name their reason.
+        const plain = ["type", "structure", "json", "percent", "base64"].includes(error.code);
+        status(
+          plain
+            ? "That isn't a cube query or a view code. Paste the JSON from Copy query, or a view code (it starts with origo-cube:)."
+            : `The view code was not applied: ${error.reason ?? error.message}`,
+        );
+        if (!plain)
+          postNotice({ code: "import-rejected", params: { reason: error.reason ?? error.message } });
+        return;
+      }
+      if (!ready || field.value.trim() !== text) {
+        status("The pasted text changed while it was being read. Apply it again.");
+        return;
+      }
+      if (decoded.kind === "v2") {
+        const checked = E.codec.validatePortable(decoded.payload, viewEnv());
+        if (!checked.ok) {
+          status(`The view code was not applied: ${checked.reasons.join("; ")}`);
+          postNotice({ code: "import-rejected", params: { reason: checked.reasons.join("; ") } });
+          return;
+        }
+        applyPortable(checked.value, checked.dropped);
+      } else {
+        applyLegacyImport(decoded.payload, decoded.kind === "legacy" ? text : null);
+      }
+    } finally {
+      importing = false;
+      el("import-apply").disabled = false;
     }
   }
-  function applyImportedView() {
-    const obj = readImport(el("import-text").value.trim());
-    if (!obj) {
-      el("copy-status").textContent =
-        "That isn't a cube query or a view code. Paste the JSON from Copy query, or a view code (it starts with origo-cube:).";
+  // A version-2 code's validated pieces, in place at once: the view as the codec checked it (its own
+  // window or rectangle, level, selection and replay), then the descriptors and the appearance.
+  function applyPortable(value, dropped) {
+    try {
+      applyView(portableView(value, value.id));
+    } catch (error) {
+      el("copy-status").textContent = error.message;
       return;
     }
+    recordView("Restored query");
+    update();
+    save();
+    if (dropped.length)
+      postNotice({
+        code: "import-partial",
+        text: E.text.fill(PERSIST_TEXT.importDropped, { list: dropped.map((d) => d.key).join(", ") }),
+        details: dropped.map((d) => `${d.key}: ${d.reason}`),
+      });
+    el("copy-status").textContent = "View restored";
+    el("import").hidden = true;
+  }
+  // A code from before version 2, or a bare cube query, applied as the baseline applied it (a code's own
+  // view fields are copied one by one, never merged into the state). A code with a view is a legacy
+  // payload: its settings are kept, the scale is the default, and the notice says what changed.
+  // `code` is the pasted text of a legacy code (null for a cube query, which is no view and owes no notice).
+  function applyLegacyImport(obj, code) {
     try {
       const q = obj.query || obj;
       const n = Math.log2(Number(q.tR) / BASE),
@@ -2088,6 +3287,12 @@
           z[3] > z[2]
         )
           [S.tA, S.tB, S.pA, S.pB] = z;
+        // A code made before the scales existed carries none: the preferences are the defaults, and what
+        // that changes is listed once for this code.
+        if (code !== null) {
+          S.scale = structuredClone(E.policy.DEFAULTS);
+          reportView({ kind: "legacy", text: code, ...obj.view, dropped: [] });
+        }
       }
       chooseSource();
       limits();
@@ -2289,14 +3494,20 @@
         : b[0] >= Math.floor(CUT)
           ? "Not measured yet: the open column is measured once it completes"
           : "Not measured by the cube yet",
-        span = Math.max(0, Math.min(b[1], rect.end) - b[0]) * BASE;
+        // The rectangle's covered time: the seconds of its columns the motion reached. The dwell share is
+        // stated over it, and a dwell longer than it (or a negative one) is a failed validation, never a
+        // share to show (E.measure.dwellCheck).
+        span = Math.max(0, Math.min(b[1], rect.end) - b[0]) * BASE,
+        invalid = reached ? E.measure.dwellCheck(rect.query.w, span) : null;
       for (const [id, text, exact] of [
         ["path", reached ? compact(rect.query.p) : "—", reached ? usdt(rect.query.p) + " USDT" : why],
         [
           "dwell",
           reached ? dur(rect.query.w) : "—",
           reached
-            ? `${secondsExact(rect.query.w)} · ${(span > 0 ? (100 * rect.query.w) / span : 0).toFixed(1)}% of the time`
+            ? invalid
+              ? `${secondsExact(rect.query.w)} · ${E.result.describe(invalid).short}`
+              : `${secondsExact(rect.query.w)} · ${(span > 0 ? (100 * rect.query.w) / span : 0).toFixed(1)}% of the rectangle's ${secondsExact(span)} of covered time`
             : why,
         ],
       ]) {
@@ -2321,24 +3532,26 @@
     el("buypoc-value").textContent = wait(
       query.bpoc === null ? "—" : price((query.bpoc + 0.5) * ps * PR),
     );
+    // The taker share and the signed taker volume of the rectangle, from the same measures the cells use,
+    // asked with the rectangle's totals (summed before the ratio, never a mean of cell ratios).
+    const flow = totalMeasure("flow", query),
+      delta = totalMeasure("delta", query);
     el("share").textContent = wait(
-      query.v ? ((100 * query.bv) / query.v).toFixed(1) + "%" : "—",
+      flow?.result.tag === "finite" ? (100 * flow.result.value).toFixed(1) + "%" : "—",
     );
     el("delta-value").textContent = wait(
-      signed(2 * query.bv - query.v, compact) + " USDT",
+      delta?.result.tag === "finite" ? signed(delta.result.value, compact) + " USDT" : "—",
     );
     el("cells").textContent = wait(integer(query.cells.length));
+    // The counts of cells that stick out of the rectangle and that are still open, from the one predicate
+    // the readout and the table use.
     let partials = 0,
       unfinished = 0;
+    const cut = activeCutoff();
     for (const c of query.cells) {
-      if (
-        c.c * ts < b[0] ||
-        (c.c + 1) * ts > b[1] ||
-        c.r * ps < b[2] ||
-        (c.r + 1) * ps > b[3]
-      )
-        partials++;
-      if (!S.replay && c.c * ts < CUT && (c.c + 1) * ts > CUT) unfinished++;
+      const state = E.measure.cellState(c, b, cut, CUT, S.replay, ts, ps);
+      if (state.portion) partials++;
+      if (state.open) unfinished++;
     }
     el("partials").textContent = wait(integer(partials));
     // The open column's cells without a trade yet are open, not zero-trade.
@@ -2367,17 +3580,18 @@
   // the chart both ways through the cell under the pointer. It is rebuilt a
   // moment after the view settles, so panning never waits on it.
   const CELLS_PAGE = 100;
+  // The rows of the table by their numeric cell key, each with its element and the readout it was built
+  // from, and the level the whole table is listed at: a row and a cell of the chart are the same cell only
+  // when that level is the level drawn.
   let cellRows = new Map(),
+    cellRowsLevel = null,
     hoverRow = null,
     cellsTimer = 0;
+  // The words of a cell's finality, from the one predicate (E.measure.cellState) the readout and the
+  // inspector's counts use, so the table, the tooltip and the counts cannot say different things.
   function cellState(c, b, ts = stepT(), ps = stepP()) {
-    const open = !S.replay && (c.c + 1) * ts > CUT,
-      portion =
-        c.c * ts < b[0] ||
-        (c.c + 1) * ts > b[1] ||
-        c.r * ps < b[2] ||
-        (c.r + 1) * ps > b[3];
-    return [open ? "unfinished" : "complete", portion ? "portion" : ""]
+    const state = E.measure.cellState(c, b, activeCutoff(), CUT, S.replay, ts, ps);
+    return [state.open ? "unfinished" : "complete", state.portion ? "portion" : ""]
       .filter(Boolean)
       .join(" · ");
   }
@@ -2389,24 +3603,37 @@
   function buildCells(query, b, mv) {
     for (const th of qsa(".ol-motion-col")) th.hidden = !mv;
     if (!query) {
+      cellRows = new Map();
+      cellRowsLevel = null;
+      hoverRow = null;
       el("table-body").replaceChildren();
       el("table-caption").textContent = "Measuring the rectangle in the cube…";
       el("table-page").textContent = "";
       el("table-back").disabled = el("table-next").disabled = true;
+      // The rows are gone: a row the pointer was on no longer has a value to show on the legend.
+      if (tableHover) rowMarker();
       return;
     }
-    // The cells at the measure's own level, which a very wide rectangle reads
-    // coarser in time than the view shows.
-    const ts = 2 ** query.n,
-      ps = 2 ** query.m,
-      key = [query.n, query.m, b.join(","), S.cellSort, S.cellDir, Boolean(mv)].join("|"),
+    // The cells at the level the chart draws. A very wide rectangle is measured by the cube coarser in time
+    // than the view shows, and listing those cells put a row of one level beside a cell of another (the
+    // link, the outline and the numbers all described different cells); the drawn cells are listed
+    // instead, and each row names its level.
+    const drawn = { n: renderN(), m: renderM() },
+      listed =
+        query.n === drawn.n && query.m === drawn.m
+          ? query
+          : last?.query === query && last.shown
+            ? last.shown
+            : query,
+      ts = 2 ** listed.n,
+      ps = 2 ** listed.m,
+      same = listed.n === drawn.n && listed.m === drawn.m,
+      key = [listed.n, listed.m, b.join(","), S.cellSort, S.cellDir, Boolean(mv)].join("|"),
       // With a movement view on, each cell's path and dwell, and the cells the
       // price moved through or held in without a trade, at the table's level.
-      mq =
-        mv?.rect.query && mv.rect.query.n === query.n && mv.rect.query.m === query.m
-          ? mv.rect.query
-          : null,
-      end = mq ? mv.rect.end : -Infinity,
+      mq = mv?.shown && mv.shown.n === listed.n && mv.shown.m === listed.m ? mv.shown : null,
+      // The same motion end the chart and the tooltip read.
+      end = mq ? mv.end : -Infinity,
       moves = (c) => (c.p !== undefined ? c : mq?.map.get(cellKey(c.c, c.r)));
     if (key !== tableKey) {
       tablePage = 0;
@@ -2425,8 +3652,8 @@
       }[S.cellSort],
       // Cells the price moved through or held in without a trade: without one
       // here either, where a cell's trades can come after path and dwell end.
-      movedThrough = mq ? mq.moved.filter((z) => !query.map.has(z.c + "," + z.r)) : [],
-      cells = query.cells
+      movedThrough = mq ? mq.moved.filter((z) => !listed.map.has(z.c + "," + z.r)) : [],
+      cells = listed.cells
         .concat(movedThrough)
         .sort(
           (x, y) =>
@@ -2439,47 +3666,86 @@
     tablePage = clamp(tablePage, 0, pages - 1);
     const frag = document.createDocumentFragment();
     cellRows = new Map();
+    cellRowsLevel = { n: listed.n, m: listed.m };
     for (const c of cells.slice(
       tablePage * CELLS_PAGE,
       (tablePage + 1) * CELLS_PAGE,
     )) {
-      const tr = document.createElement("tr");
+      const tr = document.createElement("tr"),
+        state = cellState(c, b, ts, ps),
+        mz = mv ? moves(c) : null,
+        reached = Boolean(mq) && c.c * ts < end,
+        // What the chosen measure reads in this row: under Path and Dwell the motion cell (none where the
+        // motion has not reached the column), else the row's own cell.
+        read = movementMode() ? (reached ? (mz ?? c) : null) : c,
+        readout = same && read ? cellReadout(read, null) : null;
       tr.dataset.c = c.c;
       tr.dataset.r = c.r;
+      tr.dataset.cellKey = `${listed.n}:${listed.m}:${c.c}:${c.r}`;
+      tr.dataset.level = `${listed.n}:${listed.m}`;
+      // The text of each column and, for a number, the canonical value it was made from (the same field
+      // names as the tooltip's rows, so the two can be compared for one cell).
       const values = [
-        range(Math.max(c.c * ts, b[0]), Math.min((c.c + 1) * ts, b[1])),
-        price(Math.max(c.r * ps, b[2]) * PR) +
-          "–" +
-          price(Math.min((c.r + 1) * ps, b[3]) * PR),
-        usdt(c.v),
-        integer(c.ct),
-        usdt(c.bv ?? 0),
-        integer(c.bt ?? 0),
+        [range(Math.max(c.c * ts, b[0]), Math.min((c.c + 1) * ts, b[1]))],
+        [
+          price(Math.max(c.r * ps, b[2]) * PR) +
+            "–" +
+            price(Math.min((c.r + 1) * ps, b[3]) * PR),
+        ],
+        [usdt(c.v), "volume", c.v],
+        [integer(c.ct), "trades", c.ct],
+        [usdt(c.bv ?? 0), "buyVolume", c.bv ?? 0],
+        [integer(c.bt ?? 0), "buyTrades", c.bt ?? 0],
         ...(mv
           ? !mq
-            ? ["…", "…"]
+            ? [
+                ["…", "path", "pending"],
+                ["…", "dwell", "pending"],
+              ]
             : c.c * ts >= end
-              ? ["—", "—"]
+              ? [
+                  ["—", "path", "pending"],
+                  ["—", "dwell", "pending"],
+                ]
               : [
-                  usdt(moves(c)?.p ?? 0),
-                  secondsMilli(moves(c)?.w ?? 0),
+                  [usdt(mz?.p ?? 0), "path", mz?.p ?? 0],
+                  [secondsMilli(mz?.w ?? 0), "dwell", mz?.w ?? 0],
                 ]
           : []),
-        cellState(c, b, ts, ps) + (c.ct === 0 ? " · no trades" : ""),
+        [state + (c.ct === 0 ? " · no trades" : ""), "state", state],
       ];
-      for (const v of values) {
+      for (const [text, field, canonical] of values) {
         const td = document.createElement("td");
-        td.textContent = v;
+        td.textContent = text;
+        if (field) {
+          td.dataset.field = field;
+          td.dataset.canonical = String(canonical);
+        }
         tr.append(td);
       }
-      cellRows.set(c.c + "," + c.r, tr);
+      // What the chart encodes for the cell, from the readout of the draw: the value of the chosen measure,
+      // its place on the scale and the colour step. There is no column for them (the table lists amounts);
+      // they are carried, hidden, where the state is, and they say why when there is nothing to carry: the
+      // table was listed at another level than the chart draws, or the measure has not read the cell yet.
+      const why = !same ? "level-differs" : readout ? null : "pending";
+      for (const [field, canonical] of readoutFields(readout, why)) {
+        const node = document.createElement("data");
+        node.hidden = true;
+        node.dataset.field = field;
+        node.dataset.canonical = String(canonical);
+        tr.lastElementChild.append(node);
+      }
+      cellRows.set(cellKey(c.c, c.r), { tr, z: c, readout });
       frag.append(tr);
     }
     el("table-body").replaceChildren(frag);
     hoverRow = null;
-    el("table-caption").textContent = mq
-      ? `${integer(query.cells.length)} occupied and ${integer(movedThrough.length)} moved-through cells in view · other zero cells omitted`
-      : `${integer(cells.length)} occupied cells in view · zero cells omitted`;
+    // The rows are new: a row the pointer is on keeps its marker on the legend.
+    if (tableHover) rowMarker();
+    el("table-caption").textContent =
+      (mq
+        ? `${integer(listed.cells.length)} occupied and ${integer(movedThrough.length)} moved-through cells in view · other zero cells omitted`
+        : `${integer(cells.length)} occupied cells in view · zero cells omitted`) + scaleCaption();
     el("table-page").textContent = `${tablePage + 1} / ${pages}`;
     el("table-back").disabled = tablePage === 0;
     el("table-next").disabled = tablePage === pages - 1;
@@ -2490,9 +3756,14 @@
       else th.removeAttribute("aria-sort");
     }
   }
-  // Outline the table row of the cell under the chart pointer.
+  // Outline the table row of the cell under the chart pointer, when the row and the cell are at the same
+  // level (a row listed at another level is another cell, whatever its numbers are).
   function syncRowHover(key) {
-    const tr = key ? cellRows.get(key) || null : null;
+    const row =
+      key !== null && cellRowsLevel && cellRowsLevel.n === renderN() && cellRowsLevel.m === renderM()
+        ? cellRows.get(key)
+        : null,
+      tr = row?.tr || null;
     if (tr === hoverRow) return;
     hoverRow?.classList.remove("is-hover");
     tr?.classList.add("is-hover");
@@ -2509,7 +3780,17 @@
       return node;
     };
     const list = part("dl", "ol-tip-rows", "");
-    for (const [label, value] of rows) list.append(part("dt", "", label), part("dd", "", value));
+    // A row may carry a third and a fourth element, the name of its field and the canonical value the text
+    // was made from (a number, or the tag of a typed result), so a reader of the page can compare a number
+    // here with the same number in the Cells table without parsing the words.
+    for (const [label, value, field, canonical] of rows) {
+      const dd = part("dd", "", value);
+      if (field) {
+        dd.dataset.field = field;
+        dd.dataset.canonical = String(canonical);
+      }
+      list.append(part("dt", "", label), dd);
+    }
     tip.replaceChildren(
       part("div", "ol-tip-head", head),
       ...(sub ? [part("div", "ol-tip-sub", sub)] : []),
@@ -2518,11 +3799,15 @@
       ...[note || []].flat().filter(Boolean).map((text) => part("div", "ol-tip-note", text)),
     );
   }
-  // A drawn cell's path and dwell for the tooltip, or why it has none yet.
-  function motionRows(c, r, z, money, exact) {
+  // A drawn cell's path and dwell for the tooltip, or why it has none yet. Path is shown in the three ways
+  // the measure has (path over the measured price span in row spans, the USDT moved, and row spans per
+  // minute) with the raw path, the measured width and the covered seconds they are made of; Dwell shows its
+  // numerator and the covered time it is a share of, from the exposure record the encoder used. Every
+  // number is asked of E.measure.cellMeasurement at the level, rectangle, cutoff and motion end of the
+  // frame, so the row the chart colours by is one of these, not a neighbour computed here.
+  function motionRows(c, r, z, money, exact, readout) {
     const mv = last.mv,
-      ts = stepT(),
-      ps = stepP();
+      ts = stepT();
     if (!mv.src)
       return [["Path, dwell", motionIssue() ? `couldn't be read: ${motionIssue()}` : "reading from the cube…"]];
     if (c * ts >= mv.end)
@@ -2536,11 +3821,27 @@
               : "not measured by the cube yet",
         ],
       ];
-    const b = last.b,
-      secs = Math.max(0, Math.min((c + 1) * ts, b[1], mv.end) - Math.max(c * ts, b[0])) * BASE,
-      width = Math.max(0, Math.min((r + 1) * ps, b[3]) - Math.max(r * ps, b[2])) * PR,
-      path = z ? z.p : 0,
-      dwell = z ? z.w : 0,
+    // A cell the price never touched has a path and a dwell of zero, measured.
+    const cell = z ?? { c, r, v: 0, bv: 0, ct: 0, bt: 0, p: 0, w: 0 },
+      // A quantity the record could not hold (a non-finite number becomes null there) reads as a dash.
+      seconds = (x) => (x === null ? "—" : exact ? secondsExact(x) : dur(x)),
+      share = (x) => (x * 100).toFixed(exact ? 2 : 1) + "%",
+      spans = cellMeasure("path", cell, "amount", "spans"),
+      moved = cellMeasure("path", cell, "amount", "usdt"),
+      perMinute = cellMeasure("path", cell, "amount", "perMinute"),
+      // Under Dwell the numerator, denominator and result are the readout's own record (the exposure the
+      // encoder used); beside another measure they are asked for, with the same inputs.
+      dwell =
+        readout?.measure.measure === "dwell" && readout.exposure
+          ? { numerator: readout.observed ? readout.observed.value : null, denominator: readout.exposure.seconds, result: readout.typed, exposure: readout.exposure }
+          : cellMeasure("dwell", cell),
+      // The width and the seconds the ratios divide by: one exposure record (the per-minute basis uses both).
+      ex = perMinute.exposure,
+      spanText = (m, unit) =>
+        m.result.tag === "finite"
+          ? `${exact ? m.result.value.toFixed(3) : compact(m.result.value)} ${unit}`
+          : E.result.describe(m.result).short,
+      canonical = (m) => (m.result.tag === "finite" ? m.result.value : m.result.tag),
       // The column's value in the pane under the prices, while it follows the cells.
       col = movementMode() && S.pane === "cells" ? mv.shown?.cols.find((x) => x.c === c) : null,
       pane =
@@ -2548,33 +3849,66 @@
           ? []
           : S.mode === "path"
             ? [["Column path ÷ range", col.ct > 0 && col.hi > col.lo ? compact(col.p / (col.hi - col.lo)) : "—"]]
-            : [["Column USDT ÷ path", col.p > 0 ? compact(col.v / col.p) : "—"]];
+            : [["Column USDT ÷ path", col.p > 0 ? compact(col.v / col.p) : "—"]],
+      // The covered seconds of the cell's whole column, which a dwell residual is measured against.
+      column = Math.max(0, Math.min((c + 1) * ts, last.cut, mv.end) - c * ts) * BASE,
+      residual = E.measure.dwellResidual(column, null),
+      short = spans.exposure?.short || dwell.exposure?.short;
     return [
-      ["Path", `${money(path)} · ${compact(width > 0 ? path / width : 0)} row heights`],
+      ["Path / price span", spanText(spans, E.text.unit.rowSpans), "pathSpans", canonical(spans)],
+      ["USDT moved", money(moved.numerator), "path", moved.numerator],
+      [
+        "Row spans per minute",
+        spanText(perMinute, E.text.unit.rowSpansPerMinute),
+        "pathPerMinute",
+        canonical(perMinute),
+      ],
+      ["Measured width", `${price(ex.width)} USDT`, "width", ex.width],
+      ["Covered time", seconds(ex.seconds), "seconds", ex.seconds],
       [
         "Dwell",
-        `${exact ? secondsExact(dwell) : dur(dwell)} · ${(secs > 0 ? (100 * dwell) / secs : 0).toFixed(exact ? 2 : 1)}% of the column`,
+        dwell.result.tag === "finite"
+          ? `${seconds(dwell.numerator)} of ${seconds(dwell.denominator)} covered column time · ${share(dwell.result.value)}`
+          : `${seconds(dwell.numerator)} · ${E.result.describe(dwell.result).short}`,
+        "dwell",
+        dwell.numerator,
       ],
+      // Dwell is never renormalised to fill the column: what the rows do not account for is stated, or
+      // said to be unmeasurable when only the rectangle's rows are known (always, for one cell).
+      [E.text.label.coverage, E.text.dwell.coverage],
+      [
+        E.text.label.unattributed,
+        residual.measurable
+          ? E.text.fill(E.text.dwell.residual, { seconds: seconds(residual.seconds) })
+          : residual.tag
+            ? E.result.describe(residual).short
+            : E.text.dwell.notMeasurable,
+      ],
+      ...(short && !readout?.exposure?.short ? [exposureRow(ex)] : []),
       ...pane,
       ...((c + 1) * ts > mv.end ? [["Measured to", `${when(mv.end)} UTC`]] : []),
     ];
   }
-  // A cell's share of its parent and its Cascade value for the tooltip, or why
-  // it has none; at +2, that no other cell in its parent traded. The share is
-  // the whole cell's: where the rectangle holds only part of the cell (shown),
-  // both whole amounts are given too.
+  // A cell's share of its parent and its Cascade value for the tooltip, or why it has none; at +2, that no
+  // other cell in its parent traded. The share is the whole cell's: where the rectangle holds only part of
+  // the cell (shown), both whole amounts are given too. The value, and the reason there is none, are the
+  // readout's (typed, with the words of E.text), where the readout exists; the parent's amounts are the
+  // Cascade entry's.
   const ratioText = (v, exact) => signed(v, (x) => x.toFixed(exact ? 3 : 2));
-  function cascadeRows(e, share, exact, money, shown) {
+  function cascadeRows(e, share, exact, money, shown, readout) {
+    const typed = readout?.typed ?? null;
     if (e.state === "ok") {
       const part = shown && Math.abs(shown.v - e.w.v) > 1e-9 * e.w.v;
       return {
         rows: [
-          ["Of its parent", share(e.share)],
-          ["Cascade", ratioText(e.value, exact)],
+          ["Of its parent", share(e.share), "cascadeShare", e.share],
+          // With a readout the value (or the reason there is none) is its first row; this one stands in
+          // where there is no readout to read.
+          ...(typed ? [] : [["Cascade", ratioText(e.value, exact), "cascade", e.value]]),
           ...(part
             ? [
-                ["Whole cell", money(e.w.v)],
-                ["Parent", money(e.p.v)],
+                ["Whole cell", money(e.w.v), "cascadeCell", e.w.v],
+                ["Parent", money(e.p.v), "cascadeParent", e.p.v],
               ]
             : []),
         ],
@@ -2591,19 +3925,23 @@
       outside: "only part of its parent is loaded",
       none: "no value here",
     };
-    return { rows: [["Cascade", why[e.state]]], note: "" };
+    return { rows: typed ? [] : [["Cascade", why[e.state]]], note: "" };
   }
   // The pane's column under the pointer: its value and what it is made of,
-  // or why it has none.
+  // or why it has none, and where the value sits on the pane's axis. The
+  // value and the why come from the pane's frame (one Readout per column,
+  // the same record the bar was encoded from); the rows beside them are the
+  // column's own amounts. Numeric rows name themselves for a test.
   function paneTip(tip, p, money, count, share, exact, note) {
     if (paneShown.measure.osc) return oscillatorTip(tip, p);
     const ts = stepT(),
       c = Math.floor(p.t / ts),
       head = `${range(c * ts, (c + 1) * ts)} UTC · ${dur(ts * BASE)}`,
-      { key, measure, cols } = paneShown,
+      { key, measure, cols, axis: rec, frame, model } = paneShown,
       x = cols.find((y) => y.c === c),
       mv = last.mv,
       sub = [measure.label, measure.unit].filter(Boolean).join(" · ");
+    scaleRt.tipReadout = null;
     if (p.t >= last.cut) return tipRows(tip, head, sub, [], S.replay ? "Hidden in replay" : "After the data cutoff");
     if (!x) {
       const b = last.b,
@@ -2625,86 +3963,102 @@
                 : "No trades in this column";
       return tipRows(tip, head, sub, [], why);
     }
-    if (measure.ratio && x.state !== "ok") {
-      const why = {
-        coarsest: "No coarser level to compare with",
-        open: S.replay ? "Its parent column runs past the replay's edge" : "Its parent column is still open",
-        outside: "Only part of its parent column is loaded",
-        unavailable: "The recorded snapshot has no 125 USDT rows here",
-        pending: "Reading its rows from the cube…",
-        failed: `The cube didn't answer: ${x.error}`,
-        none: "No trades in this column",
-      };
-      return tipRows(tip, head, sub, [], why[x.state]);
+    if (!frame) return tipRows(tip, head, sub, [], E.text.notice.scaleFault);
+    // The column's readout: its typed result, its place on the axis and whether the axis leaves it out.
+    const readout = frame.readout(x, { ctx: x.ctx, index: x.c }),
+      typed = readout.typed,
+      at = `pane:${rec.id}:${c}`,
+      modelNote = model ? modelNoteWords(model) : "";
+    scaleRt.tipReadout = readout;
+    if (typed.tag !== "finite") {
+      // Why there is no bar: the typed reason in the module's words, with what a person would add about
+      // the level (the parent column of a ratio) where the reason alone is short.
+      const more =
+        typed.tag === "waiting-for-complete-parent"
+          ? S.replay
+            ? "Its parent column runs past the replay's edge"
+            : "Its parent column is still open"
+          : typed.tag === "unsupported" && x.state === "unavailable"
+            ? "The recorded snapshot has no 125 USDT rows here"
+            : typed.tag === "unsupported"
+              ? "Only part of its parent column is loaded"
+              : "";
+      tipRows(tip, head, sub, [], [E.result.describe(typed).long, more, modelNote]);
+      return paneTipFields(tip, [], at);
     }
-    // A ratio's entry, or else the column itself and its value.
-    const col = x,
-      value = measure.ratio ? x.value : measure.value(x),
-      rows =
+    const value = typed.value,
+      // [label, text, field, canonical]: what the row says, and the number a test reads back.
+      list =
         key === "cascade"
           ? [
-              ["Of its parent column", share(x.share)],
-              ["Value", ratioText(value, exact)],
-              ["Column", money(x.w.v)],
-              ["Parent column", money(x.p.v)],
+              ["Of its parent column", share(x.share), "share", x.share],
+              ["Value", ratioText(value, exact), "value", value],
+              ["Column", money(x.w.v), "volume", x.w.v],
+              ["Parent column", money(x.p.v), "parentVolume", x.p.v],
             ]
           : key === "efficiency"
             ? [
-                ["Efficiency", ratioText(value, exact)],
-                ["USDT per row", money(x.e)],
-                ["Rows touched", integer(x.w.rows)],
-                ["Parent's USDT per row", money(x.ep)],
-                ["Parent's rows", integer(x.p.rows)],
+                ["Efficiency", ratioText(value, exact), "value", value],
+                ["USDT per row", money(x.e), "perRow", x.e],
+                ["Rows touched", integer(x.w.rows), "rows", x.w.rows],
+                ["Parent's USDT per row", money(x.ep), "parentPerRow", x.ep],
+                ["Parent's rows", integer(x.p.rows), "parentRows", x.p.rows],
               ]
             : key === "choppiness"
               ? [
-                  ["Path ÷ range", compact(value)],
-                  ["Path", money(col.p)],
-                  ["Range", col.ct > 0 ? money(col.hi - col.lo) : "—"],
+                  ["Path ÷ range", compact(value), "value", value],
+                  ["Path", money(x.p), "path", x.p],
+                  ["Range", money(x.hi - x.lo), "range", x.hi - x.lo],
                 ]
               : key === "perpath"
                 ? [
-                    ["USDT per USDT moved", compact(value)],
-                    ["Volume", money(col.v)],
-                    ["Path", money(col.p)],
+                    ["USDT per USDT moved", compact(value), "value", value],
+                    ["Volume", money(x.v), "volume", x.v],
+                    ["Path", money(x.p), "path", x.p],
                   ]
                 : key === "delta"
                   ? [
-                      ["Buy − sell", signed(value, money)],
-                      ["Volume", money(col.v)],
-                      ["Taker buys", share(col.bv / col.v)],
+                      ["Buy − sell", signed(value, money), "value", value],
+                      ["Volume", money(x.v), "volume", x.v],
+                      ["Taker buys", share(x.bv / x.v), "takerShare", x.bv / x.v],
                     ]
                   : key === "takertrades"
                     ? [
-                        ["Buy − sell trades", signed(value, count)],
-                        ["Trades", count(col.ct)],
-                        ["Taker-buy trades", share(col.ct ? col.bt / col.ct : 0)],
+                        ["Buy − sell trades", signed(value, count), "value", value],
+                        ["Trades", count(x.ct), "trades", x.ct],
+                        ["Taker-buy trades", share(x.ct ? x.bt / x.ct : 0), "takerShare", x.ct ? x.bt / x.ct : 0],
                       ]
                     : key === "size"
                       ? [
-                          ["Trade size", col.ct ? money(value) : "—"],
-                          ["Trades", count(col.ct)],
+                          ["Trade size", money(value), "value", value],
+                          ["Trades", count(x.ct), "trades", x.ct],
                         ]
                       : key === "trades"
                         ? [
-                            ["Trades", count(col.ct)],
-                            ["Volume", money(col.v)],
+                            ["Trades", count(x.ct), "value", value],
+                            ["Volume", money(x.v), "volume", x.v],
                           ]
                         : [
-                            ["Volume", money(col.v)],
-                            ["Trades", count(col.ct)],
+                            ["Volume", money(x.v), "value", value],
+                            ["Trades", count(x.ct), "trades", x.ct],
                           ],
+      axis = paneAxisTipRows(rec, value),
       notes =
         key === "cascade" && x.alone
           ? "The other column in its parent had no trades"
           : key === "efficiency"
-            ? "Its USDT per 125 USDT row its trades touched, over its parent column's, against the 0.70 expected"
+            ? `Its USDT per 125 USDT row its trades touched, over its parent column's, against the ${EFFICIENCY_EXPECTED.toFixed(2)} the recorded model expects`
             : "";
-    tipRows(tip, head, sub, rows, [notes, note]);
+    tipRows(tip, head, sub, [...list.map(([label, text]) => [label, text]), ...axis.rows], [notes, modelNote, note]);
+    paneTipFields(tip, [...list.map(([, , field, canonical]) => ({ field, canonical })), ...axis.meta], at);
   }
   // The tooltip's row section: the row's USDT in the rectangle and its share
   // of it (left out over the profile, which gives them already), the
-  // underlay's value for the row over its period, and its relative volume.
+  // underlay's value for the row over its period, and its relative volume. The
+  // underlay's numbers are the Rows readout's own (the band the canvas encoded,
+  // through the same frame), and a relative volume that is not a number says
+  // which case it is: outside the comparison range, no current volume, no
+  // reference volume, or neither traded.
   function rowSection(r, money, share, exact, withRow = true) {
     const out = [],
       q = last.query,
@@ -2727,31 +4081,59 @@
       { approx, from } = underlayBasis(u.res);
     if (!u.bands) return [...out, [label, underlayWhy(u.res)]];
     if (from) out.push(["Period's rows", from]);
-    const band = u.bands.map.get(Math.floor(r / 2 ** (u.bands.m - renderM())));
+    const frame = last.sc?.rows ?? null,
+      band = u.bands.map.get(Math.floor(r / 2 ** (u.bands.m - renderM()))),
+      readout = frame && band && u.kind !== "relvol" ? frame.readout(band) : null,
+      // The observed amount of the band: the readout's, or (the scale display is off) the band's own.
+      observed = readout ? readout.observed?.value : u.kind === "volume" ? band?.v : u.kind === "delta" ? (band ? 2 * band.bv - band.v : undefined) : band?.w;
     if (u.kind === "volume")
-      out.push([label, band?.v > 0 ? `${approx}${money(band.v)} · ${share(band.v / u.bands.v)}` : "No trades in the period"]);
+      out.push([label, observed > 0 ? `${approx}${money(observed)} · ${share(observed / u.bands.v)}` : "No trades in the period"]);
     else if (u.kind === "delta")
-      out.push([label, band?.v > 0 ? approx + signed(2 * band.bv - band.v, money) : "No trades in the period"]);
-    else if (u.kind === "time")
+      out.push([label, band?.v > 0 ? approx + signed(observed, money) : "No trades in the period"]);
+    else if (u.kind === "time") {
       out.push([
         label,
-        band?.w > 0
-          ? `${exact ? secondsExact(band.w) : dur(band.w)} · ${share(u.bands.w > 0 ? band.w / u.bands.w : 0)}`
+        observed > 0
+          ? `${exact ? secondsExact(observed) : dur(observed)} · ${share(u.bands.w > 0 ? observed / u.bands.w : 0)}`
           : "The price wasn't here in the period",
       ]);
+      // The three seconds the read has: what it covered, what the rows hold, and what no row accounts for
+      // (only where the cube gave the period's total; the rows are never scaled to it).
+      const time = readout?.rows?.time;
+      if (time) {
+        const gap = E.measure.dwellResidual(time.coveredSeconds, time.cubeSeconds);
+        out.push(
+          [E.text.label.coverage, E.text.dwell.coverage],
+          ["Period covered", exact ? secondsExact(time.coveredSeconds) : dur(time.coveredSeconds)],
+          ["Attributed to rows", exact ? secondsExact(time.attributedSeconds) : dur(time.attributedSeconds)],
+          [
+            E.text.label.unattributed,
+            gap.measurable ? (exact ? secondsExact(gap.seconds) : dur(gap.seconds)) : gap.tag ? E.result.describe(gap).short : E.text.dwell.notMeasurable,
+          ],
+        );
+      }
+    }
     // Relative volume: the underlay's own value under Relative volume.
     const vb = u.volBands;
     if (vb) {
-      const e = u.rect && relativeVolume(vb, u.rect).get(Math.floor(r / 2 ** (vb.m - renderM())));
+      const rv = relvolFor(vb, u.vol, u.rect),
+        bin = Math.floor(r / 2 ** (vb.m - renderM())),
+        typed = rv.at(bin),
+        period = vb.map.get(bin);
+      // The ratio compares shares; the period's own amount at the row stays in the inspection beside it.
+      if (u.kind === "relvol" && period?.v > 0)
+        out.push(["Period's USDT", `${approx}${money(period.v)} · ${share(vb.v > 0 ? period.v / vb.v : 0)} of the period`]);
       out.push([
         u.kind === "relvol" ? label : "Relative volume",
-        !u.rect
+        u.rect.state === "pending" || u.rect.state === "failed"
           ? "measuring the rectangle…"
-          : !e
-            ? "No trades in the period"
-            : e.none
-              ? `−2 · it traded in the period, not in the ${where}`
-              : approx + ratioText(e.value, exact),
+          : typed.tag === "finite"
+            ? // A ratio that rounds to 0 at the digits shown is 0, not a signed zero (equal distributions differ in the last bit).
+              approx + ratioText(Math.abs(typed.value) < (exact ? 5e-4 : 5e-3) ? 0 : typed.value, exact)
+            : E.result.describe(typed).short,
+        // the number (or the tag of the typed result) the words were made from, as a test reads it back
+        "relvol",
+        typed.tag === "finite" ? typed.value : typed.tag,
       ]);
     }
     return out;
@@ -2787,21 +4169,321 @@
     const px = G.x + G.w + 9;
     return p.x >= px && p.x <= px + G.profile - 8 && p.y >= G.y && p.y <= G.y + G.h;
   }
-  function tooltip(p) {
+  // ---- The readout consumers (PRD-0002 S1) ----
+  // The tooltip, the Cells table and the inspector say what a cell measures by reading the ONE readout of
+  // the frame of the draw (`last.sc.cells.readout`), and the readings beside it (the Path bases next to the
+  // chosen one, the trade size next to Volume) by asking the same module with the same level, rectangle,
+  // cutoff and motion end. A number printed here is therefore the number the encoder mapped to a colour
+  // and the legend marker locates on the key; nothing below computes a measure, it chooses words and digits.
+
+  // The key of a readout as the page names it in the DOM: "<n>:<m>:<c>:<r>" for a cell, "row:<r>" for a
+  // profile row, "pane:<axis id>:<column>" for a column pane.
+  function readoutId(readout) {
+    if (!readout) return "";
+    if (readout.consumer === "cells") {
+      const r = readout.key % 2097152;
+      return `${readout.level.n}:${readout.level.m}:${(readout.key - r) / 2097152}:${r}`;
+    }
+    if (readout.consumer === "pane") return `pane:${readout.axis?.id ?? ""}:${String(readout.key).replace(/^col:/, "")}`;
+    return String(readout.key);
+  }
+  // One measure of one cell at the level drawn: the kernel spec the frame of the draw was built from, asked
+  // for a measure and basis of its own. `E.measure.cellMeasurement` is the code the encoder runs, so the
+  // typed result here is the encoder's for that measure; its numerator, denominator and exposure are the
+  // quantities the ratio was made of.
+  function cellMeasure(mode, z, basis = "amount", pathBasis = "spans") {
+    return E.measure.cellMeasurement({
+      mode,
+      basis,
+      pathBasis,
+      z,
+      geom: { BASE, PR },
+      level: { n: renderN(), m: renderM() },
+      bounds: last.b,
+      cut: last.cut,
+      end: last.mv ? last.mv.end : Infinity,
+      CUT,
+      replay: S.replay,
+      read: null,
+      measured: null,
+      cascade: null,
+    });
+  }
+  // A measure of the rectangle's totals (summed before the ratio): a pseudo cell of the level the totals
+  // were summed at. Fail-soft, because the inspector is written inside the draw: a fault turns the scale
+  // display off and leaves the field empty (the caller shows a dash).
+  function totalMeasure(mode, q) {
+    try {
+      return E.measure.cellMeasurement({
+        mode,
+        basis: "amount",
+        z: { c: 0, r: 0, v: q.v, bv: q.bv, ct: q.ct, bt: q.bt, p: 0, w: 0 },
+        geom: { BASE, PR },
+        level: { n: q.n, m: q.m },
+        bounds: null,
+        cut: Infinity,
+        end: Infinity,
+        CUT,
+        replay: false,
+        read: null,
+        measured: null,
+        cascade: null,
+      });
+    } catch (error) {
+      scaleFault(error);
+      return null;
+    }
+  }
+  // The cell the chosen measure reads at (c, r) of the level drawn: the cell itself, or under Path and
+  // Dwell the motion cell (a price that never touched the cell has a path and a dwell of zero, measured),
+  // or null where the measure has nothing to read yet (no motion block, or a column the motion has not
+  // reached: that is pending, never zero).
+  function measuredCell(c, r) {
+    if (movementMode()) {
+      const mv = last.mv;
+      if (!mv?.src || c * stepT() >= mv.end) return null;
+      return mv.shown?.map.get(cellKey(c, r)) ?? { c, r, v: 0, bv: 0, ct: 0, bt: 0, p: 0, w: 0 };
+    }
+    return last.shown.map.get(c + "," + r) ?? null;
+  }
+  // The Readout of one cell from the frame of the draw, or null when there is none to give: no cell, no
+  // frame, or a fault (which also turns the scale display off, and then the words fall back to the plain
+  // facts). `interaction` names who is asking ("hover", or null for a table row).
+  function cellReadout(z, interaction) {
+    const frame = last?.sc?.cells;
+    if (!z || !frame) return null;
+    try {
+      return frame.readout(z, { interaction });
+    } catch (error) {
+      scaleFault(error);
+      return null;
+    }
+  }
+  // The canonical values of a readout that the tooltip's rows and the table's hidden fields share: the
+  // value of the chosen measure (or the tag of its typed result), its coordinate on the scale and its colour
+  // step. `why` names the reason there is no readout: "level-differs" (a table listed at another level than
+  // the chart draws) or "pending" (the measure has not read the cell).
+  function readoutFields(readout, why) {
+    if (!readout) return [["value", why ?? "pending"], ["coordinate", why ?? "pending"], ["index", why ?? "pending"]];
+    const { typed, coordinate } = readout;
+    return [
+      ["value", typed === null ? "none" : typed.tag === "finite" ? typed.value : typed.tag],
+      ["coordinate", coordinate ? coordinate.t : "none"],
+      ["index", coordinate ? coordinate.idx : "none"],
+    ];
+  }
+  // The Short exposure cue with both fractions it is made of (DR-10: a usability cue, never "confidence").
+  function exposureRow(ex) {
+    const pct = (x) => (x * 100).toFixed(1) + "%";
+    return [
+      E.text.exposure.short,
+      E.text.fill(E.text.exposure.detail, { t: pct(ex.timeFraction), w: pct(ex.priceFraction) }),
+      "shortExposure",
+      Math.min(ex.timeFraction, ex.priceFraction),
+    ];
+  }
+  // A measured value in the unit its formula names. `f` = {money, count, share, exact}, the tooltip's own
+  // formatters, so Shift still shows exact digits.
+  function unitText(unit, x, isSigned, f) {
+    const sg = (format) => (isSigned ? signed(x, format) : format(x)),
+      digits = (v) => (f.exact ? v.toFixed(3) : compact(v));
+    switch (unit) {
+      case "usdt":
+        return sg(f.money);
+      case "trades":
+        return sg(f.count);
+      case "usdt-per-min-per-125usdt":
+        return `${sg(f.money)} ${E.text.unit.intensity}`;
+      case "trades-per-min-per-125usdt":
+        return `${sg(f.count)} ${E.text.unit.trades} ${E.text.unit.intensity}`;
+      case "usdt-per-trade":
+        return f.money(x);
+      case "row-spans":
+        return `${digits(x)} ${E.text.unit.rowSpans}`;
+      case "row-spans-per-min":
+        return `${digits(x)} ${E.text.unit.rowSpansPerMinute}`;
+      case "share":
+        return f.share(x);
+      case "log2-ratio":
+        return ratioText(x, f.exact);
+      default:
+        return String(x);
+    }
+  }
+  // The scale a readout was encoded with, in words: its policy and id, or the state that says there is no
+  // mapping to name (No calibration, Updating, Reading), and the external override where there is one.
+  function scaleText(scale) {
+    const t = E.text,
+      state =
+        scale.state === "no-calibration"
+          ? t.state.noCalibration
+          : scale.state === "updating"
+            ? t.state.updating
+            : scale.state === "pending"
+              ? t.state.pending
+              : null;
+    if (state && !scale.id) return state;
+    const parts = [t.policy[scale.policy] ?? scale.policy, scale.id];
+    if (state) parts.push(state);
+    if (scale.external) parts.push(t.state.external);
+    return parts.filter(Boolean).join(" · ");
+  }
+  // The rows a readout adds to a tooltip: the measure and basis with its value (or the typed reason there
+  // is none), the scale, the place on the scale and the colour step, and the exposure the ratio divides by
+  // with the Short exposure cue. Nothing for geometry, which measures nothing.
+  function readoutRows(readout, f) {
+    if (!readout || readout.typed === null) return [];
+    const { measure, typed, scale, coordinate, exposure } = readout,
+      formula = E.measure.FORMULAS[measure.formula],
+      basis = E.text.basis[measure.basis],
+      finite = typed.tag === "finite",
+      rows = [
+        [
+          // The Path bases already name Path ("Path / price span", "USDT moved"); the others name the measure
+          // first ("Volume · Intensity").
+          measure.measure === "path" && basis
+            ? basis
+            : `${MODE_NAMES[measure.measure] ?? measure.measure}${basis ? " · " + basis : ""}`,
+          finite ? unitText(measure.unit, typed.value, Boolean(formula?.signed), f) : E.result.describe(typed).short,
+          "value",
+          finite ? typed.value : typed.tag,
+        ],
+        ["Scale", scaleText(scale), "scale", scale.id ?? scale.state],
+      ];
+    if (coordinate) {
+      const isSigned = ["positive", "negative", "midpoint"].includes(coordinate.role),
+        percent = (coordinate.t * 100).toFixed(f.exact ? 2 : 1) + "%",
+        clip = coordinate.clip === "low" ? E.text.key.below : coordinate.clip === "high" ? E.text.key.above : "";
+      rows.push(
+        [
+          "Position on scale",
+          [isSigned && coordinate.t > 0 ? "+" + percent : percent, clip].filter(Boolean).join(" · "),
+          "coordinate",
+          coordinate.t,
+        ],
+        [
+          "Color step",
+          coordinate.idx < 0
+            ? E.text.key.zero
+            : coordinate.role === "midpoint"
+              ? E.text.role.midpoint
+              : `${coordinate.idx} of 255`,
+          "index",
+          coordinate.idx,
+        ],
+      );
+    }
+    if (exposure && measure.basis === "intensity")
+      rows.push([
+        "Observed",
+        `${f.exact ? secondsExact(exposure.seconds) : dur(exposure.seconds)} × ${price(exposure.width)} USDT`,
+        "exposureSeconds",
+        exposure.seconds,
+      ]);
+    if (exposure?.short) rows.push(exposureRow(exposure));
+    return rows;
+  }
+  // The scale the table's cells were encoded with, as one caption phrase: the policy and id of the mapping,
+  // or the state that says there is none. Empty where nothing is measured (Geometry) or the frame cannot say.
+  function scaleCaption() {
+    const frame = last?.sc?.cells;
+    if (!frame || S.mode === "geometry") return "";
+    try {
+      const input = frame.legendInput();
+      if (!input) return "";
+      return ` · Scale: ${scaleText({ state: input.state, id: input.mappingId || null, policy: input.policy, external: input.external })}`;
+    } catch (error) {
+      scaleFault(error);
+      return "";
+    }
+  }
+  // The plain facts of a drawn cell, each with its canonical value: the amounts, and the ratios between
+  // them as typed results (a cell without trades has no trade size: undefined, naming the denominator).
+  function cellFacts(z, f) {
+    const size = cellMeasure("size", z, "mean"),
+      flow = cellMeasure("flow", z),
+      flowTrades = cellMeasure("flowtrades", z),
+      delta = cellMeasure("delta", z),
+      canonical = (m) => (m.result.tag === "finite" ? m.result.value : m.result.tag),
+      text = (m, format) => (m.result.tag === "finite" ? format(m.result.value) : E.result.describe(m.result).short);
+    return [
+      ["Volume", f.money(z.v), "volume", z.v],
+      ["Trades", f.count(z.ct), "trades", z.ct],
+      ["Trade size", text(size, f.money), "size", canonical(size)],
+      ["Taker buys", `${f.money(z.bv)} · ${text(flow, f.share)}`, "buyVolume", z.bv],
+      ["Taker sells", f.money(z.v - z.bv), "sellVolume", z.v - z.bv],
+      ["Taker-buy trades", `${f.count(z.bt)} · ${text(flowTrades, f.share)}`, "buyTrades", z.bt],
+      ["Buy − sell", text(delta, (x) => signed(x, f.money)), "delta", canonical(delta)],
+    ];
+  }
+  // The legend marker for what the pointer is on, whatever it is on: the tooltip's readout while the tip
+  // shows, else the table row's. It follows the tip and the row, so it is cleared whenever either goes,
+  // whatever hid it; the hook writes only on change.
+  function markerNow() {
+    legendMarker(hover && !el("tip").hidden ? scaleRt.tipReadout : tableHover ? scaleRt.rowReadout : null);
+  }
+  // The tooltip's readout, stored and shown on the legend (null clears both).
+  function tipMarker(readout) {
+    scaleRt.tipReadout = readout;
+    try {
+      markerNow();
+    } catch (error) {
+      scaleFault(error);
+    }
+  }
+  // The table row's readout, stored and shown on the legend; the row is the one under the table pointer.
+  function rowMarker() {
+    // A row stays the row under the pointer only at the level it was hovered at: a table rebuilt at another
+    // level puts another cell under the same numeric key, and its readout would not be the outlined cell's.
+    const atLevel = tableHover && cellRowsLevel && tableHover.n === cellRowsLevel.n && tableHover.m === cellRowsLevel.m;
+    scaleRt.rowReadout = atLevel ? (cellRows.get(cellKey(tableHover.c, tableHover.r))?.readout ?? null) : null;
+    try {
+      markerNow();
+    } catch (error) {
+      scaleFault(error);
+    }
+  }
+  // Runs at the end of every draw: a mapping, theme or pack that changed under the tip makes its numbers
+  // stale, so the tip is derived again (without scheduling a frame: it is inside one), and the marker on the
+  // legend follows the tip and the table row whatever hid them. Not for a null hover (tooltip(null) throws),
+  // and not for a hidden tip (tooltip always ends by showing it).
+  function refreshTip() {
+    const tip = el("tip");
+    if (hover && !tip.hidden && last?.sc && scaleRt.tipStamp !== last.sc.stamp) tooltip(hover, { redraw: false });
+    // The readout key is named on the tip only while the tip shows (the pointer leaving, a pan or a tool hides
+    // it without going through tooltip()); the attribute stays, empty, so a reader can always find it.
+    if (tip.hidden && tip.dataset.readout) tip.dataset.readout = "";
+    markerNow();
+  }
+  // The tip names its readout from the start (empty until a cell's tip shows), so a reader finds the attribute.
+  el("tip").dataset.readout = "";
+  function tooltip(p, { redraw = true } = {}) {
+    // The first statements, on EVERY path out of the function (the early return too): the pointer the tip
+    // belongs to and the stamp it was derived under. A draw that finds the stamp changed derives the tip
+    // again (refreshTip); a stamp stored only at the end would leave a pointer resting on the price axis,
+    // where the tip is hidden at once, looking changed at every frame and drawing forever.
     hover = p;
+    scaleRt.tipStamp = last?.sc?.stamp ?? "";
+    scaleRt.tipReadout = null;
     const tip = el("tip"),
       exact = nav.shift,
       money = (x) => (exact ? usdt(x) : compact(x)) + " USDT",
       count = (x) => (exact ? integer(x) : compact(x)),
       share = (x) => (x * 100).toFixed(exact ? 2 : 1) + "%",
+      fmt = { money, count, share, exact },
       note = exact ? "" : "Hold Shift for exact values",
       ps = stepP(),
       priceRow = (r) => `${price(r * ps * PR)}–${price((r + 1) * ps * PR)} USDT`;
+    let readout = null;
     // A line or its tag under the pointer names the line; a clock line or a
     // CME gap, its event.
     const onLine = last && lineHits.length && inPlot(p) ? lineAt(p) : null,
       onClock = !onLine && last && clockHits.length && inPlot(p) ? clockAt(p) : null;
     hover.line = onLine?.id || null;
+    // Cleared first, so a branch that names no readout (a line, a clock event, a profile row, an unavailable
+    // cell) leaves none behind; a branch that does (the pane sections name theirs through paneTipFields,
+    // which runs inside the branch) is not overwritten below.
+    if (tip.dataset.readout) tip.dataset.readout = "";
     if (onLine) {
       lineTip(tip, onLine);
       syncRowHover(null);
@@ -2817,6 +4499,8 @@
         marks = underlayMarks(r);
       // A profile row is no one cell: the Cells drawer shows none as hovered.
       syncRowHover(null);
+      // It names the row it reads out (D.18: "row:<r>"), at the level drawn, unless it has nothing to read.
+      if (!waiting) tip.dataset.readout = `row:${r}`;
       if (waiting)
         tipRows(
           tip,
@@ -2850,8 +4534,10 @@
       syncRowHover(null);
     } else if (!last || !inPlot(p)) {
       tip.hidden = true;
+      tip.dataset.readout = "";
       syncRowHover(null);
-      requestDraw();
+      tipMarker(null);
+      if (redraw) requestDraw();
       return;
     } else {
       const ts = stepT(),
@@ -2871,12 +4557,19 @@
         PACK.live && CANON !== null && (c + 1) * ts > CANON
           ? ["Source", "provisional minutes"]
           : null;
+      // What the chosen measure reads in the cell and its readout, the record the encoder, the table and the
+      // legend marker share. A Cascade cell with no trades of its own still has a typed result (its parent
+      // traded and it did not, or its parent is open), which only the Cascade entry can say.
+      const read =
+        measuredCell(c, r) ??
+        (S.mode === "cascade" && !z && !unavailable ? { c, r, v: 0, bv: 0, ct: 0, bt: 0 } : null);
+      if (!unavailable) readout = cellReadout(read, "hover");
       // Path and dwell, while a movement view shows them; Cascade's share.
       const mz = last.mv?.shown?.map.get(cellKey(c, r)),
-        moves = last.mv ? motionRows(c, r, mz, money, exact) : [],
+        moves = last.mv ? motionRows(c, r, mz, money, exact, readout) : [],
         cas =
           S.mode === "cascade" && last.full?.cascade
-            ? cascadeRows(cascadeOf(last.full.cascade, c, r), share, exact, money, z)
+            ? cascadeRows(cascadeOf(last.full.cascade, c, r), share, exact, money, z, readout)
             : null;
       if (unavailable)
         tipRows(tip, head, priceRow(r), [], S.replay && p.t >= last.cut
@@ -2893,7 +4586,13 @@
           tip,
           head,
           priceRow(r),
-          [...moves, ...(coarse ? [coarse] : []), ...(provisional ? [provisional] : []), ...rowSection(r, money, share, exact)],
+          [
+            ...readoutRows(readout, fmt),
+            ...moves,
+            ...(coarse ? [coarse] : []),
+            ...(provisional ? [provisional] : []),
+            ...rowSection(r, money, share, exact),
+          ],
           mz
             ? mz.p > 0
               ? "The price moved through without a trade here"
@@ -2908,22 +4607,18 @@
           head,
           priceRow(r),
           [
-            ["Volume", money(z.v)],
-            ["Trades", count(z.ct)],
-            ["Trade size", z.ct ? money(z.v / z.ct) : "—"],
-            ["Taker buys", `${money(z.bv)} · ${share(z.bv / z.v)}`],
-            ["Taker-buy trades", `${count(z.bt)} · ${share(z.ct ? z.bt / z.ct : 0)}`],
-            ["Buy − sell", signed(2 * z.bv - z.v, money)],
+            ...readoutRows(readout, fmt),
+            ...cellFacts(z, fmt),
             ...(cas ? cas.rows : []),
             ...moves,
-            ["Column", open ? "Still open" : "Complete"],
+            ["Column", (open ? "Still open" : "Complete") + (readout?.support.portion ? " · portion" : "")],
             ...(provisional ? [provisional] : []),
             ...(coarse ? [coarse] : []),
             ...rowSection(r, money, share, exact),
           ],
           [cas?.note, note],
         );
-      syncRowHover(z ? c + "," + r : null);
+      syncRowHover(z ? cellKey(c, r) : null);
     }
     // After a tap, the row section's control for the level line.
     if (nav.touchTip && !onLine && (inPlot(p) || onProfile(p))) tip.append(levelButton(Math.floor(p.p / ps)));
@@ -2936,7 +4631,13 @@
       left = right + tw <= G.x + G.w - 4 || onProfile(p) ? right : p.x - 16 - tw;
     tip.style.left = clamp(onProfile(p) ? p.x - 16 - tw : left, 4, G.width - tw - 4) + "px";
     tip.style.top = clamp(p.y - th / 2, G.y + 4, G.y + G.h - th - 4) + "px";
-    requestDraw();
+    // The readout the tip was built from (a cell's here; a pane's or a row's set by their own sections):
+    // named on the tip so the same record can be found in the table, and located on the legend.
+    if (readout) scaleRt.tipReadout = readout;
+    if (scaleRt.tipReadout) tip.dataset.readout = readoutId(scaleRt.tipReadout);
+    tipMarker(scaleRt.tipReadout);
+    // A derivation inside a draw (refreshTip) asks for no frame: it is in one.
+    if (redraw) requestDraw();
   }
   function update() {
     if (!ready) return;
@@ -3045,6 +4746,9 @@
     updateNavigation();
     requestDraw();
     scheduleCube();
+    // The Scale section and the legend chips (DOM package), and the calibration clock.
+    renderScaleUi();
+    scaleArm();
   }
   function bindRoot() {
     el("query-text").addEventListener("blur", () => {
@@ -3053,35 +4757,8 @@
     el("copy-query").addEventListener("click", () =>
       copyText(JSON.stringify(cubeQuery(), null, 2), "Query"),
     );
-    el("copy-view").addEventListener("click", () =>
-      copyText(
-        "origo-cube:" +
-          encodeURIComponent(
-            JSON.stringify({
-              query: cubeQuery(),
-              view: {
-                mode: S.mode,
-                pane: S.pane,
-                poc: S.poc,
-                area: S.area,
-                untested: S.untested,
-                rows: S.rows,
-                period: S.period,
-                level: S.level,
-                lines: S.lines,
-                tab: S.tab,
-                replay: S.replay,
-                anchor: S.anchor,
-                horizon: S.horizon,
-                evidenceKind: S.evidenceKind,
-                barrier: S.barrier,
-                viewport: [S.tA, S.tB, S.pA, S.pB],
-              },
-            }),
-          ),
-        "View code",
-      ),
-    );
+    // The view code is made asynchronously (it is compressed), so the copy is handed the maker, not its text.
+    el("copy-view").addEventListener("click", () => copyText(viewCode, "View code"));
     el("import-toggle").addEventListener("click", () => {
       el("import").hidden = !el("import").hidden;
     });
@@ -3105,15 +4782,20 @@
         if (last) buildCells(measuredCells(last), last.b, last.mv);
         save();
       });
-    // A table row and its cell on the chart light up together.
+    // A table row and its cell on the chart light up together, and the row's value is located on the
+    // legend. The row carries its own level: the outline is drawn at it, and the legend marker is shown
+    // only when it is the level the legend describes.
     el("table-body").addEventListener("pointerover", (e) => {
       const tr = e.target.closest("tr");
       if (!tr) return;
-      tableHover = { c: Number(tr.dataset.c), r: Number(tr.dataset.r) };
+      const [n, m] = tr.dataset.level.split(":").map(Number);
+      tableHover = { c: Number(tr.dataset.c), r: Number(tr.dataset.r), n, m };
+      rowMarker();
       requestDraw();
     });
     el("table-body").addEventListener("pointerleave", () => {
       tableHover = null;
+      rowMarker();
       requestDraw();
     });
     bindPanels();
@@ -3180,6 +4862,8 @@
           part(".ol-drawer-bar") +
           part(".ol-status") +
           part("#ol-loading") +
+          // the notice banner, when one shows, takes its height from the chart too
+          part("#ol-notice") +
           8;
       return Math.max(120, part(".ol-chart") - used - 220);
     };
@@ -3419,6 +5103,1268 @@
     if (menu.hidden) button.click();
     else focusMenuItem(menu, checkedItem(menu));
   }
+  // ---- The scale display's DOM (PRD-0002 S1, package U) ----
+  // The legend chips, their detail popovers, the axis chip, the Scale sections of the Cells and Rows menus,
+  // the notice banner, the lens's Local contrast toggle and the generated keys. Every value and every
+  // sentence here comes from the measurement module (E) and the frames the spine built for the draw that
+  // paints; this block only writes them into the page, and only when what they were made from changed
+  // (E.legend.keyOf is computed from ids before any Legend model exists, so a steady frame builds none).
+  // Nothing here is an aria-live region: a state is visible text in a chip that a person can open, never a
+  // polite announcement on every zoom step (the banner and the lens status are the two status elements, and
+  // both change only on an event).
+  const scaleUi = {
+      // The Legend model of each colour channel, built when its key changed: the popover, the marker and the
+      // footer keys read it, so nothing is built twice for one state.
+      models: { cells: null, rows: null, pane: null },
+      rowsInfo: null,
+      inks: null,
+      fallback: { cells: "", rows: "" },
+      // What the marker drew last, and the footer keys' last write key
+      markerKey: "",
+      keysKey: "",
+      // The axes drawn in the frame in progress (the registry records the axis hooks hand over) and the pane's
+      // own, which the axis chip shows; the last write key of the chip and its last place
+      axes: new Map(),
+      pane: null,
+      paneShown: null,
+      axisKey: "",
+      lensKey: "",
+      lensId: "",
+      axisRecords: [],
+      noticeVersion: -1,
+      noticeOpen: "",
+      menuKey: "",
+    },
+    // A Readout's numeric key is column * 2^21 + row (cellKey above): the marker names the column and row
+    UI_CELL_STRIDE = 2097152,
+    // TEXT(S1): the labels of the scale-change fields when they are empty (E.legend words them when there is a change)
+    UI_SHORT_LABELS = { modelApplicability: "Model applies to" },
+    UI_CHANGE_LABELS = { scaleChangeCause: "Changed by", scaleChangeFrom: "Was", scaleChangeTo: "Now" };
+  function uiEl(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  // Numbers as a chart reads them: compact magnitudes, a share as a percentage, durations in their units.
+  // The canonical number always travels beside its text (data-value), so this never changes what a value is.
+  function uiFmt(value, unit) {
+    if (typeof value !== "number" || !Number.isFinite(value)) return String(value);
+    if (unit === "share") return +(value * 100).toPrecision(3) + "%";
+    if (unit === "seconds") return dur(value);
+    return compact(value);
+  }
+  // The preference part of a legend's write key. The mapping id alone does not name what a chip says: Explore
+  // and Auto can hold the same mapping, the lock and Local contrast change what the popover offers, and a
+  // change of measure, basis or transform moves the context even when two fits happen to give one mapping.
+  function legendPolicy(channel) {
+    const sc = S.scale;
+    return [
+      sc.lock ? "L" : "",
+      sc[channel] ?? "",
+      sc.local ? "l" : "",
+      scaleRt.playing ? "p" : "",
+      channel === "rows" ? S.rows + S.period : S.mode,
+      sc.basis,
+      sc.pathBasis,
+      sc.transform,
+      sc.curve,
+      sc.rowsTransform,
+      // what only the spine knows of the chip (counters, the override, a fallback's words)
+      scaleRt.sc?.chip?.[channel]?.key ?? "",
+    ].join(":");
+  }
+  // What the settled warnings pass said about a channel, as a short string: the legend is rebuilt when the
+  // shares, the clip counts or the warning set moved, and not when the pass re-ran to the same answer.
+  function uiWarnStamp(channel) {
+    const entry = scaleRt.warn[channel],
+      report = entry?.report;
+    if (!report) return "";
+    const c = report.counts ?? {};
+    return [
+      report.rangeExceeded ? 1 : 0,
+      report.lowDiscrimination ?? "-",
+      c.marks,
+      c.outside,
+      c.low,
+      c.high,
+      c.negInf,
+      c.noRef,
+      c.exactLow,
+      c.exactHigh,
+      Math.round((report.shares?.area ?? 0) * 1000),
+      // the per-key counts the consumers' marks hooks kept beside the tally
+      Object.entries(entry.keys ?? {})
+        .map(([id, n]) => id + "=" + n)
+        .join("+"),
+    ].join(",");
+  }
+  // What the spine's chip of a frame says beyond its ids (the attributes, the options the Legend is built
+  // with): anything in it that moved is a reason to write the chip again, since a context change, a fit
+  // number, a note or a count can leave the mapping id as it was.
+  function uiChipStamp(chip) {
+    if (!chip) return "";
+    const o = chip.opts ?? {},
+      n = o.note;
+    return [
+      Object.values(chip.attrs).join("~"),
+      n ? [n.causes?.join("/"), n.from, n.to].join(">") : "",
+      chip.fallback ?? "",
+      o.evicted ? "e" : "",
+      o.afterEdge ? "a" : "",
+      o.paused || "",
+      o.revisionStatus ?? "",
+      Object.entries(o.counts ?? {})
+        .map(([id, count]) => id + "=" + count)
+        .join("+"),
+    ].join("|");
+  }
+  // Marks per key id for a channel the spine made no chip for (the lens): whatever its own tally counted.
+  function legendCounts(channel) {
+    const entry = scaleRt.warn[channel],
+      c = entry?.report?.counts,
+      out = { ...(entry?.keys ?? null) };
+    if (c) {
+      out["clip-low"] = c.low;
+      out["clip-high"] = c.high;
+      out["negative-infinite"] = c.negInf;
+      out["no-reference"] = c.noRef;
+      out["exact-low"] = c.exactLow;
+      out["exact-high"] = c.exactHigh;
+    }
+    return out;
+  }
+  // The Legend of a channel's frame (a model, allocated; only when the chip's key changed or a popover opens).
+  // The spine's chip of the frame carries the options and the warnings report it was made with (its note of a
+  // scale change, the counts of its settled pass, the paused and evicted states); a channel with no chip of
+  // its own (the lens) is built from its own tally.
+  function legendOf(channel, frame, chip) {
+    let input = frame.legendInput();
+    if (!input) return null;
+    // The recorded model's standing at the effective cutoff is disclosed wherever a scale is (DD-35, S1-147: it
+    // follows the cutoff in every mode, and is not a property of the scale's eligibility): a Cells frame that
+    // names no model of its own carries the one behind the price-axis diagonal.
+    if (channel === "cells" && !input.model && typeof input.observation?.cutoffMs === "number")
+      input = { ...input, model: E.model.describe("diagonal", input.observation.cutoffMs, input.level?.n ?? renderN()) };
+    const auto = S.scale[channel === "lens" ? "cells" : channel] === "auto",
+      paused = auto && S.scale.lock ? "lock" : auto && scaleRt.playing ? "play" : false,
+      base = chip
+        ? chip.opts
+        : { channel, counts: legendCounts(channel), paused, updating: frame.mappingState === "updating" };
+    return {
+      input,
+      chip,
+      legend: E.legend.build(input, chip ? chip.warn : (scaleRt.warn[channel]?.report ?? null), uiFmt, {
+        ...base,
+        channel,
+        measureLabel: channel === "rows" ? (ROWS_INFO[S.rows]?.name ?? S.rows) : MODE_NAMES[S.mode],
+        shortExposure: scaleRt.warn[channel]?.shortExposure,
+      }),
+    };
+  }
+  // The observation attributes of a chip (INTEGRATION D.18), from the same frame that painted: a frame log
+  // can assert them per draw. The spine's chip hands them over (attribute names and strings); a channel it
+  // made no chip for (the lens) gets them derived from its Legend input here.
+  function legendAttrs(node, channel, built) {
+    const { input, legend } = built,
+      attrs = built.chip
+        ? built.chip.attrs
+        : {
+            "data-state": legend.state === "ok" ? "ready" : legend.state,
+            "data-policy": S.scale.local ? "local" : (input.policy ?? ""),
+            "data-mapping-id": input.desc?.id ?? input.mappingId ?? "",
+            "data-appearance": input.lut.id,
+            "data-workspace": scaleWorkspace(),
+            "data-transform": input.transform ?? "",
+            "data-basis": input.basis ?? "",
+            "data-context": input.contextKey ?? "",
+            "data-effective-n": String(input.level?.n ?? ""),
+            "data-effective-m": String(input.level?.m ?? ""),
+            "data-fit-through": String(input.calibration?.obsEndMs ?? ""),
+            "data-fit-seq": String(scaleRt.fitSeq.lens),
+            "data-override": input.external ? "external" : "",
+            "data-updating": String(legend.state === "updating"),
+          };
+    for (const [name, value] of Object.entries(attrs)) if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+    return attrs;
+  }
+  // A legend bar: the exact colour row of the Lut through the transform (E.legend.barPixels), blitted one
+  // device pixel per sample into a canvas of the bar's css size, so the bar is the colours the chart draws
+  // and never a gradient between them.
+  function legendBar(canvas, legend, cssWidth, cssHeight) {
+    const dpr = devicePixelRatio || 1,
+      w = Math.max(1, Math.round(cssWidth * dpr)),
+      h = Math.max(1, Math.round(cssHeight * dpr)),
+      row = E.legend.barPixels(legend, w),
+      data = new Uint8ClampedArray(w * h * 4);
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    for (let y = 0; y < h; y++) data.set(row, y * w * 4);
+    canvas.getContext("2d").putImageData(new ImageData(data, w, h), 0, 0);
+  }
+  // The position of a marker along a bar, clamped to the bar's ends (a value beyond the domain sits at the
+  // end and the key counts it).
+  const uiBarLeft = (p) => clamp(p, 0, 1) * 100 + "%";
+  // One key swatch: the role table's glyph painted by the same function the plot uses, so a key cannot drift
+  // from its mark. The inks come from the caller (this helper reads no palette itself).
+  function uiKeySwatch(glyph, inks) {
+    const dpr = devicePixelRatio || 1,
+      size = 11,
+      canvas = document.createElement("canvas"),
+      g = E.role.GLYPHS[glyph],
+      body = Boolean(g.pattern) || g.kind === "outline" || g.kind === "line",
+      ctx2 = canvas.getContext("2d");
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    canvas.setAttribute("aria-hidden", "true");
+    ctx2.setTransform(dpr, 0, 0, dpr, 0, 0);
+    E.role.paint(ctx2, glyph, size / 2, size / 2, body ? size : size - 3, g.ink === "occupancy" ? inks.occupancy : inks.state, {
+      ground: inks.surface,
+      font: `${TYPE.s}px ${FONT}`,
+    });
+    const swatch = uiEl("i", "ol-data-key ol-glyph");
+    swatch.append(canvas);
+    return swatch;
+  }
+  // The keys of a legend as list items: `[data-key]` with the glyph id as its role and the count of marks.
+  // `all` lists the keys with no marks too (a popover), else only those with marks (the footer).
+  function uiKeyList(keys, inks, all) {
+    const out = [];
+    for (const key of keys) {
+      if (!all && key.count <= 0) continue;
+      const item = uiEl("span", "ol-key");
+      item.dataset.key = key.id;
+      if (key.glyph) item.dataset.role = key.glyph;
+      item.dataset.count = String(key.count);
+      if (key.glyph) item.append(uiKeySwatch(key.glyph, inks));
+      item.append(document.createTextNode(key.label + (all ? ` ${key.count}` : "")));
+      out.push(item);
+    }
+    return out;
+  }
+  // What the Rows frame says about the rows behind the bands (its `info`, which E.legend.build does not read):
+  // the period, the row size in USDT, the quality class, where the period starts and what it was read to,
+  // Time at price's seconds and Relative volume's counts. Returned as the short words the chip adds and as
+  // the detail rows of its popover.
+  function uiRowsInfo(info) {
+    if (!info) return { words: [], rows: [] };
+    const words = [info.periodLabel, `${compact(info.rowUsdt)} USDT rows`],
+      rows = [],
+      add = (field, label, text, canonical) => rows.push({ field, label, value: text, canonical });
+    // TEXT(S1): the labels and words of the Rows details
+    if (info.approximate) words.unshift("≈");
+    add("rowPeriod", "Period", info.periodLabel, info.period);
+    add("rowSize", "Row size", `${compact(info.rowUsdt)} USDT`, info.effectiveM);
+    if (info.effectiveM !== info.requestedM) add("rowSizeAsked", "Row size asked for", `${compact(PR * 2 ** info.requestedM)} USDT`, info.requestedM);
+    add("rowQuality", "Quality", info.approximate ? `Approximate (${info.quality})` : "Exact", info.quality);
+    if (info.fromBase !== null) add("rowFrom", "Period starts", uiUtcMs(E.time.baseToMs(info.fromBase, T0, BASE)), E.time.baseToMs(info.fromBase, T0, BASE));
+    if (info.trimmedFromBase !== null)
+      add("rowTrimmed", "Coarse rows start", uiUtcMs(E.time.baseToMs(info.trimmedFromBase, T0, BASE)), E.time.baseToMs(info.trimmedFromBase, T0, BASE));
+    if (info.throughBase !== null && info.throughBase !== undefined)
+      add("rowThrough", "Read through", uiUtcMs(E.time.baseToMs(info.throughBase, T0, BASE)), E.time.baseToMs(info.throughBase, T0, BASE));
+    if (info.stale) add("rowStale", "Rows", "Updating", true);
+    if (info.time) {
+      add("rowTimeCovered", "Seconds covered", dur(info.time.coveredSeconds), info.time.coveredSeconds);
+      add("rowTimeAttributed", "Seconds attributed to rows", dur(info.time.attributedSeconds), info.time.attributedSeconds);
+      if (info.time.cubeSeconds !== null) add("rowTimeCube", "Seconds the cube reports", dur(info.time.cubeSeconds), info.time.cubeSeconds);
+    }
+    if (info.relvol) {
+      const c = info.relvol.counts ?? {},
+        // TEXT(S1): the counts as words, each case that occurs, finite first
+        names = { finite: "finite", zero: "zero", negativeInfinite: "no current volume", noReference: "no reference", emptyBoth: "empty in both", underflow: "below the axis", overflow: "above the axis" },
+        counted = Object.entries(names)
+          .filter(([key]) => key === "finite" || c[key] > 0)
+          .map(([key, name]) => `${c[key] ?? 0} ${name}`)
+          .join(" · "),
+        sup = info.relvol.support;
+      add("rowRelvolCounts", "Rows compared", counted, c);
+      if (sup?.w)
+        add("rowRelvolSupport", "Comparison support", `${price(PR * sup.w[0])}–${price(PR * sup.w[1])} USDT, ${sup.kind ? String(sup.kind).replace(/-/g, " ") : sup.exact ? "exact rows" : "common rows"}`, sup);
+      if (info.relvol.restriction) {
+        const r = info.relvol.restriction;
+        add(
+          "rowRelvolRestriction",
+          "Restriction",
+          r.kind === "coarse-common-bins"
+            ? `Only bins wholly inside the support on both sides count; ${r.dropped} dropped`
+            : String(r.text ?? r.kind ?? ""),
+          r,
+        );
+      }
+    }
+    return { words, rows };
+  }
+  // The text of a chip and its accessible name, written only when it changed. Rows add the period, the row size
+  // and the quality after the scale's own words (a long chip is cut at its end, and the scale is what matters).
+  function legendChip(node, textId, legend, rows) {
+    const chip = E.legend.chip(legend),
+      text = el(textId),
+      more = rows ? uiRowsInfo(rows).words.join(" · ") : "",
+      shown = more ? `${chip.text} · ${more}` : chip.text,
+      label = more ? `${chip.label}, ${more}` : chip.label;
+    if (text.textContent !== shown) text.textContent = shown;
+    if (node.getAttribute("aria-label") !== label) node.setAttribute("aria-label", label);
+  }
+  // One colour channel's chip, written when the key computed from its ids changed; in a steady frame that
+  // is one object and a few string joins, and no Legend model is built (DD-90).
+  function legendChannel(channel, frame, sc, node, textId, barId, barWidth, under) {
+    const chip = sc.chip[channel],
+      key = E.legend.keyOf({
+        mappingId: frame.mappingId,
+        appearanceId: sc.lut.id,
+        themeEpoch: colourEpoch,
+        policy: legendPolicy(channel) + "|" + uiChipStamp(chip) + (under ? "|" + [under.period, under.bands?.m, under.quality, under.stale, under.through, under.exact].join(",") : ""),
+        state: frame.mappingState,
+        warnStamp: uiWarnStamp(channel),
+        marker: null,
+        level: frame.level,
+      });
+    if (scaleRt.legendKey[channel] === key) return;
+    scaleRt.legendKey[channel] = key;
+    const built = legendOf(channel, frame, chip);
+    if (!built) return;
+    scaleUi.models[channel] = built.legend;
+    // why this channel is not what the lock holds (Not held by Comparison lock: ...), for its popover
+    scaleUi.fallback[channel] = chip?.fallback ?? "";
+    if (channel === "rows") scaleUi.rowsInfo = built.input.info ?? null;
+    legendChip(node, textId, built.legend, channel === "rows" ? built.input.info : null);
+    legendAttrs(node, channel, built);
+    // A warning shows on the chip's border too, for the moment its text is cut short
+    node.dataset.warn = String(built.legend.warnings.some((w) => w.id === "range-exceeded" || w.id === "low-discrimination"));
+    el(barId).hidden = false;
+    legendBar(el(barId), built.legend, barWidth, 8);
+    // The footer keys and the popover follow the model. The popover is built whether or not it is open: its
+    // fields, warnings and keys are the page's observation surface (INTEGRATION D.18), written by the draw that
+    // paints, and this runs only when the chip's key changed.
+    scaleUi.keysKey = "";
+    legendPop(channel);
+  }
+  // The legend chips, the lens status and the generated keys, once per draw (registered as `legend`).
+  function legendWrite(sc, under) {
+    const inks = { state: colors.state, occupancy: colors.occupancy, surface: colors.surface },
+      rowsChip = el("rows-legend");
+    // the popovers built outside this function (an axis popover refreshed by renderUi) take the same inks
+    scaleUi.inks = inks;
+    legendChannel("cells", sc.cells, sc, el("legend"), "legend-text", "ramp", 64);
+    // Rows show with the underlay; without a Rows frame there is nothing to map, and the chip says so.
+    if (!under) {
+      if (!rowsChip.hidden) {
+        rowsChip.hidden = true;
+        if (pop.open?.button === rowsChip) closePop();
+      }
+      // The next Rows legend is written afresh, even if its ids equal the last one's
+      scaleUi.models.rows = null;
+      scaleRt.legendKey.rows = "";
+    } else {
+      if (rowsChip.hidden) rowsChip.hidden = false;
+      if (sc.rows) legendChannel("rows", sc.rows, sc, rowsChip, "rows-legend-text", "rows-ramp", 36, under);
+      else if (scaleRt.legendKey.rows !== "none") {
+        scaleRt.legendKey.rows = "none";
+        scaleUi.models.rows = null;
+        el("rows-ramp").hidden = true;
+        el("rows-legend-text").textContent = E.text.state.noCalibration;
+        rowsChip.dataset.state = "no-calibration";
+        rowsChip.setAttribute("aria-label", E.text.ui.scale + ": " + E.text.state.noCalibration);
+      }
+    }
+    lensStatusWrite(sc);
+    // The axis chip first: it builds the Columns pane's Legend, whose marks the footer keys count too
+    axisChipCommit();
+    // The footer keys: those of the channels in view that have marks, each id once, counts added
+    const legends = [scaleUi.models.cells, scaleUi.models.rows, scaleUi.models.pane].filter(Boolean),
+      keysKey =
+        legends.map((l) => l.keys.map((k) => k.id + ":" + k.count).join(",")).join("|") + "|" + colourEpoch + "|" + (devicePixelRatio || 1);
+    if (scaleUi.keysKey !== keysKey) {
+      scaleUi.keysKey = keysKey;
+      const merged = new Map();
+      for (const legend of legends)
+        for (const key of legend.keys) {
+          const seen = merged.get(key.id);
+          if (seen) seen.count += key.count;
+          else merged.set(key.id, { ...key });
+        }
+      el("keys-scale").replaceChildren(...uiKeyList([...merged.values()], inks, false));
+    }
+  }
+  // The lens's status element: a text mirror of the STABLE part of its caption (the measure, whether it
+  // shares the Cells mapping or has its own, the mapping's short id and its state), so a screen reader
+  // finds it once per change. The shares live in the Cells popover. Written only while the lens shows, and
+  // only when that text changed.
+  function lensStatusWrite(sc) {
+    if (!S.lens) return;
+    const frame = sc.lens ?? sc.cells,
+      key = E.legend.keyOf({
+        mappingId: frame.mappingId,
+        appearanceId: sc.lut.id,
+        themeEpoch: colourEpoch,
+        policy: S.scale.local ? "local" : "shared",
+        state: frame.mappingState,
+        warnStamp: uiWarnStamp("lens"),
+        marker: null,
+        level: frame.level,
+      });
+    if (scaleUi.lensKey === key) return;
+    scaleUi.lensKey = key;
+    const built = legendOf("lens", frame, null);
+    if (!built) return;
+    const { legend } = built,
+      node = el("lens-status"),
+      // A read or a refit in progress is a moment, not a fact to announce: the attributes show it, the text
+      // (the one status element a reader hears) waits for the settled state
+      transient = legend.state === "updating" || legend.state === "pending",
+      state = legend.state === "no-calibration" ? E.text.state.noCalibration : legend.state === "updating" ? E.text.state.updating : "",
+      words = [
+        MODE_NAMES[S.mode],
+        // TEXT(S1): "Shared scale" has no key of its own in E.text
+        S.scale.local ? E.text.policy.local : "Shared scale",
+        (built.input.desc?.id ?? built.input.mappingId ?? "").slice(0, 8),
+        state,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    scaleUi.lensId = built.input.desc?.id ?? built.input.mappingId ?? "";
+    legendAttrs(node, "lens", built);
+    if (!transient && node.textContent !== words) node.textContent = words;
+  }
+  // The marker on the legend bar: where the value under the pointer (or of the table row) sits, written
+  // only when it moved (registered as `legendMarker`, called from the tooltip, the table hover and
+  // refreshTip, whatever hid the tip clearing it). The marker carries the coordinate and the readout key it
+  // was made from, so a test can compare it with the tooltip and the pixel.
+  function legendMarker(readout) {
+    const legend = scaleUi.models.cells,
+      found = readout && legend ? E.legend.marker(legend, readout) : null,
+      key = found ? `${found.p.toFixed(4)}|${found.clip}|${readout.key}|${readout.level?.n}:${readout.level?.m}` : "";
+    if (scaleUi.markerKey === key) return;
+    scaleUi.markerKey = key;
+    const marker = el("legend-marker"),
+      note = el("legend-marker-text"),
+      popMarker = el("legend-pop").querySelector(".ol-legend-marker");
+    marker.hidden = !found;
+    note.hidden = !found;
+    if (popMarker) popMarker.hidden = !found;
+    if (!found) {
+      // The attributes stay (empty) so the observation surface always finds the element; `hidden` says it is off
+      marker.dataset.coordinate = "";
+      marker.dataset.readout = "";
+      marker.dataset.clip = "";
+      note.textContent = "";
+      return;
+    }
+    const at = uiBarLeft(found.p);
+    marker.style.left = at;
+    marker.dataset.coordinate = String(found.t);
+    marker.dataset.clip = String(found.clip);
+    // The cell key is column * 2^21 + row; the readout's attribute names its level first, as the tooltip's does
+    if (typeof readout.key === "number") {
+      const r = ((readout.key % UI_CELL_STRIDE) + UI_CELL_STRIDE) % UI_CELL_STRIDE;
+      marker.dataset.readout = `${readout.level?.n}:${readout.level?.m}:${(readout.key - r) / UI_CELL_STRIDE}:${r}`;
+    } else marker.dataset.readout = String(readout.key);
+    // TEXT(S1): the sentence for assistive technology, which cannot see where a marker sits on a bar
+    note.textContent = `Value under the pointer at ${Math.round(clamp(found.p, 0, 1) * 100)}% of the scale`;
+    if (popMarker) popMarker.style.left = at;
+  }
+  // The popover of a colour chip: its bar and ticks, the details list, the keys with their counts, the
+  // warnings with their actions, the scale change, and (built once, so typing is never disturbed) the
+  // actions and the manual-domain form. One builder for both colour chips (each chip has its own panel,
+  // because bindPop closes a panel when its button is pressed again).
+  function legendPop(channel) {
+    const panel = el(channel === "rows" ? "rows-legend-pop" : "legend-pop"),
+      chip = el(channel === "rows" ? "rows-legend" : "legend"),
+      legend = scaleUi.models[channel],
+      inks = { state: colors.state, occupancy: colors.occupancy, surface: colors.surface };
+    if (!panel.firstChild) uiPopSkeleton(panel, channel);
+    const part = (name) => panel.querySelector(`[data-part="${name}"]`),
+      focused = panel.contains(document.activeElement) ? document.activeElement : null,
+      action = focused?.dataset.action,
+      dyn = (name, nodes) => part(name).replaceChildren(...nodes);
+    if (!legend) {
+      dyn("bar", []);
+      dyn("details", [uiEl("p", "", E.text.state.noCalibration)]);
+      dyn("keys", []);
+      dyn("warnings", []);
+      dyn("lens", []);
+    } else {
+      // The bar, at the popover's own width, with its ticks as text and the marker over it
+      const bar = uiEl("div", "ol-legend-bar"),
+        canvas = uiEl("canvas", "ol-legend-canvas"),
+        marker = uiEl("i", "ol-legend-marker");
+      canvas.setAttribute("aria-hidden", "true");
+      marker.hidden = el("legend-marker").hidden || channel !== "cells";
+      marker.style.left = el("legend-marker").style.left;
+      bar.append(canvas, marker);
+      legendBar(canvas, legend, 240, 10);
+      // The tick labels sit under the bar at their true positions; one that would overlap the last label of
+      // its row goes to a second row (the widths are an estimate of 6px a character, which is enough to
+      // keep "0" and a k of 30.0 k apart)
+      const ticks = uiEl("div", "ol-legend-ticks ol-num"),
+        rowEnd = [-Infinity, -Infinity];
+      ticks.setAttribute("aria-hidden", "true");
+      legend.bar.ticks.forEach((tick, i, all) => {
+        const node = uiEl("span", "ol-legend-tick", tick.label),
+          align = i === 0 ? "start" : i === all.length - 1 ? "end" : "mid",
+          width = tick.label.length * 6 + 6,
+          x = clamp(tick.p, 0, 1) * 240,
+          left = align === "start" ? x : align === "end" ? x - width : x - width / 2,
+          row = left < rowEnd[0] ? 1 : 0;
+        rowEnd[row] = Math.max(rowEnd[row], left + width);
+        node.dataset.kind = tick.kind;
+        node.style.left = uiBarLeft(tick.p);
+        node.style.top = 2 + row * 14 + "px";
+        node.dataset.align = align;
+        ticks.append(node);
+      });
+      if (rowEnd[1] > -Infinity) ticks.style.height = "30px";
+      dyn("bar", [bar, ticks]);
+      const legendDetails = E.legend.details(legend),
+        details = legendDetails.map((d) => {
+          const dt = uiEl("dt", "", uiDetailLabel(d)),
+            dd = uiEl("dd", "ol-num", uiUtcText(d));
+          dd.dataset.field = d.field;
+          if (d.canonical !== null && d.canonical !== undefined)
+            dd.dataset.value = typeof d.canonical === "string" ? d.canonical : JSON.stringify(d.canonical);
+          return [dt, dd];
+        }),
+        list = uiEl("dl", "ol-legend-details");
+      // Rows say what the rows are: the period, the row size, the quality and what they were read to
+      for (const d of channel === "rows" ? uiRowsInfo(scaleUi.rowsInfo).rows.reverse() : []) {
+        const dd = uiEl("dd", "ol-num", d.value);
+        dd.dataset.field = d.field;
+        if (d.canonical !== null && d.canonical !== undefined) dd.dataset.value = typeof d.canonical === "string" ? d.canonical : JSON.stringify(d.canonical);
+        // first: what the rows are comes before how they are coloured
+        details.unshift([uiEl("dt", "", d.label), dd]);
+      }
+      // The scale change is always a field, empty when the last settle changed nothing, so that "no change was
+      // announced" is something a reader of the page finds and not an absence
+      for (const name of ["scaleChangeCause", "scaleChangeFrom", "scaleChangeTo"])
+        if (!legendDetails.some((d) => d.field === name)) {
+          const dd = uiEl("dd", "ol-num", "");
+          dd.dataset.field = name;
+          dd.dataset.value = "";
+          details.push([uiEl("dt", "", UI_CHANGE_LABELS[name]), dd]);
+        }
+      list.append(...details.flat());
+      const notes = [...(scaleUi.fallback[channel] ? [scaleUi.fallback[channel]] : []), ...legend.notes].map((text) =>
+        uiEl("p", "ol-legend-note", text),
+      );
+      dyn("details", [...notes, list]);
+      dyn("keys", uiKeyList(legend.keys, inks, true));
+      dyn("warnings", uiWarnings(legend.warnings, channel));
+      dyn("lens", channel === "cells" && S.lens ? uiLensBlock(inks) : []);
+    }
+    part("appearance").textContent = legend ? E.text.fill(E.text.ui.appearance, { id: legend.summary.appearance }) : "";
+    uiPopActions(panel, channel);
+    // A rebuilt warning action that had the focus gets it back; a popover that lost it gets it itself
+    if (focused && !focused.isConnected) (action && panel.querySelector(`[data-action="${action}"]`))?.focus() ?? panel.focus();
+    uiPopPlace(panel, chip, channel === "rows" ? "start" : "end");
+  }
+  // The details that are instants arrive as milliseconds (the canonical number stays in data-value); they
+  // read as UTC times.
+  function uiUtcMs(ms) {
+    return new Date(ms).toISOString().replace(/(:\d\d)?\.000Z$/, "Z");
+  }
+  // A detail row's label: the module's own, except where it is the same long sentence as the value (the model's
+  // applicability), which would make the label column as wide as the popover.
+  // TEXT(S1): the short label of that field
+  const uiDetailLabel = (d) => (d.label === d.value && d.label.length > 24 ? (UI_SHORT_LABELS[d.field] ?? d.field) : d.label);
+  function uiUtcText(detail) {
+    return ["fitThrough", "obsCutoff", "obsCanonical"].includes(detail.field) && typeof detail.canonical === "number"
+      ? uiUtcMs(detail.canonical)
+      : detail.value;
+  }
+  // The warnings of a legend: each with its text, its detail and the actions that answer it. A warning
+  // never recolours or refits anything by itself; it offers Fit, Auto color, Open lens (the main chart) or
+  // Local contrast (the lens), and each is a real button.
+  function uiWarnings(warnings, channel) {
+    return warnings.map((w) => {
+      const box = uiEl("div", "ol-legend-warning");
+      box.dataset.warning = w.id;
+      if (w.shares) {
+        box.dataset.shareMarks = String(w.shares.marks);
+        box.dataset.shareArea = String(w.shares.area);
+      }
+      box.append(uiEl("strong", "", w.text));
+      if (w.detail) box.append(uiEl("span", "ol-legend-note ol-num", w.detail));
+      const words = E.text.warn.action;
+      for (const name of w.actions) {
+        const button = uiEl("button", "ol-action ol-s cursor-interaction", name === "open-lens" ? words.openLens : words[name]);
+        button.type = "button";
+        button.dataset.action = `warn-${name}`;
+        button.dataset.channel = channel;
+        box.append(button);
+      }
+      return box;
+    });
+  }
+  // The lens's own block in the Cells popover: whether it shares the Cells mapping or has a mapping of its
+  // own, that mapping, and its shares of marks outside its scale (the lens reports its own tally).
+  function uiLensBlock(inks) {
+    const box = uiEl("div", "ol-legend-lens"),
+      report = scaleRt.warn.lens?.report,
+      model = scaleUi.models.cells,
+      list = uiEl("dl", "ol-legend-details"),
+      add = (label, value, field, canonical) => {
+        const dd = uiEl("dd", "ol-num", value);
+        dd.dataset.field = field;
+        if (canonical !== undefined && canonical !== null) dd.dataset.value = String(canonical);
+        list.append(uiEl("dt", "", label), dd);
+      };
+    // TEXT(S1): the lens block's heading
+    box.append(uiEl("strong", "", "Lens"));
+    add(E.text.ui.policy, S.scale.local ? E.text.policy.local : "Shared scale", "policy", S.scale.local ? "local" : "shared");
+    // TEXT(S1): the lens block's mapping label
+    add("Mapping", scaleUi.lensId || model?.summary.scaleId || "", "mappingId", scaleUi.lensId || model?.summary.scaleId);
+    if (report) {
+      add("Marks outside the scale", uiFmt(report.shares.marks, "share"), "shareMarks", report.shares.marks);
+      add("Area outside the scale", uiFmt(report.shares.area, "share"), "shareArea", report.shares.area);
+    }
+    box.append(list);
+    const warnings = [];
+    if (report?.rangeExceeded) warnings.push({ id: "range-exceeded", text: E.text.warn.rangeExceeded, shares: report.shares, actions: ["fit", "auto", "local"] });
+    if (report?.lowDiscrimination)
+      warnings.push({ id: "low-discrimination", text: E.text.warn.lowDisc, shares: report.shares, actions: ["fit", "auto", "local"] });
+    box.append(...uiWarnings(warnings, "lens"));
+    return [box];
+  }
+  // The static skeleton of a colour popover: parts the builder fills and two it builds once.
+  function uiPopSkeleton(panel, channel) {
+    const head = uiEl("div", "ol-pop-head");
+    head.append(uiEl("span", "", channel === "rows" ? E.text.ui.scale + " · Rows" : E.text.ui.details));
+    panel.append(head);
+    const part = (name) => {
+      const node = uiEl("div", "ol-legend-part");
+      node.dataset.part = name;
+      if (name === "keys") node.className += " ol-legend-keys";
+      return node;
+    };
+    // What a person came for comes first: the bar, the warnings and the actions; the long details last
+    panel.append(part("bar"), part("warnings"));
+    const actions = uiEl("div", "ol-legend-actions");
+    actions.dataset.part = "actions";
+    actions.setAttribute("role", "group");
+    // TEXT(S1): the group's name
+    actions.setAttribute("aria-label", "Scale actions");
+    for (const [name, label] of [
+      ["fit", E.text.ui.fit],
+      ["auto", E.text.policy.auto],
+      ["lock", E.text.ui.lock],
+      ["local", E.text.ui.local],
+    ]) {
+      const button = uiEl("button", "ol-action ol-s cursor-interaction", label);
+      button.type = "button";
+      button.dataset.action = name;
+      button.dataset.channel = channel;
+      actions.append(button);
+    }
+    const why = uiEl("p", "ol-legend-note");
+    why.dataset.part = "why";
+    const form = uiEl("form", "ol-legend-form");
+    form.dataset.part = "manual";
+    form.noValidate = true;
+    form.dataset.channel = channel;
+    const note = uiEl("p", "ol-legend-note");
+    note.dataset.part = "appearance";
+    panel.append(actions, why, form, part("keys"), part("lens"), part("details"), note);
+  }
+  // The buttons of the popover: their pressed state and whether the measure offers them, with the reason
+  // beside them when it does not (never a title). The manual form follows the measure: a Value scale takes U
+  // and k (U alone when linear), a manual share window takes a low and a high.
+  function uiPopActions(panel, channel) {
+    const cells = channel !== "rows",
+      subject = cells ? S.mode : S.rows,
+      part = (name) => panel.querySelector(`[data-part="${name}"]`);
+    if (!subject || subject === "off" || (cells && E.measure.MODES[subject].kind === "occupancy")) {
+      part("actions").hidden = part("why").hidden = part("manual").hidden = true;
+      return;
+    }
+    const offers = E.policy.offers(cells ? "cells" : "rows", subject, S.scale, Boolean(PACK.live), cells ? MODE_NAMES[subject] : ROWS_INFO[subject].name),
+      eff = E.policy.effective(S.scale, subject, cells ? undefined : "rows"),
+      reasons = [],
+      set = (name, { pressed = null, enabled, reason }) => {
+        const button = part("actions").querySelector(`[data-action="${name}"]`);
+        if (pressed !== null) button.setAttribute("aria-pressed", String(pressed));
+        else button.removeAttribute("aria-pressed");
+        button.disabled = !enabled;
+        button.hidden = enabled === null;
+        if (!enabled && reason) reasons.push(reason);
+      };
+    part("actions").hidden = false;
+    set("fit", { enabled: offers.fit, reason: offers.reasons.fit });
+    set("auto", {
+      pressed: S.scale[channel === "rows" ? "rows" : "cells"] === "auto",
+      enabled: offers.policy.includes("auto") || S.scale[channel === "rows" ? "rows" : "cells"] === "auto",
+      reason: offers.reasons["policy.auto"],
+    });
+    set("lock", { pressed: S.scale.lock, enabled: offers.lock || S.scale.lock, reason: offers.reasons.lock });
+    // Local contrast is the lens's: offered in the Cells popover while the lens is the tool
+    const local = part("actions").querySelector('[data-action="local"]');
+    local.hidden = !(cells && S.lens);
+    if (!local.hidden) set("local", { pressed: S.scale.local, enabled: offers.local || S.scale.local, reason: offers.reasons.local });
+    // A channel the lock holds nothing for says so first (the spine's chip carries the words the resolution gave it)
+    const fallback = scaleRt.sc?.chip?.[cells ? "cells" : "rows"]?.fallback;
+    if (fallback) reasons.unshift(fallback);
+    part("why").textContent = [...new Set(reasons)].join(" · ");
+    part("why").hidden = reasons.length === 0;
+    uiPopForm(part("manual"), channel, subject, eff, offers);
+    // Clear is offered only where there is something to clear: a manual mapping, or a window
+    const clear = part("manual").querySelector("[data-action^='clear']");
+    if (clear)
+      clear.hidden =
+        clear.dataset.action === "clear-window"
+          ? S.scale.window === null
+          : scaleUi.models[cells ? "cells" : "rows"]?.details.find((d) => d.field === "fitOrigin")?.canonical !== "manual";
+  }
+  // The manual-domain form of a popover, rebuilt only when its kind changed (so a value being typed stays).
+  function uiPopForm(form, channel, subject, eff, offers) {
+    const share = subject === "flow" || subject === "flowtrades" || subject === "dwell",
+      kind = share ? "window" : offers.fit ? (eff.curve === "linear" && eff.transform === "value" ? "value-linear" : "value-log1p") : "";
+    form.hidden = kind === "" || eff.transform === "rank";
+    if (form.dataset.kind === kind && form.childElementCount) return;
+    form.dataset.kind = kind;
+    form.replaceChildren();
+    if (form.hidden) return;
+    const field = (name, label, attrs) => {
+      const wrap = uiEl("label", "ol-legend-field"),
+        input = uiEl("input", "ol-num");
+      input.type = "number";
+      input.name = name;
+      input.step = "any";
+      input.inputMode = "decimal";
+      Object.assign(input, attrs);
+      wrap.append(uiEl("span", "", label), input);
+      return wrap;
+    };
+    // TEXT(S1): the title of a share window; its numbers are named lo and hi, as a manual domain's are U and k
+    const legend = uiEl("span", "ol-legend-form-title", share ? "Share window" : E.text.ui.manual);
+    const fields = share
+      ? [field("lo", "Low", { min: 0, max: 1 }), field("hi", "High", { min: 0, max: 1 })]
+      : kind === "value-linear"
+        ? [field("U", "U", { min: 0 })]
+        : [field("U", "U", { min: 0 }), field("k", "k", { min: 0 })];
+    const apply = uiEl("button", "ol-action ol-s cursor-interaction", E.text.ui.apply),
+      clear = uiEl("button", "ol-action ol-s cursor-interaction", share ? "Clear window" : E.text.ui.clearManual),
+      error = uiEl("p", "ol-legend-error");
+    apply.type = "submit";
+    clear.type = "button";
+    clear.dataset.action = share ? "clear-window" : "clear-manual";
+    clear.dataset.channel = channel;
+    error.dataset.part = "error";
+    error.id = `ol-${channel}-form-error`;
+    error.hidden = true;
+    form.append(legend, ...fields, apply, clear, error);
+  }
+  // Where a popover sits: under its chip, or over it where the window has more room above (the axis chip
+  // sits at the bottom of the plot), within the host it is positioned in, kept inside the viewport, and no
+  // taller than the room it has.
+  function uiPopPlace(panel, chip, align) {
+    const host = panel.offsetParent;
+    if (!host) return;
+    const at = chip.getBoundingClientRect(),
+      below = innerHeight - at.bottom - 12,
+      above = at.top - 12;
+    panel.style.maxHeight = Math.max(160, Math.min(560, Math.max(below, above))) + "px";
+    const width = panel.offsetWidth,
+      height = panel.offsetHeight,
+      left = align === "end" ? chip.offsetLeft + chip.offsetWidth - width : chip.offsetLeft;
+    panel.style.left = clamp(left, 8, Math.max(8, host.clientWidth - width - 8)) + "px";
+    panel.style.right = "auto";
+    panel.style.top = (height > below && above > below ? chip.offsetTop - 6 - height : chip.offsetTop + chip.offsetHeight + 6) + "px";
+  }
+  // The manual form's submit: checked here so the reason shows beside the number that caused it (the same
+  // checks the reducer makes, through the module), then handed to the spine like any other choice.
+  function uiApplyManual(form) {
+    const channel = form.dataset.channel,
+      kind = form.dataset.kind,
+      value = (name) => (form.elements[name].value.trim() === "" ? NaN : Number(form.elements[name].value)),
+      fail = (text, input) => {
+        const error = form.querySelector('[data-part="error"]');
+        error.textContent = text;
+        error.hidden = false;
+        input.setAttribute("aria-invalid", "true");
+        input.setAttribute("aria-describedby", error.id);
+        input.focus();
+      };
+    for (const input of form.elements) input.removeAttribute?.("aria-invalid");
+    form.querySelector('[data-part="error"]').hidden = true;
+    if (kind === "window") {
+      const win = [value("lo"), value("hi")],
+        out = E.policy.reduce(S.scale, { type: "window", value: win }, { mode: S.mode, live: Boolean(PACK.live) });
+      if (!win.every(Number.isFinite) || out.rejected)
+        return fail(out.rejected?.reason ?? E.text.reject.windowRange, form.elements.lo);
+      return scaleSet({ type: "window", value: win });
+    }
+    const U = value("U"),
+      k = kind === "value-linear" ? undefined : value("k"),
+      fit = E.scale.manual({ kind, signed: false, U, k });
+    if (fit.state !== "ok") return fail(E.text.reject.manual, form.elements[Number.isFinite(U) && U > 0 ? "k" : "U"]);
+    return scaleSet({ type: "manual", channel: channel === "rows" ? "rows" : "cells", U, k });
+  }
+  // What a popover button does. The warnings' buttons and the action row share the names: Fit, Auto color
+  // and Comparison lock toggle state through the spine's scaleSet; Open lens only moves the focus to the lens
+  // tool and changes nothing (a warning is advice, never a state change); Local contrast is the lens's own.
+  function uiPopAction(button) {
+    const name = button.dataset.action,
+      channel = button.dataset.channel === "rows" ? "rows" : "cells";
+    if (name === "warn-open-lens") {
+      closePop();
+      if (PHONE.matches && root.dataset.sheet !== "open") setSheet(true);
+      el("lens").focus();
+    } else if (name === "fit" || name === "warn-fit") scaleSet({ type: "fit", channel });
+    else if (name === "auto" || name === "warn-auto")
+      scaleSet({ type: "policy", channel, value: name === "auto" && S.scale[channel] === "auto" ? "explore" : "auto" });
+    else if (name === "lock") scaleSet({ type: S.scale.lock ? "unlock" : "lock" });
+    else if (name === "local" || name === "warn-local") scaleSet({ type: "local", value: name === "warn-local" ? true : !S.scale.local });
+    else if (name === "clear-manual") scaleSet({ type: "clearManual", channel });
+    else if (name === "clear-window") scaleSet({ type: "window", value: null });
+  }
+  // ---- the axis chip ----
+  // The text of an axis chip from its registry record: the policy and the exact domain, or why there is none
+  // (no data, updating, paused by Play).
+  function uiAxisText(rec) {
+    const t = E.text;
+    if (!rec || rec.typed === "none") return t.axis.none;
+    if (rec.hold === "play") return t.axis.paused;
+    if (rec.hold === "waiting") return t.axis.waiting;
+    if (rec.hold) return t.axis.updating;
+    const name = rec.policy === "frozen" ? t.policy.axisFrozen : rec.policy === "fixed" ? t.policy.fixed : t.policy.axisAuto;
+    return [name, uiAxisDomain(rec)].filter(Boolean).join(" · ");
+  }
+  // The words of an axis unit id (an id with no string of its own reads as itself)
+  function uiAxisUnit(unit) {
+    const u = E.text.unit;
+    return { usdt: u.usdt, trades: u.trades, "usdt-per-trade": u.usdtPerTrade, "log2-ratio": u.log2, seconds: u.seconds }[unit] ?? unit ?? "";
+  }
+  // "±1.92 B USDT", "0 – 100", "−2 – 2 log2 ratio": the domain as the chart's own numbers read it
+  function uiAxisDomain(rec) {
+    if (rec.typed === "zero-only" || !Array.isArray(rec.domain)) return E.text.axis.zero;
+    const [lo, hi] = rec.domain,
+      span = rec.sign === "signed-symmetric" ? "±" + uiFmt(hi, rec.unit) : `${uiFmt(lo, rec.unit)} – ${uiFmt(hi, rec.unit)}`;
+    return rec.unit ? `${span} ${uiAxisUnit(rec.unit)}` : span;
+  }
+  // The axis state of D.18 for a record
+  function uiAxisState(rec) {
+    if (!rec || rec.typed === "none") return "none";
+    if (rec.hold === "play") return "paused";
+    if (rec.hold) return "updating";
+    if (rec.typed === "zero-only") return "zero-only";
+    return rec.policy === "frozen" ? "frozen" : rec.policy === "fixed" ? "fixed" : "auto";
+  }
+  // An axis the draw in progress has just scaled (registered as `axisChip`; called by the pane, the
+  // oscillators and the profiles). Only the pane's record becomes the chip; all of them are listed in the
+  // popover. A null record says nothing: the chip is hidden when no pane axis was handed over this frame.
+  function axisChipWrite(rec, shown) {
+    if (!rec) return;
+    scaleUi.axes.set(rec.id, rec);
+    if (String(rec.id).startsWith("pane.")) {
+      scaleUi.pane = rec;
+      // what the pane drew this frame: its frame (the Legend input), its model and its per-key counts
+      scaleUi.paneShown = shown ?? null;
+    }
+  }
+  // The end of the draw: the chip's place (re-set on every draw from the geometry, because the pane moves
+  // with a resize and with the splitter), and its text and attributes from the pane's record, written when
+  // the axes of the frame changed. The axes of the frame become the popover's list.
+  function axisChipCommit() {
+    const chip = el("axis-chip"),
+      rec = scaleUi.pane,
+      shown = scaleUi.paneShown,
+      records = [...scaleUi.axes.values()];
+    scaleUi.pane = scaleUi.paneShown = null;
+    scaleUi.axes.clear();
+    if (!rec) {
+      if (!chip.hidden) {
+        chip.hidden = true;
+        if (pop.open?.button === chip) closePop();
+      }
+      if (scaleUi.models.pane) {
+        scaleUi.models.pane = null;
+        scaleUi.axisKey = "";
+        scaleUi.keysKey = "";
+      }
+      return;
+    }
+    if (chip.hidden) chip.hidden = false;
+    // Two string compares per draw: the chip sits inside the pane's top right corner
+    const top = Math.round(G.ay + 2) + "px",
+      right = Math.round(G.width - (G.x + G.w) + 4) + "px";
+    if (chip.style.top !== top) chip.style.top = top;
+    if (chip.style.right !== right) chip.style.right = right;
+    const counts = shown?.counts ?? {},
+      key =
+        records
+          .map((a) => [a.id, a.policy, a.typed, a.hold, a.mappingId, a.domain?.join("~"), a.clipped?.count, a.provenance?.through].join(":"))
+          .join("|") +
+        "|" + S.scale.lock + "|" + scaleWorkspace() + "|" + colourEpoch + "|" + (shown?.key ?? "") + "|" + (shown?.model?.status ?? "") +
+        "|" + Object.entries(counts).join(",");
+    if (scaleUi.axisKey === key) return;
+    scaleUi.axisKey = key;
+    scaleUi.axisRecords = records;
+    // The pane's Legend: its details (the model's provenance for Efficiency), and the generated keys its marks
+    // need (a zero tick, a column with no value, a value beyond the axis). An oscillator has no frame to ask.
+    scaleUi.models.pane = shown?.frame
+      ? E.legend.build(shown.frame, scaleRt.warn.pane?.report ?? null, uiFmt, {
+          channel: "pane",
+          counts: { ...counts, "zero-tick": counts["zero-tick"] ?? counts.zero ?? 0 },
+          measureLabel: shown.measure?.label,
+          paused: rec.hold === "play" ? "play" : false,
+        })
+      : null;
+    scaleUi.keysKey = "";
+    const text = uiAxisText(rec);
+    if (el("axis-chip-text").textContent !== text) el("axis-chip-text").textContent = text;
+    const label = `${E.text.ui.scale}: ${text}`;
+    if (chip.getAttribute("aria-label") !== label) chip.setAttribute("aria-label", label);
+    const attrs = {
+      state: rec.typed === "none" ? "no-calibration" : rec.hold === "play" ? "paused" : rec.hold ? "updating" : rec.typed === "zero-only" ? "zero-only" : rec.policy === "fixed" ? "fixed" : "ready",
+      policy: rec.policy === "frozen" ? "frozen" : rec.policy === "fixed" ? "fixed" : "auto",
+      mappingId: rec.mappingId ?? "",
+      appearance: scaleRt.lut.get(scaleRt.appearance + "|" + scaleRt.theme)?.id ?? "",
+      workspace: rec.provenance?.workspace ?? scaleWorkspace(),
+      transform: "axis",
+      basis: "",
+      context: rec.id,
+      fitThrough: String(rec.provenance?.through ?? ""),
+      fitSeq: String(scaleRt.fitSeq.axis ?? 0),
+      override: "",
+      updating: String(Boolean(rec.hold) && rec.hold !== "play"),
+      axisId: rec.id,
+      domain: Array.isArray(rec.domain) ? rec.domain.join(",") : "",
+      axisState: uiAxisState(rec),
+    };
+    for (const [name, value] of Object.entries(attrs)) if (chip.dataset[name] !== value) chip.dataset[name] = value;
+    axisPop();
+  }
+  // The axis popover: every axis the frame drew (the pane, the profiles), each with its policy, domain,
+  // unit, provenance, hold reason and clip counts, and the Comparison lock, which freezes them all.
+  function axisPop() {
+    const panel = el("axis-pop"),
+      chip = el("axis-chip");
+    if (!panel.firstChild) {
+      const head = uiEl("div", "ol-pop-head"),
+        body = uiEl("div", "ol-legend-part"),
+        actions = uiEl("div", "ol-legend-actions"),
+        lock = uiEl("button", "ol-action ol-s cursor-interaction", E.text.ui.lock);
+      head.append(uiEl("span", "", "Axes"));
+      body.dataset.part = "axes";
+      lock.type = "button";
+      lock.dataset.action = "lock";
+      actions.append(lock);
+      panel.append(head, body, actions);
+    }
+    const focused = panel.contains(document.activeElement) ? document.activeElement : null,
+      sections = scaleUi.axisRecords.map((rec) => {
+        const box = uiEl("section", "ol-legend-axis"),
+          list = uiEl("dl", "ol-legend-details"),
+          add = (label, value, field, canonical) => {
+            const dd = uiEl("dd", "ol-num", value);
+            dd.dataset.field = field;
+            if (canonical !== undefined && canonical !== null) dd.dataset.value = typeof canonical === "string" ? canonical : JSON.stringify(canonical);
+            list.append(uiEl("dt", "", label), dd);
+          };
+        box.dataset.axisId = rec.id;
+        box.append(uiEl("strong", "", `${rec.id} · ${uiAxisText(rec)}`));
+        add(E.text.ui.policy, rec.policy === "frozen" ? E.text.policy.axisFrozen : rec.policy === "fixed" ? E.text.policy.fixed : E.text.policy.axisAuto, "policy", rec.policy);
+        if (rec.mappingId) add("Mapping", rec.mappingId, "mappingId", rec.mappingId);
+        add("Domain", uiAxisDomain(rec), "domain", rec.domain);
+        if (rec.unit) add("Unit", uiAxisUnit(rec.unit), "unit", rec.unit);
+        if (rec.provenance?.through) add("Fitted through", uiUtcText({ field: "fitThrough", canonical: rec.provenance.through, value: String(rec.provenance.through) }), "fitThrough", rec.provenance.through);
+        if (rec.hold) add("Hold", rec.hold, "hold", rec.hold);
+        if (rec.clipped) {
+          add(E.text.key.below, String(rec.clipped.low), "clipLowFinite", rec.clipped.low);
+          add(E.text.key.above, String(rec.clipped.high), "clipHighFinite", rec.clipped.high);
+        }
+        box.append(list);
+        if (rec.policy === "frozen") box.append(uiEl("p", "ol-legend-note", E.text.axis.frozenBy));
+        if (rec.clipped?.count > 0) box.append(uiEl("p", "ol-legend-note", E.text.fill(E.text.axis.clipped, { n: rec.clipped.count, total: rec.clipped.total })));
+        return box;
+      });
+    // The pane's own details (measure, unit, the model's provenance for Efficiency) and its keys with counts
+    const legend = scaleUi.models.pane;
+    if (legend) {
+      const list = uiEl("dl", "ol-legend-details"),
+        inks = scaleUi.inks;
+      for (const d of E.legend.details(legend)) {
+        const dd = uiEl("dd", "ol-num", uiUtcText(d));
+        dd.dataset.field = d.field;
+        if (d.canonical !== null && d.canonical !== undefined) dd.dataset.value = typeof d.canonical === "string" ? d.canonical : JSON.stringify(d.canonical);
+        list.append(uiEl("dt", "", uiDetailLabel(d)), dd);
+      }
+      const keys = uiEl("div", "ol-legend-keys");
+      keys.append(...uiKeyList(legend.keys, inks, true));
+      const detail = uiEl("section", "ol-legend-axis");
+      detail.append(list, keys);
+      sections.push(detail);
+    }
+    panel.querySelector('[data-part="axes"]').replaceChildren(...sections);
+    const lock = panel.querySelector('[data-action="lock"]');
+    lock.setAttribute("aria-pressed", String(S.scale.lock));
+    if (focused && !focused.isConnected) lock.focus();
+    uiPopPlace(panel, chip, "end");
+  }
+  // ---- the Scale sections of the Cells and Rows menus ----
+  // One item of the Scale section: a native button with an accessible name and, when there is one, a
+  // description (why it is not offered, what an approximation is). A disabled item stays in the list and
+  // says why, so nothing is explained by a hover.
+  function uiScaleItem(spec) {
+    const b = menuItem(
+      spec.role,
+      [svgIcon("check", "ol-icon ol-check"), itemText(spec.id, spec.name, spec.desc ?? "")],
+      () => {
+        if (!spec.disabled) uiScaleChoose(spec.channel, spec.key);
+      },
+    );
+    b.setAttribute("aria-labelledby", `ol-${spec.id}-name`);
+    if (spec.desc) b.setAttribute("aria-describedby", `ol-${spec.id}-desc`);
+    b.setAttribute("aria-checked", String(Boolean(spec.checked)));
+    if (spec.disabled) b.setAttribute("aria-disabled", "true");
+    b.dataset.scaleItem = spec.key;
+    b.dataset.scaleChannel = spec.channel;
+    return b;
+  }
+  // The Scale section of a menu, from what the measure offers (E.policy.offers decides which groups and
+  // items exist; nothing is hard-coded here). Basis, Transform (Value (log), Value (linear), Relative
+  // rank), Scale policy, and the lock, Local contrast and Fit. No item has a shortcut of its own.
+  function uiScaleSection(channel) {
+    const cells = channel === "cells",
+      subject = cells ? S.mode : S.rows;
+    if (!subject || subject === "off" || (cells && E.measure.MODES[subject].kind === "occupancy")) return [];
+    const name = cells ? MODE_NAMES[subject] : ROWS_INFO[subject].name,
+      offers = E.policy.offers(channel, subject, S.scale, Boolean(PACK.live), name);
+    if (!offers.available) return [];
+    const t = E.text,
+      parts = [],
+      rule = uiEl("div", "ol-menu-rule"),
+      group = (label, items) => {
+        const box = uiEl("div"),
+          head = uiEl("div", "ol-menu-cap", label);
+        head.id = `ol-scale-${channel}-cap-${parts.length}`;
+        box.setAttribute("role", "group");
+        box.setAttribute("aria-labelledby", head.id);
+        box.append(head, ...items);
+        parts.push(box);
+      },
+      item = (key, label, extra) =>
+        uiScaleItem({
+          channel,
+          key,
+          id: `scale-${channel}-${key.replace(":", "-")}`,
+          name: label,
+          role: extra.role ?? "menuitemradio",
+          checked: uiScaleChecked(channel, key),
+          disabled: extra.disabled,
+          desc: extra.disabled ? extra.reason : extra.desc,
+        });
+    rule.setAttribute("role", "separator");
+    parts.push(rule);
+    // Basis: Amount and Intensity where the measure lists them, Path's three variants for Path
+    if (offers.basis.length)
+      group(t.ui.basis, [
+        item("basis:amount", t.basis.amount, { disabled: !offers.basis.includes("amount"), reason: offers.reasons["basis.amount"] }),
+        item("basis:intensity", t.basis.intensity, { disabled: !offers.basis.includes("intensity"), reason: offers.reasons["basis.intensity"] }),
+      ]);
+    if (offers.pathBasis.length)
+      group(
+        t.ui.basis,
+        [["spans", t.basis.spans], ["usdt", t.basis.usdt], ["perMinute", t.basis.perMinute]].map(([key, label]) =>
+          item("path:" + key, label, { disabled: !offers.pathBasis.includes(key), reason: offers.reasons["pathBasis." + key] }),
+        ),
+      );
+    // Transform: the two Values where the measure is unbounded, Relative rank only where it has one
+    if (offers.transform.length)
+      group(t.ui.transform, [
+        item("transform:log", t.transform.valueLog, { disabled: !offers.transform.includes("value") }),
+        item("transform:linear", t.transform.valueLinear, { disabled: !offers.curve.includes("linear"), reason: offers.reasons["curve.linear"] }),
+        ...(offers.transform.includes("rank") ? [item("transform:rank", t.transform.rank, { desc: t.rank.approx })] : []),
+      ]);
+    // Scale policy: Explore and Auto color (Auto is withheld under the lock, and says so)
+    group(t.ui.policy, [
+      item("policy:explore", t.policy.explore, { disabled: !offers.policy.includes("explore"), reason: offers.reasons["policy.auto"] }),
+      item("policy:auto", t.policy.auto, { disabled: !offers.policy.includes("auto"), reason: offers.reasons["policy.auto"] }),
+    ]);
+    // The lock is one action for every channel; Local contrast is the lens's; Fit replaces the mapping once
+    group(t.ui.scale, [
+      item("lock", t.ui.lock, { role: "menuitemcheckbox", disabled: !(offers.lock || S.scale.lock), reason: offers.reasons.lock }),
+      ...(cells ? [item("local", t.ui.local + " (lens)", { role: "menuitemcheckbox", disabled: !(offers.local || S.scale.local), reason: offers.reasons.local })] : []),
+      item("fit", t.ui.fit, { role: "menuitem", disabled: !offers.fit, reason: offers.reasons.fit }),
+    ]);
+    return parts;
+  }
+  // Whether a Scale item is on, from the raw preferences through what the measure reads of them.
+  function uiScaleChecked(channel, key) {
+    const cells = channel === "cells",
+      subject = cells ? S.mode : S.rows,
+      [group, value] = key.split(":");
+    if (group === "lock") return S.scale.lock;
+    if (group === "local") return S.scale.local;
+    if (group === "fit" || !subject || subject === "off") return false;
+    const eff = E.policy.effective(S.scale, subject, cells ? undefined : "rows");
+    if (group === "basis") return eff.basis === value;
+    if (group === "path") return eff.pathBasis === value;
+    if (group === "transform") return value === "rank" ? eff.transform === "rank" : eff.transform === "value" && eff.curve === value;
+    if (group === "policy") return S.scale[channel] === value;
+    return false;
+  }
+  // What choosing a Scale item does: one action, or two for a Transform that also leaves Relative rank
+  // (the reducer never rewrites a field it was not asked to set).
+  function uiScaleChoose(channel, key) {
+    const field = channel === "cells" ? "transform" : "rowsTransform",
+      [group, value] = key.split(":");
+    if (group === "basis") scaleSet({ type: "basis", value });
+    else if (group === "path") scaleSet({ type: "pathBasis", value });
+    else if (group === "transform") {
+      if (value === "rank") scaleSet({ type: field, value: "rank" });
+      else {
+        if (S.scale[field] !== "value") scaleSet({ type: field, value: "value" });
+        if (S.scale.curve !== value) scaleSet({ type: "curve", value });
+      }
+    } else if (group === "policy") scaleSet({ type: "policy", channel, value });
+    else if (group === "lock") scaleSet({ type: S.scale.lock ? "unlock" : "lock" });
+    else if (group === "local") scaleSet({ type: "local", value: !S.scale.local });
+    else if (group === "fit") scaleSet({ type: "fit", channel });
+  }
+  // What update() asks of the DOM package on every input (registered as `renderUi`): the pressed state of
+  // the built Scale items, the lens bar's Local contrast toggle, and an open popover's buttons. Everything
+  // hangs on one key of the preferences, so a pointer move that changes none of them does a string join.
+  function renderScaleUi() {
+    const s = S.scale,
+      key = [S.mode, S.rows, PACK.live ? 1 : 0, S.lens ? 1 : 0, s.basis, s.pathBasis, s.transform, s.curve, s.rowsTransform, s.cells, s.rows, s.local ? 1 : 0, s.lock ? 1 : 0, s.window?.join("~")].join("|");
+    if (key === scaleUi.menuKey) return;
+    scaleUi.menuKey = key;
+    // Local contrast is the lens's: offered, and shown, only where the measure has a scale to fit
+    const toggle = el("lens-local");
+    el("lens-local-label").hidden = !E.policy.offers("cells", S.mode, s, Boolean(PACK.live)).local;
+    if (toggle.checked !== s.local) toggle.checked = s.local;
+    for (const b of qsa("#ol-mode-menu [data-scale-item], #ol-rows-menu [data-scale-item]")) {
+      const on = String(uiScaleChecked(b.dataset.scaleChannel, b.dataset.scaleItem));
+      if (b.getAttribute("aria-checked") !== on) b.setAttribute("aria-checked", on);
+    }
+    if (pop.open) {
+      const panel = pop.open.panel;
+      // A menu that is open while its measure changes (a shortcut) is rebuilt, the focused item kept
+      if (panel === el("mode-menu") || panel === el("rows-menu")) {
+        const at = document.activeElement,
+          item = at?.dataset?.scaleItem;
+        (panel === el("mode-menu") ? buildModeMenu : buildRowsMenu)();
+        if (panel.contains(at) && !at.isConnected)
+          (item && panel.querySelector(`[data-scale-item="${item}"]`))?.focus() ?? focusMenuItem(panel, checkedItem(panel));
+      } else if (panel === el("legend-pop")) legendPop("cells");
+      else if (panel === el("rows-legend-pop")) legendPop("rows");
+      else if (panel === el("axis-pop")) axisPop();
+    }
+  }
+  // ---- the notice banner ----
+  // One notice at a time (the most serious, then the newest), its count when the same thing keeps happening,
+  // how many more wait, a Details toggle for its lines and Dismiss. Not animated, and a status element that
+  // changes once per event: the queue's own version says when, so a stream of repeats is one DOM write each.
+  function noticeShow() {
+    const queue = scaleRt.notices;
+    if (queue.version === scaleUi.noticeVersion) return;
+    scaleUi.noticeVersion = queue.version;
+    const box = el("notice"),
+      cur = queue.current(),
+      was = box.hidden;
+    if (scaleRt.fault) uiFault();
+    if (!cur) {
+      box.hidden = true;
+      el("notice-text").replaceChildren();
+    } else {
+      // Every notice still waiting is in the banner's DOM (so the observation surface and a reader of the page
+      // find each one with its count and its lines), and only the current one shows: the rest are hidden until
+      // this one is dismissed.
+      const waiting = queue.list().filter((row) => !row.dismissed),
+        items = waiting.map((row) => {
+          const item = uiEl("span", "ol-notice-item"),
+            here = row.id === cur.id;
+          item.dataset.notice = row.id;
+          item.dataset.code = row.code;
+          item.dataset.count = String(row.count);
+          item.dataset.level = row.level;
+          item.hidden = !here;
+          // TEXT(S1): the level word, for a reader that cannot see the box's border
+          if (row.level !== "info") item.append(uiEl("span", "ol-sr", row.level === "error" ? "Error: " : "Warning: "));
+          item.append(document.createTextNode(row.text + (row.count > 1 ? ` (×${row.count})` : "")));
+          if (row.details.length) {
+            const list = uiEl("ul", "ol-note-details");
+            list.append(...row.details.map((line) => uiEl("li", "", line)));
+            // the lines are there for every notice; only the current one's can be opened
+            list.hidden = !(here && scaleUi.noticeOpen === row.id);
+            if (here) list.id = "ol-note-details";
+            item.append(list);
+          }
+          return item;
+        });
+      // TEXT(S1): the count of the notices that wait behind the one shown
+      if (waiting.length > 1) items.push(uiEl("span", "ol-notice-queued", ` +${waiting.length - 1} more`));
+      el("notice-text").replaceChildren(...items);
+      box.dataset.level = cur.level;
+      if (scaleUi.noticeOpen !== cur.id) scaleUi.noticeOpen = "";
+      const more = el("notice-more");
+      more.hidden = cur.details.length === 0;
+      more.setAttribute("aria-expanded", String(scaleUi.noticeOpen === cur.id));
+      box.dataset.noticeId = cur.id;
+      box.hidden = false;
+    }
+    // The banner takes height from the chart: the drawer's limit follows
+    if (was !== box.hidden) applyPanels();
+  }
+  function noticeHide(id) {
+    const box = el("notice"),
+      hadFocus = box.contains(document.activeElement);
+    scaleRt.notices.dismiss(id);
+    noticeShow();
+    if (hadFocus && box.hidden) canvas.focus();
+  }
+  // After a fault the page draws the legacy legend lines into the chip's text; the chip's own label would
+  // be stale, so it is dropped and the chip says it failed.
+  function uiFault() {
+    const chip = el("legend");
+    chip.removeAttribute("aria-label");
+    chip.dataset.state = "failed";
+    el("legend-marker").hidden = true;
+  }
+  // ---- binding ----
+  // The popover of a colour chip or the axis chip opened: built from the model, positioned, and the first
+  // control focused, so the keyboard lands inside the dialog it opened.
+  function uiOpenPop(channel) {
+    const panel = el(channel === "rows" ? "rows-legend-pop" : channel === "axis" ? "axis-pop" : "legend-pop");
+    if (channel === "axis") axisPop();
+    else legendPop(channel);
+    // The first control, without scrolling the dialog past its bar
+    (panel.querySelector("button:not(:disabled), input") ?? panel).focus({ preventScroll: true });
+  }
+  // The controls of the scale display, bound once at startup (registered as `bindUi`).
+  function bindScaleUi() {
+    bindPop("legend", "legend-pop", () => uiOpenPop("cells"));
+    bindPop("rows-legend", "rows-legend-pop", () => uiOpenPop("rows"));
+    bindPop("axis-chip", "axis-pop", () => uiOpenPop("axis"));
+    for (const id of ["legend-pop", "rows-legend-pop", "axis-pop"]) {
+      const panel = el(id);
+      panel.addEventListener("click", (e) => {
+        const button = e.target.closest?.("button[data-action]");
+        if (button) uiPopAction(button);
+      });
+      panel.addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (e.target.matches?.("form[data-part='manual']")) uiApplyManual(e.target);
+      });
+      // A number field keeps its keys, so Escape would never reach the page's own handler from inside one
+      // (TEXT_FIELDS): every input of the form closes the popover itself and returns the focus to its chip.
+      panel.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape" || !e.target.matches?.("input")) return;
+        e.preventDefault();
+        closePop(true);
+      });
+    }
+    el("lens-local").addEventListener("change", () => scaleSet({ type: "local", value: el("lens-local").checked }));
+    el("notice-dismiss").addEventListener("click", () => noticeHide(el("notice").dataset.noticeId));
+    el("notice-more").addEventListener("click", () => {
+      const list = document.getElementById("ol-note-details"),
+        open = Boolean(list?.hidden);
+      if (list) list.hidden = !open;
+      scaleUi.noticeOpen = open ? el("notice").dataset.noticeId : "";
+      el("notice-more").setAttribute("aria-expanded", String(open));
+    });
+    noticeShow();
+  }
   function menuItem(role, children, onChoose) {
     const b = document.createElement("button");
     b.type = "button";
@@ -3559,6 +6505,8 @@
       }
       parts.push(group);
     }
+    // The Scale section: basis, transform, policy, lock, Local contrast and Fit, from what the measure offers
+    parts.push(...uiScaleSection("cells"));
     el("mode-menu").replaceChildren(...parts);
   }
   // The pane's measures, grouped as the encodings are, each with what it shows.
@@ -3629,6 +6577,8 @@
       }
       parts.push(group);
     }
+    // The matching Transform and policy groups of the Rows measure
+    parts.push(...uiScaleSection("rows"));
     el("rows-menu").replaceChildren(...parts);
   }
   // The Rows menu's button, and its period's, written only when they change:
@@ -3980,39 +6930,22 @@
     closePop();
     if (!el("keys").open) el("keys").showModal();
   }
+  // Copy the address of the view. It is written from the state now, not read back from the address bar
+  // (the bar may hold an older one if the browser refused a rewrite), and when the address had to be made
+  // shorter to stay within its budget the status names how and offers the full view code, which never
+  // loses anything (S1-169).
   async function copyLink() {
-    const url = new URL(location.href);
+    syncURL(true);
+    const url = new URL(location.href),
+      now = addressOf();
     url.username = url.password = "";
-    try {
-      await navigator.clipboard.writeText(url.href);
-      viewsStatus("Link copied.");
-    } catch {
-      viewsStatus("Copy the address from the browser's address bar.");
-    }
+    if (now.hash !== null) url.hash = now.hash;
+    const copied = await copyText(url.href, "Link");
+    viewsStatus(copied ? "Link copied." : "Copy the address from the browser's address bar.");
+    if (now.level > 0) offerViewCode(now.level);
   }
 
-  let markState = {
-    metrics: new WeakMap(),
-    level: new WeakMap(),
-    deltaMax: 1,
-    va: null,
-    rays: [],
-  };
-  function signedCompact(value) {
-    return (value < 0 ? "−" : value > 0 ? "+" : "") + compact(Math.abs(value));
-  }
-  function cellExposure(z, b, ts = stepT(), ps = stepP()) {
-    const seconds =
-      Math.max(
-        0,
-        Math.min((z.c + 1) * ts, b[1], activeCutoff()) -
-          Math.max(z.c * ts, b[0]),
-      ) * BASE;
-    const width =
-      Math.max(0, Math.min((z.r + 1) * ps, b[3]) - Math.max(z.r * ps, b[2])) *
-      PR;
-    return { seconds, width, area: seconds * width };
-  }
+  let markState = { va: null, rays: [] };
   function contiguousArea(rows, poc, total) {
     if (poc === null || !(total > 0) || !rows.length) return null;
     const values = new Map(rows.map((r) => [r.r, r.v])),
@@ -4034,162 +6967,11 @@
     }
     return { r0: low, r1: high + 1, volume, share: volume / total };
   }
-  // The drawn level's metrics: each cell's exposure within its block, up to
-  // the cutoff, and the scale delta shades on. They change only with the
-  // level, the block or the cutoff, so the level keeps them, as it keeps its
-  // sorted amounts.
-  function levelMetrics(full) {
-    const src = displaySource(),
-      end = Math.min(src.b1, activeCutoff()),
-      key = src.b0 + "|" + end;
-    if (full.metrics?.key === key) return full.metrics;
-    const ts = stepT(),
-      ps = stepP(),
-      whole = ts * BASE * ps * PR,
-      sourceBounds = [src.b0, end, 0, Infinity],
-      cells = new WeakMap(),
-      deltas = [];
-    for (const z of full.cells) {
-      const delta = 2 * z.bv - z.v;
-      cells.set(z, { ...cellExposure(z, sourceBounds, ts, ps), whole, delta });
-      if (delta !== 0) deltas.push(Math.abs(delta));
-    }
-    deltas.sort((a, b) => a - b);
-    full.metrics = { key, cells, deltaMax: d3.quantileSorted(deltas, 0.995) || 1 };
-    return full.metrics;
-  }
-  // Only the rectangle's cells are measured every frame: its bounds cut them.
-  // Path and dwell shade by their own amounts: under them these go unread, and
-  // the level's cells (full) aren't summed.
-  function prepareMeasures(full, shown, query, b, moving = false) {
-    const level = moving ? null : levelMetrics(full),
-      ts = stepT(),
-      ps = stepP(),
-      whole = ts * BASE * ps * PR,
-      metrics = new WeakMap();
-    if (!moving)
-      for (const z of shown.cells)
-        metrics.set(z, { ...cellExposure(z, b, ts, ps), whole, delta: 2 * z.bv - z.v });
-    markState = {
-      metrics,
-      level: level ? level.cells : new WeakMap(),
-      deltaMax: level ? level.deltaMax : 1,
-      va: contiguousArea(query.rows, query.poc, query.v),
-      rays: [],
-    };
+  // What the marks layer keeps of a draw: the composite value area and the untested-level rays. Every cell's
+  // number and colour comes from the frame's one evaluation kernel, not from here.
+  function prepareMeasures(query) {
+    markState = { va: contiguousArea(query.rows, query.poc, query.v), rays: [] };
     return markState;
-  }
-  // A cell's amount for an encoding: USDT, trades or USDT a trade. Volume and
-  // trades grow with the cell, so an edge portion or the open column counts at
-  // its full-cell rate and compares with whole cells; the values shown stay
-  // the cell's own. The rectangle's and the lens's cells are measured within
-  // their own bounds, the level's other cells within its block.
-  function amount(z, mode = S.mode) {
-    const m = markState.metrics.get(z) || markState.level.get(z),
-      rate = m?.area > 0 ? m.whole / m.area : 1;
-    if (mode === "trades" || mode === "flowtrades") return z.ct * rate;
-    if (mode === "size") return z.ct > 0 ? z.v / z.ct : 0;
-    return z.v * rate;
-  }
-  // Amounts shade by rank among the drawn block's cells: each step of the ramp
-  // holds as many cells as any other, so the colour tells cells apart wherever
-  // they crowd. Sorted once per block, level and encoding.
-  function amountScale(full, mode = S.mode) {
-    const key =
-      mode === "flowtrades"
-        ? "trades"
-        : ["flow", "delta", "cascade", "geometry"].includes(mode)
-          ? "volume"
-          : mode;
-    if (!full.scales[key])
-      full.scales[key] = Float64Array.from(
-        full.cells.map((z) => amount(z, key)).filter((x) => x > 0),
-      ).sort();
-    return full.scales[key];
-  }
-  // A value's place in a sorted scale, from 0 to 1; ties share the middle of
-  // their run.
-  function rank(sorted, x) {
-    if (!sorted.length) return 0.5;
-    const lo = d3.bisectLeft(sorted, x),
-      hi = d3.bisectRight(sorted, x);
-    return clamp((lo + hi) / 2 / sorted.length, 0, 1);
-  }
-  // The ramp amounts shade on: from near the surface to deep in the light
-  // theme and to bright in the dark one, through yellow, green and blue, with
-  // lightness changing evenly (interpolated in Lab).
-  const RAMP = {
-    light: ["#f2f9c4", "#d6efb3", "#a9dcb6", "#73c6bd", "#41b0c3", "#2390bd", "#2a6aac", "#283f94", "#15205e"],
-    dark: ["#1b2c33", "#18405a", "#1a5b7d", "#1f7896", "#2c969c", "#4db493", "#86cd83", "#c6e27c", "#f4f1a6"],
-  };
-  // Colours kept with cells, as Cascade's are, are worked out again once the
-  // theme changes: this counts the themes the page has drawn in.
-  let rampColours = [],
-    colourEpoch = 0;
-  function buildRamp() {
-    const stops = d3.lab(colors.surface).l < 50 ? RAMP.dark : RAMP.light,
-      f = d3.piecewise(d3.interpolateLab, stops);
-    rampColours = Array.from({ length: 256 }, (_, i) => d3.rgb(f(i / 255)).formatHex());
-    colourEpoch++;
-  }
-  const ramp = (t) => rampColours[Math.round(clamp(t, 0, 1) * 255)];
-  const AMOUNT_UNITS = { volume: "USDT", trades: "trades", size: "USDT a trade" };
-  function legendText(full, mv) {
-    if (mv && movementMode()) {
-      if (!mv.src) return motionIssue() ? "Path and dwell unavailable" : "Reading path and dwell…";
-      return motionLegend(motionScale(mv.full, mv.fullBounds, mv.end, stepT(), stepP()));
-    }
-    if (S.mode === "geometry") return "Occupied cells";
-    if (S.mode === "flow") return "Taker buys 25% · 50% · 75% of USDT";
-    if (S.mode === "flowtrades") return "Taker buys 25% · 50% · 75% of trades";
-    if (S.mode === "delta")
-      return `Δ ${signedCompact(-markState.deltaMax)} · 0 · ${signedCompact(markState.deltaMax)} USDT`;
-    if (S.mode === "cascade")
-      return full.cascade?.parent ? "−2 · 0 · +2 vs an even share" : "No coarser level to compare with";
-    const sorted = amountScale(full),
-      unit = AMOUNT_UNITS[S.mode];
-    if (!sorted.length) return unit;
-    return `${compact(d3.quantileSorted(sorted, 0.05))} → ${compact(d3.quantileSorted(sorted, 0.95))} ${unit}`;
-  }
-  // The legend's precise meaning, one hover away.
-  const LEGEND_TITLES = {
-    volume:
-      "USDT traded per cell, shaded by rank: each step of the ramp holds as many of the drawn cells as any other, from the least traded to the most. An edge cell or the open column is shaded at its full-cell rate. The numbers are the 5th and 95th percentiles.",
-    trades:
-      "Trades per cell, shaded by rank like volume, at the full-cell rate. The numbers are the 5th and 95th percentiles.",
-    size: "Average USDT per trade in each cell, shaded by rank. The numbers are the 5th and 95th percentiles.",
-    flow: "The share of each cell's volume bought by takers: buy colour above half, sell colour below, full at 75% and 25%. Paler cells traded less.",
-    flowtrades:
-      "The share of each cell's trades that were taker buys: buy colour above half, sell colour below, full at 75% and 25%. Paler cells had fewer trades.",
-    delta: "Taker-buy minus taker-sell volume per cell, in USDT",
-    cascade:
-      "How each cell's USDT splits within its parent, the cell one level coarser in time and price that it shares with three others: log₂ of 4 × its share of the parent, so 0 is an even quarter, +1 twice that and −1 half. +2 is the whole parent: no other cell in it traded, so the price never got there. Buy colour above 0, where volume concentrated, sell colour below, where it thinned; full at ±2 and paler where less traded. The pane under the prices shows each column's share of its parent column the same way.",
-    path: "How far the price travelled in each cell: its path length, the sum of every move between consecutive trades split across the rows it passes, over the row's height, at its full-cell rate and shaded by rank. The numbers are the 5th and 95th percentiles. Outlined cells the price moved through or held in without a trade. The pane under the prices shows each column's path over its range, its highest trade less its lowest: 1 for a straight run, more the more it turned back. Read from the live cube up to the last complete base column.",
-    dwell: "Each cell's share of its column's time: how long the price, held from one trade to the next, sat in the cell's rows, shaded by rank. The numbers are the 5th and 95th percentiles. Outlined cells the price moved through or held in without a trade. The pane under the prices shows each column's USDT traded per USDT the price moved, its volume over its path. Read from the live cube up to the last complete base column.",
-    geometry: "The grid's occupied cells",
-  };
-  function legendRamp() {
-    if (S.mode === "flow" || S.mode === "flowtrades" || S.mode === "cascade")
-      return "linear-gradient(to right,var(--ol-sell),var(--ol-neutral),var(--ol-buy))";
-    if (S.mode === "delta")
-      return "linear-gradient(to right,var(--ol-sell),var(--ol-line),var(--ol-buy))";
-    if (S.mode === "geometry") return "var(--ol-line)";
-    return `linear-gradient(to right,${[0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1].map(ramp).join(",")})`;
-  }
-  // How much a cell traded among the block's cells, from 0 to 1: its amount at
-  // its full-cell rate on a log scale between their 2nd and 99.5th percentiles.
-  // Diverging colours are paler the less a cell traded.
-  function tradedLevel(z, full) {
-    const sorted = amountScale(full),
-      lo = Math.log(d3.quantileSorted(sorted, 0.02) || 1),
-      hi = Math.log(d3.quantileSorted(sorted, 0.995) || Math.E);
-    return clamp((Math.log(Math.max(amount(z), 1e-9)) - lo) / Math.max(0.1, hi - lo), 0, 1);
-  }
-  // From the neutral midpoint at 0 to buy at +1 and sell at −1, toward the
-  // surface as the level falls.
-  function divergingColour(t, level) {
-    const hue = d3.interpolateRgb(colors.neutral, t >= 0 ? colors.buy : colors.sell)(Math.abs(t));
-    return d3.interpolateRgb(colors.surface, hue)(0.3 + 0.7 * level);
   }
   // Cascade: how each cell's USDT splits within its parent, the cell one level
   // coarser in both time and price, (n + 1, m + 1), that it shares with three
@@ -4214,6 +6996,9 @@
       c = full.cascade;
     if (!(c && c.parent === parent && c.start === start && c.end === end && c.cut === cut))
       full.cascade = cascadeContext(full, parent, start, end, cut);
+    // The Cells frame is built before this runs and reads its Cascade entries lazily, at encode time: this is
+    // the context it reads (see cascadeTyped).
+    cascadeLevel = full.cascade;
     return full.cascade;
   }
   function cascadeOf(ctx, c, r) {
@@ -4225,22 +7010,32 @@
     }
     return e;
   }
-  // A cell's share of its parent and its value, or why it has none: no parent
-  // at the coarsest level; outside, a parent the block holds only part of;
-  // open, one that runs past the data.
+  // A cell's share of its parent and its value, or why it has none. The STRUCTURE is decided before the
+  // child is looked at (DD-38): no parent at the coarsest level (coarsest); a parent the block holds only
+  // part of (outside); one that runs past the data (open). Only a complete parent is asked for the child,
+  // and there an absent child is a real state, not "no value here": the parent traded and this cell did not
+  // (negative-infinite, readout only: such a cell is never drawn). `res` is the typed result of
+  // E.ratio.cascade (factor 4) and is what the Cells frame, the tooltip and the tally read; `state`, `w`, `p`,
+  // `share`, `value` and `alone` keep the shape the tooltip, the Columns pane and the lens read.
   function cascadeEntry(ctx, c, r) {
-    if (!ctx.parent) return { state: "coarsest" };
     const w = ctx.cells.map.get(c + "," + r);
-    if (!w) return { state: "none" };
+    if (!ctx.parent) return cascadeTyped({ state: "coarsest", w }, { factor: 4, structure: "coarsest" });
     const pc = Math.floor(c / 2),
       span = 2 ** (ctx.n + 1);
-    if (pc * span < ctx.start) return { state: "outside", w };
-    if ((pc + 1) * span > ctx.end) return { state: ctx.end >= ctx.cut ? "open" : "outside", w };
-    const p = ctx.parent.map.get(pc + "," + Math.floor(r / 2));
-    if (!(p?.v > 0)) return { state: "none", w };
-    const share = w.v / p.v;
+    if (pc * span < ctx.start) return cascadeTyped({ state: "outside", w }, { factor: 4, structure: "outside" });
+    if ((pc + 1) * span > ctx.end) {
+      const open = ctx.end >= ctx.cut;
+      return cascadeTyped({ state: open ? "open" : "outside", w }, { factor: 4, structure: open ? "open" : "outside" });
+    }
+    const p = ctx.parent.map.get(pc + "," + Math.floor(r / 2)),
+      entry = cascadeTyped({ state: "none", w, p }, { factor: 4, structure: "complete", childV: w?.v, parentV: p?.v });
+    if (entry.tag !== CASCADE_FINITE) return entry;
     // Alone: no other cell in the parent traded.
-    return { state: "ok", w, p, share, value: Math.log2(4 * share), alone: p.ct === w.ct, colour: "", epoch: -1 };
+    entry.state = "ok";
+    entry.share = w.v / p.v;
+    entry.value = entry.res.value;
+    entry.alone = p.ct === w.ct;
+    return entry;
   }
   // A column's share of its parent column, one level up in time, as log2(2 ×
   // its share): the pane's Same as cells under Cascade, on the same scale.
@@ -4257,47 +7052,205 @@
     }
     return e;
   }
+  // The column's entry, structure first as the cell's is (DD-38), with its typed result from E.ratio.cascade
+  // at factor 2: a column that IS its whole parent column sits at +1.
   function cascadeColumnEntry(ctx, c) {
-    if (!ctx.parent) return { c, state: "coarsest" };
     const w = ctx.cells.cols[bisectColumn(ctx.cells.cols, c)],
-      pc = Math.floor(c / 2),
+      col = w?.c === c ? w : undefined;
+    if (!ctx.parent) return cascadeTyped({ c, state: "coarsest", w: col }, { factor: 2, structure: "coarsest" });
+    const pc = Math.floor(c / 2),
       span = 2 ** (ctx.n + 1);
-    if (w?.c !== c) return { c, state: "none" };
-    if (pc * span < ctx.start) return { c, state: "outside", w };
-    if ((pc + 1) * span > ctx.end) return { c, state: ctx.end >= ctx.cut ? "open" : "outside", w };
-    const p = ctx.parents.get(pc);
-    if (!(p?.v > 0)) return { c, state: "none", w };
-    const share = w.v / p.v;
-    return { c, state: "ok", w, p, share, value: Math.log2(2 * share), alone: p.ct === w.ct };
+    if (pc * span < ctx.start) return cascadeTyped({ c, state: "outside", w: col }, { factor: 2, structure: "outside" });
+    if ((pc + 1) * span > ctx.end) {
+      const open = ctx.end >= ctx.cut;
+      return cascadeTyped({ c, state: open ? "open" : "outside", w: col }, { factor: 2, structure: open ? "open" : "outside" });
+    }
+    const p = ctx.parents.get(pc),
+      entry = cascadeTyped({ c, state: "none", w: col, p }, { factor: 2, structure: "complete", childV: col?.v, parentV: p?.v });
+    if (entry.tag !== CASCADE_FINITE) return entry;
+    entry.state = "ok";
+    entry.share = col.v / p.v;
+    entry.value = entry.res.value;
+    entry.alone = p.ct === col.ct;
+    return entry;
   }
-  // A cell's colour. Amounts take the ramp by rank. Taker flow, by USDT or by
-  // trades, diverges from a neutral midpoint to buy and sell, full at 75% and
-  // 25%, paler where less traded; so does Cascade, full at ±2, and a cell it
-  // has no value for is drawn plain. Delta shades signed taker volume.
-  function cellColour(z, full, deltaMax = markState.deltaMax) {
-    if (S.mode === "flow" || S.mode === "flowtrades") {
-      const byTrades = S.mode === "flowtrades",
-        share = byTrades ? (z.ct ? z.bt / z.ct : 0.5) : z.v ? z.bv / z.v : 0.5;
-      return divergingColour(clamp((share - 0.5) / 0.25, -1, 1), tradedLevel(z, full));
+  // ---- Cells and motion (PRD-0002 S1, package C) ----
+  // What the Cells channel draws and counts: the marks of the drawn cells and of the Path and Dwell cells
+  // encode through the frame of the channel (`sc.cells`, `sc.cellsFull`) into the one scratch object ENC, so
+  // the canvas, the tooltip, the table and the legend marker share one computation. The functions here are
+  // the consumers of that frame (fillCell, paintMotion), what feeds it (the Cascade entries, the measured
+  // predicate), what calibrates from it (the two cohorts) and what counts it (cellsMarks).
+  // The typed result of a Cascade entry, through E.ratio.cascade, kept on the entry with its tag as the
+  // small integer the frame's kernel writes (so the per-mark path copies four fields and allocates nothing).
+  // The entry is built once per cell and level, when first asked for.
+  const CASCADE_FINITE = E.result.TAG["finite"],
+    CASCADE_NEGATIVE_INFINITE = E.result.TAG["negative-infinite"],
+    // The roles an encode can give a mark that is an outline rather than a fill (E.readout.ROLE).
+    ROLE_OCCUPANCY = E.readout.ROLE.OCCUPANCY,
+    ROLE_ZERO = E.readout.ROLE.ZERO,
+    // The glyphs that mark a cell whose motion has not been read yet, and one whose read failed.
+    MOTION_PENDING = E.role.glyphFor("pending"),
+    MOTION_FAILED = E.role.glyphFor("failed"),
+    // Below this many css px a pattern or a zero outline is not resolvable: a flat fill at a fraction of the
+    // ink stands in (the role module's own threshold and alpha; the readout carries the tag).
+    PATTERN_MIN_PX = E.role.GLYPHS["pattern-dots"].minPx,
+    FLAT_ALPHA = 0.3;
+  // The Cascade context of the level now drawn, set by levelCascade; none before the first Cascade draw.
+  let cascadeLevel = null,
+    // Where the drawn Path or Dwell read ends, in base units, and the column width it was drawn at: a cell
+    // that starts at or after the end was never read and is pending, never a zero.
+    motionEnd = Infinity,
+    motionTs = 1,
+    // What this pass has already put on the canvas, so a colour is assigned only when it changes: a pass is
+    // one frame over one geometry object (each draw makes a new one and a new canvas state).
+    passGeometry = null,
+    passFrame = null,
+    passFill = null,
+    passStroke = null,
+    passPatternKind = null,
+    passPattern = null;
+  function cascadeTyped(entry, input) {
+    const res = E.ratio.cascade(input);
+    entry.res = res;
+    entry.tag = E.result.TAG[res.tag];
+    entry.reason = typeof res.reason === "string" ? res.reason : null;
+    entry.denominator = typeof res.denominator === "string" ? res.denominator : null;
+    if (res.tag === "finite") entry.value = res.value;
+    return entry;
+  }
+  // The Cascade entry of a cell as the Cells frame asks for it. The frame is built before the level's context
+  // exists (scaleFrame runs first in a draw), so it asks lazily, per mark, at encode time. No context yet
+  // leaves the result pending.
+  function cascadeInto(z, out) {
+    if (!cascadeLevel) return;
+    const entry = cascadeOf(cascadeLevel, z.c, z.r);
+    out.tag = entry.tag;
+    out.value = entry.tag === CASCADE_FINITE ? entry.value : NaN;
+    out.reason = entry.reason;
+    out.denominator = entry.denominator;
+  }
+  // Is the cell measured? Every cell of the block drawn for a volume measure is. Under Path and Dwell a cell
+  // at or after the end of the motion read was never read: it is pending, not zero.
+  function cellsMeasured(z) {
+    const mode = S.mode;
+    if (mode !== "path" && mode !== "dwell") return true;
+    return z.c * motionTs < motionEnd;
+  }
+  // A new pass (a new frame or a new draw) knows nothing about the canvas state: what this pass remembers of
+  // it is dropped.
+  function cellPass(frame) {
+    if (passGeometry === G && passFrame === frame) return;
+    passGeometry = G;
+    passFrame = frame;
+    passFill = passStroke = passPatternKind = passPattern = null;
+  }
+  // A flat fill at a fraction of an ink colour, over whatever is there: what a mark too small for its
+  // pattern or outline shows. The alpha multiplies the pass's own (a faded pass stays faded).
+  function cellFlat(colour, xa, ya, w, h) {
+    const alpha = ctx.globalAlpha;
+    ctx.globalAlpha = alpha * FLAT_ALPHA;
+    if (colour !== passFill) ctx.fillStyle = passFill = colour;
+    ctx.fillRect(xa, ya, Math.max(0.1, w), Math.max(0.1, h));
+    ctx.globalAlpha = alpha;
+  }
+  // A cell that has no value, or whose read has not answered, in the pattern of its kind ("pattern-dots" for
+  // a read not finished, a typed tag's glyph from the role table): one DPR-compensated tile per kind,
+  // anchored to the canvas so neighbours line up. Below the glyph's threshold the state ink stands in flat,
+  // and the readout still names the tag. (xa, ya, w, h) is the cell's box; the gap is taken off inside.
+  function motionPattern(kind, xa, ya, w, h, gap) {
+    if (Math.min(w, h) < PATTERN_MIN_PX) return cellFlat(colors.state, xa + gap / 2, ya + gap / 2, w - gap, h - gap);
+    if (kind !== passPatternKind) {
+      passPattern = patternFor(kind);
+      passPatternKind = kind;
     }
-    if (S.mode === "cascade") {
-      const e = full.cascade && cascadeOf(full.cascade, z.c, z.r);
-      if (e?.state !== "ok") return colors.line;
-      // Kept with the cell for its level, until the theme changes.
-      if (e.epoch !== colourEpoch) {
-        e.colour = divergingColour(clamp(e.value / 2, -1, 1), tradedLevel(e.w, full));
-        e.epoch = colourEpoch;
-      }
-      return e.colour;
+    if (passPattern !== passFill) ctx.fillStyle = passFill = passPattern;
+    ctx.fillRect(xa + gap / 2, ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
+  }
+  // The inputs of the Cells calibration that both cohorts share, from the state at the moment of asking
+  // (vp is built then, never kept from a draw): the rectangle the viewer declared, the cutoff and the open
+  // edge, the drawn level, the read that has to have answered, and what the fit is over. `read` is the
+  // state of the rectangle's own measure; a fit waits for it to be exact, recorded or from the cube.
+  function cohortCells(vp, cells, end, read) {
+    const eff = E.policy.effective(S.scale, S.mode);
+    return {
+      cells,
+      mode: S.mode,
+      basis: eff.basis,
+      pathBasis: eff.pathBasis,
+      b: vp.meas.b,
+      cut: vp.cut,
+      end,
+      CUT,
+      replay: S.replay,
+      level: { n: renderN(), m: renderM() },
+      geom: { BASE, PR },
+      read,
+      // The Cells quality class is "exact" whatever tier the read came from (exact, recorded or cube): the
+      // portable code only accepts the classes of a context, so the read's own state is no quality.
+      quality: "exact",
+      loading: Object.values(loadState).includes("loading"),
+      selection: Boolean(S.selection),
+      calibratedOn: S.selection ? "selection" : "view",
+    };
+  }
+  // The cells of the drawn level, for a measure that is not Path or Dwell. A fixed measure has nothing to
+  // fit, and Geometry no value: the caller (the settled tick) never asks for those, and the answer is none.
+  function cellsCohortInputs(vp) {
+    if (S.mode === "geometry" || !vp.shown) return null;
+    const inputs = cohortCells(vp, vp.shown.cells, Infinity, { state: vp.meas.state, updating: Boolean(vp.meas.updating) });
+    if (S.mode === "cascade") inputs.cascade = cascadeInto;
+    return inputs;
+  }
+  // Path and Dwell cells: the motion cells of the rectangle (movement-only cells included, they are
+  // measured), up to the end of the read. No motion block yet is a read that has not answered, and a read
+  // still under way (the tier reading the columns it gained, the rectangle's own) is not finished either.
+  function motionCohortInputs(vp) {
+    const mv = vp.mv;
+    if (!mv || !movementMode()) return null;
+    const pending = !mv.src ? { state: motionIssue() ? "failed" : "pending" } : motion.busy || motionWant() ? { state: "pending" } : null;
+    return cohortCells(vp, mv.shown ? mv.shown.cells : [], mv.end, pending);
+  }
+  // The warnings pass: every drawn mark of the Cells channel, encoded through the frame the settled mapping
+  // gives now, into the tally with its box (css px, the plot's and the rectangle's clip come in `clip`). A
+  // mark that is not a value is not counted; negative infinity is counted as a mark and as out of range.
+  // Nothing here depends on the last draw: the frame is built from the state now (a fit that has just
+  // committed is not drawn yet, and the tally must describe the mapping about to be drawn, so the
+  // frame of `last.sc` would be the old one), and what the frame reads lazily (the Cascade level, where the
+  // motion read ends) is set from `vp` before the first mark, so the pass gives the same answer when it runs
+  // twice or after another draw. `keys`, when the caller passes it, gets the marks of each generated key
+  // of the legend by key id (an unsigned zero, each kind of non-value, Geometry's occupied cells) and the
+  // marks with short exposure, for the legend's keys and its short-exposure line.
+  function cellsMarks(tally, clip, vp, keys) {
+    const count = (id) => {
+      if (keys) keys[id] = (keys[id] ?? 0) + 1;
+    };
+    if (S.mode === "geometry") {
+      for (const z of vp.shown.cells) if (cellBox(z, 1, vp.ts, vp.ps, vp.cut)) count("occupied");
+      return;
     }
-    if (S.mode === "delta") {
-      const delta = 2 * z.bv - z.v;
-      return d3.interpolateRgb(
-        colors.surface,
-        delta >= 0 ? colors.buy : colors.sell,
-      )(clamp(Math.log1p(Math.abs(delta)) / Math.log1p(deltaMax), 0, 1));
+    const frame = scaleFrame(vp.cut, vp).cells,
+      cells = vp.moving ? vp.mv?.shown?.cells : vp.shown.cells;
+    if (S.mode === "cascade") levelCascade(vp.full, vp.src, vp.sum);
+    if (vp.moving) {
+      motionEnd = vp.mv?.src ? vp.mv.end : -Infinity;
+      motionTs = vp.ts;
+      // The base cells the motion read has not reached, or never answered for, draw as the pending or failed
+      // pattern (see paintMotion): they are keyed, never counted as values.
+      const covered = vp.mv?.shown?.map,
+        kind = !vp.mv?.src && motionIssue() ? "failed" : "pending";
+      for (const z of vp.shown.cells)
+        if ((z.c + 1) * vp.ts > motionEnd && !covered?.has(cellKey(z.c, z.r)) && cellBox(z, 1, vp.ts, vp.ps, vp.cut)) count(kind);
     }
-    return ramp(rank(amountScale(full), amount(z)));
+    if (!cells) return;
+    for (const z of cells) {
+      if (!cellBox(z, 1, vp.ts, vp.ps, vp.cut)) continue;
+      frame.encode(z, ENC);
+      if (ENC.tag === CASCADE_NEGATIVE_INFINITE) tally.addBoxNegInf(BOX.xa, BOX.ya, BOX.xb, BOX.yb, clip);
+      else tally.addBox(BOX.xa, BOX.ya, BOX.xb, BOX.yb, clip, ENC.idx, ENC.clip, ENC.tag === CASCADE_FINITE, ENC.value !== 0);
+      if (ENC.tag !== CASCADE_FINITE) count(E.result.TAGS[ENC.tag]);
+      else if (ENC.role === ROLE_ZERO) count("zero");
+      if (ENC.short) count("short-exposure");
+    }
   }
   function marksReadout(b) {
     const va = markState.va,
@@ -4308,7 +7261,13 @@
       vaHigh: va ? Math.min(va.r1 * ps, b[3]) * PR : null,
     };
   }
-  function fillCell(z, full, u) {
+  // One cell of the drawn level, encoded through the Cells frame (`frame`: sc.cells, or sc.cellsFull for the
+  // selection's faded layer) into ENC: a fill from the table entry of its coordinate; the midpoint fill for a
+  // signed zero (a balanced cell is occupied, never the surface); an outline for an unsigned zero ("Zero
+  // (occupied)"), for Geometry and for a cell with no calibration yet; a pattern for a value that is not
+  // one. Nothing is drawn for a cell the role table marks as readout only. The cell's own colour is assigned
+  // to the canvas only when it differs from the last one, and the outline's width is always set here.
+  function fillCell(z, full, u, frame) {
     const ts = stepT(),
       ps = stepP(),
       cut = activeCutoff();
@@ -4328,27 +7287,25 @@
       yb = G.Y(ob) + (yb - G.Y(ob)) * u;
     }
     if (xb < G.x || xa > G.x + G.w || yb < G.y || ya > G.y + G.h) return;
-    if (S.mode === "geometry") {
-      const alpha = ctx.globalAlpha;
-      ctx.strokeStyle = colors.volume;
-      ctx.globalAlpha = alpha * 0.4;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(
-        xa + 0.5,
-        ya + 0.5,
-        Math.max(0.1, xb - xa - 1),
-        Math.max(0.1, yb - ya - 1),
-      );
-      ctx.globalAlpha = alpha;
+    cellPass(frame);
+    frame.encode(z, ENC);
+    const w = xb - xa,
+      h = yb - ya,
+      gap = w > 4 && h > 4 ? design.gap : 0;
+    if (ENC.pattern !== null) motionPattern(ENC.pattern, xa, ya, w, h, gap);
+    else if (ENC.css === null) return;
+    else if (ENC.role === ROLE_OCCUPANCY || ENC.role === ROLE_ZERO) {
+      // An unsigned zero too small for an outline stands in as a flat fill, as the role table says; an
+      // occupancy outline (Geometry) keeps its 1 px line at any size.
+      if (ENC.role === ROLE_ZERO && Math.min(w, h) < PATTERN_MIN_PX) cellFlat(ENC.css, xa, ya, w, h);
+      else {
+        if (ENC.css !== passStroke) ctx.strokeStyle = passStroke = ENC.css;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(xa + 0.5, ya + 0.5, Math.max(0.1, w - 1), Math.max(0.1, h - 1));
+      }
     } else {
-      ctx.fillStyle = cellColour(z, full);
-      const gap = xb - xa > 4 && yb - ya > 4 ? design.gap : 0;
-      ctx.fillRect(
-        xa + gap / 2,
-        ya + gap / 2,
-        Math.max(0.1, xb - xa - gap),
-        Math.max(0.1, yb - ya - gap),
-      );
+      if (ENC.css !== passFill) ctx.fillStyle = passFill = ENC.css;
+      ctx.fillRect(xa + gap / 2, ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
     }
   }
   function markLine(x1, y1, x2, y2, color, width = 1, alpha = 1) {
@@ -4362,14 +7319,25 @@
     ctx.stroke();
     ctx.restore();
   }
-  function profile(query, b, state, under) {
+  function profile(query, b, state, under, sc) {
     if (!G.profile) return;
-    const max = d3.max(query.rows, (z) => z.v) || 1,
+    // The length of every bar: the registered axis of the current profile, over the rows it shows. It is the
+    // exact maximum of them, "0" for rows that are all zero, and "No data" for none (never a maximum of 1
+    // made up for an empty view); it waits for a measured rectangle and keeps its domain through a gesture.
+    const axis = axisFrame("profile.current", {
+        sign: "unsigned",
+        eligible: state === "exact" || state === "recorded" || state === "cube",
+        sig: [scaleWorkspace(), "profile.current", objId(query), state].join("|"),
+        summary: () => rowsScan(query.rows, 0, Infinity, rowsV),
+      }),
+      at = { t: 0, clip: 0 },
       px = G.x + G.w + 9,
       pw = G.profile - 29,
       ps = stepP(),
       va = markState.va,
       labels = [];
+    let low = 0,
+      high = 0;
     ctx.save();
     ctx.beginPath();
     ctx.rect(px, G.y, G.profile - 8, G.h);
@@ -4383,24 +7351,30 @@
       ctx.globalAlpha = 1;
     }
     // The underlay's second profile, behind the view's.
-    if (under?.bands) underProfile(under, px, pw);
-    for (const row of query.rows) {
+    if (under?.bands) underProfile(under, px, pw, sc);
+    for (const row of axis.typed === "none" ? [] : query.rows) {
       const ya = G.Y(Math.min((row.r + 1) * ps, b[3])),
         yb = G.Y(Math.max(row.r * ps, b[2]));
       if (yb <= ya) continue;
+      // A bar past a held domain (a gesture or Play keeps it) is clamped at the strip's edge and counted.
+      E.axis.coordinate(axis, row.v, at);
+      if (at.clip === E.scale.CLIP.LOW) low++;
+      else if (at.clip === E.scale.CLIP.HIGH) high++;
       ctx.fillStyle = S.poc && row.r === query.poc ? colors.poc : colors.muted;
       ctx.globalAlpha = S.poc && row.r === query.poc ? 0.75 : 0.32;
-      ctx.fillRect(px, ya, (pw * row.v) / max, Math.max(0.1, yb - ya - 0.7));
-      ctx.fillStyle = colors.buy;
+      ctx.fillRect(px, ya, pw * at.t, Math.max(0.1, yb - ya - 0.7));
+      E.axis.coordinate(axis, row.bv, at);
+      // The taker-buy subset of the row is an amount like the row: its interim colour, not a signed arm.
+      ctx.fillStyle = colors.legacyBuy;
       ctx.globalAlpha = 0.85;
-      ctx.fillRect(
-        px,
-        ya,
-        (pw * row.bv) / max,
-        Math.max(0.7, Math.min(2, (yb - ya) * 0.3)),
-      );
+      ctx.fillRect(px, ya, pw * at.t, Math.max(0.7, Math.min(2, (yb - ya) * 0.3)));
     }
     ctx.globalAlpha = 1;
+    axis.clipped.low = low;
+    axis.clipped.high = high;
+    axis.clipped.count = low + high;
+    axis.clipped.total = query.rows.length;
+    axisChipWrite(axis);
     if (S.level !== null) {
       const y = Math.round(G.Y(S.level)) + 0.5;
       ctx.setLineDash([6, 4]);
@@ -4429,7 +7403,7 @@
     if (S.poc) {
       for (const [row, symbol, color] of [
         [query.poc, "P", colors.poc],
-        [query.bpoc, "B", colors.buy],
+        [query.bpoc, "B", colors.legacyBuy],
       ]) {
         if (row === null) continue;
         const y = G.Y((row + 0.5) * ps);
@@ -4499,99 +7473,107 @@
     }
     return [i, hi];
   }
-  // The period's peaks among its rows in view, which the bands and the second
-  // profile are scaled to, as the view's profile is to its own rows: its most
-  // USDT, most signed USDT and most time in a row.
-  function underlayPeak(u) {
-    const b = u.bands,
-      rows = b.rows;
-    let [i, hi] = rowsInView(rows, 2 ** b.m),
-      v = 0,
-      d = 0,
-      w = 0;
-    for (; i < rows.length && rows[i].r <= hi; i++) {
-      const x = rows[i];
-      if (x.v > v) v = x.v;
-      if (Math.abs(2 * x.bv - x.v) > d) d = Math.abs(2 * x.bv - x.v);
-      if (x.w > w) w = x.w;
-    }
-    return { v: v || 1, d: d || 1, w: w || 1 };
-  }
-  // A band's strength, 0 to 1, and its colour: volume in a neutral grey,
-  // delta and relative volume in the buy and sell colours (relative volume
-  // full at ±2), time at price in its own. Amounts go by the square root of
-  // their share of the peak in view, so the thinner rows still show.
-  function bandTone(u, x, rel) {
-    const k = u.peak;
-    if (u.kind === "volume") return [Math.sqrt(x.v / k.v), colors.ink];
-    if (u.kind === "time") return [Math.sqrt(x.w / k.w), colors.time];
-    const v = u.kind === "delta" ? (2 * x.bv - x.v) / k.d : rel?.get(x.r) ? rel.get(x.r).value / 2 : 0,
-      t = u.kind === "delta" ? Math.sqrt(Math.abs(v)) : Math.min(1, Math.abs(v));
-    return [t, v >= 0 ? colors.buy : colors.sell];
-  }
   // The underlay's bands: one per price row at the drawn row size, across the
-  // whole chart behind the cells, so they show where the view has no cells:
-  // the heavy levels it never visited. Each at a low alpha.
-  function paintBands(u) {
-    if (!u.bands) return;
-    const b = u.bands,
-      ps = 2 ** b.m,
-      rel = u.kind === "relvol" && u.rect ? relativeVolume(b, u.rect) : null,
-      rows = b.rows,
-      top = u.kind === "volume" ? 0.2 : u.kind === "time" ? 0.3 : 0.16;
-    if (u.kind === "relvol" && !rel) return;
-    let [i, hi] = rowsInView(rows, ps);
-    for (; i < rows.length && rows[i].r <= hi; i++) {
-      const x = rows[i],
-        [t, colour] = bandTone(u, x, rel);
-      if (!(t > 0)) continue;
-      const ya = G.Y((x.r + 1) * ps);
-      ctx.fillStyle = colour;
-      ctx.globalAlpha = top * t;
-      ctx.fillRect(G.x, ya, G.w, Math.max(0.5, G.Y(x.r * ps) - ya));
+  // whole chart behind the cells, so they show where the view has no cells: the
+  // heavy levels it never visited. Each is painted through the Rows frame (see
+  // bandPaint), at the fixed Rows alpha.
+  function paintBands(u, frame) {
+    if (!u.bands || !frame) return;
+    const relvol = u.kind === "relvol" ? u.relvol : null;
+    // A whole-result status (still reading, failed, no totals to compare) paints no band: the legend says why.
+    if (u.kind === "relvol" && relvol?.state !== "ok") return;
+    const ps = 2 ** u.bands.m;
+    ctx.globalAlpha = E.lut.ROWS_ALPHA;
+    bandInk = null;
+    if (relvol) {
+      const [lo, hi] = rowsBinRange(relvol, ps);
+      for (let j = lo; j <= hi; j++) {
+        rowsBin.r = j;
+        bandPaint(u, rowsBin, frame, ENC);
+      }
+    } else {
+      const rows = u.bands.rows;
+      let [i, hi] = rowsInView(rows, ps);
+      for (; i < rows.length && rows[i].r <= hi; i++) bandPaint(u, rows[i], frame, ENC);
     }
     ctx.globalAlpha = 1;
   }
   // The underlay's second profile, behind the view's: each row's value over
-  // its period, scaled to the period's own peak. Volume and time at price run
-  // from the strip's edge; delta and relative volume diverge from a centre
-  // line. The period's POC is a dashed line across the strip, and its 70%
-  // value area a bar down the strip's edge.
-  function underProfile(u, px, pw) {
+  // its period, on the length axis of its own (registered as
+  // profile.reference.<measure>: the exact maximum of the rows in view, or the
+  // fixed -2 to +2 of Relative volume), apart from the current profile's.
+  // Volume and time at price run from the strip's edge in the constant bar
+  // colour; delta and relative volume diverge from a centre line in the two
+  // arms. The period's POC is a dashed line across the strip, and its 70% value
+  // area a bar down the strip's edge.
+  function underProfile(u, px, pw, sc) {
     const b = u.bands,
       ps = 2 ** b.m,
       mid = px + pw / 2,
-      rel = u.kind === "relvol" && u.rect ? relativeVolume(b, u.rect) : null,
       rows = b.rows,
-      diverging = u.kind === "delta" || u.kind === "relvol";
+      kind = u.kind,
+      diverging = kind === "delta" || kind === "relvol",
+      relvol = kind === "relvol" ? u.relvol : null,
+      id = "profile.reference." + kind,
+      read = kind === "volume" ? rowsV : kind === "delta" ? rowsDelta : rowsW,
+      lut = sc?.lut,
+      // The constant bar colour of the active appearance and the two arms; the legacy ink if the scale display is off.
+      bar = lut ? lut.bar.css : colors.ink,
+      arms = lut ? [lut.positive.css[255], lut.negative.css[255]] : [colors.legacyBuy, colors.legacySell],
+      at = { t: 0, clip: 0 };
     let [i, hi] = rowsInView(rows, ps);
-    for (; i < rows.length && rows[i].r <= hi; i++) {
-      const x = rows[i],
-        ya = G.Y((x.r + 1) * ps),
-        h = Math.max(0.1, G.Y(x.r * ps) - ya - 0.7);
-      if (!diverging) {
-        const t = Math.min(1, u.kind === "volume" ? x.v / u.peak.v : x.w / u.peak.w);
-        if (!(t > 0)) continue;
-        ctx.fillStyle = u.kind === "volume" ? colors.ink : colors.time;
-        ctx.globalAlpha = u.kind === "volume" ? 0.16 : 0.28;
-        ctx.fillRect(px, ya, pw * t, h);
-        ctx.globalAlpha = 0.6;
-        ctx.fillRect(px + pw * t - 1, ya, 1, h);
-        continue;
+    const first = i,
+      axis = axisFrame(
+        id,
+        kind === "relvol"
+          ? { sign: "ratio", eligible: true, sig: "fixed" }
+          : {
+              sign: diverging ? "signed-symmetric" : "unsigned",
+              eligible: u.res.state === "ready" && !u.stale,
+              sig: [scaleWorkspace(), id, objId(rows), b.m, first, hi].join("|"),
+              summary: () => rowsScan(rows, first, hi, read),
+            },
+      );
+    let low = 0,
+      high = 0,
+      drawn = 0;
+    // "No data" draws no bar, and a whole-result status of Relative volume has none to draw.
+    if (axis.typed !== "none" && (kind !== "relvol" || relvol?.state === "ok"))
+      for (; i < rows.length && rows[i].r <= hi; i++) {
+        const x = rows[i],
+          ya = G.Y((x.r + 1) * ps),
+          h = Math.max(0.1, G.Y(x.r * ps) - ya - 0.7);
+        let value;
+        if (kind === "relvol") {
+          const typed = relvol.at(x.r);
+          if (typed.tag !== "finite") continue;
+          value = typed.value;
+        } else value = read(x);
+        E.axis.coordinate(axis, value, at);
+        drawn++;
+        if (at.clip === E.scale.CLIP.LOW) low++;
+        else if (at.clip === E.scale.CLIP.HIGH) high++;
+        if (!diverging) {
+          if (!(at.t > 0)) continue;
+          ctx.fillStyle = bar;
+          ctx.globalAlpha = kind === "volume" ? 0.16 : 0.28;
+          ctx.fillRect(px, ya, pw * at.t, h);
+          ctx.globalAlpha = 0.6;
+          ctx.fillRect(px + pw * at.t - 1, ya, 1, h);
+          continue;
+        }
+        if (!at.t) continue;
+        const w = (pw / 2) * Math.abs(at.t);
+        ctx.fillStyle = at.t > 0 ? arms[0] : arms[1];
+        ctx.globalAlpha = 0.35;
+        ctx.fillRect(at.t > 0 ? mid : mid - w, ya, w, h);
       }
-      const v =
-        u.kind === "delta"
-          ? (2 * x.bv - x.v) / u.peak.d
-          : rel?.get(x.r)
-            ? clamp(rel.get(x.r).value / 2, -1, 1)
-            : 0;
-      if (!v) continue;
-      const w = (pw / 2) * Math.abs(v);
-      ctx.fillStyle = v >= 0 ? colors.buy : colors.sell;
-      ctx.globalAlpha = 0.35;
-      ctx.fillRect(v >= 0 ? mid : mid - w, ya, w, h);
-    }
     ctx.globalAlpha = 1;
+    axis.clipped.low = low;
+    axis.clipped.high = high;
+    axis.clipped.count = low + high;
+    axis.clipped.total = drawn;
+    axisChipWrite(axis);
     if (diverging) markLine(mid, G.y, mid, G.y + G.h, colors.line, 1, 0.9);
     const vb = u.volBands;
     if (vb?.va) {
@@ -4613,12 +7595,16 @@
   // How the underlay's rows stand for its period where they aren't its own
   // exactly (the recorded snapshot): from coarser rows, its 1,000 USDT ones,
   // marked ≈; or at 125 USDT from a block's first whole column after the
-  // period starts, which is said.
+  // period starts. The trimmed start is said either way (the coarser rows
+  // begin on a whole column too). The Rows legend's details carry the same
+  // words, from the frame's description of the rows.
   function underlayBasis(res) {
     if (res.state !== "ready" || res.exact !== false) return { approx: "", from: "" };
-    if (res.rowPrice > 1) return { approx: "≈ ", from: `from ${price(PR * res.rowPrice)} USDT rows` };
-    const a = Math.ceil(res.span[0] / res.columns) * res.columns;
-    return { approx: "", from: a > res.span[0] ? `from ${when(a)} UTC` : "" };
+    const a = Math.ceil(res.span[0] / res.columns) * res.columns,
+      trimmed = a > res.span[0] ? `from ${when(a)} UTC` : "";
+    if (res.rowPrice > 1)
+      return { approx: "≈ ", from: `from ${price(PR * res.rowPrice)} USDT rows${trimmed ? `, starting ${when(a)} UTC` : ""}` };
+    return { approx: "", from: trimmed };
   }
   // Why the underlay has no rows to draw yet.
   function underlayWhy(res) {
@@ -4629,41 +7615,6 @@
         : res.state === "unrecorded"
           ? "not recorded for this period"
           : "no time before the data's edge";
-  }
-  // The underlay's legend chip, after its menus, which name its choice and
-  // period: its ramp and scale, the peak in view, or why it has none yet. Its
-  // title names all three. Written only when its words change.
-  function underlayLegend(u) {
-    const chip = el("rows-legend");
-    if (!u) {
-      if (!chip.hidden) chip.hidden = true;
-      return;
-    }
-    if (chip.hidden) chip.hidden = false;
-    const k = u.peak,
-      { approx, from } = underlayBasis(u.res),
-      scale = !u.bands
-        ? underlayWhy(u.res)
-        : u.kind === "volume"
-          ? `${approx}0 → ${compact(k.v)} USDT`
-          : u.kind === "delta"
-            ? `${approx}Δ ${signedCompact(-k.d)} · 0 · ${signedCompact(k.d)} USDT`
-            : u.kind === "relvol"
-              ? `${approx}−2 · 0 · +2 vs the period`
-              : `0 → ${dur(k.w)}`,
-      title = `Rows: ${ROWS_INFO[u.kind].name} ${periodPhrase(u.period)}${from ? `, ${from}` : ""}: ${scale}`;
-    if (el("rows-legend-text").textContent !== scale) el("rows-legend-text").textContent = scale;
-    if (chip.title !== title) chip.title = title;
-    const ramp = el("rows-ramp");
-    if (ramp.dataset.kind !== u.kind) {
-      ramp.dataset.kind = u.kind;
-      ramp.style.background =
-        u.kind === "volume"
-          ? "linear-gradient(to right,var(--ol-surface),color-mix(in srgb,var(--ol-ink) 30%,var(--ol-surface)))"
-          : u.kind === "time"
-            ? "linear-gradient(to right,var(--ol-surface),color-mix(in srgb,var(--ol-time) 45%,var(--ol-surface)))"
-            : "linear-gradient(to right,color-mix(in srgb,var(--ol-sell) 45%,var(--ol-surface)),var(--ol-surface),color-mix(in srgb,var(--ol-buy) 45%,var(--ol-surface)))";
-    }
   }
   function markings(full, cut) {
     const ts = stepT(),
@@ -6176,165 +9127,6 @@
       }
     return out;
   }
-  // Moving averages, Bollinger bands and the oscillators (live), each on the
-  // closes of its own timeframe, by the standard definitions. SMA(n) is the
-  // mean of the last n closes. EMA(n) has α = 2 ÷ (n + 1) and is seeded with
-  // the SMA of its first n closes. RSI(14) smooths gains and losses as the
-  // ATR does, by Wilder's rule. Bollinger (20, 2σ) is the SMA(20) ± 2
-  // population standard deviations of the last 20 closes, and its bandwidth
-  // their spread over the middle. MACD is EMA(12) − EMA(26), its signal the
-  // EMA(9) of it and its histogram their difference. Each has a value from
-  // its first full window on (NaN before), drawn at the end of its bar, whose
-  // close it takes in.
-  function smaOf(values, n) {
-    const out = new Float64Array(values.length).fill(NaN);
-    for (let i = n - 1; i < values.length; i++) {
-      let s = 0;
-      for (let k = i - n + 1; k <= i; k++) s += values[k];
-      out[i] = s / n;
-    }
-    return out;
-  }
-  function emaOf(values, n, from = 0) {
-    const out = new Float64Array(values.length).fill(NaN),
-      a = 2 / (n + 1);
-    if (values.length - from < n) return out;
-    let e = 0;
-    for (let k = from; k < from + n; k++) e += values[k];
-    e /= n;
-    out[from + n - 1] = e;
-    for (let i = from + n; i < values.length; i++) out[i] = e = a * values[i] + (1 - a) * e;
-    return out;
-  }
-  function rsiOf(closes, n = 14) {
-    const out = new Float64Array(closes.length).fill(NaN);
-    if (closes.length <= n) return out;
-    let up = 0,
-      down = 0;
-    for (let i = 1; i <= n; i++) {
-      const d = closes[i] - closes[i - 1];
-      if (d > 0) up += d;
-      else down -= d;
-    }
-    up /= n;
-    down /= n;
-    const value = () => (down === 0 ? 100 : up === 0 ? 0 : 100 - 100 / (1 + up / down));
-    out[n] = value();
-    for (let i = n + 1; i < closes.length; i++) {
-      const d = closes[i] - closes[i - 1];
-      up = ((n - 1) * up + (d > 0 ? d : 0)) / n;
-      down = ((n - 1) * down + (d < 0 ? -d : 0)) / n;
-      out[i] = value();
-    }
-    return out;
-  }
-  function bollingerOf(closes, n = 20, k = 2) {
-    const len = closes.length,
-      nan = () => new Float64Array(len).fill(NaN),
-      mid = nan(),
-      upper = nan(),
-      lower = nan(),
-      width = nan();
-    for (let i = n - 1; i < len; i++) {
-      let s = 0;
-      for (let j = i - n + 1; j <= i; j++) s += closes[j];
-      const m = s / n;
-      let q = 0;
-      for (let j = i - n + 1; j <= i; j++) q += (closes[j] - m) * (closes[j] - m);
-      const sd = Math.sqrt(q / n);
-      mid[i] = m;
-      upper[i] = m + k * sd;
-      lower[i] = m - k * sd;
-      width[i] = (upper[i] - lower[i]) / m;
-    }
-    return { mid, upper, lower, width };
-  }
-  function macdOf(closes) {
-    const fast = emaOf(closes, 12),
-      slow = emaOf(closes, 26),
-      macd = new Float64Array(closes.length).fill(NaN),
-      hist = new Float64Array(closes.length).fill(NaN);
-    for (let i = 25; i < closes.length; i++) macd[i] = fast[i] - slow[i];
-    const signal = emaOf(macd, 9, 25);
-    for (let i = 0; i < closes.length; i++) hist[i] = macd[i] - signal[i];
-    return { macd, signal, hist };
-  }
-  // Where one series crosses another: where their difference changes sign
-  // between bars where both have a value. A touch that turns back is none.
-  function crossesOf(a, b) {
-    const out = [];
-    let was = 0;
-    for (let i = 0; i < a.length; i++) {
-      const d = a[i] - b[i];
-      if (!(d > 0 || d < 0)) continue;
-      const s = d > 0 ? 1 : -1;
-      if (was && s !== was) out.push({ i, up: s > 0 });
-      was = s;
-    }
-    return out;
-  }
-  // A 4-hour squeeze: bandwidth below its 10th percentile over the last 500
-  // bars, this one included, the percentile 0.9 of the way from the 50th
-  // lowest to the 51st (the order statistics' linear rule, at 0.1 × 499). A
-  // daily squeeze: bandwidth at its lowest of the trailing 182 days, this one
-  // included.
-  const SQUEEZE_BARS = 500,
-    SQUEEZE_RANK = 0.1,
-    SQUEEZE_DAYS = 182;
-  function squeezeBelow(width, size = SQUEEZE_BARS, p = SQUEEZE_RANK) {
-    const out = new Uint8Array(width.length),
-      win = [],
-      at = (v) => {
-        let lo = 0,
-          hi = win.length;
-        while (lo < hi) {
-          const mid = (lo + hi) >> 1;
-          if (win[mid] < v) lo = mid + 1;
-          else hi = mid;
-        }
-        return lo;
-      },
-      pos = p * (size - 1),
-      k = Math.floor(pos),
-      f = pos - k;
-    for (let i = 0; i < width.length; i++) {
-      const v = width[i];
-      if (!Number.isFinite(v)) continue;
-      win.splice(at(v), 0, v);
-      if (win.length > size) win.splice(at(width[i - size]), 1);
-      if (win.length === size && v < win[k] + f * (win[k + 1] - win[k])) out[i] = 1;
-    }
-    return out;
-  }
-  function squeezeLowest(width, size = SQUEEZE_DAYS) {
-    const out = new Uint8Array(width.length);
-    for (let i = size - 1; i < width.length; i++) {
-      if (!Number.isFinite(width[i - size + 1])) continue;
-      let low = Infinity;
-      for (let k = i - size + 1; k <= i; k++) if (width[k] < low) low = width[k];
-      if (width[i] <= low) out[i] = 1;
-    }
-    return out;
-  }
-  // RSI divergences between consecutive swings of a kind on the RSI's own
-  // timeframe: bearish where price made a higher high and the RSI a lower
-  // one, bullish where price made a lower low and the RSI a higher one, each
-  // at the swings' bars and known once the later swing is confirmed.
-  function divergencesOf(swings, rsi) {
-    const out = [],
-      last = {};
-    for (const s of swings) {
-      const was = last[s.kind];
-      last[s.kind] = s;
-      if (!was) continue;
-      const r0 = rsi[was.i],
-        r1 = rsi[s.i];
-      if (!Number.isFinite(r0) || !Number.isFinite(r1)) continue;
-      if (s.kind === "high" ? s.price > was.price && r1 < r0 : s.price < was.price && r1 > r0)
-        out.push({ bearish: s.kind === "high", a: was, b: s, r0, r1 });
-    }
-    return out;
-  }
   // The bars an average is computed on, each with its close and the time its
   // value is drawn at: its bar's end, or where the bars end. The days and
   // weeks come from the 8-hour bars, and the 4-hour and hourly bars are read
@@ -6417,14 +9209,14 @@
       const c = frame.closes;
       v =
         name === "sma"
-          ? smaOf(c, n)
+          ? E.indicators.smaOf(c, n)
           : name === "ema"
-            ? emaOf(c, n)
+            ? E.indicators.emaOf(c, n)
             : name === "rsi"
-              ? rsiOf(c, n)
+              ? E.indicators.rsiOf(c, n)
               : name === "bb"
-                ? bollingerOf(c, n)
-                : macdOf(c);
+                ? E.indicators.bollingerOf(c, n)
+                : E.indicators.macdOf(c);
       frame.memo.set(key, v);
     }
     return v;
@@ -6445,7 +9237,7 @@
     let runs = frame.memo.get("squeezes");
     if (!runs) {
       const width = indicator(frame, "bb", 20).width,
-        flags = frame.tf === "1d" ? squeezeLowest(width) : squeezeBelow(width);
+        flags = frame.tf === "1d" ? E.indicators.squeezeLowest(width) : E.indicators.squeezeBelow(width);
       runs = [];
       for (let i = 0; i < flags.length; i++)
         if (flags[i]) {
@@ -6458,7 +9250,7 @@
   }
   function frameCrosses(frame) {
     let out = frame.memo.get("crosses");
-    if (!out) frame.memo.set("crosses", (out = crossesOf(indicator(frame, "sma", 50), indicator(frame, "sma", 200))));
+    if (!out) frame.memo.set("crosses", (out = E.indicators.crossesOf(indicator(frame, "sma", 50), indicator(frame, "sma", 200))));
     return out;
   }
   // The moving averages' rows: each one's timeframe, and the averages it
@@ -6775,25 +9567,66 @@
     if (!hit) {
       if (key === "macd1d") {
         const m = indicator(frame, "macd", 0);
-        hit = { state: "ready", frame, ...m, crosses: crossesOf(m.macd, m.signal) };
+        hit = { state: "ready", frame, ...m, crosses: E.indicators.crossesOf(m.macd, m.signal) };
       } else {
         const rsi = indicator(frame, "rsi", 14),
           swings = key === "rsi4h" ? fourHourSwings(barSeries(8)) : structureNow(barSeries(9)).daily;
-        hit = { state: "ready", frame, rsi, divergences: divergencesOf(swings, rsi) };
+        hit = { state: "ready", frame, rsi, divergences: E.indicators.divergencesOf(swings, rsi) };
       }
       frame.memo.set(key, hit);
     }
     return hit;
   }
+  // The bars an oscillator's pane reads are all read: no chunk of its timeframe is still to come (one that
+  // failed is not waited for). The axis is fitted only on bars that are.
+  function oscBarsCoherent(n) {
+    const span = BAR_CHUNK * 2 ** n;
+    for (let j = Math.floor((cutEdge() - 1) / span); j >= 0; j--) {
+      const want = barChunkWant(n, j);
+      if (want && !motion.failed.has(want.key)) return false;
+    }
+    const tail = barEdgeWant(n);
+    return !(tail && !motion.failed.has(tail.key));
+  }
+  // MACD, its signal and its histogram over the bars i0..i1 as one summary, for the one axis they share.
+  function oscMacdSummary(o, i0, i1) {
+    let count = 0,
+      max = -Infinity,
+      min = Infinity;
+    for (let i = i0; i <= i1; i++)
+      for (const v of [o.macd[i], o.signal[i], o.hist[i]])
+        if (Number.isFinite(v)) {
+          count++;
+          if (v > max) max = v;
+          if (v < min) min = v;
+        }
+    return { count, max, min };
+  }
   // The pane under an oscillator: RSI with its 70 and 30 guides and its
-  // divergences, bearish in the sell colour and bullish in the buy colour, or
+  // divergences, bearish in the negative colour and bullish in the positive one, or
   // MACD's histogram, line and signal with its crosses; each on its own bars,
-  // one point to a pixel column, sharing the chart's time axis.
-  function drawOscillator(key, measure, cut) {
+  // one point to a pixel column, sharing the chart's time axis. RSI's axis is
+  // fixed, 0 to 100; MACD's is one axis for its three series, symmetric about
+  // zero and as long as the largest of them in view (No data before its first
+  // value), which holds still while a gesture is on and then follows.
+  function drawOscillator(key, measure, cut, sc) {
     const top = G.ay,
       h = G.ah,
       right = G.x + G.w,
-      o = oscillatorOf(key);
+      o = oscillatorOf(key),
+      id = "pane." + key,
+      // The registry's record, unless the scale display is off (then the pane holds its bars back).
+      oscAxis = (spec) => {
+        if (sc === INERT_SC) return null;
+        try {
+          return axisFrame(id, spec);
+        } catch (error) {
+          scaleFault(error);
+          return null;
+        }
+      },
+      place = { t: 0, clip: 0 };
+    let rec = null;
     ctx.fillStyle = colors.surface;
     ctx.fillRect(G.x, top, G.w, h);
     ctx.save();
@@ -6810,12 +9643,13 @@
     let note = "",
       scale = null,
       guides = [];
-    if (o.state !== "ready")
+    if (o.state !== "ready") {
       note =
         o.state === "failed"
           ? `the bars couldn't be read: ${o.error}`
           : `reading ${key === "rsi4h" ? "4-hour" : "8-hour"} bars from the cube…`;
-    else {
+      rec = oscAxis(key === "macd1d" ? { sign: "signed-symmetric", eligible: false, sig: "" } : { eligible: true, sig: "" });
+    } else {
       const f = o.frame,
         i0 = Math.max(0, endAt(f.ends, S.tA) - 1),
         i1 = Math.min(f.ends.length - 1, endAt(f.ends, S.tB)),
@@ -6850,77 +9684,149 @@
           ctx.stroke();
         };
       if (key === "macd1d") {
-        let max = 0;
-        for (let i = i0; i <= i1; i++)
-          for (const v of [o.macd[i], o.signal[i], o.hist[i]]) if (Number.isFinite(v)) max = Math.max(max, Math.abs(v));
-        max = max || 1;
-        const zero = top + h / 2,
-          room = h / 2 - 6,
-          y = (v) => zero - (v / max) * room;
-        markLine(G.x, zero, right, zero, colors.line, 1, 0.9);
-        // The histogram, a bar to a day, thinned to one a pixel column.
-        let lastX = -Infinity;
-        for (let i = i0; i <= i1; i++) {
-          const v = o.hist[i];
-          if (!Number.isFinite(v)) continue;
-          const xa = G.X(f.starts[i]),
-            xb = G.X(f.ends[i]);
-          if (xb - lastX < 1 && xb - xa < 1) continue;
-          lastX = xb;
-          ctx.fillStyle = v >= 0 ? colors.buy : colors.sell;
-          ctx.globalAlpha = 0.45;
-          ctx.fillRect(xa, Math.min(zero, y(v)), Math.max(0.6, xb - xa - (xb - xa > 3 ? 1 : 0)), Math.abs(y(v) - zero));
-        }
-        ctx.globalAlpha = 1;
-        stroke(pts(o.signal, y), lineStyle("average", "long").colour, 1.25);
-        stroke(pts(o.macd, y), colors.ink, 1.5);
-        for (const x of o.crosses) {
-          if (x.i < i0 || x.i > i1) continue;
-          const cx = G.X(f.ends[x.i]),
-            cy = y(o.macd[x.i]);
-          ctx.beginPath();
-          ctx.arc(cx, cy, 3, 0, 2 * Math.PI);
-          ctx.fillStyle = x.up ? colors.buy : colors.sell;
-          ctx.fill();
-          ctx.strokeStyle = colors.surface;
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        }
-        scale = `±${compact(max)}`;
-      } else {
-        const y = (v) => top + 4 + (1 - v / 100) * (h - 8);
-        for (const g of [70, 30]) {
-          ctx.setLineDash([3, 3]);
-          markLine(G.x, y(g), right, y(g), colors.line, 1, 1);
-          ctx.setLineDash([]);
-        }
-        stroke(pts(o.rsi, y), colors.ink, 1.5);
-        for (const d of o.divergences) {
-          if (d.b.confirmed > cut || f.ends[d.b.i] < S.tA || f.ends[d.a.i] > S.tB) continue;
-          const colour = d.bearish ? colors.sell : colors.buy;
-          line(G.X(f.ends[d.a.i]), y(d.r0), G.X(f.ends[d.b.i]), y(d.r1), colour, 2, 0.95);
-          for (const [s, r] of [
-            [d.a, d.r0],
-            [d.b, d.r1],
-          ]) {
-            ctx.beginPath();
-            ctx.arc(G.X(f.ends[s.i]), y(r), 2.5, 0, 2 * Math.PI);
-            ctx.fillStyle = colour;
-            ctx.fill();
+        // One axis for the three series, fitted on the exact largest of them in view once their bars
+        // are read; it holds through a gesture and Play (the chip says so) and is never 1 by default.
+        rec = oscAxis({
+          sign: "signed-symmetric",
+          eligible: oscBarsCoherent(9),
+          sig: [scaleWorkspace(), id, live.generation, barsVersion, cutEdge(), S.replay, key, i0, i1, o.state].join("|"),
+          summary: () => oscMacdSummary(o, i0, i1),
+        });
+        if (rec?.clipped) {
+          // Bars beyond a held or frozen domain are drawn at its edge and counted.
+          const cl = rec.clipped;
+          cl.low = cl.high = cl.count = 0;
+          if (rec.typed !== "none" && (rec.hold !== null || rec.policy === "frozen")) {
+            cl.total = 0;
+            for (let i = i0; i <= i1; i++)
+              for (const v of [o.macd[i], o.signal[i], o.hist[i]])
+                if (Number.isFinite(v)) {
+                  cl.total++;
+                  const c = E.axis.coordinate(rec, v, place).clip;
+                  if (c === E.scale.CLIP.LOW || c === E.scale.CLIP.HIGH) {
+                    cl.count++;
+                    if (c === E.scale.CLIP.LOW) cl.low++;
+                    else cl.high++;
+                  }
+                }
           }
         }
-        guides = [70, 30].map((g) => [String(g), y(g)]);
+        if (rec && rec.typed !== "none") {
+          const zero = top + h / 2,
+            room = h / 2 - 6,
+            y = (v) => zero - E.axis.coordinate(rec, v, place).t * room;
+          markLine(G.x, zero, right, zero, colors.line, 1, 0.9);
+          // The histogram, a bar to a day, thinned to one a pixel column.
+          let lastX = -Infinity;
+          for (let i = i0; i <= i1; i++) {
+            const v = o.hist[i];
+            if (!Number.isFinite(v)) continue;
+            const xa = G.X(f.starts[i]),
+              xb = G.X(f.ends[i]);
+            if (xb - lastX < 1 && xb - xa < 1) continue;
+            lastX = xb;
+            ctx.fillStyle = v >= 0 ? colors.positive : colors.negative;
+            ctx.globalAlpha = 0.45;
+            ctx.fillRect(xa, Math.min(zero, y(v)), Math.max(0.6, xb - xa - (xb - xa > 3 ? 1 : 0)), Math.abs(y(v) - zero));
+          }
+          ctx.globalAlpha = 1;
+          stroke(pts(o.signal, y), lineStyle("average", "long").colour, 1.25);
+          stroke(pts(o.macd, y), colors.ink, 1.5);
+          for (const x of o.crosses) {
+            if (x.i < i0 || x.i > i1) continue;
+            const cx = G.X(f.ends[x.i]),
+              cy = y(o.macd[x.i]);
+            ctx.beginPath();
+            ctx.arc(cx, cy, 3, 0, 2 * Math.PI);
+            ctx.fillStyle = x.up ? colors.positive : colors.negative;
+            ctx.fill();
+            ctx.strokeStyle = colors.surface;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+        scale = !rec || rec.typed === "none" ? E.text.axis.none : rec.typed === "zero-only" ? E.text.axis.zero : `±${compact(rec.domain[1])}`;
+      } else {
+        // RSI's axis is fixed at 0 to 100, its guides at 30 and 70: the record's, so the line, the guides, the
+        // labels and the tooltip place a value the same way.
+        rec = oscAxis({ eligible: true, sig: "" });
+        if (rec?.typed === "finite") {
+          const y = (v) => top + 4 + (1 - E.axis.coordinate(rec, v, place).t) * (h - 8),
+            ticks = E.axis.ticks(rec, h - 8),
+            guideY = ticks.filter((t) => t.kind === "guide").map((t) => y(t.value));
+          for (const gy of guideY) {
+            ctx.setLineDash([3, 3]);
+            markLine(G.x, gy, right, gy, colors.line, 1, 1);
+            ctx.setLineDash([]);
+          }
+          // The guides' labels, and the ends' where they are clear of a guide's.
+          guides = ticks
+            .filter((t) => t.kind === "guide" || guideY.every((gy) => Math.abs(gy - y(t.value)) >= 12))
+            .map((t) => [String(t.value), clamp(y(t.value), top + 6, top + h - 6)]);
+          stroke(pts(o.rsi, y), colors.ink, 1.5);
+          for (const d of o.divergences) {
+            if (d.b.confirmed > cut || f.ends[d.b.i] < S.tA || f.ends[d.a.i] > S.tB) continue;
+            const colour = d.bearish ? colors.legacySell : colors.legacyBuy;
+            line(G.X(f.ends[d.a.i]), y(d.r0), G.X(f.ends[d.b.i]), y(d.r1), colour, 2, 0.95);
+            for (const [s, r] of [
+              [d.a, d.r0],
+              [d.b, d.r1],
+            ]) {
+              ctx.beginPath();
+              ctx.arc(G.X(f.ends[s.i]), y(r), 2.5, 0, 2 * Math.PI);
+              ctx.fillStyle = colour;
+              ctx.fill();
+            }
+          }
+        }
       }
     }
     ctx.restore();
-    paneShown = { key, measure, osc: o, cols: [] };
+    paneShown = { key, measure, osc: o, cols: [], axis: rec, frame: null, model: null };
+    if (sc !== INERT_SC) sc.pane = paneShown;
     // The scale in the price labels' column: the RSI's guides, MACD's largest value.
     if (scale) text(scale, G.x - 8, top + 7, colors.muted, "right");
     for (const [label, gy] of guides) text(label, G.x - 8, gy, colors.muted, "right");
-    paneLegend(measure, [], null, top, note);
+    paneLegend(measure, [], null, top, note, rec, "");
+    axisChipWrite(rec, paneShown);
+  }
+  // The tooltip's pane rows that say where a value sits on the pane's axis: the axis in words, its domain
+  // as numbers, the value's place on it and whether the axis leaves it out. `meta` is parallel to the rows
+  // (what a test reads as [data-field][data-canonical], see paneTipFields).
+  function paneAxisTipRows(rec, value) {
+    const rows = [],
+      meta = [];
+    if (!rec) return { rows, meta };
+    rows.push(["Axis", paneAxisNote(rec)]);
+    meta.push(null);
+    if (rec.typed === "finite" && Number.isFinite(value)) {
+      const at = E.axis.coordinate(rec, value, { t: 0, clip: 0 }),
+        beyond = at.clip === E.scale.CLIP.LOW || at.clip === E.scale.CLIP.HIGH;
+      rows.push([
+        "Axis domain",
+        rec.sign === "unsigned" ? `${compact(rec.domain[0])} to ${compact(rec.domain[1])}` : `${signed(rec.domain[0], compact)} to ${signed(rec.domain[1], compact)}`,
+      ]);
+      meta.push({ field: "axisHigh", canonical: rec.domain[1] });
+      rows.push(["On the axis", `${(at.t * 100).toFixed(0)}%${beyond ? " · beyond the axis" : ""}`]);
+      meta.push({ field: "axisPosition", canonical: at.t });
+    }
+    return { rows, meta };
+  }
+  // The numeric rows of a pane's tooltip carry [data-field] and [data-canonical] (INTEGRATION D.18) and the
+  // tooltip names the readout it was built from, "pane:<axis id>:<column or bar>". `meta` is parallel to
+  // the rows tipRows just wrote; a null entry is a row with nothing to read back.
+  function paneTipFields(tip, meta, readout) {
+    const values = tip.querySelectorAll(".ol-tip-rows dd");
+    meta.forEach((m, i) => {
+      if (!m || !values[i]) return;
+      values[i].dataset.field = m.field;
+      values[i].dataset.canonical = String(m.canonical);
+    });
+    if (readout) tip.dataset.readout = readout;
   }
   // The pane's tooltip under an oscillator: the value at the bar whose close,
-  // where it is drawn, is nearest the pointer, and a divergence or a cross there.
+  // where it is drawn, is nearest the pointer, and a divergence or a cross there,
+  // with where that value sits on the pane's axis.
   function oscillatorTip(tip, p) {
     const o = paneShown.osc,
       measure = paneShown.measure;
@@ -6931,10 +9837,15 @@
     if (p.t >= last.cut) return tipRows(tip, measure.label, "", [], S.replay ? "Hidden in replay" : "After the data cutoff");
     if (i < 0 || p.t < f.starts[0]) return tipRows(tip, measure.label, "", [], "Before the history's first bar");
     const head = `${measure.label} · at the close of ${frameBar(f, i)}`,
-      two = (v) => (Number.isFinite(v) ? v.toFixed(2) : "—");
+      two = (v) => (Number.isFinite(v) ? v.toFixed(2) : "—"),
+      rec = paneShown.axis,
+      readout = rec ? `pane:${rec.id}:${i}` : "";
+    // An oscillator's bar has no Readout record of the module's (its values are the page's own series).
+    scaleRt.tipReadout = null;
     if (paneShown.key === "macd1d") {
-      const x = o.crosses.find((c) => c.i === i);
-      return tipRows(
+      const x = o.crosses.find((c) => c.i === i),
+        axis = paneAxisTipRows(rec, o.macd[i]);
+      tipRows(
         tip,
         head,
         x ? (x.up ? "MACD crossed above its signal" : "MACD crossed below its signal") : "",
@@ -6943,12 +9854,25 @@
           ["Signal", two(o.signal[i])],
           ["Histogram", two(o.hist[i])],
           ["Close", `${price(Math.round(100 * f.closes[i]) / 100)} USDT`],
+          ...axis.rows,
         ],
-        Number.isFinite(o.signal[i]) ? "EMA(12) − EMA(26) of the daily closes; its signal the EMA(9) of it" : "From its first full window: the 34th day",
+        Number.isFinite(o.signal[i]) ? "EMA(12) − EMA(26) of the daily closes in USDT; its signal the EMA(9) of it" : "From its first full window: the 34th day",
+      );
+      return paneTipFields(
+        tip,
+        [
+          Number.isFinite(o.macd[i]) ? { field: "macd", canonical: o.macd[i] } : null,
+          Number.isFinite(o.signal[i]) ? { field: "signal", canonical: o.signal[i] } : null,
+          Number.isFinite(o.hist[i]) ? { field: "histogram", canonical: o.hist[i] } : null,
+          { field: "close", canonical: f.closes[i] },
+          ...axis.meta,
+        ],
+        readout,
       );
     }
-    const d = o.divergences.find((x) => x.b.i === i && x.b.confirmed <= last.cut);
-    return tipRows(
+    const d = o.divergences.find((x) => x.b.i === i && x.b.confirmed <= last.cut),
+      axis = paneAxisTipRows(rec, o.rsi[i]);
+    tipRows(
       tip,
       head,
       d ? `${d.bearish ? "Bearish" : "Bullish"} divergence from ${frameBar(f, d.a.i)}` : "",
@@ -6956,8 +9880,19 @@
         ["RSI 14", two(o.rsi[i])],
         ["Close", `${price(Math.round(100 * f.closes[i]) / 100)} USDT`],
         ...(d ? [["RSI at the swing before", two(d.r0)]] : []),
+        ...axis.rows,
       ],
       Number.isFinite(o.rsi[i]) ? "Wilder's smoothing of gains and losses over 14 bars" : "From its first full window: the 15th bar",
+    );
+    paneTipFields(
+      tip,
+      [
+        Number.isFinite(o.rsi[i]) ? { field: "rsi", canonical: o.rsi[i] } : null,
+        { field: "close", canonical: f.closes[i] },
+        ...(d ? [{ field: "rsiBefore", canonical: d.r0 }] : []),
+        ...axis.meta,
+      ],
+      readout,
     );
   }
   // The row underlay (Rows, U): each price row's value over a period of its
@@ -6971,9 +9906,11 @@
       off: { name: "Off", desc: "No backdrop behind the cells" },
       volume: { name: "Volume", desc: "USDT traded at each price row over the period" },
       delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT at each price row over the period" },
+      // Version 2: both shares are taken over the same price range (the selection's, else the view's), so a
+      // rectangle that trades like its period reads 0 on every row; rows outside that range are not compared.
       relvol: {
         name: "Relative volume",
-        desc: "Each row's share of the view's USDT against its share of the period's, log₂",
+        desc: "Each row's share of the view's USDT against its share of the period's over the same price range, log₂",
       },
       time: { name: "Time at price", desc: "How long the price spent in each row over the period" },
     },
@@ -7068,8 +10005,6 @@
     let v = 0,
       w = 0,
       vmax = 0,
-      dmax = 0,
-      wmax = 0,
       poc = null;
     for (const x of rows) {
       v += x.v;
@@ -7078,42 +10013,21 @@
         vmax = x.v;
         poc = x.r;
       }
-      dmax = Math.max(dmax, Math.abs(2 * x.bv - x.v));
-      wmax = Math.max(wmax, x.w);
     }
-    const bands = { m: bm, rows, map, v, w, vmax, dmax, wmax, poc, va: contiguousArea(rows, poc, v) };
+    const bands = { m: bm, rows, map, v, w, poc, va: contiguousArea(rows, poc, v) };
     byRows.set(bm, bands);
     return bands;
-  }
-  // Relative volume: log2 of a row's share of the rectangle's USDT (the
-  // selection's, or the view's) over its share of the period's, at the bands'
-  // row size. A row the period traded but the rectangle didn't is −2; a row the
-  // period never traded has none. Kept for the last rectangle.
-  const relMemo = new WeakMap();
-  function relativeVolume(bands, query) {
-    const hit = relMemo.get(bands);
-    if (hit?.query === query) return hit.values;
-    const k = 2 ** Math.max(0, bands.m - (query.m ?? renderM())),
-      rect = new Map(),
-      values = new Map();
-    for (const x of query.rows) {
-      const r = Math.floor(x.r / k);
-      rect.set(r, (rect.get(r) || 0) + x.v);
-    }
-    if (query.v > 0 && bands.v > 0)
-      for (const x of bands.rows) {
-        if (!(x.v > 0)) continue;
-        const shareP = x.v / bands.v,
-          shareV = (rect.get(x.r) || 0) / query.v;
-        values.set(x.r, shareV > 0 ? { value: Math.log2(shareV / shareP), shareV, shareP } : { value: -2, shareV: 0, shareP, none: true });
-      }
-    relMemo.set(bands, { query, values });
-    return values;
   }
   // What the underlay shows this frame, or null while it is off: its rows (the
   // lines' for the period, or Time at price's dwell), their bands at the drawn
   // row size, and the volume bands its POC, value area and relative volume
-  // come from. Relative volume waits for the rectangle's own measures.
+  // come from. `rect` is the rectangle the view compares with its period (its
+  // measure, bounds and read state: Relative volume says for itself when the
+  // rectangle is not measured yet); the rest describes the period's rows: their
+  // own row level, whether they are exact, the period's quality class, the
+  // edge they were read to, and whether they are the last period's while a new
+  // read is out. These stay on the frame and never on the cached bands, which
+  // are keyed by the rows alone.
   function underlayFrame(meas) {
     if (S.rows === "off") return null;
     const kind = S.rows,
@@ -7122,8 +10036,367 @@
       res = kind === "time" ? dwellShown(S.period) : vol,
       volBands = vol.state === "ready" && vol.rows ? underlayBands(vol, m) : null,
       bands = kind === "time" ? (res.state === "ready" && res.rows ? underlayBands(res, m) : null) : volBands,
-      rect = meas.state === "pending" || meas.state === "failed" ? null : meas.query;
-    return { kind, period: S.period, vol, res, bands, volBands, rect };
+      rect = { query: meas.query, b: meas.b, state: meas.state },
+      ready = res.state === "ready" && res.rows,
+      // Time at price ends where the dwell read did; the other measures at their period's span.
+      through = !ready ? null : kind === "time" && res.end !== undefined ? res.end : (res.span?.[1] ?? null);
+    return {
+      kind,
+      period: S.period,
+      vol,
+      res,
+      bands,
+      volBands,
+      rect,
+      stale: Boolean(res.stale),
+      own: ready ? Math.round(Math.log2(res.rowPrice || 1)) : 0,
+      exact: res.exact !== false,
+      rowPrice: res.rowPrice || 1,
+      through,
+      quality: ready ? rowsQuality(res) : "exact",
+    };
+  }
+  // ---- The Rows channel of the scale spine (PRD-0002 S1, package R) ----
+  // What the row underlay colours with: one mapping for each (measure, period, row size, quality), fitted
+  // over ALL the measured rows of the period, off-screen ones included (never the peak in view), or the
+  // fixed log2 scale of Relative volume. The spine owns the clocks and the store; this block owns what is
+  // particular to rows: the context key, the cohort the spine fits from, the frame the bands and the profile
+  // encode through, the comparison Relative volume makes, and the marks the warning tally counts. It joins
+  // the spine through three hooks (rowsFrame, rowsCohort, rowsMarks), registered below.
+  const rowsRole = E.readout.ROLE,
+    rowsTag = E.result.TAG,
+    // The period identity of a rolling period needs its length; the calendar and dated ones need none.
+    rowsPeriodEnv = { T0, BASE, days: (key) => lineInfo(key)?.days };
+  // One small integer per object, for memo keys: arrays and query summaries carry no id of their own.
+  const objIds = new WeakMap();
+  let objIdCount = 0;
+  function objId(object) {
+    let id = objIds.get(object);
+    if (id === undefined) objIds.set(object, (id = ++objIdCount));
+    return id;
+  }
+  // The period's rows stand for it exactly, or as the snapshot's coarser rows (labelled with their size), or
+  // from its first whole column on (the snapshot's finest cells start on a column edge).
+  function rowsQuality(res) {
+    return res.rowPrice > 1 ? "approx-rows:" + res.rowPrice : res.exact === false ? "approx-start" : "exact";
+  }
+  // The Rows calibration context of what the underlay shows: measure, transform, period identity, effective
+  // row size, quality and workspace; no resolution level n, because rows do not depend on it. The period is
+  // the one the page asks for NOW (not the one of rows that are kept while the new ones are read), so at a
+  // calendar rollover the new period has no record and nothing is fitted from the last one's rows. Null
+  // until there are rows to calibrate on.
+  function rowsContext(under = underlayFrame(viewParts().meas)) {
+    if (!under?.bands) return null;
+    const eff = E.policy.effective(S.scale, under.kind, "rows");
+    return E.context.rowsKey({
+      measure: under.kind,
+      transform: eff.transform,
+      curve: eff.curve,
+      quality: under.quality,
+      period: E.context.periodIdentity(under.period, lineSpan(under.period) || under.res.span, rowsPeriodEnv),
+      rowSize: under.bands.m,
+      workspace: scaleWorkspace(),
+      instrument: INSTRUMENT,
+    });
+  }
+  // What the cohort of Rows needs, from the state at the moment it is asked (the spine calls it when a fit
+  // is due, never with a frame kept from an earlier draw). Every row of the period at the effective row size
+  // is in it, in view or not; each measure reads only the result that carries it (Time at price the dwell's
+  // rows). Relative volume has a fixed domain and no cohort. The extra fields are for the spine: the context
+  // and its key, and the inputs of the coherence check (the rows are the period's own, to its own end).
+  function rowsCohortInputs(vp) {
+    const under = underlayFrame(vp.meas);
+    if (!under || under.kind === "relvol") return null;
+    const res = under.res,
+      span = lineSpan(under.period),
+      ctx = rowsContext(under);
+    return {
+      rows: under.bands ? under.bands.rows : [],
+      measure: under.kind,
+      m: under.bands ? under.bands.m : renderM(),
+      res: { state: res.state, span: res.span ?? null, end: res.end, stale: under.stale },
+      stale: under.stale,
+      span,
+      cut: vp.cut,
+      quality: under.quality,
+      ctx,
+      key: ctx ? E.context.keyString(ctx) : null,
+      coherent: {
+        state: res.state,
+        stale: under.stale,
+        span1: res.span ? res.span[1] : null,
+        expectedEnd: span ? span[1] : null,
+      },
+    };
+  }
+  // Relative volume of the rectangle against the period, through the module, IN the draw path: it needs only
+  // the rows inside the comparison range W (the rectangle's price bounds), a binary search and flat arrays,
+  // so it costs O(rows in W) and runs again only when the period's rows, the rectangle, W or the row level
+  // change (a vertical pan moves W, so it does every pan step). Kept for the last call; the result lives
+  // apart from the cached bands, which stay unrestricted (POC and value area keep their own periods).
+  const relvolMemo = { key: "", value: null };
+  function relvolFor(bands, res, rect) {
+    if (!bands || !res?.rows || !rect) return null;
+    const key = [objId(res.rows), objId(rect.query), rect.b[2], rect.b[3], bands.m, rect.state, res.stale ? 1 : 0].join("|");
+    if (relvolMemo.key === key) return relvolMemo.value;
+    const value = E.relvol.compute({
+      read: { meas: { state: rect.state }, res: { state: res.state }, stale: Boolean(res.stale) },
+      W: [rect.b[2], rect.b[3]],
+      period: { rows: res.rows, own: Math.round(Math.log2(res.rowPrice || 1)), exact: res.exact !== false },
+      current: { rows: rect.query.rows, m: rect.query.m ?? renderM() },
+      bm: bands.m,
+      hidden: false,
+    });
+    relvolMemo.key = key;
+    relvolMemo.value = value;
+    return value;
+  }
+  // The read state of the period's rows, for the frame: bands exist only while they are "ready".
+  function rowsRead(res) {
+    if (res.state === "failed") return { state: "failed", reason: String(res.error ?? "read failed") };
+    if (res.state === "pending") return { state: "pending", reason: "reading from the cube" };
+    if (res.state === "unrecorded") return { state: "unsupported", reason: "not recorded for this period" };
+    if (res.state === "none") return { state: "unsupported", reason: "no time before the data's edge" };
+    return null;
+  }
+  // What the readouts and the legend say about the rows behind a band (JSON-safe numbers and text): the
+  // period and its label, the row size asked for and the one in effect with its USDT size, the quality class,
+  // where the period starts and what it was read to, whether the rows are the last period's, Time at price's
+  // three seconds, and Relative volume's support and counts.
+  function rowsInfo(under, relvol) {
+    const { res, bands } = under,
+      span = lineSpan(under.period),
+      trimmed = bands && under.exact === false && res.columns ? Math.ceil(res.span[0] / res.columns) * res.columns : null;
+    return {
+      period: under.period,
+      periodLabel: periodLabel(under.period),
+      requestedM: renderM(),
+      effectiveM: bands ? bands.m : renderM(),
+      ownM: under.own,
+      rowUsdt: PR * 2 ** (bands ? bands.m : renderM()),
+      quality: under.quality,
+      approximate: under.exact === false,
+      trimmedFromBase: trimmed !== null && trimmed > res.span[0] ? trimmed : null,
+      fromBase: span ? span[0] : null,
+      throughBase: under.through,
+      stale: under.stale,
+      time:
+        under.kind === "time" && bands
+          ? {
+              // Wall-clock seconds the dwell read covers, the cube's own total for the period (absent when the
+              // cube did not say) and the sum of the rows the page holds: rows are never scaled to the total.
+              coveredSeconds: Math.max(0, Math.min(res.end ?? res.span[1], res.span[1]) - res.span[0]) * BASE,
+              cubeSeconds: Number.isFinite(res.w) ? res.w : null,
+              attributedSeconds: bands.w,
+            }
+          : null,
+      relvol: relvol && relvol.state === "ok" ? { counts: relvol.counts, support: relvol.support, restriction: relvol.restriction } : null,
+    };
+  }
+  // The observation a frame states: what was read, to when, at which generation and cutoff.
+  function rowsObservation(under, cutMs) {
+    return {
+      source: PACK.live ? "cube" : "recorded",
+      instrument: INSTRUMENT,
+      read: under.res.state,
+      updating: under.stale,
+      cutoffMs: cutMs,
+      liveCutoffMs: E.time.baseToMs(CUT, T0, BASE),
+      canonicalThroughMs: CANON === null ? null : E.time.baseToMs(CANON, T0, BASE),
+      token: PACK.state_token ?? null,
+      generation: live.generation,
+      replay: Boolean(S.replay),
+      coverage: "range",
+    };
+  }
+  // The surface colour as RGB for the legend's composites, parsed once for each theme epoch.
+  const rowsSurface = { epoch: -1, rgb: null };
+  let relvolDescriptor = null;
+  // The mapping the Rows channel finds for a context, by lookup only and without a side effect: the fixed
+  // log2 scale for Relative volume, else what E.policy.resolve finds in the store, marked updating while a fit
+  // for the channel is waiting. The marks pass counts through it (it has no chip to write and asks for
+  // nothing); the draw resolves through the spine's `scaleResolve` instead (rowsResolve below).
+  function rowsMapping(under, ctx, cutMs) {
+    if (under.kind === "relvol") return relvolDescriptor ?? (relvolDescriptor = E.scale.fixed("log2-ratio"));
+    if (!ctx) return null;
+    const resolved = E.policy.resolve({
+      channel: "r",
+      kind: "unbounded",
+      ctx,
+      scale: S.scale,
+      store: scaleRt.store,
+      workspace: scaleWorkspace(),
+      cutMs,
+    });
+    return resolved.state === "ok" && scaleRt.ctl.hasWants() && scaleRt.ctl.snapshot().wants.rows
+      ? { ...resolved, state: "updating" }
+      : resolved;
+  }
+  // What a refit of the Rows mapping would read, as a key: the context, the period's rows (by identity: a
+  // new read is a new array) and where they end. The spine compares it with the key of the last fit under
+  // Auto, so Auto refits when the period was read again and Explore (which never asks) does not.
+  function rowsDataKey(under, key) {
+    return [key, objId(under.res.rows ?? under.res), under.bands?.m, under.through].join("|");
+  }
+  // The mapping of the draw, through the spine's `scaleResolve` (DR-53): it looks the context up, asks for
+  // the fit that is missing (the first calibration of a context; under Auto a refit when the rows changed),
+  // leaves what the chip and the tick need in `scaleRt.cur.rows`, and discloses a change of mapping. Relative
+  // volume has a fixed domain: nothing is asked and nothing is fitted, and it has no range warning (A-14).
+  function rowsResolve(under, ctx, cutMs) {
+    if (!ctx) return null;
+    const relvol = under.kind === "relvol",
+      key = E.context.keyString(ctx);
+    if (relvol && !relvolDescriptor) relvolDescriptor = E.scale.fixed("log2-ratio");
+    return scaleResolve("rows", {
+      ctx,
+      kind: relvol ? "fixed" : "unbounded",
+      fixed: relvol ? relvolDescriptor : null,
+      cutMs,
+      memo: () => rowsDataKey(under, key),
+      meaningful: !relvol,
+      failed: under.res.state === "failed",
+    });
+  }
+  // The frame of the Rows channel for what the underlay shows, from the same inputs wherever it is asked
+  // (the draw, and the marks pass at a settled moment): the mapping, the Relative-volume result, the
+  // read state, the Lut and the description of the rows. `resolve` is the draw's resolution (it asks for what
+  // is missing); without it the mapping is the pure lookup. `surface` (RGB) is for the legend's samples
+  // only, so the marks pass, which has no legend, leaves it out.
+  function rowsFrameOf(under, cutMs, lut, surface = null, resolve = false) {
+    const ctx = rowsContext(under),
+      mapping = resolve ? rowsResolve(under, ctx, cutMs) : rowsMapping(under, ctx, cutMs),
+      relvol = under.kind === "relvol" ? relvolFor(under.bands, under.vol, under.rect) : null;
+    const frame = E.readout.rowsFrame({
+      kind: under.kind,
+      rowSize: under.bands ? under.bands.m : renderM(),
+      mapping,
+      lut,
+      relvol,
+      read: rowsRead(under.res),
+      surface,
+      info: rowsInfo(under, relvol),
+      observation: rowsObservation(under, cutMs),
+      contextKey: ctx ? E.context.keyString(ctx) : null,
+    });
+    return { frame, ctx, mapping, relvol };
+  }
+  // The Rows frame of a draw, registered as the rowsFrame hook: `sc.rows`, which paintBands, the profile and
+  // the readouts encode through. `under.relvol` carries Relative volume's result to them. A fit that is
+  // wanted but whose data had not come (the period's rows are still being read) is woken again here: the
+  // read that lands redraws, and the wake is one timer at most.
+  function rowsScaleFrame(under, sc) {
+    if (!under) return null;
+    if (rowsSurface.epoch !== colourEpoch) {
+      rowsSurface.epoch = colourEpoch;
+      rowsSurface.rgb = E.lut.parseColor(colors.surface);
+    }
+    const built = rowsFrameOf(under, sc.cutMs, sc.lut, rowsSurface.rgb, true);
+    under.relvol = built.relvol;
+    if (scaleRt.ask.rows) scaleArm();
+    return built.frame;
+  }
+  // The row indices a frame draws: the period's rows in view for the amounts; for Relative volume every bin
+  // of its comparison range in view, because rows only the rectangle traded (no reference) and rows only the
+  // period traded (no current volume) are marks too, and a bin outside the range is not drawn at all.
+  function rowsBinRange(relvol, ps) {
+    const lo = Math.floor(G.Y.invert(G.y + G.h) / ps),
+      hi = Math.floor(G.Y.invert(G.y) / ps),
+      s = relvol.support;
+    return s.first === null ? [1, 0] : [Math.max(lo, s.first), Math.min(hi, s.last)];
+  }
+  const rowsBin = { r: 0, v: 0, bv: 0, w: 0 };
+  // The three amounts a row holds, for the length axes: its USDT, its signed USDT and its time.
+  const rowsV = (x) => x.v,
+    rowsDelta = (x) => 2 * x.bv - x.v,
+    rowsW = (x) => x.w;
+  // What an axis needs to know of the rows it is drawn for: how many, and their extremes (one pass, no sort).
+  // From index `i` to the last row whose number is at most `hiRow`.
+  function rowsScan(rows, i, hiRow, read) {
+    let count = 0,
+      max = -Infinity,
+      min = Infinity;
+    for (; i < rows.length && rows[i].r <= hiRow; i++) {
+      const value = read(rows[i]);
+      count++;
+      if (value > max) max = value;
+      if (value < min) min = value;
+    }
+    return { count, max, min };
+  }
+  // The ink of the last band filled, so the fill style is assigned only when the colour changes.
+  let bandInk = null;
+  // One band: the Rows mapping's RAW role colour (the canvas paints it at the fixed Rows alpha, so the grid
+  // shows through; the legend samples the same blend), or the typed mark of a value that is not a number.
+  // Volume and Time at price use the rows role, Delta and Relative volume the arms (zero at the midpoint).
+  // A row with no trade (zero) and a row outside the comparison range draw no band. Negative infinity (the
+  // period traded here, the rectangle did not) is a 2 px tick in state ink at the plot's edge with the
+  // infinity plate where the band is 8 px or more; no reference (the rectangle traded, the period did not)
+  // a dotted 1 px tick. Both are opaque: they are marks, not part of the projection.
+  function bandPaint(u, x, frame, out) {
+    frame.encode(x, out);
+    const ps = 2 ** u.bands.m,
+      ya = G.Y((x.r + 1) * ps),
+      yb = G.Y(x.r * ps),
+      h = Math.max(0.5, yb - ya);
+    if (out.role === rowsRole.PATTERN) {
+      if (out.tag === rowsTag["negative-infinite"]) {
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = colors.state;
+        ctx.fillRect(G.x, ya, 2, h);
+        if (h >= 8) paintGlyph("infinity", G.x + 9, (ya + yb) / 2, 10);
+        ctx.restore();
+      } else if (out.tag === rowsTag["no-reference"]) {
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = colors.state;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([1, 2]);
+        ctx.beginPath();
+        ctx.moveTo(G.x + 0.5, ya);
+        ctx.lineTo(G.x + 0.5, ya + h);
+        ctx.stroke();
+        ctx.restore();
+      }
+      return;
+    }
+    if (out.css === null || out.role === rowsRole.ZERO) return;
+    if (bandInk !== out.css) ctx.fillStyle = bandInk = out.css;
+    ctx.fillRect(G.x, ya, G.w, h);
+  }
+  // The bands in view, counted as the marks of the warning tally: the same bands, through the same frame, as
+  // the paint. They run across the plot, so each is clipped to the plot only (not to the measured rectangle);
+  // a zero row is an occupied mark with no magnitude, negative infinity is occupied and outside the scale,
+  // no reference counts for its key alone.
+  function rowsMarks(tally, clip, vp) {
+    const under = underlayFrame(vp.meas);
+    if (!under?.bands) return;
+    const { frame, relvol } = rowsFrameOf(under, E.time.baseToMs(vp.cut, T0, BASE), lutFor(scaleRt.appearance, scaleRt.theme));
+    if (under.kind === "relvol" && relvol?.state !== "ok") return;
+    const area = { plot: clip.plot ?? clip, meas: null },
+      x0 = G.x,
+      x1 = G.x + G.w,
+      ps = 2 ** under.bands.m,
+      mark = (x) => {
+        frame.encode(x, ENC);
+        const y0 = G.Y((x.r + 1) * ps),
+          y1 = G.Y(x.r * ps);
+        if (ENC.role === rowsRole.PATTERN) {
+          if (ENC.tag === rowsTag["negative-infinite"]) tally.addBoxNegInf(x0, y0, x1, y1, area);
+          else if (ENC.tag === rowsTag["no-reference"]) tally.addNoRef();
+        } else if (ENC.css !== null) tally.addBox(x0, y0, x1, y1, area, ENC.idx, ENC.clip, true, ENC.role !== rowsRole.ZERO);
+      };
+    if (relvol) {
+      const [lo, hi] = rowsBinRange(relvol, ps);
+      for (let j = lo; j <= hi; j++) {
+        rowsBin.r = j;
+        mark(rowsBin);
+      }
+    } else {
+      const rows = under.bands.rows;
+      let [i, hi] = rowsInView(rows, ps);
+      for (; i < rows.length && rows[i].r <= hi; i++) mark(rows[i]);
+    }
   }
   // The horizontal lines on, as drawn this frame: each with its key and its
   // own id, the family and tier it is drawn in, its price (base rows), its
@@ -8716,49 +11989,70 @@
   }
   // Each measure's name and unit, and its value from a column of the
   // rectangle's cells, or of their path and dwell (motion), up to where those
-  // end. A ratio is log2 of the actual over the expected, from the level's
-  // whole columns, on the buy and sell colours and full at ±2.
-  const PANE_MEASURES = {
-    volume: { label: "Volume", unit: "USDT", value: (c) => c.v },
-    delta: { label: "Delta", unit: "USDT", signed: true, value: (c) => 2 * c.bv - c.v },
-    takertrades: { label: "Buy − sell trades", unit: "", signed: true, value: (c) => 2 * c.bt - c.ct },
-    trades: { label: "Trades", unit: "", value: (c) => c.ct },
-    size: { label: "Trade size", unit: "USDT a trade", value: (c) => (c.ct > 0 ? c.v / c.ct : 0) },
-    choppiness: {
-      label: "Choppiness",
-      unit: "path ÷ range",
-      motion: true,
-      value: (c) => (c.ct > 0 && c.hi > c.lo ? c.p / (c.hi - c.lo) : 0),
+  // end. A value is E.measure.columnValue's, so a column that has none (no
+  // trades, no price range, no path) is a typed non-value the pane marks and
+  // never a zero bar. A ratio is log2 of the actual over the expected, from
+  // the level's whole columns, on a fixed axis of ±2 in the positive and
+  // negative arms.
+  const PANE_NUMBER = { tag: 0, value: NaN, reason: null, denominator: null },
+    // The number a column has under a measure, or NaN where it has none.
+    paneNumber = (key, c) => {
+      E.measure.columnValue(key, c, null, PANE_NUMBER);
+      return PANE_NUMBER.tag === E.result.TAG.finite ? PANE_NUMBER.value : NaN;
     },
-    perpath: { label: "Volume per path", unit: "USDT per USDT moved", motion: true, value: (c) => (c.p > 0 ? c.v / c.p : 0) },
-    cascade: { label: "Share of parent column", unit: "log₂ vs even", ratio: true },
-    efficiency: { label: "Efficiency", unit: "log₂ vs expected", ratio: true },
-    rsi1d: { label: "RSI 14 · 1D", unit: "", osc: true },
-    rsi4h: { label: "RSI 14 · 4h", unit: "", osc: true },
-    macd1d: { label: "MACD · 1D", unit: "12, 26, 9", osc: true },
-  };
-  // The pane's measure and columns as last drawn, which its tooltip reads.
+    PANE_MEASURES = {
+      volume: { label: "Volume", unit: "USDT", value: (c) => paneNumber("volume", c) },
+      delta: { label: "Delta", unit: "USDT", signed: true, value: (c) => paneNumber("delta", c) },
+      takertrades: { label: "Buy − sell trades", unit: "", signed: true, value: (c) => paneNumber("takertrades", c) },
+      trades: { label: "Trades", unit: "", value: (c) => paneNumber("trades", c) },
+      size: { label: "Trade size", unit: "USDT a trade", value: (c) => paneNumber("size", c) },
+      choppiness: {
+        label: "Choppiness",
+        unit: "path ÷ range",
+        motion: true,
+        value: (c) => paneNumber("choppiness", c),
+      },
+      perpath: { label: "Volume per path", unit: "USDT per USDT moved", motion: true, value: (c) => paneNumber("perpath", c) },
+      cascade: { label: "Share of parent column", unit: "log₂ vs even", ratio: true },
+      efficiency: { label: "Efficiency", unit: "log₂ vs expected", ratio: true },
+      rsi1d: { label: "RSI 14 · 1D", unit: "", osc: true },
+      rsi4h: { label: "RSI 14 · 4h", unit: "", osc: true },
+      // The parameters are in the name: USDT is what it measures.
+      macd1d: { label: "MACD 12, 26, 9 · 1D", unit: "USDT", osc: true },
+    };
+  // The pane's measure, columns, axis and frame as last drawn, which its tooltip reads.
   let paneShown = null;
-  // A ratio's columns in view between `from` and `to`, each with its value, or
-  // why it has none. The other measures' columns are the cells' own (activity).
+  // A Cascade column entry as the ratio kernel takes it: the column and its parent column, whole, at
+  // factor 2 (two child columns to a parent), or why there is no pair.
+  function paneCascadeRatio(e) {
+    return { structure: e.state === "ok" || e.state === "none" ? "complete" : e.state, childV: e.w?.v, parentV: e.p?.v, factor: 2 };
+  }
+  // A ratio's columns in view between `from` and `to`, each with its typed result (`typed`, from the
+  // ratio kernel; `ctx` is what the pane frame evaluates it from) or why it has none. The other
+  // measures' columns are the cells' own (paneColumns).
   function ratioColumns(key, full, ts, from, to) {
     const out = [];
     if (key === "cascade") {
       const cx = full?.cascade,
         cols = cx ? full.cols : [];
-      for (let i = bisectColumn(cols, Math.floor(from / ts)); i < cols.length && cols[i].c * ts < to; i++)
-        out.push(cascadeColumn(cx, cols[i].c));
+      for (let i = bisectColumn(cols, Math.floor(from / ts)); i < cols.length && cols[i].c * ts < to; i++) {
+        // A copy: the level's entries are kept with the level and this adds what the pane needs. The entry
+        // already carries its typed result (C's cascadeTyped, factor 2, DD-38); the input is what the pane
+        // frame evaluates the column from.
+        const e = cascadeColumn(cx, cols[i].c),
+          input = paneCascadeRatio(e);
+        out.push({ ...e, typed: e.res ?? E.ratio.cascade(input), ctx: { ratio: input } });
+      }
     } else if (to > from) {
       const ex = efficiencyContext(renderN());
-      for (let c = Math.floor(from / ts); c * ts < to; c++) {
-        const e = efficiencyOf(ex, c);
-        if (e.state !== "none") out.push(e);
-      }
+      // A column with no value is listed too: its typed reason is what the pane marks.
+      for (let c = Math.floor(from / ts); c * ts < to; c++) out.push(efficiencyOf(ex, c));
     }
     return out;
   }
-  function activity(shown, cut, mv, full) {
-    if (PANE_MEASURES[paneMeasure()]?.osc) return drawOscillator(paneMeasure(), PANE_MEASURES[paneMeasure()], cut);
+  // The columns the pane draws between the view, the rectangle, the cutoff and where the motion read
+  // ends: what `activity` paints, `paneTally` counts and `paneTip` looks a column up in.
+  function paneColumns(shown, cut, mv, full) {
     const ts = stepT(),
       b = bounds(),
       key = paneMeasure(),
@@ -8766,18 +12060,125 @@
       end = measure.motion ? (mv?.src ? mv.end : -Infinity) : Infinity,
       from = Math.max(S.tA, b[0]),
       to = Math.min(S.tB, cut, b[1], end),
-      // A column of the cells, or of their path and dwell, with a value; a
-      // ratio's, with its value or why it has none.
+      // A column of the cells, or of their path and dwell; a ratio's, with its typed result.
       cols = measure.ratio
         ? ratioColumns(key, full, ts, from, to)
-        : ((measure.motion ? mv?.shown : shown)?.cols || []).filter((c) => (c.c + 1) * ts > from && c.c * ts < to),
-      value = measure.ratio ? (x) => x.value : measure.value,
+        : ((measure.motion ? mv?.shown : shown)?.cols || []).filter((c) => (c.c + 1) * ts > from && c.c * ts < to);
+    return { key, measure, ts, b, end, from, to, cols };
+  }
+  // The count, largest and smallest of the values a measure has on these columns: what an Auto axis fits.
+  // A column without a value is not counted (an axis is never fitted to nothing, and never to a zero that
+  // is not there).
+  function paneColumnSummary(key, cols) {
+    let count = 0,
+      max = -Infinity,
+      min = Infinity;
+    for (const col of cols) {
+      const v = paneNumber(key, col);
+      if (v !== v) continue;
+      count++;
+      if (v > max) max = v;
+      if (v < min) min = v;
+    }
+    return { count, max, min };
+  }
+  // The registered axis of an ordinary column pane (the spine's axisFrame, the one wrapper around the
+  // registry): a ratio's is fixed at ±2; an Auto one takes the exact maximum of the values displayed, once
+  // the read that feeds the pane has settled (a rectangle still being measured, or a motion read still
+  // out, is not a cohort). The signature changes exactly when a displayed value might.
+  function paneAxis(pane, mv) {
+    const { key, measure, cols, from, to, b } = pane,
+      id = "pane." + key;
+    if (measure.ratio) return axisFrame(id, { eligible: true, sig: "" });
+    const meas = measurement(),
+      ready =
+        (meas.state === "exact" || meas.state === "recorded" || meas.state === "cube") &&
+        !meas.updating &&
+        (!measure.motion || Boolean(mv?.src && !motionIssue()));
+    return axisFrame(id, {
+      sign: measure.signed ? "signed-symmetric" : "unsigned",
+      eligible: ready,
+      sig: [
+        scaleWorkspace(),
+        id,
+        live.generation,
+        PACK.state_token ?? "",
+        cutEdge(),
+        S.replay,
+        renderN(),
+        renderM(),
+        b.join(","),
+        from,
+        to,
+        cols.length,
+        meas.state,
+        meas.updating ? 1 : 0,
+        mv?.src ? mv.end : "-",
+      ].join("|"),
+      summary: () => paneColumnSummary(key, cols),
+    });
+  }
+  // What the pane says about its axis, in words from E.text: "Auto axis ±1.92 B", "Fixed scale ±2",
+  // "Frozen ±1.92 B", "0", "No data", and why it is not current ("Updating", "Auto paused", how many bars
+  // the held domain leaves out). The chip carries the full detail; this is the canvas's short form.
+  function paneAxisNote(rec) {
+    if (!rec) return "";
+    const T = E.text,
+      parts = [],
+      sign = rec.sign === "unsigned" ? "" : "±";
+    if (rec.typed === "none") parts.push(rec.hold === "waiting" ? T.axis.waiting : T.axis.none);
+    else if (rec.typed === "zero-only") parts.push(`${rec.policy === "frozen" ? T.policy.axisFrozen : T.policy.axisAuto} ${T.axis.zero}`);
+    else {
+      const value = rec.policy === "fixed" && rec.sign === "unsigned" ? `${rec.domain[0]}–${rec.domain[1]}` : sign + compact(rec.domain[1]);
+      parts.push(`${rec.policy === "fixed" ? T.policy.fixed : rec.policy === "frozen" ? T.policy.axisFrozen : T.policy.axisAuto} ${value}`);
+    }
+    if (rec.external) parts.push(T.state.external);
+    if (rec.hold === "play") parts.push(T.axis.paused);
+    else if (rec.hold === "gesture" || rec.hold === "cap" || rec.hold === "settling") parts.push(T.axis.updating);
+    // Bars a HELD or frozen domain leaves out; a fixed axis's are the edge triangles and their key's count.
+    if (rec.policy !== "fixed" && rec.clipped?.count > 0) parts.push(T.fill(T.axis.clipped, { n: rec.clipped.count, total: rec.clipped.total }));
+    return parts.join(" · ");
+  }
+  // How the recorded model stands for one use ("efficiency" or "diagonal") at level n and the effective
+  // cutoff, as one line: its timing status and, where the level lies outside the levels it was fitted on,
+  // that it is extrapolated (the equality with it is still drawn). Empty when there is nothing to disclose.
+  function modelStatusLine(use, n) {
+    try {
+      return modelNoteWords(E.model.describe(use, E.time.baseToMs(activeCutoff(), T0, BASE), n));
+    } catch (error) {
+      scaleFault(error);
+      return "";
+    }
+  }
+  // The words of a model note: its disclosure labels, and for a model that can only have been fitted
+  // before the cutoff by the conservative bound, the status line E.model.describe leaves to its consumers.
+  const modelNoteWords = (note) =>
+    (note.status === "eligible-by-bound" ? [E.text.model.eligibleByBound, ...note.labels] : note.labels).join(" · ");
+  function activity(shown, cut, mv, full, sc) {
+    const first = paneMeasure();
+    if (PANE_MEASURES[first]?.osc) return drawOscillator(first, PANE_MEASURES[first], cut, sc);
+    const pane = paneColumns(shown, cut, mv, full),
+      { key, measure, ts, b, end, cols } = pane,
       signed = measure.signed || measure.ratio,
-      max = measure.ratio ? 2 : d3.max(cols, (c) => Math.abs(value(c))) || 1,
       top = G.ay,
       h = G.ah,
       zero = signed ? top + h / 2 : top + h,
       room = (signed ? h / 2 : h) - 4;
+    // The axis and the frame that encodes every column through it. A fault here is the scale display's, not
+    // the chart's: the pane then draws no bars and says why (see scaleFault).
+    let rec = null,
+      frame = null,
+      model = null;
+    if (sc !== INERT_SC && sc.lut) {
+      try {
+        rec = paneAxis(pane, mv);
+        model = key === "efficiency" ? E.model.describe("efficiency", E.time.baseToMs(cut, T0, BASE), renderN()) : null;
+        frame = E.readout.paneFrame({ key, axis: rec, lut: sc.lut, model });
+      } catch (error) {
+        scaleFault(error);
+        rec = frame = null;
+      }
+    }
     ctx.fillStyle = colors.surface;
     ctx.fillRect(G.x, top, G.w, h);
     ctx.save();
@@ -8793,30 +12194,83 @@
     }
     timeGrid(top, top + h);
     if (signed) markLine(G.x, zero, G.x + G.w, zero, colors.line, 1, 0.9);
-    let bars = 0;
-    for (const x of cols) {
-      if (measure.ratio && x.state !== "ok") continue;
-      const xa = G.X(Math.max(x.c * ts, b[0])),
-        xb = G.X(Math.min((x.c + 1) * ts, cut, b[1], end));
-      if (xb <= xa) continue;
-      bars++;
-      const v = measure.ratio ? clamp(x.value, -2, 2) : value(x),
-        bh = (Math.abs(v) / max) * room,
-        y = signed ? (v >= 0 ? zero - bh : zero) : zero - bh;
-      ctx.fillStyle = measure.ratio
-        ? divergingColour(v / 2, 1)
-        : signed
-          ? v >= 0
-            ? colors.buy
-            : colors.sell
-          : colors.volume;
+    // What the columns are, by how the frame encodes them: bars, and the marks of the ones that have no
+    // bar. `counts` is per key of the role table, every column counted whether or not its glyph fits.
+    const counts = {},
+      marks = [],
+      see = (id) => (counts[id] = (counts[id] || 0) + 1);
+    // The axis record keeps this frame's clip counts: the bars the held or fixed domain leaves out.
+    if (rec && !rec.clipped) rec.clipped = { low: 0, high: 0, count: 0, total: 0 };
+    const clipped = rec?.clipped;
+    if (clipped) clipped.low = clipped.high = clipped.count = clipped.total = 0;
+    if (frame) {
+      const ROLE = E.readout.ROLE,
+        CLIP = E.scale.CLIP,
+        FINITE = E.result.TAG.finite;
+      let css = null;
       ctx.globalAlpha = measure.ratio ? 0.85 : 0.65;
-      ctx.fillRect(xa, y, Math.max(0.1, xb - xa - (xb - xa > 3 ? 1 : 0)), bh);
+      for (const x of cols) {
+        const xa = G.X(Math.max(x.c * ts, b[0])),
+          xb = G.X(Math.min((x.c + 1) * ts, cut, b[1], end));
+        if (xb <= xa) continue;
+        frame.encode(x, ENC, x.ctx);
+        if (ENC.tag === FINITE) {
+          if (ENC.role === ROLE.NONE) continue;
+          clipped.total++;
+          if (ENC.clip === CLIP.LOW || ENC.clip === CLIP.HIGH) {
+            clipped.count++;
+            if (ENC.clip === CLIP.LOW) clipped.low++;
+            else clipped.high++;
+            see(ENC.clip === CLIP.LOW ? "clip-low" : "clip-high");
+            marks.push({ id: ENC.clip === CLIP.LOW ? "tri-down" : "tri-up", xa, xb, y: ENC.clip === CLIP.LOW ? top + h - 4 : top + 4 });
+          }
+          if (ENC.role === ROLE.ZERO) {
+            // A measured zero has no length: a tick on the baseline says it was there.
+            see("zero-tick");
+            marks.push({ id: "tick", xa, xb, y: signed ? zero : zero - 1 });
+            continue;
+          }
+          if (ENC.css !== css) ctx.fillStyle = css = ENC.css;
+          const bh = Math.abs(ENC.t) * room;
+          ctx.fillRect(xa, ENC.t >= 0 ? zero - bh : zero, Math.max(0.1, xb - xa - (xb - xa > 3 ? 1 : 0)), bh);
+          continue;
+        }
+        // A value the column does not have: the glyph of its tag, counted under the key of the tag.
+        const tag = E.result.TAGS[ENC.tag];
+        if (ENC.role === ROLE.NONE || !ENC.pattern) continue;
+        see(tag);
+        // An open parent keeps its own hatch below; a column that is not there at all is no mark.
+        if (tag === "waiting-for-complete-parent") continue;
+        const last = marks[marks.length - 1];
+        if (last && last.id === ENC.pattern && ENC.pattern.startsWith("pattern-") && Math.abs(last.xb - xa) < 0.5) last.xb = xb;
+        else marks.push({ id: ENC.pattern, xa, xb, y: ENC.pattern === "diamond" ? (signed ? zero : zero - 4) : ENC.pattern === "infinity" ? top + h - 6 : 0 });
+      }
+      ctx.globalAlpha = 1;
+      for (const mark of marks) {
+        const w = mark.xb - mark.xa,
+          cx = (mark.xa + mark.xb) / 2;
+        if (mark.id === "tick") paintGlyph("tick", cx, mark.y, 6, { width: Math.max(1, w) });
+        else if (mark.id === "diamond") {
+          // A glyph is drawn where its column is at least as wide as it; otherwise it is only counted.
+          if (w >= 6) paintGlyph(mark.id, cx, mark.y, 6);
+        } else if (mark.id === "tri-up" || mark.id === "tri-down") {
+          // The edge triangles go over the label plate: they are painted after it (below).
+        } else if (mark.id === "infinity") {
+          if (w >= 10) paintGlyph("infinity", cx, mark.y, 10);
+        } else if (w < 4) {
+          // Below the pixel size a texture can be read at: a flat neutral fill, the readout has the tag.
+          ctx.globalAlpha = 0.3;
+          ctx.fillStyle = colors.state;
+          ctx.fillRect(mark.xa, top, Math.max(w, 1), h);
+          ctx.globalAlpha = 1;
+        } else {
+          ctx.fillStyle = patternFor(mark.id);
+          ctx.fillRect(mark.xa, top, w, h);
+        }
+      }
     }
     ctx.globalAlpha = 1;
-    // A ratio's columns without a value: those whose parent runs past the data
-    // are unfinished, like the open column; those it can't be read for are
-    // unavailable.
+    // A ratio's columns whose parent runs past the data are unfinished, like the open column: hatched.
     if (measure.ratio) {
       const span = 2 * ts,
         at = Math.floor(cut / span) * span;
@@ -8824,35 +12278,35 @@
         const xa = Math.max(G.x, G.X(at));
         hatchRect(xa, top, Math.min(G.x + G.w, G.X(cut)) - xa, h, colors.poc, 7, 0.25);
       }
-      let run = null;
-      const flush = () => {
-        if (run) hatchRect(G.X(run[0]), top, G.X(run[1]) - G.X(run[0]), h, colors.line, 11, 0.6);
-        run = null;
-      };
-      for (const x of cols)
-        if (x.state === "outside" || x.state === "unavailable") {
-          const a = Math.max(x.c * ts, b[0]),
-            z = Math.min((x.c + 1) * ts, cut, b[1]);
-          if (run && run[1] === a) run[1] = z;
-          else {
-            flush();
-            run = [a, z];
-          }
-        }
-      flush();
     }
     ctx.restore();
-    paneShown = { key, measure, cols };
-    // The scale in the price labels' column: the largest value, or a ratio's
-    // full strength.
-    if (bars || measure.ratio)
-      text((signed ? "±" : "") + (measure.ratio ? "2" : compact(max)), G.x - 8, top + 7, colors.muted, "right");
-    paneLegend(measure, cols, mv, top);
+    paneShown = { key, measure, cols, axis: rec, frame, model, ts, counts };
+    if (sc !== INERT_SC) sc.pane = paneShown;
+    // The scale in the price labels' column: what the axis is. A ratio's ticks are its fixed ones that fit.
+    const at = (s, y) => text(s, G.x - 8, clamp(y, top + 7, top + h - 6), colors.muted, "right");
+    if (rec) {
+      if (rec.typed === "none") at(E.text.axis.none, top + 7);
+      else if (rec.typed === "zero-only") at(E.text.axis.zero, top + 7);
+      else if (measure.ratio) for (const t of E.axis.ticks(rec, 2 * room)) at(t.label, zero - t.t * room);
+      else at((signed ? "±" : "") + compact(rec.domain[1]), top + 7);
+    }
+    paneLegend(measure, cols, mv, top, "", rec, model ? modelNoteWords(model) : "");
+    // The triangles that say a value lies beyond the axis, over the pane and its label.
+    if (marks.some((mark) => mark.id === "tri-up" || mark.id === "tri-down")) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(G.x, top, G.w, h);
+      ctx.clip();
+      for (const mark of marks)
+        if ((mark.id === "tri-up" || mark.id === "tri-down") && mark.xb - mark.xa >= 6) paintGlyph(mark.id, (mark.xa + mark.xb) / 2, mark.y, 6);
+      ctx.restore();
+    }
+    axisChipWrite(rec, paneShown);
   }
-  // The pane's name and unit at its top left, and what it is still reading or
-  // couldn't read. Measured only when its words or the pane's width change.
+  // The pane's name and unit at its top left, what its axis is, and what it is still reading or couldn't
+  // read. Measured only when its words or the pane's width change.
   let paneLabel = { s: "", width: 0, text: "", w: 0 };
-  function paneLegend(measure, cols, mv, top, extra = "") {
+  function paneLegend(measure, cols, mv, top, extra = "", axis = null, model = "") {
     const has = (state) => measure.ratio && cols.some((x) => x.state === state),
       note = measure.osc
         ? extra
@@ -8873,7 +12327,9 @@
                 : has("unavailable")
                   ? `125 USDT rows are recorded here for the last ${renderN() >= 4 ? 30 : 7} days`
                   : "",
-      s = note ? `${measure.label}${measure.unit ? " · " + measure.unit : ""} · ${note}` : measure.unit ? `${measure.label} · ${measure.unit}` : measure.label;
+      // The axis words and the model's follow the name: the memo below is keyed on the whole string, so a
+      // change of domain, "Updating" or "No data" is a new label.
+      s = [measure.label, measure.unit, paneAxisNote(axis), note, model].filter(Boolean).join(" · ");
     ctx.font = `${TYPE.s}px ${FONT}`;
     if (paneLabel.s !== s || paneLabel.width !== G.w) {
       const fitted = fitText(s, G.w - 12);
@@ -8884,6 +12340,63 @@
     ctx.fillRect(G.x + 2, top + 1, paneLabel.w + 8, 15);
     ctx.globalAlpha = 1;
     text(paneLabel.text, G.x + 6, top + 8.5, colors.muted, "left");
+  }
+  // The warning tally's feeder for the pane (DD-76): the bars as drawn now, each once, with its place on the
+  // axis and whether it is beyond it. The columns come from the current state at the moment of the call;
+  // the axis is the registry's current record, never a fresh fit (the tick only counts, it does not refit).
+  // A bar's index is its length on the axis in 256 steps, so "low discrimination" reads as most bars being
+  // tiny against the axis.
+  function paneTally(tally) {
+    const vp = viewParts(),
+      pane = paneColumns(vp.shown, vp.cut, vp.mv, vp.full);
+    if (pane.measure.osc) return;
+    const rec = scaleRt.axes.get("pane." + pane.key, scaleWorkspace());
+    if (!rec || rec.typed === "none") return;
+    const frame = E.readout.paneFrame({ key: pane.key, axis: rec, lut: lutFor(scaleRt.appearance, scaleRt.theme) }),
+      ROLE = E.readout.ROLE,
+      FINITE = E.result.TAG.finite,
+      end = pane.end;
+    for (const x of pane.cols) {
+      if (G.X(Math.min((x.c + 1) * pane.ts, vp.cut, pane.b[1], end)) <= G.X(Math.max(x.c * pane.ts, pane.b[0]))) continue;
+      frame.encode(x, ENC, x.ctx);
+      if (ENC.tag !== FINITE || ENC.role === ROLE.NONE) continue;
+      tally.add(E.scale.index(ENC.t), ENC.clip, true, ENC.role !== ROLE.ZERO);
+    }
+  }
+  // The pane's Legend model (E.legend.build over the pane frame), for the generated keys of the footer and the
+  // axis popover's model and key fields (D.18). Built when what it is made of changed (the axis, the counts
+  // of the drawn marks, the model's status, the palette) and never in a steady frame; null when this frame has
+  // no pane frame (an oscillator, a fault). Called by the legend hook before it writes the footer keys, from
+  // the pane the same draw just painted (`sc.pane`, set by `activity`).
+  function paneLegendCommit(sc) {
+    const pane = sc.pane,
+      rec = pane?.axis,
+      frame = pane?.frame;
+    if (!frame || !rec) {
+      scaleUi.models.pane = null;
+      scaleUi.paneKey = "";
+      return;
+    }
+    const counts = pane.counts,
+      key = [
+        frame.fingerprint(),
+        rec.domain?.join(","),
+        rec.hold,
+        rec.policy,
+        Object.keys(counts).sort().map((id) => id + "=" + counts[id]).join(","),
+        pane.model?.status,
+        pane.model?.labels?.join("|"),
+        colourEpoch,
+      ].join(";");
+    if (scaleUi.paneKey === key) return;
+    scaleUi.paneKey = key;
+    scaleUi.models.pane = E.legend.build(frame, null, uiFmt, {
+      channel: "pane",
+      counts,
+      measureLabel: pane.measure.label,
+      updating: Boolean(rec.hold) && rec.hold !== "play",
+      paused: rec.hold === "play" ? "play" : false,
+    });
   }
   // Efficiency: a column's USDT per 125 USDT row its trades touched, against
   // its parent column's one level up in time, as log2 of their ratio over
@@ -8896,7 +12409,7 @@
   // cells, and from 15 minutes the 30-day archive with the recent tier after
   // it), and live, elsewhere, from the cube (/cube/touched), a chunk of 512
   // columns at a time.
-  const EFFICIENCY_EXPECTED = 2 ** (ISO_B - 1),
+  const EFFICIENCY_EXPECTED = E.model.PROVENANCE.baseline,
     TOUCHED_CHUNK = 512,
     touches = new Map(),
     touchedMaps = new WeakMap();
@@ -8927,15 +12440,26 @@
       chunk: null,
     };
   }
+  // A column Efficiency has no pair for, or none yet, with its typed result from the ratio kernel:
+  // "coarsest" (no coarser level: no-coarser-parent), "open" (its parent runs past the data:
+  // waiting-for-complete-parent), "unavailable" (the recorded snapshot has no 125 USDT rows: unsupported),
+  // "pending" and "failed" (the read of its rows). `ctx` is what the pane frame evaluates it from.
+  function efficiencyColumnEntry(c, state, error) {
+    const input = { baseline: EFFICIENCY_EXPECTED };
+    if (state === "pending") input.read = { state: "pending", reason: "reading rows" };
+    else if (state === "failed") input.read = { state: "failed", reason: String(error) };
+    else input.structure = state;
+    return { c, state, error, typed: E.ratio.efficiency(input), ctx: { ratio: input } };
+  }
   function efficiencyOf(ex, c) {
     const n = ex.n;
-    if (n >= N_MAX) return { c, state: "coarsest" };
+    if (n >= N_MAX) return efficiencyColumnEntry(c, "coarsest");
     const span = 2 ** (n + 1),
       pc = Math.floor(c / 2),
       a = pc * span,
       z = a + span;
     // A parent that runs past the data is unfinished, as the open column is.
-    if (z > ex.cut) return { c, state: "open" };
+    if (z > ex.cut) return efficiencyColumnEntry(c, "open");
     for (const h of ex.blocks)
       if (a >= h.start && z <= h.end) {
         if (!h.cols) {
@@ -8944,7 +12468,7 @@
         }
         return efficiencyFrom(h.cols, h.parents, c, pc);
       }
-    if (!PACK.live) return { c, state: "unavailable" };
+    if (!PACK.live) return efficiencyColumnEntry(c, "unavailable");
     // Columns in view share a chunk or two: each is looked up once a frame.
     const k = Math.floor(a / (TOUCHED_CHUNK * 2 ** n));
     if (ex.chunk?.k !== k) {
@@ -8954,15 +12478,23 @@
     }
     const { key, hit } = ex.chunk;
     if (hit) return efficiencyFrom(hit.cols, hit.parents, c, pc);
-    return key && cube.failed.has(key) ? { c, state: "failed", error: cube.failed.get(key) } : { c, state: "pending" };
+    return key && cube.failed.has(key) ? efficiencyColumnEntry(c, "failed", cube.failed.get(key)) : efficiencyColumnEntry(c, "pending");
   }
+  // A column's Efficiency from its counts and its parent's: the ratio kernel's typed result, which is
+  // empty-population naming the count that is 0 where a column has no trades or touched no row ("none"),
+  // and otherwise log2 of the two USDT per row over the model's expected ratio.
   function efficiencyFrom(cols, parents, c, pc) {
     const w = cols.get(c),
-      p = parents.get(pc);
-    if (!(w?.v > 0 && w.rows > 0 && p?.v > 0 && p.rows > 0)) return { c, state: "none" };
-    const e = w.v / w.rows,
-      ep = p.v / p.rows;
-    return { c, state: "ok", value: Math.log2(e / ep / EFFICIENCY_EXPECTED), e, ep, w, p };
+      p = parents.get(pc),
+      input = {
+        structure: "complete",
+        child: { v: w?.v, rows: w?.rows },
+        parent: { v: p?.v, rows: p?.rows },
+        baseline: EFFICIENCY_EXPECTED,
+      },
+      typed = E.ratio.efficiency(input);
+    if (typed.tag !== "finite") return { c, state: "none", typed, ctx: { ratio: input } };
+    return { c, state: "ok", value: typed.value, typed, ctx: { ratio: input }, e: w.v / w.rows, ep: p.v / p.rows, w, p };
   }
   // Chunk k of level n: its columns up to the last whole parent before the
   // data's edge.
@@ -9662,6 +13194,14 @@
     planeHover: false,
     planeButtons: null,
     bound: false,
+    // A zoom gesture whose last step has come but whose price refit has not landed: a hold for the
+    // calibration clock, from the first step to the refit.
+    zoomPending: false,
+    // How the data last changed under the view, for the readout's observation block: nothing, the
+    // provisional minutes replaced by the archive's, or a whole new pack (kind "unknown").
+    revision: { kind: "none" },
+    // The cause the next scale disclosure names (pin, lock, policy), set where the change is made.
+    scaleCause: null,
   };
   function stepAnchor(delta) {
     S.anchor = clamp(
@@ -9676,6 +13216,7 @@
     update();
     recordView("Anchor");
     save();
+    noteGesture();
   }
   // Playing a replay steps its anchor a column at a time at the chosen speed,
   // moving the view on when the line nears its right edge, and stops at the
@@ -9686,6 +13227,10 @@
     player.timer = on ? setInterval(playStep, 1000 / Number(el("speed").value)) : 0;
     el("play").setAttribute("aria-pressed", String(on));
     el("play").setAttribute("aria-label", on ? "Pause" : "Play");
+    // Auto colour pauses while it plays and resumes once the pause or scrub has settled.
+    scaleRt.playing = on;
+    noteGesture();
+    scaleArm();
   }
   function playStep() {
     const end = Math.floor(CUT / stepT()) * stepT();
@@ -9752,6 +13297,10 @@
     for (const id of ids) {
       const raw = PACK.blocks[id],
         range = raw ? [raw.b0, raw.b1] : null;
+      // A tile only the lens asked for does not move the resolution plane: it is
+      // not the block shown and not the tile the view wants (viewTileId is asked
+      // only when a lens tile is met, so the plane's 210 calls stay cheap).
+      if (raw?.lens && id !== S.dataset && id !== viewTileId()) continue;
       if (
         !raw ||
         !range ||
@@ -9791,13 +13340,18 @@
       delete PACK.blocks[t.id];
     }
   }
-  function tileRead(t, label) {
+  // `lens` marks a tile only the lens asked for: the flag rides on the block and on the
+  // decoded tile, and chooseSource, exactSource and resolutionReadiness leave such a tile
+  // out until it is the block shown or the tile the view asks for (lensOnly); Pin clears
+  // it. It is set when the read starts and again when the answer is applied, which
+  // replaces the block's record.
+  function tileRead(t, label, lens = false) {
     return {
       key: ["tile", live.generation, t.id].join("|"),
       path: `/cube/tile?n=${t.n}&m=${t.m}&b0=${t.b0}&b1=${t.b1}`,
       loading: label,
       start: () => {
-        PACK.blocks[t.id] = { n: t.n, m: t.m, b0: t.b0, b1: t.b1 };
+        PACK.blocks[t.id] = { n: t.n, m: t.m, b0: t.b0, b1: t.b1, lens };
         loadState[t.id] = "loading";
       },
       drop: () => {
@@ -9808,8 +13362,10 @@
       apply: ({ tile, body }) => {
         const meta = { ...body.block };
         delete meta.gzip_base64;
+        meta.lens = lens;
         PACK.blocks[t.id] = meta;
         tile.used = performance.now();
+        tile.lens = lens;
         sources[t.id] = tile;
         loadState[t.id] = "ready";
         trimTiles([t.id, S.dataset, lensSource]);
@@ -9848,7 +13404,7 @@
   }
   function lensWant() {
     const t = lensTile();
-    return t && !loadState[t.id] ? tileRead(t, "") : null;
+    return t && !loadState[t.id] ? tileRead(t, "", true) : null;
   }
   // The continuations' history at the drawn level: each column's POC, volume
   // and taker-buy volume, for up to the last 100,000 columns.
@@ -9990,6 +13546,7 @@
     cube.busy = null;
     if (cube.stale) pollLive();
     update();
+    scaleArm();
     pumpCube();
   }
   // Path and dwell (PRD-0023): how the price moved inside each cell, which the
@@ -10360,30 +13917,12 @@
     motion.busy = null;
     if (cube.stale) pollLive();
     requestDraw();
+    scaleArm();
     // The Lines popover says what its bars are waiting on, and the days the
     // bars now reach may need reading in the first slot.
     renderLines();
     pumpCube();
     pumpMotion();
-  }
-  // A cell's path in row heights, at its full-cell rate as volume counts, or
-  // its dwell as a share of its column's time: the column's seconds inside the
-  // rectangle and before the measures end, which its cells' dwell sums to.
-  function motionAmount(z, b, end, ts, ps, mode = S.mode) {
-    const seconds =
-      Math.max(0, Math.min((z.c + 1) * ts, b[1], end) - Math.max(z.c * ts, b[0])) * BASE;
-    if (!(seconds > 0)) return 0;
-    if (mode === "dwell") return z.w / seconds;
-    const width = Math.max(0, Math.min((z.r + 1) * ps, b[3]) - Math.max(z.r * ps, b[2])) * PR;
-    return width > 0 ? (z.p / width) * ((ts * BASE) / seconds) : 0;
-  }
-  // Shaded by rank among the block's cells, like the other amounts.
-  function motionScale(q, b, end, ts, ps, mode = S.mode) {
-    if (!q.scales[mode])
-      q.scales[mode] = Float64Array.from(
-        q.cells.map((z) => motionAmount(z, b, end, ts, ps, mode)).filter((x) => x > 0),
-      ).sort();
-    return q.scales[mode];
   }
   // Where a cell of the drawn level falls, mid-transition too; false when it
   // is off the plot. One box, reused, so a frame allocates nothing per cell.
@@ -10431,47 +13970,52 @@
   }
   // Path and dwell shade the cells the price traded in and outline those it
   // only moved through or held in: with no trade in `base` either, where a
-  // cell's trades can come after they end. A cell of `base` after where they
-  // end, or any while they are read, is drawn plain.
-  function paintMotion(base, q, mv, b, u) {
+  // cell's trades can come after they end. The cells are encoded through the
+  // Cells frame (`frame`), so a cell at or after where the read ends, or a
+  // value that is not one, draws the pattern of its kind, never a colour; an
+  // unsigned zero is the occupancy outline. A cell of `base` after where the
+  // read ends, or any while it is being read, is drawn in the pattern of a
+  // read that has not finished, or of one that failed.
+  function paintMotion(base, q, mv, b, u, frame) {
     const ts = stepT(),
       ps = stepP(),
       cut = activeCutoff(),
       end = mv.src ? mv.end : -Infinity;
+    // What the frame's measured predicate answers with while this draw runs, and the pass's canvas state.
+    motionEnd = end;
+    motionTs = ts;
+    cellPass(frame);
     if (q) {
-      const sorted = motionScale(mv.full, mv.fullBounds, end, ts, ps);
       for (const z of q.cells) {
         if (!cellBox(z, u, ts, ps, cut)) continue;
         const w = BOX.xb - BOX.xa,
-          h = BOX.yb - BOX.ya;
-        motionMark(
-          ramp(rank(sorted, motionAmount(z, b, end, ts, ps))),
-          z.ct > 0 || (base !== null && base.map.has(z.c + "," + z.r)),
-          BOX.xa,
-          BOX.ya,
-          w,
-          h,
-          w > 4 && h > 4 ? design.gap : 0,
-        );
+          h = BOX.yb - BOX.ya,
+          gap = w > 4 && h > 4 ? design.gap : 0;
+        frame.encode(z, ENC);
+        if (ENC.pattern !== null) motionPattern(ENC.pattern, BOX.xa, BOX.ya, w, h, gap);
+        else if (ENC.css === null) continue;
+        else if (ENC.role !== ROLE_ZERO && ENC.role !== ROLE_OCCUPANCY && (z.ct > 0 || (base !== null && base.map.has(z.c + "," + z.r)))) {
+          if (ENC.css !== passFill) ctx.fillStyle = passFill = ENC.css;
+          ctx.fillRect(BOX.xa + gap / 2, BOX.ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
+        } else {
+          // Outlined: a cell the price only moved through or held in (in the colour of its value), or a
+          // zero (in the occupancy ink). motionMark sets both colours itself.
+          motionMark(ENC.css, false, BOX.xa, BOX.ya, w, h, gap);
+          passFill = passStroke = null;
+        }
       }
     }
-    ctx.fillStyle = colors.line;
-    for (const z of base ? base.cells : []) {
-      if ((z.c + 1) * ts <= end || (q && q.map.has(cellKey(z.c, z.r))) || !cellBox(z, u, ts, ps, cut))
-        continue;
-      const w = BOX.xb - BOX.xa,
-        h = BOX.yb - BOX.ya,
-        gap = w > 4 && h > 4 ? design.gap : 0;
-      ctx.fillRect(BOX.xa + gap / 2, BOX.ya + gap / 2, Math.max(0.1, w - gap), Math.max(0.1, h - gap));
+    if (base) {
+      let kind = null;
+      for (const z of base.cells) {
+        if ((z.c + 1) * ts <= end || (q && q.map.has(cellKey(z.c, z.r))) || !cellBox(z, u, ts, ps, cut))
+          continue;
+        if (kind === null) kind = !mv.src && motionIssue() ? MOTION_FAILED : MOTION_PENDING;
+        const w = BOX.xb - BOX.xa,
+          h = BOX.yb - BOX.ya;
+        motionPattern(kind, BOX.xa, BOX.ya, w, h, w > 4 && h > 4 ? design.gap : 0);
+      }
     }
-  }
-  // The legend's quantiles, as each movement encoding reads.
-  const motionUnit = (x) =>
-    S.mode === "dwell" ? `${+(x * 100).toPrecision(2)}%` : compact(x);
-  function motionLegend(sorted) {
-    if (!sorted.length) return S.mode === "dwell" ? "Share of column time" : "Row heights";
-    const range = `${motionUnit(d3.quantileSorted(sorted, 0.05))} → ${motionUnit(d3.quantileSorted(sorted, 0.95))}`;
-    return S.mode === "dwell" ? `${range} of column time` : `${range} row heights`;
   }
   // Seconds to the microsecond, as the cube counts dwell, and to the
   // millisecond in the Cells table. The inspector writes them every frame, so
@@ -10692,8 +14236,10 @@
   function replaceURL(entry) {
     try {
       history.replaceState({ explorer: entry.id }, "", entry.hash);
-    } catch {
-      // Browsers limit how often a page may rewrite its address; the view stands.
+    } catch (error) {
+      // Browsers limit how often a page may rewrite its address: the view stands, and the banner says the
+      // address in the bar is behind it (a run of these is one notice with a count).
+      postNotice({ code: "history-failed", details: [String(error?.message ?? error)] });
     }
   }
   // An entry is a place. A change that moves nothing (the encoding, the
@@ -10723,8 +14269,9 @@
       hist.index = hist.entries.length - 1;
       try {
         history.pushState({ explorer: entry.id }, "", entry.hash);
-      } catch {
+      } catch (error) {
         // As above.
+        postNotice({ code: "history-failed", details: [String(error?.message ?? error)] });
       }
     }
     hist.at = now;
@@ -10753,14 +14300,21 @@
     replaceURL(current);
     renderHistory();
   }
+  // The tab's list as stored: versioned, and with the scales left out of every entry but the current one
+  // (Back and Forward return to a place and ignore how an entry showed it, so an older entry's rank knots
+  // would only add up to fifty copies per write).
   function saveHistory() {
     try {
       window.explorerState?.saveHistory({
-        entries: hist.entries,
+        visualVersion: 2,
+        entries: hist.entries.map((x, i) =>
+          i === hist.index ? x : { ...x, hash: x.hash.replace(/&sc=[^&]*/, "") },
+        ),
         index: hist.index,
       });
-    } catch {
-      // The tab's list lasts until it closes; only a reload forgets it.
+    } catch (error) {
+      // The tab's list lasts until it closes; only a reload forgets it. The banner says so.
+      postNotice({ code: "storage-failed", details: [String(error?.message ?? error)] });
     }
   }
   // The tab's list survives a reload, when the address is still one of its
@@ -10768,7 +14322,15 @@
   function startHistory(label) {
     let kept = null;
     try {
-      kept = window.explorerState?.history();
+      const got = window.explorerState?.read("history:v1");
+      // A list made by a newer build, or one that cannot be read, is not continued and not overwritten
+      // (the storage module keeps a copy first): say so once.
+      if (got && (got.status === "unknown-version" || (got.status === "unreadable" && got.raw !== null)))
+        postNotice({
+          code: "import-rejected",
+          text: E.text.fill(PERSIST_TEXT.storedKept, { what: "history", reason: got.reason }),
+        });
+      kept = got?.status === "ok" ? got.value : null;
     } catch {
       // No list to continue.
     }
@@ -10846,36 +14408,24 @@
     el("breadcrumbs").replaceChildren(frag);
   }
   // Back and Forward return to a place and leave how it is shown alone; an
-  // address edited by hand is taken whole.
+  // address edited by hand is taken whole. "How it is shown" is every field of the codec's table (the
+  // settings and the scale preferences too), read from the state now; the descriptors of the entry's
+  // address are not adopted, so stepping through history never changes a calibration. Only an address this
+  // list does not know (edited by hand) is classified and reported: a known entry never owes a notice.
   addEventListener("popstate", (e) => {
     if (!ready) return;
-    const view = readView(location.hash);
-    if (!view) return;
+    const i = hist.entries.findIndex((x) => x.id === e.state?.explorer),
+      address = readAddress(location.hash),
+      view = viewOfAddress(address, location.hash);
+    if (!view) {
+      if (i < 0) reportRefused(address);
+      return;
+    }
     transition = reduce
       ? null
       : { n: renderN(), m: renderM(), start: performance.now() };
-    const i = hist.entries.findIndex((x) => x.id === e.state?.explorer);
-    applyView(
-      i < 0
-        ? view
-        : {
-            ...view,
-            follow: followMode(),
-            mode: S.mode,
-            pane: S.pane,
-            poc: S.poc,
-            area: S.area,
-            untested: S.untested,
-            rows: S.rows,
-            period: S.period,
-            level: S.level,
-            lines: S.lines,
-            tab: S.tab,
-            evidenceKind: S.evidenceKind,
-            horizon: S.horizon,
-            barrier: S.barrier,
-          },
-    );
+    applyView(i < 0 ? view : { ...view, ...visualOf(), records: undefined, axes: [], appearance: null });
+    if (i < 0) reportView(view);
     // The step after Back or Forward is new, whatever its kind.
     hist.at = 0;
     if (i >= 0) hist.index = i;
@@ -10901,30 +14451,46 @@
   // Named views, kept by this browser for every tab. A view saved while it
   // shows the cutoff is live: it opens on the latest data with the same span
   // and fits the price range again, as the price has moved since.
-  const views = { list: [], undo: null };
+  // `foreign` holds what this page cannot show but must not lose: an entry a newer build stamped with
+  // another visual version, and any entry that is not a view at all. A list rewrite puts them back as they
+  // were, so a view made by another version survives this page's saves and deletes (and the list is never
+  // shortened by anything but the person deleting a view).
+  const views = { list: [], foreign: [], undo: null };
   function loadViews() {
     let list = null;
     try {
-      list = window.explorerState?.views();
+      const got = window.explorerState?.read("views:v1");
+      list = got?.status === "ok" ? got.value : null;
+      // A list that is not a list, or one made by a newer build as a whole, stays in storage untouched; the
+      // storage module copies it aside before the first write that would replace it.
+      if (got && (got.status === "unknown-version" || (got.status === "unreadable" && got.raw !== null)))
+        postNotice({
+          code: "import-rejected",
+          key: "views-kept:" + got.status,
+          text: E.text.fill(PERSIST_TEXT.storedKept, { what: "views", reason: got.reason }),
+        });
     } catch {
       // No saved views to show.
     }
-    views.list = Array.isArray(list)
-      ? list.filter(
-          (x) =>
-            x &&
-            typeof x.name === "string" &&
-            typeof x.hash === "string" &&
-            [x.span, x.lead, x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite),
-        )
-      : [];
+    const usable = (x) =>
+      x &&
+      typeof x.name === "string" &&
+      typeof x.hash === "string" &&
+      [x.span, x.lead, x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite) &&
+      (x.visualVersion === undefined || x.visualVersion === 2);
+    views.list = Array.isArray(list) ? list.filter(usable) : [];
+    views.foreign = Array.isArray(list) ? list.filter((x) => !usable(x)) : [];
   }
+  // Every write is the whole list as it was read (plus the change), so two tabs saving at once both keep
+  // their views. A write that fails (the storage is full or blocked) is said in the banner as well as
+  // here, and the list on the page stays as it is: nothing is dropped to make room.
   function storeViews() {
     try {
-      window.explorerState.saveViews(views.list);
+      window.explorerState.saveViews([...views.list, ...views.foreign]);
       return true;
-    } catch {
+    } catch (error) {
       viewsStatus("This browser's storage is unavailable, so views can't be saved.");
+      postNotice({ code: "storage-failed", details: [String(error?.message ?? error)] });
       return false;
     }
   }
@@ -10937,14 +14503,16 @@
         : listRange(S.tA, Math.min(S.tB, CUT));
   }
   // Every change starts from the list as stored, so two tabs saving at once
-  // both keep their views.
-  function saveView(name) {
+  // both keep their views. A view is stamped with the visual version it was made under and carries its
+  // address; when that address had to be made shorter (scale ids only, or no scales) the full view code is
+  // kept beside it, unless it is larger than a browser's storage should be asked to hold for one view
+  // (then the view keeps the address and the banner says the code must be copied separately).
+  async function saveView(name) {
     name = name.trim().slice(0, 80);
     if (!name) {
       viewsStatus("Name the view to save it.");
       return;
     }
-    loadViews();
     const view = {
         name,
         live: !S.window && atCutoff(),
@@ -10956,18 +14524,47 @@
         rows: S.rows,
         period: S.period,
         ...summary(),
+        visualVersion: 2,
       },
-      i = views.list.findIndex((x) => x.name === name);
+      level = addr.level;
+    if (level > 0) {
+      let code = null;
+      try {
+        code = await viewCode();
+      } catch {
+        // The code could not be made; the view keeps its address alone.
+      }
+      if (code !== null && code.length <= NAMED_CODE_MAX) view.code = code;
+      else postNotice({ code: "code-not-stored" });
+    }
+    loadViews();
+    const i = views.list.findIndex((x) => x.name === name),
+      replaced = i >= 0 ? views.list[i] : null;
     if (i >= 0) views.list[i] = view;
     else views.list.push(view);
     views.undo = null;
     if (storeViews())
       viewsStatus(i >= 0 ? `Updated “${name}”.` : `Saved “${name}”.`);
+    // A view that could not be saved is not listed as if it were (the list is what storage holds).
+    else if (i >= 0) views.list[i] = replaced;
+    else views.list.pop();
     renderViews();
   }
-  function openView(x) {
-    const view = readView(x.hash);
+  // A saved view opens from its full code when it kept one (that is exact), else from its address. A view
+  // saved before visual version 2 is migrated as it opens, with one notice per view and tab, and is never
+  // rewritten: the stored entry stays as it was until the person saves the view again.
+  async function openView(x) {
+    let view = null;
+    if (typeof x.code === "string") {
+      try {
+        view = await viewOfCode(x.code);
+      } catch (error) {
+        postNotice({ code: "import-rejected", params: { reason: error.reason ?? error.message } });
+      }
+    }
+    view ??= readView(x.hash);
     if (!view) return;
+    if (x.visualVersion === undefined) view.text = x.name + "\n" + x.hash;
     if (x.live && !view.window) {
       view.tB = CUT + x.lead;
       view.tA = view.tB - x.span;
@@ -10976,6 +14573,7 @@
       ? null
       : { n: renderN(), m: renderM(), start: performance.now() };
     applyView(view);
+    reportView(view);
     if (x.live) {
       fit();
       if (S.auto) autoLevel();
@@ -11035,7 +14633,571 @@
       ...(x.rows && x.rows !== "off" && ROWS_INFO[x.rows] && validPeriod(x.period)
         ? [`${ROWS_INFO[x.rows].name} rows · ${periodName(x.period)}`]
         : []),
+      // A view saved before visual version 2 opens migrated, and says so in its row.
+      ...(x.visualVersion === undefined ? [PERSIST_TEXT.legacyRow] : []),
     ].join(" · ");
+  }
+  // ---- Persistence of the visual state (PRD-0002 S1, D9) ----
+  // How the view is shown (the scale preferences, the active mappings, the appearance) travels in the
+  // address, the stored last view, the tab's history, the named views and the portable view code, always
+  // marked visual version 2. The codec (E.codec) owns every format and every limit; this block is the
+  // page's side of it: what the state says, what a payload is allowed to change, what the person is told
+  // when a write fails or a payload is refused, and the browser-wide cache of the live calibrations.
+  // Nothing here refits, truncates or silently replaces anything: a payload this page cannot use is
+  // reported and left where it is.
+  //
+  // The most a named view keeps of its full view code (characters). A longer code is not stored with the
+  // view (the address is; the banner says the code must be copied separately), because one view should
+  // not be what fills a browser's storage.
+  const NAMED_CODE_MAX = 64 * 1024,
+    // A calibration commit or a policy action writes the address and the cache once it has settled, not
+    // once per change: Auto may commit twice a second and a write rewrites history and storage.
+    PERSIST_MS = 250,
+    // The names of the address ladder, index = level (E.text.address.level has their words).
+    LADDER = ["exact", "ids", "settings", "refused"],
+    // The one-letter policy codes of the address grammar, by the store's policy words.
+    POLICY_LETTER = { explore: "e", auto: "a", comparison: "k", local: "l" },
+    // Words that E.text does not hold yet (an amendment is raised for them): storage and import outcomes
+    // that are neither a failed write nor a rejected view code.
+    PERSIST_TEXT = {
+      codeFailed: "The {what} could not be made: {reason}",
+      importDropped: "The view code was applied. These settings are not available on this page: {list}.",
+      storedKept: "A saved {what} could not be used here and was kept unchanged: {reason}",
+      addressRejected: "This address was not applied: {reason}. The default view is shown.",
+      legacyRow: "saved before visual version 2",
+    },
+    // The address as last written: what copyLink and saveView read, and the level the ladder reached.
+    addr = { hash: "#w=24h", level: 0, dropped: [] },
+    persistRt = { timer: 0, shown: "" };
+  // An import in progress: one at a time.
+  let importing = false;
+
+  // ---- reading the state through the codec's table ----
+  // The fields of every VISUAL_KEYS entry, read from the state: one object, the scale preferences under
+  // `scale`. The address, the Back and Forward override and the view code all read it, so a setting added to
+  // the table is carried by all of them at once (the baseline kept ten lists of these by hand).
+  function visualOf() {
+    const out = { scale: {} };
+    for (const entry of E.codec.VISUAL_KEYS)
+      for (const path of entry.fields) {
+        if (path.startsWith("scale.")) out.scale[path.slice(6)] = S.scale[path.slice(6)];
+        else out[path] = path === "follow" ? followMode() : S[path];
+      }
+    return out;
+  }
+  // What the codec needs to know about this page: the lattice and cutoff, which modes, panes and periods it
+  // offers (they differ between the live and the recorded page), its limits, and how long the address
+  // already is before its hash (origin, path and search, credentials left out: the string copyLink copies).
+  function viewEnv() {
+    const url = new URL(location.href);
+    url.username = url.password = "";
+    url.hash = "";
+    return {
+      T0,
+      BASE,
+      PR,
+      CUT,
+      windowKey,
+      modes,
+      panes,
+      rowsChoices,
+      validPeriod,
+      normalizeLines,
+      N_MAX,
+      M_MAX,
+      INSTRUMENT,
+      baseLength: url.href.length,
+    };
+  }
+  // The id of the appearance in use: its name and the hash of its tables, theme independent.
+  function appearanceId() {
+    return lutFor(scaleRt.appearance, scaleRt.theme).id;
+  }
+  // A whole-number millisecond for the codec, which refuses fractions (an open column's cutoff has them).
+  // Floored, so a restored record is never later than the data it was fitted on.
+  const wholeMs = (x) => (Number.isFinite(x) ? Math.max(0, Math.floor(x)) : null);
+  // The cohort of a record, as much of it as the codec takes. The fit's own cohort names its `quality` after the
+  // read state it was taken from (a state word such as "ok"), while a portable record names a measurement
+  // quality class (exact, approx-start, approx-rows:<size>); a word that is not a class is left out rather than
+  // making the whole view code unwritable. Everything else is provenance the details list shows.
+  const COHORT_QUALITY = /^(exact|approx-start|approx-rows:[1-9]\d*)$/;
+  function cohortOf(c) {
+    if (!c || !Number.isInteger(c.n)) return null;
+    const out = {};
+    for (const k of ["kind", "n", "zeros", "nonzero", "excluded", "calibratedOn", "bounds", "level", "quality", "obsEndBase", "support"]) {
+      if (c[k] === undefined) continue;
+      if (k === "quality" && !(typeof c[k] === "string" && COHORT_QUALITY.test(c[k]))) continue;
+      out[k] = c[k];
+    }
+    return out;
+  }
+  // A mapping record of the store, or a held one, as the codec writes it: the store's policy word as the
+  // grammar's letter, the origin reduced to the three the grammar knows (an external comparison mapping is
+  // a flag), only the members a payload may carry.
+  function recordOf(channel, rec) {
+    if (!rec?.desc || !rec.ctx) return null;
+    const c = rec.cohort;
+    return {
+      channel,
+      policy: POLICY_LETTER[rec.policy] ?? "e",
+      external: rec.origin === "external",
+      origin: rec.origin === "manual" || rec.origin === "restored" ? rec.origin : "fit",
+      desc: rec.desc,
+      ctx: rec.ctx,
+      cohort: cohortOf(c),
+      obsEndMs: wholeMs(rec.obsEndMs),
+      cutMs: wholeMs(rec.cutMs),
+      canonicalThroughMs: wholeMs(rec.canonicalThroughMs),
+      token: typeof rec.token === "string" && /^[0-9a-f]{1,32}$/.test(rec.token) ? rec.token : null,
+    };
+  }
+  // The colour mappings the view is showing, as records for the address and the code: the active Cells
+  // and Rows mapping of the workspace in view (by lookup, never a refit), each mapping a Comparison lock
+  // or a manual domain holds, and the restored Local-contrast mapping. "No calibration" has no record and
+  // so is not written: a link never pretends to carry a scale it does not have.
+  function activeRecords() {
+    const ws = scaleWorkspace(),
+      out = [],
+      add = (channel, rec) => {
+        const r = recordOf(channel, rec);
+        if (r) out.push(r);
+      },
+      from = (channel, ctx) => {
+        if (ctx) add(channel, scaleRt.store.latest(ws, E.context.keyString(ctx)));
+      };
+    from("c", cellsContext());
+    // The Rows context is the Rows block's own function (rowsContext), asked for here because the address
+    // must carry the mapping the Rows channel is showing; it is a lookup of the state, never a fit.
+    if (S.rows !== "off") from("r", rowsContext());
+    for (const [key, rec] of Object.entries(S.scale.held ?? {})) add(key.charAt(0) === "r" ? "r" : "c", rec);
+    if (scaleRt.local) add("l", scaleRt.local);
+    return out;
+  }
+  // The frozen axis domains of the workspace in view (a Comparison lock freezes each displayed Auto axis);
+  // an Auto axis needs no record, because an absent record means Auto under vis=2.
+  function frozenAxes() {
+    return scaleRt.axes
+      .list(scaleWorkspace())
+      .filter((r) => r.policy === "frozen")
+      .map((r) => ({ id: r.id, domain: r.domain, policy: "frozen", through: wholeMs(r.provenance?.through) }));
+  }
+  // The state the codec writes: the view as checkView returns it, the ten scale preferences (raw, never the
+  // effective view: a measure that cannot use a preference does not erase it), the appearance, and the
+  // active mappings and frozen axes. `withScales` false leaves the last two out (the address's own
+  // fallback when they cannot be written).
+  function visualState(withScales = true) {
+    return {
+      window: S.window,
+      tA: S.tA,
+      tB: S.tB,
+      pA: S.pA,
+      pB: S.pB,
+      auto: S.auto,
+      // whole levels: a level held while a gesture is still moving it is the one it will settle on
+      n: Number.isFinite(S.n) ? Math.round(S.n) : S.n,
+      m: Number.isFinite(S.m) ? Math.round(S.m) : S.m,
+      selection: S.selection,
+      anchor: S.anchor,
+      replay: S.replay,
+      ...visualOf(),
+      scale: { ...E.policy.DEFAULTS, ...E.policy.persisted(S.scale) },
+      appearance: appearanceId(),
+      scales: withScales ? activeRecords() : [],
+      axes: withScales ? frozenAxes() : [],
+    };
+  }
+  // ---- the address ----
+  // The address of the view, written by the codec within its budget of 8192 characters counted over the
+  // whole URL. It is the ladder's: full records, then scale ids only, then settings only, and past that
+  // the address is not rewritten (the bar keeps the one it has). A state the codec refuses (more than 16
+  // active scales) is written without its scales and says so; any other fault leaves the address that
+  // was last written. Returns {hash, level, dropped}; `addr` keeps the last one for copyLink and saveView.
+  function addressOf() {
+    const env = viewEnv();
+    let result;
+    try {
+      result = E.codec.formatAddress(visualState(true), env, { budget: true });
+    } catch (error) {
+      if (error?.name === "LimitError") postNotice({ code: "limit", params: { max: E.LIMITS.DESCRIPTORS_MAX } });
+      result = E.codec.formatAddress(visualState(false), env, { budget: true });
+      if (result.level === 0) result = { ...result, level: 2 };
+    }
+    // Past the last level the address is not rewritten: the bar keeps the one it has.
+    if (result.hash === null) result = { ...result, hash: location.hash || addr.hash };
+    // A shortened address is said once when it becomes one, not on every write that follows.
+    if (result.level !== addr.level) {
+      if (result.level > 0)
+        postNotice({
+          code: "address-degraded",
+          params: { level: E.text.address.level[LADDER[result.level]] },
+          details: result.dropped.map((d) => `${d.channel ?? d.key}: ${d.reason}`),
+        });
+      addr.level = result.level;
+    }
+    addr.hash = result.hash;
+    addr.dropped = result.dropped;
+    const status = el("copy-status");
+    if (status.dataset.addressLevel !== LADDER[result.level]) status.dataset.addressLevel = LADDER[result.level];
+    return result;
+  }
+  // After a shortened address was copied: which level it is, in the list's status line, with a button for
+  // the full view code (which never loses a scale).
+  function offerViewCode(level) {
+    const node = el("views-status"),
+      button = document.createElement("button");
+    node.append(` ${E.text.address.level[LADDER[level]]}. `);
+    button.type = "button";
+    button.className = "ol-action ol-s cursor-interaction";
+    button.textContent = E.text.ui.copyCode;
+    button.addEventListener("click", () => copyText(viewCode, "View code"));
+    node.append(button);
+  }
+  // ---- what a payload is allowed to change, and what the person is told ----
+  // The notices a view from outside owes: a payload from before visual version 2 (once per payload and
+  // tab, listing each setting whose meaning changed), and descriptors that could not be used (the settings
+  // stay, a fresh Explore scale is fitted). A stored or linked version-2 view owes nothing.
+  function reportView(v) {
+    if (!v) return;
+    if (v.kind === "legacy") {
+      const digest = E.codec.digest(v.text);
+      if (scaleRt.notices.mark("legacy:" + digest))
+        postNotice({
+          code: "legacy-migrated",
+          key: "legacy-migrated:" + digest,
+          details: [
+            ...E.codec.migrateLegacy(v).changes.map((c) => `${c.setting}: ${c.text}`),
+            E.text.notice.legacyUnsaved,
+          ],
+        });
+    }
+    const bad = (v.dropped ?? []).filter((d) => d.key === "sc");
+    if (bad.length) postNotice({ code: "scale-dropped", details: bad.map((d) => d.reason) });
+  }
+  // An address that names a version this page does not read is not applied; say which.
+  function reportRefused(address) {
+    if (address.kind === "reject")
+      postNotice({
+        code: "import-rejected",
+        text: E.text.fill(PERSIST_TEXT.addressRejected, { reason: address.reasons[0] ?? "" }),
+      });
+  }
+  // The raw view of a version-4 stored object (the last view and the workspace in one, the view as plain
+  // fields): where the view is, written out, and every other field by the codec's table, so a setting the
+  // table knows is read here too. `follow` was three flags then; checkView validates all of it.
+  function legacyRaw(x) {
+    const raw = {
+      window: x.window,
+      tA: x.tA,
+      tB: x.tB,
+      pA: x.pA,
+      pB: x.pB,
+      auto: x.auto !== false,
+      n: x.n,
+      m: x.m,
+      follow: x.diagonal ? "diagonal" : x.coupled ? "coupled" : x.refit === false ? "free" : "refit",
+      selection: x.selection,
+      anchor: x.anchor,
+      replay: x.replay === true,
+    };
+    for (const entry of E.codec.VISUAL_KEYS)
+      if (entry.legacy) for (const path of entry.fields) if (path !== "follow") raw[path] = x[path];
+    return raw;
+  }
+  // A version-4 stored view is a legacy payload: its choices are kept and the notice names what changed.
+  function legacyStored(view, x) {
+    return view
+      ? { ...view, kind: "legacy", records: [], axes: [], dropped: [], reasons: [], text: JSON.stringify(x) }
+      : null;
+  }
+  // Nothing usable is stored and no link was followed: the default view shows. Once per browser (a flag in
+  // storage; once per tab when storage is unavailable) the banner says that this version measures and
+  // colours differently, and a stored view that came from a newer build is named, because it is being
+  // kept and not shown.
+  function noteFirstVisit() {
+    const state = window.explorerState,
+      stored = state?.read?.("view:v5");
+    if (stored && (stored.status === "unknown-version" || (stored.status === "unreadable" && stored.raw !== null)))
+      postNotice({
+        code: "import-rejected",
+        text: E.text.fill(PERSIST_TEXT.storedKept, { what: "view", reason: stored.reason }),
+      });
+    if (state?.notice?.().status === "ok" || !scaleRt.notices.mark("version-default")) return;
+    postNotice({ code: "version-default" });
+    state?.saveNotice?.();
+  }
+  // The browser-wide cache of the live calibrations (scales:v1) is read ONCE, here, when the page loads,
+  // into the live store: it seeds the contexts this browser has already fitted, and never follows the
+  // `storage` event afterwards, so each tab keeps its own active mappings. A record that fails its checks
+  // is skipped and the rest are kept; a cache from another version is left in storage and named.
+  function loadScaleCache() {
+    const got = window.explorerState?.scales?.();
+    if (!got) return;
+    if (got.status === "ok") {
+      const out = scaleRt.store.mergeJSON(got.value, { workspace: "live" });
+      if (out.rejected)
+        postNotice({
+          code: "import-rejected",
+          text: E.text.fill(PERSIST_TEXT.storedKept, { what: "calibration cache", reason: out.rejected }),
+        });
+    } else if (got.status === "unknown-version" || (got.status === "unreadable" && got.raw !== null))
+      postNotice({
+        code: "import-rejected",
+        text: E.text.fill(PERSIST_TEXT.storedKept, { what: "calibration cache", reason: got.reason }),
+      });
+  }
+  loadScaleCache();
+  // The appearance an address or a code names: adopted when this page builds exactly that appearance (its
+  // name and the hash of its tables), otherwise the running one stays and the notice says which was asked
+  // for. Mapping ids do not depend on the appearance, so they still match.
+  function applyAppearance(ap) {
+    if (typeof ap !== "string") return;
+    const running = appearanceId();
+    if (ap === running) return;
+    const name = ap.slice(0, ap.lastIndexOf("-"));
+    if (Object.hasOwn(E.lut.APPEARANCES, name) && E.lut.appearanceId(name) === ap) {
+      scaleRt.appearance = name;
+      themeChanged();
+    } else postNotice({ code: "appearance-mismatch", params: { ap, current: running } });
+  }
+  // The mapping records of a view in place: the preferences and the descriptors are replaced TOGETHER by
+  // what the view carries, so a link without a lock does not keep this tab's lock. A record that is only an
+  // id is found in the live cache or left out; what cannot be placed is listed and the rest is applied.
+  // Nothing is refitted: a context with no record fits afresh once the view settles.
+  function adoptScales(v) {
+    const ws = scaleWorkspace(),
+      store = scaleRt.store,
+      dropped = [],
+      records = [];
+    for (const rec of v.records) {
+      let desc = rec.desc;
+      if (desc === null) {
+        let hit = null;
+        try {
+          hit = store.latest(ws, E.context.keyString(rec.ctx));
+        } catch {
+          // A context that has no key has no record.
+        }
+        if (hit?.desc.id !== rec.mappingId) {
+          dropped.push({ chan: rec.channel, reason: `${E.text.address.level.ids}; this browser does not hold that scale` });
+          continue;
+        }
+        desc = hit.desc;
+      }
+      records.push({
+        chan: rec.channel,
+        policy: rec.policy,
+        origin: rec.external ? "external" : rec.origin,
+        desc,
+        ctx: rec.ctx,
+        cohort: rec.cohort,
+        obsEndMs: rec.obsEndMs,
+        cutMs: rec.cutMs,
+        token: rec.token,
+        through: rec.obsEndMs,
+      });
+    }
+    const out = E.policy.restore({ scale: v.scale, records, axes: v.axes ?? [], replay: S.replay === true });
+    S.scale = out.scale;
+    // What is protected from eviction while these are committed: the context in view and every held one.
+    const cells = cellsContext(),
+      keep = () => [...(cells ? [E.context.keyString(cells)] : []), ...Object.values(out.scale.held).map((r) => r.key)];
+    for (const { workspace, record } of out.commits) {
+      // The mapping the view carries is the active one, not a newer fit this tab made for the same context.
+      store.remove(workspace, record.key);
+      store.commit(workspace, record, keep);
+    }
+    for (const axis of scaleRt.axes.list(ws))
+      if (axis.policy === "frozen") scaleRt.axes.unfreeze(axis.id, { workspace: ws });
+    for (const axis of out.frozen) {
+      try {
+        scaleRt.axes.freeze(axis.id, { workspace: ws, domain: axis.domain, through: axis.through });
+      } catch (error) {
+        dropped.push({ chan: "a." + axis.id, reason: error.message });
+      }
+    }
+    scaleRt.local = out.lens;
+    dropped.push(...out.dropped);
+    if (dropped.length)
+      postNotice({ code: "scale-dropped", details: dropped.map((d) => `${d.chan}: ${d.reason}`) });
+  }
+  // A view's visual fields in place, by the codec's table: the settings one by one, the scale preferences
+  // and descriptors as a whole when the view carries descriptors (`records`, even an empty list), else the
+  // preferences alone (Back and Forward return to a place and leave the calibrations as they are), and the
+  // appearance when the view names one.
+  function applyVisual(v) {
+    const prefs = E.codec.VISUAL_KEYS.filter((entry) => entry.id.startsWith("scale.")).map((entry) => entry.id.slice(6));
+    for (const entry of E.codec.VISUAL_KEYS)
+      for (const path of entry.fields) {
+        if (path === "follow") {
+          S.refit = v.follow === "refit";
+          S.coupled = v.follow === "coupled";
+          S.diagonal = v.follow === "diagonal";
+        } else if (!path.startsWith("scale.")) S[path] = v[path];
+      }
+    if (Array.isArray(v.records)) adoptScales(v);
+    else {
+      const next = E.policy.sanitize(v.scale),
+        scale = { ...S.scale };
+      for (const k of prefs) scale[k] = next[k];
+      S.scale = scale;
+    }
+    if (v.appearance) applyAppearance(v.appearance);
+  }
+
+  // ---- storage: the last persist, the cache ----
+  // This browser's last view and workspace. The key and `version: 5` stay, so an older build still reads
+  // what this one writes (it ignores the members it does not know); visualVersion says which reading of
+  // the colours the view was made under.
+  function saveLastView() {
+    if (!window.explorerState) return;
+    try {
+      window.explorerState.save({
+        version: 5,
+        visualVersion: 2,
+        prefs: Object.fromEntries(PREFS.map((k) => [k, S[k]])),
+        view: viewHash(),
+      });
+    } catch (error) {
+      // Not the copy status, which sits in a drawer panel that is usually closed: the banner says it, once
+      // for a run of failures, while this tab keeps the view.
+      postNotice({ code: "storage-failed", details: [String(error?.message ?? error)] });
+    }
+  }
+  // The address and the stored last view follow the descriptors after a commit, a policy action or a lock
+  // change (the spine calls it after a commit, a policy action or a lock change). Written once the change has settled, and the
+  // browser-wide cache is updated with the live contexts (their newest record each: the cache is for the
+  // next page load, and a context's older records would only fill storage).
+  function persistScale() {
+    clearTimeout(persistRt.timer);
+    persistRt.timer = setTimeout(persistNow, PERSIST_MS);
+  }
+  function persistNow() {
+    clearTimeout(persistRt.timer);
+    persistRt.timer = 0;
+    if (!ready) return;
+    save();
+    const state = window.explorerState;
+    if (!state?.saveScales) return;
+    const json = scaleRt.store.toJSON("live");
+    json.contexts = json.contexts.map((c) => ({ key: c.key, ctx: c.ctx, records: c.records.slice(-1) }));
+    if (!json.contexts.length) return;
+    const out = state.saveScales(json);
+    if (!out.ok) postNotice({ code: "storage-failed", details: [out.reason] });
+  }
+  // A tab that is closing keeps what was waiting.
+  addEventListener("pagehide", () => {
+    if (persistRt.timer) persistNow();
+  });
+
+  // ---- the portable view code ----
+  // Gzip through the platform's stream, for the code; a browser without it writes the uncompressed form.
+  async function deflateGzip(bytes) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  // The bounded inflate the codec requires: the stream is read through a reader with a running byte
+  // counter, and the moment more than `maxBytes` has come out the reader is cancelled and the error named
+  // TooLarge is thrown, so a small code that expands to gigabytes costs a megabyte, not the tab.
+  async function inflateBounded(bytes, maxBytes) {
+    if (typeof DecompressionStream !== "function") throw new Error("this browser cannot decompress a view code");
+    const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip")).getReader(),
+      chunks = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw Object.assign(new Error("the code decompresses to more than " + maxBytes + " bytes"), { name: "TooLarge" });
+      }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, at);
+      at += chunk.length;
+    }
+    return out;
+  }
+  // The frozen and the Auto axes of the view, for the code (which writes every axis policy; the address
+  // leaves Auto out because an absent record means Auto). A frozen axis with no extent cannot be written
+  // (its domain must run from low to high) and is left out.
+  function portableAxes() {
+    return scaleRt.axes
+      .list(scaleWorkspace())
+      .filter((r) => r.policy === "auto" || (r.policy === "frozen" && r.domain && r.domain[0] < r.domain[1]))
+      .map((r) => ({
+        id: r.id,
+        domain: r.policy === "frozen" ? r.domain : null,
+        policy: r.policy,
+        through: wholeMs(r.provenance?.through),
+      }));
+  }
+  // The view as a portable payload (API B.15): self-contained (its descriptors in full, not a pointer into
+  // the workspace cache), with the appearance, the model's provenance at the cutoff shown, and where the
+  // numbers came from. A descriptor is a scale fitted on observations, not a snapshot of the market data.
+  function portablePayload() {
+    const b = requestedBounds(),
+      state = visualState(true),
+      cutMs = E.time.baseToMs(activeCutoff(), T0, BASE),
+      visual = visualOf();
+    return {
+      visualVersion: 2,
+      kind: "view",
+      query: { t1: b[0], t2: b[1], p1: b[2], p2: b[3], tR: Math.round(S.n), pR: Math.round(S.m) },
+      view: {
+        // every field of the codec's table; `scale` is the ten raw preferences and nothing of the runtime state
+        ...visual,
+        // The view's place: a window or the rectangle, whether the level follows it, and the selection.
+        auto: S.auto,
+        window: S.window,
+        viewport: [S.tA, S.tB, S.pA, S.pB],
+        selection: S.selection ? [...S.selection] : null,
+        anchor: S.anchor,
+        replay: S.replay,
+        lines: [...S.lines],
+      },
+      appearance: { id: state.appearance },
+      scales: state.scales,
+      axes: portableAxes(),
+      models: [{ ...E.model.PROVENANCE, status: E.model.status(cutMs) }],
+      observation: {
+        source: String(PACK.source ?? "").slice(0, 200),
+        instrument: INSTRUMENT,
+        cutoffMs: wholeMs(cutMs),
+        canonicalThroughMs: CANON === null ? null : wholeMs(E.time.baseToMs(CANON, T0, BASE)),
+        token: typeof PACK.state_token === "string" ? PACK.state_token : null,
+        note: E.text.vintage,
+      },
+    };
+  }
+  // The view code of the view as shown now: gzip and base64url behind origo-cube:2. (uncompressed behind
+  // origo-cube:2j. where the browser cannot compress). It throws, naming the reason, when the view cannot
+  // be written within the limits: nothing is shortened to make it fit.
+  async function viewCode() {
+    return E.codec.encodePortable(portablePayload(), typeof CompressionStream === "function" ? { deflate: deflateGzip } : {});
+  }
+  // A view, in the shape readView gives, from a view code: decoded and validated whole (a named view that
+  // kept its code opens from it). It throws the codec's error, with a `reason`, when the code is refused.
+  async function viewOfCode(code) {
+    const decoded = await E.codec.decodePortable(code, { inflate: inflateBounded });
+    if (decoded.kind !== "v2") throw Object.assign(new Error("not a version-2 view code"), { reason: "not a version-2 view code" });
+    const checked = E.codec.validatePortable(decoded.payload, viewEnv());
+    if (!checked.ok) throw Object.assign(new Error(checked.reasons.join("; ")), { reason: checked.reasons.join("; ") });
+    return portableView(checked.value, code);
+  }
+  function portableView(value, text) {
+    return {
+      ...value.view,
+      kind: "v2",
+      records: value.scales,
+      axes: value.axes.filter((a) => a.policy === "frozen"),
+      appearance: value.appearance,
+      dropped: [],
+      text,
+    };
   }
   function renderViews() {
     if (el("hist-pop").hidden) return;
@@ -11093,7 +15255,10 @@
     // would lay the page out again, in the next frame's draw.
     const pixels = `${fmt(px)} × ${fmt(py)} px per cell`;
     if (el("pixel-state").textContent !== pixels) el("pixel-state").textContent = pixels;
-    nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)`;
+    // The diagonal is the recorded model's: the one string says how it stands at the cutoff (timing, and
+    // whether the requested level lies outside the levels it was fitted on).
+    const model = modelStatusLine("diagonal", S.n);
+    nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)${model ? ` · ${model}` : ""}`;
     if (!nav.planeHover) setPlaneStatus(nav.planeStatus);
     const gesture = S.lens
       ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · V: pan"
@@ -11161,6 +15326,7 @@
   // of its last input.
   function zoomStep(timeZoomed) {
     nav.zoomTime = nav.zoomTime || timeZoomed;
+    nav.zoomPending = true;
     clearTimeout(nav.zoomTimer);
   }
   function endZoom(timeZoomed, label = "Zoom") {
@@ -11169,6 +15335,10 @@
     if (nav.zoomKeys.size || nav.pinch) return;
     nav.zoomTimer = setTimeout(() => {
       if (nav.zoomTime) refitAfterGesture();
+      // The refit has landed (20 ms after a 200 ms settle): the hold ends here, and the end of a gesture
+      // is a stamp and a wake.
+      nav.zoomPending = false;
+      noteGesture();
       nav.zoomTime = false;
       recordView(nav.zoomLabel);
       save();
@@ -11183,6 +15353,387 @@
   // Room for the lens caption tab: up to three 15px lines. The lens leaves twice
   // this free, so the tab fits above or below it wherever the lens goes.
   const LENS_CAPTION = 8 + 3 * 15;
+  // ---- The lens's scale (PRD-0002 S1) ----
+  // The lens draws with the Cells mapping the chart draws with (Shared), so a cell reads the same in the lens
+  // and outside it: it fits, initialises and touches nothing of its own. Local contrast is the one exception
+  // and it is explicit: its own descriptor, for this lens position and level, outside the store's 64 contexts
+  // (scaleRt.local, fitted by the settled tick from lensCohortInputs), labelled in the caption. Until it is
+  // fitted the lens keeps the last Local descriptor of the same chart context, marked Updating, or else draws
+  // the Shared mapping marked "Local contrast pending". A fixed measure (Flow, Dwell, Cascade) has one natural
+  // domain, so there is nothing to localise: it is the fixed mapping either way.
+  const LENS_ROLE = E.readout.ROLE,
+    // Below this many css px a pattern or an outline cannot be seen: a flat fill at a low alpha stands in.
+    LENS_NEG_INF = E.result.TAG["negative-infinite"],
+    LENS_NO_REF = E.result.TAG["no-reference"],
+    LENS_FLAT_PX = 4,
+    LENS_FLAT_ALPHA = 0.3,
+    LENS_SHARED_TEXT = "Shared scale",
+    lensRt = {
+      // the lens's own warning tally, reused every draw, and the plot rectangle it is clipped to
+      tally: E.warn.tally(),
+      clip: { x0: 0, y0: 0, x1: 0, y1: 0 },
+      // the legend model behind the caption, rebuilt only when an id it is made from changes
+      legendKey: "",
+      chipText: "",
+    },
+    lensFmt = (value, unit) => (unit === "share" ? `${+(value * 100).toPrecision(3)}%` : compact(value));
+  // What the lens shows, from the lens frame and the block it draws from: the level, the rectangle, whole
+  // cells of the block inside it. One function, so the cohort the settled tick fits from and the cells drawn
+  // can never describe different rectangles.
+  function lensParts(f) {
+    const { ta, tb, pa, pb, src, n, m } = f;
+    if (!src) return null;
+    const [start, end] = sourceRange(src),
+      a = Math.max(start, Math.floor(ta / 2 ** src.n) * 2 ** src.n),
+      b = Math.min(end, activeCutoff(), Math.ceil(tb / 2 ** src.n) * 2 ** src.n),
+      lensBounds = [
+        a,
+        b,
+        Math.max(0, Math.floor(pa / 2 ** src.m) * 2 ** src.m),
+        Math.ceil(pb / 2 ** src.m) * 2 ** src.m,
+      ];
+    return {
+      src,
+      n,
+      m,
+      ts: 2 ** n,
+      ps: 2 ** m,
+      start,
+      end,
+      b,
+      lensBounds,
+      q: aggregate(src, n, m, lensBounds),
+      fine: n < renderN() || m < renderM(),
+    };
+  }
+  // The lens's path and dwell: the motion block of the block it draws from, where it ends, and the motion
+  // cells over the lens rectangle (null while the block's motion is not read).
+  function lensMotionParts(p) {
+    const msrc = motionOf(p.src);
+    return {
+      msrc,
+      end: msrc ? Math.min(msrc.end, activeCutoff()) : -Infinity,
+      mq: msrc ? boundedMotion(msrc, p.n, p.m, p.lensBounds) : null,
+    };
+  }
+  // The Local-contrast context of this lens: the Cells context the chart is in, this lens level and this lens
+  // rectangle (rounded to the lens grid; the open column is not part of it, as it is not part of a cohort).
+  function lensContext(p, eff) {
+    return E.context.cellsKey({
+      measure: S.mode,
+      basis: eff.basis,
+      pathBasis: eff.pathBasis,
+      transform: eff.transform,
+      curve: eff.curve,
+      n: renderN(),
+      m: renderM(),
+      workspace: scaleWorkspace(),
+      instrument: INSTRUMENT,
+      lens: {
+        bounds: [p.lensBounds[0], Math.floor(p.lensBounds[1] / p.ts) * p.ts, p.lensBounds[2], p.lensBounds[3]],
+        n: p.n,
+        m: p.m,
+      },
+    });
+  }
+  // A Cascade cell of the lens, by the ladder of the measurement module: the structure (no parent, a parent
+  // the block holds only part of, one still open) is decided before the cell's own volume is looked at, then
+  // log2(4 x the cell's share of its parent). `c` is the context lensCascade builds over whole parents.
+  function lensCascadeEntry(c, z, out) {
+    let structure = "complete",
+      parentV;
+    if (!c.parent) structure = "coarsest";
+    else {
+      const pc = Math.floor(z.c / 2),
+        span = 2 ** (c.n + 1);
+      if (pc * span < c.start) structure = "outside";
+      else if ((pc + 1) * span > c.end) structure = c.end >= c.cut ? "open" : "outside";
+      else parentV = c.parent.map.get(pc + "," + Math.floor(z.r / 2))?.v;
+    }
+    const typed = E.ratio.cascade({ structure, childV: z.v, parentV, factor: 4 });
+    out.tag = E.result.TAG[typed.tag];
+    out.value = typed.tag === "finite" ? typed.value : NaN;
+    out.reason = typed.reason ?? null;
+    out.denominator = typed.denominator ?? null;
+  }
+  // The mapping the Cells chart draws with this frame, as a frame takes it, from what the frame the spine
+  // built says about itself: a lens never resolves one of its own (and never reads a store). Null when there
+  // is nothing to say (the inert frame of a fault).
+  function lensSharedMapping(input) {
+    return input
+      ? {
+          state: input.state,
+          desc: input.desc,
+          policy: input.policy,
+          origin: input.origin,
+          external: input.external,
+          record: input.calibration,
+          reason: input.reason,
+        }
+      : null;
+  }
+  // A Local-contrast want that no longer applies: the controller's want and the record of what was asked for go
+  // together, so the tick never finds an ask whose want is gone.
+  function lensWantDrop() {
+    if (!scaleRt.ask.lens && !scaleRt.ctl.hasWants()) return;
+    scaleRt.ctl.cancel("lens");
+    scaleRt.ask.lens = null;
+  }
+  // The lens's frame, for the rectangle and level of `p` (and the motion of `mp` under Path and Dwell): the
+  // frame of E.readout over the LENS level and bounds, with the mapping chosen above, wrapped with what the
+  // caption, the legend and the chip of the lens need. `scope` says whose mapping it is: "shared", "local",
+  // "local-updating" (the last Local descriptor of this chart context while the lens's own is fitted) or
+  // "local-pending" (the shared mapping while no Local descriptor exists yet).
+  function lensScaleFrame(sc, p, mp, cascade) {
+    const eff = E.policy.effective(S.scale, S.mode),
+      info = E.measure.MODES[S.mode],
+      cut = activeCutoff(),
+      lut = sc.lut;
+    let mapping,
+      scope = "shared",
+      contextKey = null,
+      record = null;
+    if (info.kind === "fixed") {
+      // the same descriptor the Cells chart resolves for a fixed measure: one natural domain, so one id
+      try {
+        mapping = E.scale.fixed(info.fixed.kind, eff.window);
+      } catch (error) {
+        mapping = E.scale.fixed(info.fixed.kind);
+      }
+      scope = "fixed";
+    } else if (info.kind === "occupancy") mapping = null;
+    else {
+      const shared = sc.cells?.legendInput?.() ?? null;
+      mapping = lensSharedMapping(shared);
+      contextKey = shared?.contextKey ?? null;
+      if (S.scale.local) {
+        const ctxLens = lensContext(p, eff),
+          key = E.context.keyString(ctxLens),
+          held = scaleRt.local ?? null,
+          mine = held && held.key === key,
+          // the last Local descriptor counts only for the same chart context and the same kind of mark
+          kin =
+            held?.ctx?.consumer === "lens" &&
+            E.context.keyString(held.ctx.base) === E.context.keyString(ctxLens.base) &&
+            held.desc?.signed === info.signed;
+        if (mine || kin) {
+          mapping = {
+            state: mine ? "ok" : "updating",
+            desc: held.desc,
+            policy: "local",
+            origin: held.origin ?? "fit",
+            external: false,
+            record: held,
+            reason: null,
+          };
+          scope = mine ? "local" : "local-updating";
+          record = held;
+        } else scope = "local-pending";
+        contextKey = key;
+        // One want for the settled tick, replaced by the next lens position; it fits from lensCohortInputs. It goes
+        // through `scaleWant` (which records what was asked for, as the tick reads it back: a bare controller
+        // request would leave the tick with nothing to fit), and a lens position that found nothing to fit is not
+        // asked again (the tick leaves its key in `noFit`, as it does for a chart context). The pack generation is
+        // the memo: a descriptor fitted from earlier data answers for this position only within one generation.
+        const memo = "g" + live.generation;
+        if (!mine && scaleRt.noFit.lens !== key + "|" + memo) scaleWant("lens", "init", key, { ctx: ctxLens, ctxKey: key, memo });
+      }
+    }
+    // a Local-contrast want that no longer applies (the option is off, or the measure has a fixed domain) is dropped
+    if (!scope.startsWith("local")) lensWantDrop();
+    const frame = E.readout.cellsFrame({
+      mode: S.mode,
+      basis: eff.basis,
+      pathBasis: eff.pathBasis,
+      level: { n: p.n, m: p.m },
+      bounds: p.lensBounds,
+      cut,
+      cutMs: E.time.baseToMs(cut, T0, BASE),
+      end: mp ? mp.end : Infinity,
+      geom: { BASE, PR },
+      CUT,
+      replay: S.replay,
+      mapping,
+      lut,
+      read: null,
+      measured: null,
+      cascade,
+      contextKey,
+      t0: T0,
+    });
+    return Object.assign({}, frame, {
+      // the lens's own legend input: its channel, and Local contrast as its policy
+      legendInput: () => {
+        const input = frame.legendInput();
+        input.channel = "lens";
+        if (scope.startsWith("local") && scope !== "local-pending") input.policy = "local";
+        return input;
+      },
+      scope,
+      updating: scope === "local-updating",
+      pending: scope === "local-pending",
+      contextKey,
+      record,
+      bounds: p.lensBounds,
+    });
+  }
+  // The inputs of the Local-contrast cohort: the whole cells of the lens rectangle at the lens level, from the
+  // state at the moment the settled tick asks (registered as the lensCohort hook). Not the lens when it is
+  // closed, not Local contrast when it is off or the measure has a fixed domain. A lens tile still being read
+  // is `loading` and a motion block not read is pending, so nothing is fitted on a fragment. The tick fits
+  // E.cohort.cells(inputs) and keeps the result as scaleRt.local with this `key`; `ctx` and `key` ride along
+  // because only the lens knows its own rectangle.
+  function lensCohortInputs() {
+    if (!(S.lens || nav.alt || nav.hold) || !S.scale.local || E.measure.MODES[S.mode].kind !== "unbounded") return null;
+    const f = lensFrame(),
+      p = f && lensParts(f);
+    if (!p) return null;
+    const eff = E.policy.effective(S.scale, S.mode),
+      mp = movementMode() ? lensMotionParts(p) : null,
+      wanted = lensTile(),
+      reading = Boolean(wanted) && !cube.failed.has(["tile", live.generation, wanted.id].join("|")),
+      motionWant = mp && !mp.mq ? motionSourceWant(p.src) : null,
+      read = mp
+        ? { state: mp.mq ? "exact" : motionWant && motion.failed.has(motionWant.key) ? "failed" : "pending" }
+        : { state: "exact" },
+      ctxLens = lensContext(p, eff);
+    return {
+      kind: "lens",
+      calibratedOn: "lens",
+      cells: mp ? (mp.mq?.cells ?? []) : p.q.cells,
+      mode: S.mode,
+      basis: eff.basis,
+      pathBasis: eff.pathBasis,
+      b: p.lensBounds,
+      cut: activeCutoff(),
+      end: mp ? mp.end : Infinity,
+      CUT,
+      replay: S.replay,
+      level: { n: p.n, m: p.m },
+      geom: { BASE, PR },
+      measured: null,
+      cascade: null,
+      read,
+      loading: reading,
+      quality: "exact",
+      selection: false,
+      ctx: ctxLens,
+      key: E.context.keyString(ctxLens),
+    };
+  }
+  // One mark of the lens, from what frame.encode left in ENC: a colour from the mapping is a fill; a typed
+  // non-value is a pattern from the role table; an occupied cell with no magnitude (Geometry, No calibration,
+  // an unsigned zero) is an outline in the occupancy ink. Marks under 4 css px are a flat low-alpha fill.
+  function lensMark(xa, ya, xb, yb) {
+    const w = xb - xa,
+      h = yb - ya,
+      role = ENC.role;
+    if (role === LENS_ROLE.NONE) return;
+    if (role === LENS_ROLE.OCCUPANCY || role === LENS_ROLE.ZERO) {
+      if (Math.min(w, h) < LENS_FLAT_PX) {
+        const alpha = ctx.globalAlpha;
+        ctx.globalAlpha = alpha * LENS_FLAT_ALPHA;
+        ctx.fillStyle = colors.occupancy;
+        ctx.fillRect(xa + 0.3, ya + 0.3, Math.max(0.5, w - 0.6), Math.max(0.5, h - 0.6));
+        ctx.globalAlpha = alpha;
+      } else {
+        ctx.strokeStyle = colors.occupancy;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(xa + 0.5, ya + 0.5, Math.max(0.4, w - 1), Math.max(0.4, h - 1));
+      }
+      return;
+    }
+    if (role === LENS_ROLE.PATTERN && Math.min(w, h) < LENS_FLAT_PX) {
+      const alpha = ctx.globalAlpha;
+      ctx.globalAlpha = alpha * LENS_FLAT_ALPHA;
+      ctx.fillStyle = colors.state;
+      ctx.fillRect(xa + 0.3, ya + 0.3, Math.max(0.5, w - 0.6), Math.max(0.5, h - 0.6));
+      ctx.globalAlpha = alpha;
+      return;
+    }
+    ctx.fillStyle = role === LENS_ROLE.PATTERN ? patternFor(ENC.pattern) : ENC.css;
+    ctx.fillRect(xa + 0.3, ya + 0.3, Math.max(0.5, w - 0.6), Math.max(0.5, h - 0.6));
+  }
+  // What the tally counts of one mark the lens drew: an occupied mark with a defined value, with the clipping
+  // the mapping gave it; negative infinity and a missing reference are their own counts.
+  function lensTallyMark(xa, ya, xb, yb) {
+    if (ENC.tag === 0) {
+      // a mark the mapping coloured (or a measured zero); an outline with no mapping is not a value on a scale
+      if ((ENC.role >= LENS_ROLE.UNSIGNED && ENC.role <= LENS_ROLE.MIDPOINT) || ENC.role === LENS_ROLE.ZERO)
+        lensRt.tally.addBox(xa, ya, xb, yb, lensRt.clip, ENC.idx, ENC.clip, true, ENC.value !== 0);
+    } else if (ENC.tag === LENS_NEG_INF) lensRt.tally.addBoxNegInf(xa, ya, xb, yb, lensRt.clip);
+    else if (ENC.tag === LENS_NO_REF) lensRt.tally.addNoRef();
+  }
+  // The third line of the lens caption: whose scale this is, its short id, the legend's short text of it
+  // (top of the scale, transform, policy, and at most one state) and the lens's own share of marks and area
+  // outside it. The legend model behind the text is rebuilt only when an id it is made from changes.
+  function lensLine(lens) {
+    if (S.mode === "geometry") return "Occupied cells";
+    if (!lens.scope) return E.text.state.noCalibration;
+    const report = E.warn.evaluate(lensRt.tally, { meaningful: E.measure.MODES[S.mode].kind === "unbounded" }),
+      c = report.counts,
+      key = E.legend.keyOf({
+        mappingId: lens.mappingId,
+        appearanceId: lens.fingerprint(),
+        themeEpoch: colourEpoch,
+        policy: lens.scope,
+        state: lens.mappingState,
+        warnStamp: [report.rangeExceeded, report.lowDiscrimination].join(","),
+        marker: null,
+        level: lens.level,
+      });
+    // the lens reports its own shares; the settled popover and the chip read them from here
+    scaleRt.warn.lens = { key, tally: lensRt.tally, report };
+    if (key !== lensRt.legendKey) {
+      lensRt.legendKey = key;
+      lensRt.chipText = E.legend.chip(
+        E.legend.build(lens, report, lensFmt, {
+          channel: "lens",
+          updating: lens.updating,
+          counts: {
+            "clip-low": c.low,
+            "clip-high": c.high,
+            "negative-infinite": c.negInf,
+            "no-reference": c.noRef,
+            "exact-low": c.exactLow,
+            "exact-high": c.exactHigh,
+          },
+        }),
+      ).text;
+    }
+    const parts = [];
+    if (lens.scope === "shared") parts.push(LENS_SHARED_TEXT);
+    else if (lens.pending) parts.push(E.text.state.localPending);
+    if (lens.mappingId) parts.push(lens.mappingId.slice(0, 6));
+    // the legend's short text can repeat a word (a fixed scale is both its transform and its policy): once is enough
+    if (lensRt.chipText) parts.push([...new Set(lensRt.chipText.split(" · "))].join(" · "));
+    if (report.shares.marks > 0 || report.shares.area > 0)
+      parts.push(`${lensFmt(report.shares.marks, "share")} of marks · ${lensFmt(report.shares.area, "share")} of area outside`);
+    return parts.join(" · ");
+  }
+  // What a Pin leaves behind for the next settled draw to disclose: the ids and context keys of the Cells and
+  // Rows mappings the chart was drawn with, and the level asked for and drawn, read from the last frame.
+  // A fault in reading them is not the Pin's: the ids are then unknown and the disclosure says so.
+  function lensPinBefore() {
+    const sc = last?.sc,
+      read = (frame) => {
+        try {
+          return { id: frame?.mappingId ?? "", key: frame?.legendInput?.()?.contextKey ?? null };
+        } catch (error) {
+          return { id: "", key: null };
+        }
+      },
+      cells = read(sc?.cells),
+      rows = read(sc?.rows);
+    return {
+      cellsKey: cells.key,
+      rowsKey: rows.key,
+      cellsId: cells.id,
+      rowsId: rows.id,
+      requested: { n: S.n, m: S.m },
+      effective: { n: renderN(), m: renderM() },
+    };
+  }
   function lensFrame() {
     if (!G.w) return null;
     const p =
@@ -11220,6 +15771,13 @@
   function pinLens() {
     const f = lensFrame();
     if (!f || !f.src) return false;
+    // Pin promotes the lens's region and level to the chart, so the Cells and Rows contexts may change: say
+    // what they were, and why, for the settled draw that discloses "Scale changed: pin/resolution".
+    scaleRt.pinBefore = lensPinBefore();
+    scaleRt.pinCause = nav.scaleCause = "pin";
+    // The tile is the chart's now: it stops being lens-only before confine() chooses the block to show.
+    f.src.lens = false;
+    if (PACK.blocks[f.src.id]) PACK.blocks[f.src.id].lens = false;
     transition = reduce
       ? null
       : { n: renderN(), m: renderM(), start: performance.now() };
@@ -11244,11 +15802,15 @@
     save();
     return true;
   }
-  function drawResolutionLens() {
-    if (!(S.lens || nav.alt || nav.hold)) return;
+  function drawResolutionLens(sc) {
+    if (!(S.lens || nav.alt || nav.hold)) {
+      // a closed lens has no Local-contrast want to wait for
+      lensWantDrop();
+      return;
+    }
     const f = lensFrame();
     if (!f) return;
-    const { w, h, x, y, ta, tb, pa, pb, depth, src, n, m } = f;
+    const { w, h, x, y, ta, tb, depth, src } = f;
     ctx.save();
     ctx.beginPath();
     ctx.rect(x, y, w, h);
@@ -11257,121 +15819,77 @@
     ctx.fillRect(x, y, w, h);
     let label = "Detail unavailable",
       sub = "No finer recorded cells in this region",
-      localLegend = "";
+      third = "";
     if (src) {
-      const ts = 2 ** n,
-        ps = 2 ** m,
-        [start, end] = sourceRange(src),
-        fine = n < renderN() || m < renderM();
-      {
-        const a = Math.max(start, Math.floor(ta / 2 ** src.n) * 2 ** src.n),
-          b = Math.min(
-            end,
-            activeCutoff(),
-            Math.ceil(tb / 2 ** src.n) * 2 ** src.n,
-          ),
-          lensBounds = [
-            a,
-            b,
-            Math.max(0, Math.floor(pa / 2 ** src.m) * 2 ** src.m),
-            Math.ceil(pb / 2 ** src.m) * 2 ** src.m,
-          ],
-          q = aggregate(src, n, m, lensBounds),
-          whole = ts * BASE * ps * PR,
-          deltas = q.cells
-            .map((z) => Math.abs(2 * z.bv - z.v))
-            .filter(Boolean)
-            .sort((x, y) => x - y),
-          deltaMax = d3.quantileSorted(deltas, 0.995) || 1;
-        if (movementMode()) localLegend = lensMotion(src, q, n, m, lensBounds, b);
-        else {
-          // The lens's cells shade against each other, at their full-cell rates.
-          for (const z of q.cells)
-            markState.metrics.set(z, {
-              ...cellExposure(z, lensBounds, ts, ps),
-              whole,
-              delta: 2 * z.bv - z.v,
-            });
-          const sorted = amountScale(q);
-          if (S.mode === "cascade") q.cascade = lensCascade(src, n, m, lensBounds);
-          localLegend =
-            S.mode === "delta"
-              ? `Δ −${compact(deltaMax)} · 0 · +${compact(deltaMax)} USDT`
-              : S.mode === "flow" || S.mode === "flowtrades"
-                ? "Taker buys 25% · 50% · 75%"
-                : S.mode === "cascade"
-                  ? q.cascade.parent
-                    ? "−2 · 0 · +2 vs an even share"
-                    : "No coarser level to compare with"
-                  : S.mode === "geometry"
-                    ? "Occupied cells"
-                    : sorted.length
-                      ? `${compact(d3.quantileSorted(sorted, 0.05))} → ${compact(d3.quantileSorted(sorted, 0.95))} ${AMOUNT_UNITS[S.mode]}`
-                      : "";
-          for (const z of q.cells) {
-            const xa = G.X(z.c * ts),
-              xb = G.X(Math.min((z.c + 1) * ts, b)),
-              ya = G.Y((z.r + 1) * ps),
-              yb = G.Y(z.r * ps);
-            ctx.fillStyle = cellColour(z, q, deltaMax);
-            if (S.mode === "geometry") {
-              ctx.strokeStyle = colors.volume;
-              ctx.globalAlpha = 0.65;
-              ctx.strokeRect(
-                xa + 0.5,
-                ya + 0.5,
-                Math.max(0.4, xb - xa - 1),
-                Math.max(0.4, yb - ya - 1),
-              );
-              ctx.globalAlpha = 1;
-            } else
-              ctx.fillRect(
-                xa + 0.3,
-                ya + 0.3,
-                Math.max(0.5, xb - xa - 0.6),
-                Math.max(0.5, yb - ya - 0.6),
-              );
-          }
+      const p = lensParts(f),
+        { n, m, ts, ps, start, end, b, lensBounds, q, fine } = p,
+        mp = movementMode() ? lensMotionParts(p) : null,
+        cascade = S.mode === "cascade" ? lensCascade(src, n, m, lensBounds) : null;
+      // The lens's frame: the Cells mapping (or Local contrast's own) over the lens level and rectangle. A fault
+      // in building it is the scale display's, not the chart's: the lens then draws occupancy only.
+      let lens = INERT_SC.cells;
+      if (sc !== INERT_SC)
+        try {
+          lens = sc.lens = lensScaleFrame(sc, p, mp, cascade ? (z, out) => lensCascadeEntry(cascade, z, out) : null);
+        } catch (error) {
+          lens = scaleFault(error).cells;
         }
-        if (S.poc) {
-          ctx.beginPath();
-          let prev = null;
-          for (const c of q.cols) {
-            if (c.poc === null) continue;
-            const cx = G.X((c.c + 0.5) * ts),
-              cy = G.Y((c.poc + 0.5) * ps);
-            if (prev !== c.c - 1) ctx.moveTo(cx, cy);
-            else ctx.lineTo(cx, cy);
-            prev = c.c;
-          }
-          ctx.strokeStyle = colors.surface;
-          ctx.globalAlpha = 0.7;
-          ctx.lineWidth = 3.3;
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-          ctx.strokeStyle = colors.poc;
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
+      lensRt.clip.x0 = x;
+      lensRt.clip.y0 = y;
+      lensRt.clip.x1 = x + w;
+      lensRt.clip.y1 = y + h;
+      lensRt.tally.reset();
+      let status = "";
+      if (mp) status = lensMotion(src, q, n, m, lensBounds, b, lens, mp);
+      else
+        for (const z of q.cells) {
+          const xa = G.X(z.c * ts),
+            xb = G.X(Math.min((z.c + 1) * ts, b)),
+            ya = G.Y((z.r + 1) * ps),
+            yb = G.Y(z.r * ps);
+          lens.encode(z, ENC, lensBounds);
+          lensMark(xa, ya, xb, yb);
+          lensTallyMark(xa, ya, xb, yb);
         }
-        // Live, finer cells come from the cube: say so while they are read,
-        // and why when they can't be.
-        const wanted = fine ? null : lensTile(),
-          reading = wanted && loadState[wanted.id] === "loading",
-          failed = wanted && cube.failed.has(["tile", live.generation, wanted.id].join("|"));
-        label = `${fine ? `Lens −${depth}` : src.n === 0 && src.m === 0 ? "Base cells" : "Finest loaded"} · ${dur(BASE * ts)} × ${price(PR * ps)} USDT`;
-        sub = fine
-          ? "Finer cells · surroundings unchanged · Enter pins"
-          : src.n === 0 && src.m === 0
-            ? "Base cells · no finer level exists"
-            : failed
-              ? "The cube's finer cells couldn't be read"
-              : reading || wanted
-                ? "Reading finer cells from the cube…"
-                : "The recorded snapshot has no finer cells here";
-        if (ta < start || tb > end) {
-          label += " · partial";
-          sub = "Finer coverage ends inside lens";
+      third = status || lensLine(lens);
+      if (S.poc) {
+        ctx.beginPath();
+        let prev = null;
+        for (const c of q.cols) {
+          if (c.poc === null) continue;
+          const cx = G.X((c.c + 0.5) * ts),
+            cy = G.Y((c.poc + 0.5) * ps);
+          if (prev !== c.c - 1) ctx.moveTo(cx, cy);
+          else ctx.lineTo(cx, cy);
+          prev = c.c;
         }
+        ctx.strokeStyle = colors.surface;
+        ctx.globalAlpha = 0.7;
+        ctx.lineWidth = 3.3;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = colors.poc;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      // Live, finer cells come from the cube: say so while they are read,
+      // and why when they can't be.
+      const wanted = fine ? null : lensTile(),
+        reading = wanted && loadState[wanted.id] === "loading",
+        failed = wanted && cube.failed.has(["tile", live.generation, wanted.id].join("|"));
+      label = `${fine ? `Lens −${depth}` : src.n === 0 && src.m === 0 ? "Base cells" : "Finest loaded"} · ${dur(BASE * ts)} × ${price(PR * ps)} USDT`;
+      sub = fine
+        ? "Finer cells · surroundings unchanged · Enter pins"
+        : src.n === 0 && src.m === 0
+          ? "Base cells · no finer level exists"
+          : failed
+            ? "The cube's finer cells couldn't be read"
+            : reading || wanted
+              ? "Reading finer cells from the cube…"
+              : "The recorded snapshot has no finer cells here";
+      if (ta < start || tb > end) {
+        label += " · partial";
+        sub = "Finer coverage ends inside lens";
       }
     }
     ctx.restore();
@@ -11381,7 +15899,7 @@
     lensCaption(x, y, h, [
       [label, colors.ink],
       [sub, colors.muted],
-      ...(localLegend ? [[localLegend, colors.muted]] : []),
+      ...(third ? [[third, colors.muted]] : []),
     ]);
   }
   // The lens under Cascade: its finer cells and their parents, summed over the
@@ -11406,41 +15924,33 @@
       cells.cascade = cascadeContext(cells, parent, start, Math.min(stop, cut), cut);
     return cells.cascade;
   }
-  // The lens under Path or Dwell: its finer cells' path and dwell, shaded
-  // against each other, from the motion of the block it draws from; its
-  // legend, or why there is none yet.
-  function lensMotion(src, q, n, m, lensBounds, stop) {
-    const msrc = motionOf(src),
+  // The lens under Path or Dwell: its finer cells' path and dwell, from the motion of the block it draws from,
+  // through the lens frame (the Shared Path mapping, or Dwell's fixed share). A cell the price only moved
+  // through or held in is outlined in its colour, as in the chart; a cell of the block the motion has not
+  // reached is a pattern. Returns why there is nothing to draw while the motion is not read.
+  function lensMotion(src, q, n, m, lensBounds, stop, lens, mp) {
+    const { end, mq } = mp,
       ts = 2 ** n,
-      ps = 2 ** m,
-      end = msrc ? Math.min(msrc.end, activeCutoff()) : -Infinity,
-      mq = msrc ? boundedMotion(msrc, n, m, lensBounds) : null,
-      sorted = mq ? motionScale(mq, lensBounds, end, ts, ps) : null;
+      ps = 2 ** m;
     for (const z of mq ? mq.cells : []) {
       const xa = G.X(z.c * ts),
         xb = G.X(Math.min((z.c + 1) * ts, stop)),
         ya = G.Y((z.r + 1) * ps),
         yb = G.Y(z.r * ps);
-      motionMark(
-        ramp(rank(sorted, motionAmount(z, lensBounds, end, ts, ps))),
-        z.ct > 0 || q.map.has(z.c + "," + z.r),
-        xa,
-        ya,
-        xb - xa,
-        yb - ya,
-        0.6,
-      );
+      lens.encode(z, ENC, lensBounds);
+      // a fill role keeps the movement outline geometry of the chart; any other role is drawn as itself
+      if (ENC.role >= LENS_ROLE.UNSIGNED && ENC.role <= LENS_ROLE.MIDPOINT)
+        motionMark(ENC.css, z.ct > 0 || q.map.has(z.c + "," + z.r), xa, ya, xb - xa, yb - ya, 0.6);
+      else lensMark(xa, ya, xb, yb);
+      lensTallyMark(xa, ya, xb, yb);
     }
-    ctx.fillStyle = colors.line;
     for (const z of q.cells) {
       if ((z.c + 1) * ts <= end || (mq && mq.map.has(cellKey(z.c, z.r)))) continue;
-      const xa = G.X(z.c * ts),
-        xb = G.X(Math.min((z.c + 1) * ts, stop)),
-        ya = G.Y((z.r + 1) * ps),
-        yb = G.Y(z.r * ps);
-      ctx.fillRect(xa + 0.3, ya + 0.3, Math.max(0.5, xb - xa - 0.6), Math.max(0.5, yb - ya - 0.6));
+      ENC.role = LENS_ROLE.PATTERN;
+      ENC.pattern = "pending";
+      lensMark(G.X(z.c * ts), G.Y((z.r + 1) * ps), G.X(Math.min((z.c + 1) * ts, stop)), G.Y(z.r * ps));
     }
-    if (mq) return motionLegend(sorted);
+    if (mq) return "";
     const want = motionSourceWant(src);
     return want && motion.failed.has(want.key) ? "Path and dwell unavailable" : "Reading path and dwell…";
   }
@@ -11505,6 +16015,7 @@
       nav.alt = e.altKey;
       el("tip").hidden = true;
       nav.touchTip = false;
+      noteGesture();
       if (nav.pointers.size === 2) {
         clearTimeout(nav.holdTimer);
         nav.hold = false;
@@ -11568,6 +16079,7 @@
         S.window = "";
         // The price range refits once, when a finger lifts (see finish).
         settleNavigation(null, false);
+        noteGesture();
         return;
       }
       if (drag?.axis) {
@@ -11584,6 +16096,7 @@
           true,
         );
         drag.axis.y = p.y;
+        noteGesture();
         return;
       }
       if (S.lens || nav.alt || nav.hold || drag?.lens) {
@@ -11591,6 +16104,7 @@
         hover = null;
         requestDraw();
         scheduleCube();
+        noteGesture();
         return;
       }
       if (!drag) {
@@ -11628,8 +16142,9 @@
         S.window = "";
         settleNavigation(null, false);
       }
+      noteGesture();
     });
-    const finish = (e) => {
+    const finishPointer = (e) => {
       clearTimeout(nav.holdTimer);
       nav.pointers.delete(e.pointerId);
       if (nav.pinch) {
@@ -11692,6 +16207,12 @@
         tooltip(p);
       }
     };
+    // The end of a pointer is a stamp and a wake on every path out of it, AFTER the hold is released: a
+    // fit that waited on the drag is armed again only by this call.
+    const finish = (e) => {
+      finishPointer(e);
+      noteGesture();
+    };
     canvas.addEventListener("pointerup", finish);
     // A tapped tooltip closes at the next touch anywhere but on it.
     document.addEventListener(
@@ -11713,6 +16234,7 @@
       nav.hold = false;
       drag = null;
       requestDraw();
+      noteGesture();
     });
     canvas.addEventListener("pointerleave", (e) => {
       // A finger lifted leaves the canvas: the tooltip its tap opened stays.
@@ -11754,6 +16276,7 @@
         if (!e.deltaY) return;
         nav.wheel = { target, at: now };
         gestureAt = now;
+        noteGesture();
         const alone = target === "price-axis",
           priceOnly = target === "chart-price",
           // Around the pointer, kept within the view; an axis's own zoom is
@@ -11857,6 +16380,7 @@
         centre = { t: (S.tA + S.tB) / 2, p: (S.pA + S.pB) / 2 };
       // A held key repeats like a gesture: the continuations wait for it to end.
       if (e.repeat) gestureAt = performance.now();
+      if (step) noteGesture();
       if (e.key === "?") openKeys();
       else if (digit) chooseWindow(WINDOW_KEYS[digit]);
       else if (bracket)
@@ -11959,7 +16483,10 @@
       }
       const id = e.code || e.key;
       nav.pressed.delete(id);
-      if (nav.zoomKeys.delete(id) && !nav.zoomKeys.size) endZoom(false);
+      if (nav.zoomKeys.delete(id)) {
+        if (!nav.zoomKeys.size) endZoom(false);
+        noteGesture();
+      }
     });
     window.addEventListener("blur", () => {
       // Losing focus lets go of every key and pointer, and ends a zoom gesture
@@ -11978,6 +16505,9 @@
       clearTimeout(nav.holdTimer);
       if (scaled) settleNavigation("Price scale", false);
       requestDraw();
+      // Every hold was just let go of, with nothing else to say so: stamp and wake, or a fit that waited
+      // on one would never be armed again.
+      noteGesture();
     });
   }
 
@@ -11994,24 +16524,28 @@
     S.mode = mode;
     update();
     save();
+    scaleArm();
   }
   function setPane(pane) {
     if (!panes().includes(pane)) return;
     S.pane = pane;
     update();
     save();
+    scaleArm();
   }
   function setRows(rows) {
     if (!rowsChoices().includes(rows)) return;
     S.rows = rows;
     update();
     save();
+    scaleArm();
   }
   function setPeriod(key) {
     if (!validPeriod(key)) return;
     S.period = key;
     update();
     save();
+    scaleArm();
   }
   // The level line (X): one dashed line on a price row's centre, kept as its
   // price, so it stays put through zooms and resolution changes. With no line,
@@ -12056,6 +16590,7 @@
     recordView(S.replay ? "Replay" : "Cutoff");
     update();
     save();
+    noteGesture();
   }
   // The same span, moved to end at the cutoff with a tenth of it to spare, as a
   // window does; replay ends, since the latest data is what was asked for.
@@ -12067,6 +16602,7 @@
     S.replay = false;
     S.window = "";
     settleNavigation("Latest", true);
+    noteGesture();
   }
   // Escape closes what is open first, then clears the selection, then goes
   // back to Pan from Select or the lens.
@@ -12281,6 +16817,10 @@
           delete PACK.blocks[id];
         }
       live.generation++;
+      // A whole pack is a new cube state: memoised fits are dropped, but the stores are not (a mapping's
+      // identity survives a revision), and nothing says what changed.
+      scaleRt.fitMemo.clear();
+      nav.revision = { kind: "unknown", atMs: Date.now() };
       measured.clear();
       motion.sources = {};
       motion.view = null;
@@ -12334,7 +16874,11 @@
       if (key in body) PACK[key] = body[key];
     CUT = (Date.parse(PACK.cutoff) / 1000 - T0) / BASE;
     CANON = canonOf(PACK);
-    if (!whole && wasCanon !== null && CANON !== wasCanon) dropMotionAfter(wasCanon);
+    if (!whole && wasCanon !== null && CANON !== wasCanon) {
+      dropMotionAfter(wasCanon);
+      // The archive replaced minutes that were provisional.
+      nav.revision = { kind: "provisional-replaced", throughMs: E.time.baseToMs(wasCanon, T0, BASE), atMs: Date.now() };
+    }
     CUT_YEAR = date(CUT).getUTCFullYear();
     groups.clear();
     evidenceCache.clear();
@@ -12344,6 +16888,7 @@
     limits();
     update();
     title();
+    scaleArm();
   }
   // A view that showed the old cutoff moves with it, keeping its span; a window
   // keeps its length. Not during a gesture, and never in replay.
@@ -12422,6 +16967,7 @@
   bindRoot();
   bindEvidence();
   bindNavigation();
+  bindScaleUi();
   try {
     qsa("button,input,select").forEach((control) => (control.disabled = true));
     el("market").textContent = PACK.live ? "LIVE" : "RECORDED";
@@ -12435,21 +16981,29 @@
     ready = true;
     geometry();
     setWindow("24h");
-    // The address names the view; without one the page opens on the view this
-    // browser showed last. The workspace is this browser's either way.
-    const linked = readView(location.hash),
-      restored = restore(window.explorerState?.saved);
-    if (linked) applyView(linked);
+    // The address names the view; without one (a bare root) the page opens on the view this browser
+    // showed last, by the three-way rule of restore. A link, or an address this page refuses, restores
+    // the workspace only: the stored view is neither applied nor migrated nor reported. The workspace is
+    // this browser's either way.
+    const address = readAddress(location.hash),
+      linked = viewOfAddress(address, location.hash),
+      restored = restore(window.explorerState?.saved, { skipView: Boolean(linked) || address.kind === "reject" });
+    if (linked) {
+      applyView(linked);
+      reportView(linked);
+    } else reportRefused(address);
     transition = null;
     qsa("button,input,select").forEach((control) => (control.disabled = false));
     startHistory(linked ? "Link" : restored ? "Restored" : "Opened");
     update();
+    scaleArm();
     title();
     new ResizeObserver(() => {
       if (ready) {
         geometry();
         if (S.auto) autoLevel();
         update();
+        noteGesture();
       }
     }).observe(canvas);
     matchMedia("(prefers-color-scheme: dark)").addEventListener(
@@ -12477,6 +17031,7 @@
         limits();
         evidenceCache.clear();
         update();
+        scaleArm();
       } catch (error) {
         loadState[id] = "unavailable";
         el("loading").textContent = `${id} unavailable: ${error.message}`;

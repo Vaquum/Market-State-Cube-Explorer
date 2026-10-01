@@ -1,0 +1,154 @@
+{
+  "note": "The current allowance of the role lint (TESTPLAN DD-T14), keyed (file, pattern) with the count still allowed. `count` may only shrink: it must be <= role-baseline.json in every worktree, and equal to the actual hit count with CONVERGENCE=1, so a removed hit forces a lower count. `rows` are the docs/visual-contract.md rows the hits belong to (each hit's function, selector or file must be named by one of them); `owner` is the slice that removes the last hit and must own at least one of the rows. K deletes an entry whose count reaches zero.",
+  "entries": [
+    {
+      "file": "src/explorer.js",
+      "pattern": "--ol-tier-*",
+      "count": 2,
+      "rows": [
+        "T-19",
+        "T-34"
+      ],
+      "owner": "#48"
+    },
+    {
+      "file": "src/explorer.js",
+      "pattern": "PERIOD_TIERS",
+      "count": 2,
+      "rows": [
+        "T-19",
+        "C-22a"
+      ],
+      "owner": "#48"
+    },
+    {
+      "file": "src/explorer.js",
+      "pattern": "colors.volume",
+      "count": 1,
+      "rows": [
+        "C-05",
+        "C-11c",
+        "C-12a",
+        "C-25",
+        "T-07"
+      ],
+      "owner": "#47"
+    },
+    {
+      "file": "src/explorer.js",
+      "pattern": "colors.evidence",
+      "count": 5,
+      "rows": [
+        "C-24",
+        "T-11"
+      ],
+      "owner": "#48"
+    },
+    {
+      "file": "src/explorer.js",
+      "pattern": "colors.tiers",
+      "count": 4,
+      "rows": [
+        "T-19",
+        "T-34",
+        "C-22a"
+      ],
+      "owner": "#48"
+    },
+    {
+      "file": "src/explorer.js",
+      "pattern": "colors.line@state",
+      "count": 3,
+      "rows": [
+        "C-04",
+        "C-08d",
+        "C-16a",
+        "C-25",
+        "T-06"
+      ],
+      "owner": "#47"
+    },
+    {
+      "file": "src/explorer.js",
+      "pattern": "colors.poc@state",
+      "count": 9,
+      "rows": [
+        "C-12d",
+        "C-16b",
+        "C-17",
+        "T-10"
+      ],
+      "owner": "#47"
+    },
+    {
+      "file": "src/explorer.css",
+      "pattern": "--ol-evidence",
+      "count": 4,
+      "rows": [
+        "T-11",
+        "D-08",
+        "D-09",
+        "D-10",
+        "D-11"
+      ],
+      "owner": "#48"
+    },
+    {
+      "file": "src/explorer.css",
+      "pattern": "--ol-line@state",
+      "count": 6,
+      "rows": [
+        "D-08",
+        "D-09",
+        "F-01",
+        "F-03",
+        "F-06"
+      ],
+      "owner": "#47"
+    },
+    {
+      "file": "src/explorer.css",
+      "pattern": "--ol-poc@state",
+      "count": 4,
+      "rows": [
+        "D-07",
+        "D-08",
+        "D-09",
+        "F-02",
+        "F-04",
+        "T-10"
+      ],
+      "owner": "#47"
+    },
+    {
+      "file": "src/explorer.css",
+      "pattern": "--ol-tier-*",
+      "count": 6,
+      "rows": [
+        "T-19"
+      ],
+      "owner": "#48"
+    },
+    {
+      "file": "src/explorer.css",
+      "pattern": "--ol-volume",
+      "count": 4,
+      "rows": [
+        "T-07",
+        "D-01",
+        "D-08",
+        "D-09"
+      ],
+      "owner": "#47"
+    },
+    {
+      "file": "docs/data-and-semantics.md",
+      "pattern": "prose:buy-sell-colour",
+      "count": 1,
+      "rows": [
+        "R-14"
+      ],
+      "owner": "#48"
+    }
+  ]
+}

@@ -1,0 +1,197 @@
+{
+ "note": "Each row: consumerId (N-01..N-08 of the visual contract, maps/consumer-inventory.md 2.8 B), fg and bg (CSS custom property names of src/explorer.css, or lut.bar), theme (both themes unless stated), min (4.5 small text, 3 essential boundary) and the opacity the mark is painted at; or an exempt reason. Rows are the S1-introduced text and controls only.",
+ "rows": [
+  {
+   "consumerId": "N-01",
+   "fg": "--ol-ink",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 4.5,
+   "note": "Scale section labels and menu items (normal), in the .ol-pop popover on the surface"
+  },
+  {
+   "consumerId": "N-01",
+   "fg": "--ol-ink",
+   "bg": "--ol-hover",
+   "theme": "both",
+   "min": 4.5,
+   "note": "menu item under hover"
+  },
+  {
+   "consumerId": "N-01",
+   "fg": "--ol-ink",
+   "bg": "--ol-on",
+   "theme": "both",
+   "min": 4.5,
+   "note": "menu item checked (aria-checked)"
+  },
+  {
+   "consumerId": "N-01",
+   "fg": "--ol-muted",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 4.5,
+   "note": "policy chip text and disabled-item reason text"
+  },
+  {
+   "consumerId": "N-01",
+   "fg": "--ol-muted",
+   "bg": "--ol-panel",
+   "theme": "both",
+   "min": 4.5,
+   "note": "policy chip text on the chart header panel"
+  },
+  {
+   "consumerId": "N-01",
+   "fg": "--ol-border",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 3,
+   "note": "policy and legend chip border (essential boundary)"
+  },
+  {
+   "consumerId": "N-01",
+   "fg": "--ol-accent",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 3,
+   "note": "focus ring of the chip and the menu items (2 px outline)"
+  },
+  {
+   "consumerId": "N-02",
+   "fg": "--ol-ink",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 4.5,
+   "note": "legend detail text and scale-change notes in the popover"
+  },
+  {
+   "consumerId": "N-02",
+   "fg": "--ol-ink",
+   "bg": "--ol-panel",
+   "theme": "both",
+   "min": 4.5,
+   "note": "warning chips (Scale range exceeded, Low discrimination, Short exposure) on the panel"
+  },
+  {
+   "consumerId": "N-02",
+   "fg": "--ol-muted",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 4.5,
+   "note": "secondary detail lines (model, provenance strings)"
+  },
+  {
+   "consumerId": "N-02",
+   "fg": "--ol-border",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 3,
+   "note": "warning chip border"
+  },
+  {
+   "consumerId": "N-03",
+   "exempt": "measurement gradient",
+   "note": "the 2 px value marker lies ON the LUT ramp; D11 exempts gradient steps, and the marker is located by position and by the readout text beside the key, never by contrast with the ramp alone"
+  },
+  {
+   "consumerId": "N-04",
+   "fg": "--ol-muted",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 3,
+   "note": "stateInk (patterns, diamond, triangles, tick, infinity plate) over the empty surface it is painted on; a pattern tile carries its own surface ground"
+  },
+  {
+   "consumerId": "N-04",
+   "fg": "--ol-border",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 3,
+   "note": "occupancy outline of a zero cell, inset inside its own empty cell (backdrop = surface)"
+  },
+  {
+   "consumerId": "N-04",
+   "exempt": "measurement gradient",
+   "note": "Geometry and movement outlines are coloured from the LUT over the surface: D11 exempts steps of the measurement gradient (an outline coloured from the LUT itself)"
+  },
+  {
+   "consumerId": "N-04",
+   "fg": "lut.bar",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 3,
+   "note": "unsigned constant bar (LUT entry 160) at the painted opacity 0.65, composited over the surface (solid 7.10 / 7.65)",
+   "alpha": 0.65
+  },
+  {
+   "consumerId": "N-05",
+   "fg": "--ol-muted",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 3,
+   "note": "key swatch boundary of a pattern glyph (stateInk over surface)"
+  },
+  {
+   "consumerId": "N-05",
+   "fg": "--ol-muted",
+   "bg": "--ol-panel",
+   "theme": "both",
+   "min": 4.5,
+   "note": "key label text in the status bar"
+  },
+  {
+   "consumerId": "N-05",
+   "fg": "--ol-border",
+   "bg": "--ol-panel",
+   "theme": "both",
+   "min": 3,
+   "note": "key swatch outline of the zero and occupied keys over the status bar panel (3.21 / 3.56)"
+  },
+  {
+   "consumerId": "N-06",
+   "fg": "--ol-ink",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 4.5,
+   "note": "model labels in the tooltip and legend details"
+  },
+  {
+   "consumerId": "N-06",
+   "fg": "--ol-muted",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 4.5,
+   "note": "model applicability notes"
+  },
+  {
+   "consumerId": "N-07",
+   "fg": "--ol-ink",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 4.5,
+   "note": "notice banner text"
+  },
+  {
+   "consumerId": "N-07",
+   "fg": "--ol-ink",
+   "bg": "--ol-raised",
+   "theme": "both",
+   "min": 4.5,
+   "note": "notice banner dismiss button on a raised control surface"
+  },
+  {
+   "consumerId": "N-07",
+   "fg": "--ol-border",
+   "bg": "--ol-surface",
+   "theme": "both",
+   "min": 3,
+   "note": "notice banner and dismiss button boundary"
+  },
+  {
+   "consumerId": "N-08",
+   "exempt": "no user interface",
+   "note": "docs/visual-contract.md and the role lint are repository artefacts with nothing painted"
+  }
+ ]
+}

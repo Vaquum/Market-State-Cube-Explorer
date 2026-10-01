@@ -1,0 +1,194 @@
+{
+  "commit": "8c82ca1f03d80d3f35ff1ab6326902f4286f7b92",
+  "source": "git show 8c82ca1:src/explorer.js and src/explorer.css, scanned with the comment-blanking lexer of tests/unit/role-lint.test.js",
+  "colorsReads": {
+    "total": 142,
+    "lines": 131,
+    "byKey": {
+      "accent": 3,
+      "bg": 5,
+      "buy": 10,
+      "evidence": 5,
+      "family": 3,
+      "ink": 18,
+      "line": 17,
+      "muted": 26,
+      "neutral": 1,
+      "poc": 15,
+      "sell": 8,
+      "surface": 21,
+      "tiers": 4,
+      "time": 2,
+      "volume": 4
+    },
+    "byFunction": {
+      "activity": {
+        "bg": 1,
+        "buy": 1,
+        "line": 3,
+        "muted": 1,
+        "poc": 1,
+        "sell": 1,
+        "surface": 1,
+        "volume": 1
+      },
+      "axes": {
+        "line": 2,
+        "muted": 4
+      },
+      "bandTone": {
+        "buy": 1,
+        "ink": 1,
+        "sell": 1,
+        "time": 1
+      },
+      "buildRamp": {
+        "surface": 1
+      },
+      "cellColour": {
+        "buy": 1,
+        "line": 1,
+        "sell": 1,
+        "surface": 1
+      },
+      "chartLabel": {
+        "muted": 1
+      },
+      "chip": {
+        "bg": 1,
+        "ink": 1
+      },
+      "crosshair": {
+        "muted": 2
+      },
+      "divergingColour": {
+        "buy": 1,
+        "neutral": 1,
+        "sell": 1,
+        "surface": 1
+      },
+      "draw": {
+        "accent": 1,
+        "bg": 1,
+        "evidence": 1,
+        "ink": 3,
+        "muted": 3,
+        "surface": 1
+      },
+      "drawCone": {
+        "evidence": 4,
+        "muted": 1
+      },
+      "drawLines": {
+        "ink": 3,
+        "surface": 8
+      },
+      "drawLineTags": {
+        "ink": 1,
+        "surface": 1
+      },
+      "drawOscillator": {
+        "bg": 1,
+        "buy": 3,
+        "ink": 2,
+        "line": 3,
+        "muted": 2,
+        "sell": 3,
+        "surface": 2
+      },
+      "drawResolutionLens": {
+        "accent": 1,
+        "ink": 1,
+        "muted": 2,
+        "poc": 1,
+        "surface": 2,
+        "volume": 1
+      },
+      "fillCell": {
+        "volume": 1
+      },
+      "getColors": {
+        "family": 2,
+        "tiers": 2
+      },
+      "grid": {
+        "line": 1
+      },
+      "lensCaption": {
+        "accent": 1,
+        "surface": 1
+      },
+      "lensMotion": {
+        "line": 1
+      },
+      "lineStyle": {
+        "family": 1,
+        "tiers": 2
+      },
+      "markings": {
+        "muted": 1,
+        "poc": 3,
+        "surface": 1
+      },
+      "paintCoverage": {
+        "bg": 1,
+        "line": 3,
+        "poc": 4
+      },
+      "paintMotion": {
+        "line": 1
+      },
+      "paintUnfinished": {
+        "poc": 4
+      },
+      "paneLegend": {
+        "muted": 1,
+        "surface": 1
+      },
+      "profile": {
+        "buy": 2,
+        "ink": 3,
+        "muted": 7,
+        "poc": 2,
+        "volume": 1
+      },
+      "text": {
+        "muted": 1
+      },
+      "timeGrid": {
+        "line": 1
+      },
+      "underProfile": {
+        "buy": 1,
+        "ink": 3,
+        "line": 1,
+        "sell": 1,
+        "time": 1
+      }
+    }
+  },
+  "codeSites": {
+    "ctx.fillStyle =": 42,
+    "ctx.strokeStyle =": 28,
+    "ctx.globalAlpha": 63,
+    "setLineDash non-empty": 9,
+    "fillRect(": 31,
+    "strokeRect(": 13,
+    "line(": 24,
+    "markLine(": 16,
+    "hatchRect(": 13,
+    "text(": 14,
+    "chartLabel(": 12,
+    ".style.background": 4,
+    "style.setProperty": 4,
+    "var(--ol- in js": 20,
+    "var(--ol- in css": 186,
+    "custom properties in css": 50
+  },
+  "minRows": {
+    "T": 26,
+    "C": 48,
+    "D": 21,
+    "F": 10
+  }
+}

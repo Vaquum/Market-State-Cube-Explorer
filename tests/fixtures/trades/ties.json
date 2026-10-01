@@ -1,0 +1,63 @@
+{
+  "trades": [
+    {"t_ms": 1000, "price": 2500000, "qty": 252000, "takerBuy": true},
+    {"t_ms": 2000, "price": 2520000, "qty": 250000, "takerBuy": false},
+    {"t_ms": 3000, "price": 2520000, "qty": 250000, "takerBuy": true},
+    {"t_ms": 4000, "price": 2500000, "qty": 252000, "takerBuy": false},
+    {"t_ms": 60000, "price": 2500000, "qty": 400000, "takerBuy": true},
+    {"t_ms": 120000, "price": 2500000, "qty": 400000, "takerBuy": true},
+    {"t_ms": 180000, "price": 2500000, "qty": 400000, "takerBuy": true}
+  ],
+  "gaps": [],
+  "cutoffIso": "2021-01-01T00:05:00Z",
+  "expected": {
+    "notes": "Ties. Col 0 holds four trades of exactly 63 USDT (25,000 x 0.00252 BTC in row 200; 25,200 x 0.0025 BTC in row 201): row 200 = 63 buy + 63 sell = 126, row 201 = 63 sell + 63 buy = 126, taker-buy 63 in each: the POC tie and the taker-buy POC tie both go to the LOWER row (200). Delta of both cells is 0 with trades. Cols 1, 2 and 3 hold one 100 USDT buy each in row 200: three cells with identical volume (a tied cohort) next to two cells of 126. Over [0, 6) row 200 totals 426 against 126, so the tie is gone (POC 200 by volume). Path: 25,000 -> 25,200 is 125 USDT in row 200 and 75 in row 201, twice (trades 2 and 4) = 250 and 150 in col 0. Dwell: 1 s, 1 s (row 201), 1 s (row 201), then trade 4 holds 4 s -> 60 s (52.25 s col 0, 3.75 s col 1), trade 5 60 -> 120 s (52.5 s col 1, 7.5 s col 2), trade 6 120 -> 180 s (48.75 s col 2, 11.25 s col 3), trade 7 180 s -> 281.25 s (45 s col 3, 56.25 s col 4).",
+    "rect": {"b0": 0, "cellsB1": 6, "motionB1": 5, "cutMs": 300000},
+    "cells": {
+      "0:0": [
+        {"c": 0, "r": 200, "v": 126, "bv": 63, "ct": 2, "bt": 1, "d": 0},
+        {"c": 0, "r": 201, "v": 126, "bv": 63, "ct": 2, "bt": 1, "d": 0},
+        {"c": 1, "r": 200, "v": 100, "bv": 100, "ct": 1, "bt": 1, "d": 100},
+        {"c": 2, "r": 200, "v": 100, "bv": 100, "ct": 1, "bt": 1, "d": 100},
+        {"c": 3, "r": 200, "v": 100, "bv": 100, "ct": 1, "bt": 1, "d": 100}
+      ]
+    },
+    "motion": {
+      "0:0": [
+        {"c": 0, "r": 200, "p": 250, "w": 53.25, "hi": 25000, "lo": 25000, "v": 126, "bv": 63, "ct": 2, "bt": 1},
+        {"c": 0, "r": 201, "p": 150, "w": 2, "hi": 25200, "lo": 25200, "v": 126, "bv": 63, "ct": 2, "bt": 1},
+        {"c": 1, "r": 200, "p": 0, "w": 56.25, "hi": 25000, "lo": 25000, "v": 100, "bv": 100, "ct": 1, "bt": 1},
+        {"c": 2, "r": 200, "p": 0, "w": 56.25, "hi": 25000, "lo": 25000, "v": 100, "bv": 100, "ct": 1, "bt": 1},
+        {"c": 3, "r": 200, "p": 0, "w": 56.25, "hi": 25000, "lo": 25000, "v": 100, "bv": 100, "ct": 1, "bt": 1},
+        {"c": 4, "r": 200, "p": 0, "w": 56.25, "hi": "NaN", "lo": "NaN", "v": 0, "bv": 0, "ct": 0, "bt": 0}
+      ]
+    },
+    "bars": {
+      "2": [{"col": 0, "open": 25000, "high": 25200, "low": 25000, "close": 25000, "volume": 552, "takerBuyVolume": 426, "baseVolume": 0.02204, "trades": 7}]
+    },
+    "summary": [
+      {
+        "rect": {"b0": 0, "b1": 1, "m": 0},
+        "volume": 252,
+        "takerBuyVolume": 126,
+        "trades": 4,
+        "takerBuyTrades": 2,
+        "pocRow": 200,
+        "poc": 25062.5,
+        "takerBuyPocRow": 200,
+        "takerBuyPoc": 25062.5
+      },
+      {
+        "rect": {"b0": 0, "b1": 6, "m": 0},
+        "volume": 552,
+        "takerBuyVolume": 426,
+        "trades": 7,
+        "takerBuyTrades": 5,
+        "pocRow": 200,
+        "poc": 25062.5,
+        "takerBuyPocRow": 200,
+        "takerBuyPoc": 25062.5
+      }
+    ]
+  }
+}

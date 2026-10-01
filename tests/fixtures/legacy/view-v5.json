@@ -1,0 +1,16 @@
+{
+  "version": 5,
+  "prefs": {
+    "sideOpen": true,
+    "sideWidth": 320,
+    "drawer": "cells",
+    "drawerOpen": false,
+    "drawerHeight": 240,
+    "cellSort": "volume",
+    "cellDir": -1,
+    "caseSort": "t",
+    "caseDir": 1,
+    "lensDepth": 2
+  },
+  "view": "#w=30d&mode=delta&pane=volume&lines=1d,7d"
+}

@@ -2,13 +2,23 @@ name: Deploy explorer
 on:
   push:
     branches: [main]
+# Workflow level, and never cancel-in-progress: cancelling rsync or compose half way would leave the
+# host half updated. A newer push waits behind the running deploy; only one run waits at a time and
+# a newer waiting run replaces an older one, so the last commit pushed is the one deployed next.
 concurrency:
   group: deploy-main
 permissions:
   contents: read
 jobs:
+  check:
+    name: Required checks
+    uses: ./.github/workflows/check.yml
   deploy:
     name: Sync to the Origo host and start
+    # The condition is explicit on purpose: a failed, skipped or cancelled check leaves this job
+    # skipped, and nothing here overrides that. There is no path around the checks.
+    needs: check
+    if: ${{ needs.check.result == 'success' }}
     runs-on: ubuntu-latest
     env:
       DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
@@ -17,6 +27,18 @@ jobs:
       DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      # The attestation comes before anything touches the host: the checks reported the commit they
+      # tested, and it must be the commit this job is about to send.
+      - name: The checks ran on this commit
+        env:
+          CHECKED: ${{ needs.check.outputs.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$CHECKED" = "$GITHUB_SHA"
+          echo "Deploying $GITHUB_SHA after checks on the same commit." >> "$GITHUB_STEP_SUMMARY"
       - name: Validate deploy configuration
         run: |
           test -n "$DEPLOY_HOST"

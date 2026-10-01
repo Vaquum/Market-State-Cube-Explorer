@@ -1,0 +1,51 @@
+{
+  "commit": "8c82ca1f03d80d3f35ff1ab6326902f4286f7b92",
+  "note": "The immutable ceiling of the role lint (TESTPLAN DD-T14): hit counts per (file, pattern) recorded by running tests/unit/role-lint.test.js's engine over the sources of `git show 8c82ca1:<file>`. No worktree lowers or raises it; the allowlist may only shrink below it. Files not listed have no hit at the baseline (a new file's ceiling is zero).",
+  "scanned": [
+    "src/explorer.js",
+    "src/explorer.css",
+    "src/view.html",
+    "src/document.html",
+    "src/state.js",
+    "README.md",
+    "docs/data-and-semantics.md"
+  ],
+  "counts": {
+    "src/explorer.js": {
+      "--ol-buy": 3,
+      "--ol-neutral": 1,
+      "--ol-sell": 3,
+      "--ol-tier-*": 2,
+      "--ol-time": 1,
+      "colors-key": 4,
+      "colors.buy": 10,
+      "colors.evidence": 5,
+      "colors.line@state": 6,
+      "colors.neutral": 1,
+      "colors.poc@state": 9,
+      "colors.sell": 8,
+      "colors.tiers": 4,
+      "colors.time": 2,
+      "colors.volume": 4,
+      "PERIOD_TIERS": 2,
+      "prose:buy-sell-colour": 10
+    },
+    "src/explorer.css": {
+      "--ol-buy": 1,
+      "--ol-evidence": 4,
+      "--ol-line@state": 6,
+      "--ol-neutral": 1,
+      "--ol-poc@state": 4,
+      "--ol-sell": 1,
+      "--ol-tier-*": 6,
+      "--ol-time": 1,
+      "--ol-volume": 4
+    },
+    "README.md": {
+      "prose:buy-sell-colour": 4
+    },
+    "docs/data-and-semantics.md": {
+      "prose:buy-sell-colour": 3
+    }
+  }
+}

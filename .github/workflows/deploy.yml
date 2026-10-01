@@ -9,6 +9,7 @@ concurrency:
   group: deploy-main
 permissions:
   contents: read
+  pull-requests: read
 jobs:
   check:
     name: Required checks

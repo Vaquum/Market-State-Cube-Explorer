@@ -60,8 +60,11 @@ test.describe("B54 screen reader and focus order", () => {
     await page.keyboard.press("Escape");
     await page.locator("#ol-canvas").focus();
     await page.keyboard.press("t");
+    await probe.waitForReady();
+    await expect(page.locator("#ol-table-caption")).toHaveAttribute("data-state", "ready");
+    await expect(page.locator('th:has([data-sort="time"])')).toHaveAttribute("aria-sort", "descending");
     const drawer = await page.locator("#ol-drawer").ariaSnapshot();
-    for (const line of ['tablist "Details"', 'tab "Cells" [selected]', "table", 'columnheader "Time · UTC"', 'columnheader "USDT volume"', 'columnheader "State"', 'button "Previous"', 'button "Next"']) expect(drawer, `the drawer has ${line}`).toContain(line);
+    for (const line of ['tablist "Details"', 'tab "Cells" [selected]', "table", 'columnheader "Time · UTC ↓"', 'columnheader "USDT volume"', 'columnheader "State"', 'button "Previous"', 'button "Next"']) expect(drawer, `the drawer has ${line}`).toContain(line);
     // rows of the Cells table are rows of the table
     await expect.poll(() => page.getByRole("row").count(), { message: "the table has its rows", timeout: 60000 }).toBeGreaterThan(1);
   });

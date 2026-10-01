@@ -69,8 +69,7 @@ test.describe("B56 path and dwell on a cube whose cutoff is not a whole base col
       });
       await page.setViewportSize({ width: 1500, height: 950 });
       await page.goto(`${fake.url}/${hash}`);
-      await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 120000 }).toBe(true);
-      await S.atRest(page, fake, probe);
+      await probe.waitForReady({ timeout: 120000 });
       await probe.waitForQuiet({ quietMs: 800, timeout: 60000 });
       // 1. nothing refused, nothing said
       const refused = fake.log().filter((e) => e.path.startsWith("/cube/") && e.status >= 400);

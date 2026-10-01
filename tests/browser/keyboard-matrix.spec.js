@@ -57,22 +57,20 @@ const SEQUENCE = [
 test.describe("B49 the documented shortcuts are the original's", () => {
   test("the same keys in the same order leave the same address and the same panels after each", async ({ page, probe, fakeFor, baselinePage }) => {
     test.setTimeout(420000);
-    const old = await baselinePage({ mode: "live", profile: "standard", probe: false, contextOptions: { reducedMotion: "reduce" }, url: "/#w=24h" });
+    const old = await baselinePage({ mode: "live", profile: "standard", contextOptions: { reducedMotion: "reduce" }, url: "/#w=24h" });
     const fake = await fakeFor("standard");
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width: 1500, height: 950 });
     await page.goto(`${fake.url}/#w=24h`);
     await S.atRest(page, fake, probe);
-    await expect.poll(() => old.fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { timeout: 120000 }).toBe(true);
-    await old.page.waitForTimeout(3000);
+    await old.probe.waitForReady({ timeout: 120000 });
     await page.locator("#ol-canvas").focus();
     await old.page.locator("#ol-canvas").focus();
     const different = [];
     for (const key of SEQUENCE) {
       await page.keyboard.press(key);
       await old.page.keyboard.press(key);
-      await probe.waitForQuiet({ quietMs: 250, timeout: 30000 });
-      await old.page.waitForTimeout(450);
+      await Promise.all([probe.waitForReady({ timeout: 30000 }), old.probe.waitForReady({ timeout: 30000 })]);
       const a = await snapshot(old.page),
         b = await snapshot(page);
       const was = { ...a, hash: normal(a.hash) },

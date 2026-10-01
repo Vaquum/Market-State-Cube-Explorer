@@ -14,7 +14,7 @@
 //      fresh context opened on them has none.
 // Oracles (none is the code under test): the page's own record of what it was (the chips' datasets before the copy), the address and code the page writes, the
 // browser's storage as a fresh context finds it, and the pixels of the same page under the same data.
-const { test, expect, observe } = require("./fixtures.js");
+const { test, expect, observe, probeTools } = require("./fixtures.js");
 const S = require("./rows-support.js");
 const P = require("./persistence-support.js");
 const H = require("./scale-helpers.js");
@@ -244,8 +244,7 @@ test.describe("B52 portable state after the final changes", () => {
     expect(Object.keys(b.view).sort(), "the same view keys").toEqual(Object.keys(a.view).sort());
     expect(b, "the whole payload is the same: no Focus, no Inspect cursor, no temporary state").toEqual(a);
     const opened = await openLink(freshContext, marked.link, async (tab) => {
-      await S.atRest(tab, fake, null).catch(() => {});
-      await tab.waitForTimeout(900);
+      await probeTools.forPage(tab).waitForReady({ timeout: 60000 });
     });
     await expect(opened.tab.locator("#ol-focus-chip"), "a fresh context has no Focus").toBeHidden();
     await expect(opened.tab.locator("#ol-inspect")).toBeHidden();

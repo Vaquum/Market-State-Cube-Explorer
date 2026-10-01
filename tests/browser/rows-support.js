@@ -135,11 +135,9 @@ function runsOf(column, rgb, { tol = 1, gap = 2 } = {}) {
   return runs;
 }
 
-// Loaded, every read answered and no draw for a moment: the page is at rest (the same rule as the S0 parity spec).
+// Required reads decoded, calibration settled and the corresponding final frame drawn: the page is at rest.
 async function atRest(page, fake, probe) {
-  await page.locator("#ol-loading").waitFor({ state: "hidden" });
-  await fake.idle({ quietMs: 600, timeoutMs: 20000 });
-  await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
+  await probe.waitForReady({ timeout: 20000 });
 }
 
 // The plot of the canvas: where it is, found from the pixels (the page exposes no geometry). The surface is painted only where the

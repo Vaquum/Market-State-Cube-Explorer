@@ -17,7 +17,6 @@
 // design tokens read back through a canvas, and the pixels of the key swatches at DPR 1 (the line runs through the middle row of an 11 px canvas).
 const { test: base, expect } = require("./fixtures.js");
 const paneCanvas = require("./pane-canvas.js");
-const S = require("./rows-support.js");
 
 const test = base.extend({
   pane: async ({ page }, use) => {
@@ -27,8 +26,7 @@ const test = base.extend({
 });
 
 async function ready(page, fake, probe) {
-  await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 120000 }).toBe(true);
-  await S.atRest(page, fake, probe);
+  await probe.waitForReady({ timeout: 120000 });
 }
 
 const EPOCH_MS = Date.parse("2021-01-01T00:00:00Z");

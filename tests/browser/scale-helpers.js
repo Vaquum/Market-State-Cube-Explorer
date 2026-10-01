@@ -5,9 +5,8 @@
 // and gives the specs the same small vocabulary: a settled chip, a context change, the actions of a chip's popover
 // (named by their accessible names, INTEGRATION.md D.7), and the replay edge of every draw frame.
 //
-// The timing contract (D.1, DR-17) that "calm" relies on: a calibration lands at most the settle time (200 ms) after
-// the last gesture plus one fit and one draw, and every read the view needs is answered first. So calm = the fake has
-// no request for a while, no draw frame for a while, and the chip says it is no longer updating.
+// Calm observes completion of required reads, browser decoding and short scheduled work, then the settled chip in its
+// corresponding draw. Timing specs with page.clock keep their existing Node-clock quiet windows: the test owns that clock.
 const { expect } = require("@playwright/test");
 const { resolveProfile, EPOCH_MS } = require("../support/profiles.js");
 const ref = require("../reference/index.js");
@@ -15,8 +14,12 @@ const ref = require("../reference/index.js");
 // The window keys of the page (observe.js PRESET_KEYS), by name.
 const KEY_OF = Object.freeze({ "24h": "6", "7d": "7", "30d": "8", "1y": "9", all: "0" });
 
-// Calm: no request in flight or recent, no draw frame for a while, and the chip settled. Returns the chip's dataset.
+// Returns the settled chip dataset.
 async function calm({ fake, probe, surface }, { channel = "cells", quietMs = 450 } = {}) {
+  if (!(await probe.readiness([channel])).clock) {
+    await probe.waitForReady({ channels: [channel] });
+    return (await surface.chip(channel)).data;
+  }
   await fake.idle({ quietMs: 300 });
   await probe.waitForQuiet({ quietMs });
   await expect

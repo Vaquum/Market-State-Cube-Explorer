@@ -88,10 +88,7 @@ test.describe("B38 the states of a standard live view: archive, provisional, ope
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width: 1500, height: 950 });
     await page.goto(`${fake.url}/${hash}`);
-    await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { timeout: 30000 }).toBe(true);
-    await page.locator("#ol-loading").waitFor({ state: "hidden" });
-    await fake.idle({ quietMs: 600, timeoutMs: 30000 });
-    await probe.waitForQuiet({ quietMs: 800, timeout: 30000 });
+    await probe.waitForReady({ timeout: 30000 });
   }
   async function hoverAt(page, hour, price) {
     const L = await page.locator("#ol-canvas").evaluate((el) => el.dataset.layout.split(",").map(Number)),
@@ -205,10 +202,7 @@ test.describe("B38 co-occurrence: a cell whose own column is open and whose pare
     const fake = await fakeFor("standard");
     await page.setViewportSize({ width: 1500, height: 950 });
     await page.goto(`${fake.url}/#t=2026-09-23T00:00Z~2026-09-24T16:00Z&p=22000~23500&r=9,2&vis=2&mode=cascade`);
-    await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { timeout: 30000 }).toBe(true);
-    await page.locator("#ol-loading").waitFor({ state: "hidden" });
-    await fake.idle({ quietMs: 600, timeoutMs: 30000 });
-    await probe.waitForQuiet({ quietMs: 800, timeout: 30000 });
+    await probe.waitForReady({ timeout: 30000 });
     const L = await page.locator("#ol-canvas").evaluate((el) => el.dataset.layout.split(",").map(Number)),
       cb = await page.locator("#ol-canvas").boundingBox();
     const a = Date.parse("2026-09-23T00:00Z"),

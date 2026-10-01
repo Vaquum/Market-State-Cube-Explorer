@@ -44,8 +44,7 @@ const TRADES = (() => {
 const CUTOFF = iso(TE + 3 * DAY);
 
 async function ready(page, fake, probe) {
-  await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 120000 }).toBe(true);
-  await S.atRest(page, fake, probe);
+  await probe.waitForReady({ timeout: 120000 });
 }
 const nav = (page) => page.locator("#ol-inspect").evaluate((n) => ({ c: Number(n.dataset.c), r: Number(n.dataset.r), ts: Number(n.dataset.ts), ps: Number(n.dataset.ps), surface: n.dataset.surface, inside: n.dataset.inside }));
 const strip = (page, layout) =>

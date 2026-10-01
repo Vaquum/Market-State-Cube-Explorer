@@ -1,9 +1,11 @@
 name: Check explorer
-# Two callers: pushes and pull requests run it as a workflow of its own, and deploy.yml runs it through
-# workflow_call so that the checks and the deploy are one run for one commit. There is no concurrency
-# group here on purpose: a group derived from the caller's would deadlock or cancel the caller.
+# Pull requests and branches without a confirmed current mergeable PR run standalone checks. main is checked once by
+# deploy.yml through workflow_call, on the exact deployed commit. No check concurrency group can
+# cancel the deploy caller; deploy.yml owns its separate, non-cancelling deploy-main group.
 on:
   push:
+    branches-ignore: [main]
+    tags: ['**']
   pull_request:
   workflow_call:
     outputs:
@@ -12,9 +14,44 @@ on:
         value: ${{ jobs.static.outputs.sha }}
 permissions:
   contents: read
+  pull-requests: read
 jobs:
+  select:
+    name: ${{ github.event_name == 'push' && 'Push / ' || '' }}Select checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      required: ${{ steps.select.outputs.required }}
+    steps:
+      - id: select
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // PRs certify the merge commit; main's reusable checks certify the deployment commit.
+            // Conflicting or unknown PR mergeability cannot produce merge-commit checks; run branch checks instead.
+            // Only a confirmed mergeable PR for this exact head can replace a branch run. Lookup errors run every check.
+            let required = true;
+            if (context.eventName === 'push' && context.ref.startsWith('refs/heads/') && context.ref !== 'refs/heads/main') {
+              const branch = context.ref.slice('refs/heads/'.length);
+              try {
+                const pulls = await github.paginate(github.rest.pulls.list, {
+                  ...context.repo, state: 'open', head: `${context.repo.owner}:${branch}`,
+                });
+                const sameBranch = pull => pull.state === 'open' && pull.head?.ref === branch &&
+                  pull.head.repo?.full_name === `${context.repo.owner}/${context.repo.repo}`;
+                // List responses do not certify mergeability. Fetch current details before skipping anything.
+                const details = await Promise.all(pulls.filter(sameBranch).map(async pull =>
+                  (await github.rest.pulls.get({ ...context.repo, pull_number: pull.number })).data));
+                required = !details.some(pull => sameBranch(pull) && pull.mergeable === true && pull.head.sha === context.sha);
+              } catch (error) {
+                core.warning(`PR lookup failed; running all checks: ${error.message}`);
+              }
+            }
+            core.setOutput('required', String(required));
   static:
-    name: Build, syntax and goldens
+    needs: select
+    if: ${{ needs.select.outputs.required == 'true' }}
+    name: ${{ github.event_name == 'push' && 'Push / ' || '' }}Build, syntax and goldens
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -46,7 +83,9 @@ jobs:
       - run: npm run golden:check
       - run: printf 'EXPLORER_AUTH_USER=x\nEXPLORER_AUTH_PASS=y\n' > .env && docker compose config -q
   unit:
-    name: Node tests
+    needs: select
+    if: ${{ needs.select.outputs.required == 'true' }}
+    name: ${{ github.event_name == 'push' && 'Push / ' || '' }}Node tests
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -73,7 +112,13 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
   browser:
-    name: Browser tests
+    needs: select
+    if: ${{ needs.select.outputs.required == 'true' }}
+    name: ${{ github.event_name == 'push' && 'Push / ' || '' }}Browser tests (${{ matrix.shard }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -95,16 +140,89 @@ jobs:
       # The revision comes from the lockfile (npx runs the installed CLI), never from @latest.
       - run: npx playwright install --with-deps --only-shell chromium
       # CONVERGENCE=1 serves the committed index.html, the one thing this workflow certifies.
-      - run: npm run test:browser
+      - run: npm run test:browser -- --shard=${{ matrix.shard }}/4 --workers=2 --retries=0
         env:
           CONVERGENCE: '1'
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: browser-report
+          name: browser-report-shard-${{ matrix.shard }}
           path: |
             reports/
             test-results/
             playwright-report/
           retention-days: 14
           if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: browser-blob-${{ matrix.shard }}
+          path: blob-report/
+          retention-days: 14
+          if-no-files-found: error
+  reports:
+    name: ${{ github.event_name == 'push' && 'Push / ' || '' }}Complete browser report
+    needs: [select, browser]
+    if: ${{ !cancelled() && needs.select.outputs.required == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: browser-blob-*
+          path: blob-report/
+          merge-multiple: true
+      # Listing the unfiltered suite supplies an independent inventory for the merged shard result.
+      - run: mkdir -p reports && npm run --silent test:browser -- --list --reporter=json > reports/browser-inventory.json
+      - run: npx playwright merge-reports --config tests/browser/merge.config.js blob-report/
+      - run: node tools/check-browser-report.js reports/browser.json reports/browser-inventory.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: browser-report
+          path: |
+            reports/browser.json
+            reports/browser.xml
+            reports/browser-inventory.json
+            playwright-report/
+          retention-days: 14
+          if-no-files-found: error
+  gate:
+    # Check names on the head SHA must distinguish pushes from PRs before selection or matrix expansion.
+    # A skipped push job is successful in GitHub and must never satisfy a required PR check.
+    name: ${{ github.event_name == 'push' && 'Push checks' || 'All required checks' }}
+    needs: [select, static, unit, browser, reports]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every job and every browser shard
+        env:
+          SELECTION: ${{ needs.select.result }}
+          REQUIRED: ${{ needs.select.outputs.required }}
+          STATIC: ${{ needs.static.result }}
+          UNIT: ${{ needs.unit.result }}
+          BROWSER: ${{ needs.browser.result }}
+          REPORTS: ${{ needs.reports.result }}
+        run: |
+          test "$SELECTION" = success
+          if test "$REQUIRED" = false; then
+            # Neither PR merge commits nor main deployment commits can take the duplicate-push path.
+            test "$GITHUB_EVENT_NAME" = push
+            case "$GITHUB_REF" in refs/heads/*) ;; *) exit 1 ;; esac
+            test "$GITHUB_REF" != refs/heads/main
+            test "$STATIC:$UNIT:$BROWSER:$REPORTS" = skipped:skipped:skipped:skipped
+          else
+            test "$REQUIRED" = true
+            test "$STATIC:$UNIT:$BROWSER:$REPORTS" = success:success:success:success
+          fi

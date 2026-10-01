@@ -5,7 +5,6 @@
 // record (data-layout).
 const { test: base, expect } = require("./fixtures.js");
 const paneCanvas = require("./pane-canvas.js");
-const S = require("./rows-support.js");
 
 const test = base.extend({
   pane: async ({ page }, use) => {
@@ -17,9 +16,7 @@ const test = base.extend({
 const DENSE = "#t=2026-09-24T06:00Z~2026-09-24T12:00Z&p=22000~23500&r=0,0&rows=volume&period=7d&vis=2";
 const layoutOf = (page) => page.locator("#ol-canvas").evaluate((el) => el.dataset.layout.split(",").map(Number));
 async function ready(page, fake, probe) {
-  await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { timeout: 30000 }).toBe(true);
-  await S.atRest(page, fake, probe);
-  await probe.waitForQuiet({ quietMs: 800, timeout: 30000 });
+  await probe.waitForReady({ timeout: 30000, channels: ["cells", "rows"] });
 }
 // The strip's blocks of a frame: 12 px wide rectangles in the column right of the heatmap.
 const stripOf = (frame, L) => frame.rects.filter((r) => r.w === 12 && r.x >= L[0] + L[2] - 1 && r.h > 1);

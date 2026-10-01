@@ -205,10 +205,8 @@ async function open({ freshContext, fakeFor }, profile, hash, options = {}) {
   const page = await context.newPage();
   const probe = probeTools.forPage(page);
   await openView(page, fake, probe, hash);
-  // The mapping lands after the settle: wait until the chip says no calibration is pending, then for the draw that paints it.
+  // openView includes the settled mapping and the draw that paints it.
   const surface = observe(page);
-  await expect.poll(async () => (await surface.chip("cells")).data.updating, { timeout: 10000 }).toBe("false");
-  await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
   return { fake, page, probe, surface, context };
 }
 

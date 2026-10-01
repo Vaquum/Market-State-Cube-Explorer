@@ -18,7 +18,6 @@ const { test: base, expect } = require("./fixtures.js");
 const paneCanvas = require("./pane-canvas.js");
 const masks = require("./masks.js");
 const ref = require("../reference/contrast.js");
-const S = require("./rows-support.js");
 const layoutOf = (page) => page.locator("#ol-canvas").evaluate((el) => el.dataset.layout.split(",").map(Number));
 
 const test = base.extend({
@@ -42,8 +41,7 @@ async function pixels(page, points) {
   }, points);
 }
 async function ready(page, fake, probe) {
-  await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 30000 }).toBe(true);
-  await S.atRest(page, fake, probe);
+  await probe.waitForReady({ timeout: 30000 });
 }
 async function open(page, fake, probe, address) {
   await page.emulateMedia({ reducedMotion: "reduce" });

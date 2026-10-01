@@ -96,12 +96,10 @@ function lastDraw(page) {
   return page.evaluate(() => window.__cellsRecorder.last());
 }
 
-// The page at rest on an address: loaded, every read answered, and no draw frame for a moment.
+// The page at rest on an address: required reads decoded, calibration settled, and the corresponding frame drawn.
 async function openView(page, fake, probe, address) {
   await page.goto(`${fake.url}/${address}`);
-  await page.locator("#ol-loading").waitFor({ state: "hidden" });
-  await fake.idle({ quietMs: 600, timeoutMs: 20000 });
-  await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
+  await probe.waitForReady({ timeout: 20000 });
 }
 
 // The Lut the page has (the module's own pinned table, asked of the page in the theme and appearance it draws with) and the

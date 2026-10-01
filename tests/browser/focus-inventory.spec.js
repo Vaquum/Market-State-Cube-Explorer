@@ -24,8 +24,7 @@ const test = base.extend({
 });
 
 async function ready(page, fake, probe) {
-  await expect.poll(() => fake.log().some((e) => e.path === "/cube/pack" && e.query.since), { message: "startup is over", timeout: 120000 }).toBe(true);
-  await S.atRest(page, fake, probe);
+  await probe.waitForReady({ timeout: 120000 });
 }
 
 const EPOCH_MS = Date.parse("2021-01-01T00:00:00Z");
@@ -85,7 +84,7 @@ test.describe("B42 Focus and Show all", () => {
     await expect(page.locator("#ol-focus-chip")).toHaveText("Focus: 7 days · Show all");
     await expect(page.locator('[data-line-focus="7d"]')).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#ol-lines-showall")).toBeEnabled();
-    await probe.waitForQuiet({ quietMs: 400, timeout: 30000 });
+    await probe.waitForReady({ timeout: 30000 });
     const focused = await poc(pane, hue);
     expect(widths(focused), "the focused line is 1 px wider, the others as they were").toEqual([1.5, 2.5]);
     for (const k of (await pane.last()).strokes.filter((k) => k.stroke === colours.surface && k.width > 2)) expect(k.width, "its backing stays within 4.5 px").toBeLessThanOrEqual(4.5);
@@ -96,12 +95,12 @@ test.describe("B42 Focus and Show all", () => {
     // Show all from the menu
     await page.locator("#ol-lines-showall").click();
     await expect(page.locator("#ol-focus-chip")).toBeHidden();
-    await probe.waitForQuiet({ quietMs: 400, timeout: 30000 });
+    await probe.waitForReady({ timeout: 30000 });
     expect(widths(await poc(pane, hue))).toEqual([1.5]);
     // a family's focus, ended from the chip
     await page.locator('[data-focus-family="profile"]').click();
     await expect(page.locator("#ol-focus-chip")).toHaveText("Focus: Volume profile · Show all");
-    await probe.waitForQuiet({ quietMs: 400, timeout: 30000 });
+    await probe.waitForReady({ timeout: 30000 });
     expect(widths(await poc(pane, hue)), "every line of the family is a pixel wider").toEqual([2.5]);
     await page.locator("#ol-focus-chip").click();
     await expect(page.locator("#ol-focus-chip")).toBeHidden();
@@ -127,7 +126,7 @@ test.describe("B42 a focused reference that alone passes the budget says so and 
     await page.setViewportSize({ width: 1500, height: 950 });
     await page.goto(`${fake.url}/#w=30d&vis=2&lines=funding`);
     await S.atRest(page, fake, probe);
-    await probe.waitForQuiet({ quietMs: 600, timeout: 60000 });
+    await probe.waitForReady({ timeout: 60000 });
     const data = () => page.locator("#ol-canvas").evaluate((el) => ({ occlusion: el.dataset.occlusion ?? "", references: el.dataset.references ?? "" }));
     expect((await data()).references, "unfocused, the budget holds the funding lines back").toBe("0/1");
     await page.locator("#ol-lines").click();

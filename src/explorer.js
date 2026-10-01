@@ -2297,18 +2297,28 @@
     grid();
     if (under) paintBands(under, sc.rows);
     // The whole block's cells are drawn as they are, selection or not: a selection is a boundary, never a fade.
-    // The marks are counted once: in the whole block's pass when there is a selection (its cells are painted again inside it), else in the one pass.
-    markTally = true;
-    if (S.selection) {
-      if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u, sc.cellsFull);
-      else for (const z of full.cells) fillCell(z, full, u, sc.cellsFull);
-    }
-    markTally = !S.selection;
-    ctx.save();
+    // The marks are counted once: in the whole block's pass when there is a selection (the selection's own pass does not count them again), else in the one pass.
+    // Each pixel is painted by ONE pass: the block's outside the selection, the selection's inside it. A cell drawn as an outline alone (Geometry, an unsigned zero) has
+    // no backing to cover a second pass, and its antialiased edge pixels would stack their coverage and read bolder inside the selection than they do outside it.
     const x1 = G.X(b[0]),
       x2 = G.X(b[1]),
       y1 = G.Y(b[3]),
       y2 = G.Y(b[2]);
+    markTally = true;
+    if (S.selection) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(G.x, G.y, G.w, G.h);
+      ctx.rect(x1, y1, x2 - x1, y2 - y1);
+      ctx.clip("evenodd");
+      if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u, sc.cellsFull);
+      else for (const z of full.cells) fillCell(z, full, u, sc.cellsFull);
+      ctx.restore();
+      // the canvas's colours went back with the state: what the pass remembered of them is forgotten, so the next one sets its own
+      passFrame = null;
+    }
+    markTally = !S.selection;
+    ctx.save();
     ctx.beginPath();
     ctx.rect(x1, y1, x2 - x1, y2 - y1);
     ctx.clip();

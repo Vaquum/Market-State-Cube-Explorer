@@ -202,7 +202,7 @@ test.describe("B49 each holder of the focus consumes its own keys", () => {
     await page.setViewportSize({ width: 1500, height: 950 });
     // the cube's answer held: the rectangle is being measured
     const held = await fakeFor("standard");
-    held.on({ route: /^\/cube\/query/ }).gate();
+    const gate = held.on({ route: /^\/cube\/query/ }).gate();
     await page.goto(`${held.url}/${address}`);
     await page.waitForFunction(() => document.getElementById("ol-canvas")?.dataset.layout);
     await page.locator("#ol-canvas").focus();
@@ -210,6 +210,10 @@ test.describe("B49 each holder of the focus consumes its own keys", () => {
     const caption = page.locator("#ol-table-caption");
     await expect.poll(() => caption.getAttribute("data-state"), { message: "the rectangle is being measured", timeout: 60000 }).toBe("pending");
     await expect(caption).toContainText("Measuring the rectangle in the cube");
+    // the held read goes, and the page is let settle, before it is left: a page torn down with a read held starts its next one as it goes (a tile of the rectangle), and the first
+    // fake, which has not yet seen the held connection close, calls that "overlapping cube reads"
+    gate.open();
+    await held.idle({ quietMs: 400, timeoutMs: 30000 });
     // the cube's answer a failure, from the first read on: the table says so, in other words
     const down = await fakeFor("standard");
     // (the tile the page reads after a failed measure would tile the rectangle and measure it exactly, so the tile fails too)

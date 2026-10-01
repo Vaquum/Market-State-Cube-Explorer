@@ -119,8 +119,8 @@ test.describe("B27 reference strokes and the occlusion budget", () => {
     const colours = await tokens(page);
     const widths = async () => {
       const frame = await pane.last();
-      // halos are the wide strokes in the surface colour at 0.85; their cores are the strokes of the lines' colours that follow
-      const halos = frame.strokes.filter((k) => k.stroke === colours.surface && Math.abs(k.alpha - 0.85) < 1e-9 && k.width > 2 && k.width <= 6 && k.path.length >= 2 && k.width !== 3.5 && k.width !== 3);
+      // halos (the casing) are the wide strokes in the surface colour, opaque; their cores are the strokes of the lines' colours that follow
+      const halos = frame.strokes.filter((k) => k.stroke === colours.surface && k.alpha === 1 && k.width > 2 && k.width <= 6 && k.path.length >= 2 && k.width !== 3.5 && k.width !== 3);
       return { halos, frame };
     };
     const rest = await widths();
@@ -149,8 +149,15 @@ test.describe("B27 reference strokes and the occlusion budget", () => {
       layout = await layoutOf(page);
     const vertical = frame.strokes.filter((k) => k.path.length >= 2 && k.path.every((p) => p[0] === k.path[0][0]) && Math.abs(Math.max(...k.path.map((p) => p[1])) - Math.min(...k.path.map((p) => p[1])) - layout[3]) < 1);
     expect(vertical.length, "calendar lines span the plot").toBeGreaterThan(2);
-    for (const k of vertical) expect(k.stroke, "no surface-coloured backing runs the length of a calendar line").not.toBe(colours.surface);
-    for (const k of vertical) expect(k.width, "a calendar line is at most 2.5 px").toBeLessThanOrEqual(2.5);
+    // a calendar line has a thin casing of its own (one pixel a side, 3.5 in all, in its own pattern), never a thick continuous backing
+    const core = vertical.filter((k) => k.stroke !== colours.surface),
+      casing = vertical.filter((k) => k.stroke === colours.surface);
+    for (const k of casing) expect(k.width, "its casing is at most 1 px a side of a 1.5 px core").toBeLessThanOrEqual(3.5);
+    for (const k of core) expect(k.width, "a calendar line is at most 2.5 px").toBeLessThanOrEqual(2.5);
+    for (const k of core.filter((x) => x.width === 1.5)) {
+      const own = casing.find((c) => c.width === 3.5 && JSON.stringify(c.dash) === JSON.stringify(k.dash) && JSON.stringify(c.path) === JSON.stringify(k.path));
+      expect(own, "each calendar line's casing has its pattern and its path").toBeTruthy();
+    }
     expect(frame.texts.some((t) => /^CME gap/.test(t.text)), "the gap is named on the plot").toBe(true);
   });
 

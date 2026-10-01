@@ -128,4 +128,69 @@ test.describe("B43 every text of the composed chart reads against the pixels it 
     await probe.waitForQuiet({ quietMs: 800, timeout: 60000 });
     await audit(page, pane, "the replay", 8);
   });
+
+  test("reference strokes and profile bars against the pixels beside them: 3:1 in the final scene, not in a token pair", async ({ page, probe, fakeFor, pane }) => {
+    const fake = await fakeFor("standard");
+    await page.setViewportSize({ width: 1500, height: 950 });
+    await page.goto(`${fake.url}/#w=7d&vis=2&lines=7d,30d,cday,funding,dopen&marks=poc&rows=volume&level=25500`);
+    await S.atRest(page, fake, probe);
+    await probe.waitForQuiet({ quietMs: 800, timeout: 60000 });
+    await page.mouse.move(8, 8);
+    await probe.waitForQuiet({ quietMs: 800, timeout: 60000 });
+    const frame = await pane.last(),
+      c = await pane.colours();
+    const px = async (points) =>
+      page.evaluate((list) => {
+        const ctx = document.getElementById("ol-canvas").getContext("2d");
+        return list.map(([x, y]) => Array.from(ctx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data.slice(0, 3)));
+      }, points);
+    const problems = [],
+      worst = {};
+    // Two numbers are kept apart, as the PRD asks: the formula contrast of the stroke's colour against its casing (the surface), at least 3:1 and asserted from
+    // the tokens in U58, and what the rasteriser made of a 1.5 px line, measured here. A 1.5 px core at DPR 1 puts a quarter of a pixel into each neighbouring row,
+    // so the pixels beside the core are a blend and the rendered contrast is below the formula's: the floor for it is 2.4:1 (a line that falls under it has lost more
+    // than the antialiasing explains). A bar (a block of pixels) has no such loss and is held to 3:1.
+    const note = (what, ratio, floor = 3) => {
+      worst[what] = Math.min(worst[what] ?? Infinity, ratio);
+      if (ratio < floor) problems.push(`${what}: ${ratio.toFixed(2)}:1 against the pixels beside it, below ${floor}:1`);
+    };
+    // 1. a horizontal reference line: its core pixel against the casing's pixels (one pixel) above and below it
+    const horizontalOf = (k) => k.path.length >= 2 && k.path.every((p, i) => i % 2 === 0 || p[1] === k.path[i - 1][1]);
+    for (const [name, hue] of [["profile", c.poc], ["price levels", c.level], ["Level (ink)", c.ink]]) {
+      const lines = frame.strokes.filter((k) => k.stroke === hue && horizontalOf(k) && Math.max(...k.path.map((p) => p[0])) - Math.min(...k.path.map((p) => p[0])) > 100 && k.width >= 1.5 && k.alpha === 1 && !k.dash.length);
+      for (const k of lines.slice(0, 3)) {
+        for (let i = 0; i + 1 < k.path.length; i += 2) {
+          const [x0, y] = k.path[i],
+            x1 = k.path[i + 1][0];
+          if (x1 - x0 < 40) continue;
+          const x = (x0 + x1) / 2,
+            [core, above, below] = await px([[x, y], [x, y - 1], [x, y + 1]]);
+          note(`${name} line`, Math.max(ref.contrast(core, above), ref.contrast(core, below)), 2.4);
+          break;
+        }
+      }
+    }
+    // 2. a calendar line (vertical, opaque, with its thin casing): its strongest pixel along a few rows against the casing's pixel beside it
+    const clock = frame.strokes.filter((k) => k.stroke === c.clock && k.path.length >= 2 && k.alpha === 1);
+    expect(clock.length, "calendar lines are in the scene").toBeGreaterThan(0);
+    for (const k of clock.slice(0, 2)) {
+      const x = k.path[0][0],
+        y0 = k.path[0][1];
+      const rows = [];
+      for (let d = 0; d < 16; d++) rows.push([x, y0 + 30 + d], [x - 1, y0 + 30 + d]);
+      const px2 = await px(rows);
+      let best = 1;
+      for (let d = 0; d < 16; d++) best = Math.max(best, ref.contrast(px2[2 * d], px2[2 * d + 1]));
+      note("calendar line", best, 2.4);
+    }
+    // 3. a profile bar: its colour against the surface it stands on
+    const layout = (await page.locator("#ol-canvas").evaluate((el) => el.dataset.layout)).split(",").map(Number);
+    const bars = frame.rects.filter((r) => r.alpha === 0.7 && r.x >= layout[7] - 1 && r.x <= layout[7] + 1 && r.w >= 8 && r.h >= 2);
+    expect(bars.length, "the current track's bars are in the scene").toBeGreaterThan(3);
+    const bar = bars.reduce((a, b) => (b.w < a.w ? b : a)),
+      [inside, beside] = await px([[bar.x + bar.w / 2, bar.y + bar.h / 2], [bar.x + bar.w + 2, bar.y + bar.h / 2]]);
+    note("profile bar", ref.contrast(inside, beside));
+    console.log(`B43 strokes and bars: ${Object.entries(worst).map(([k, v]) => `${k} ${v.toFixed(2)}:1`).join(", ")}`);
+    expect(problems, problems.join("\n")).toEqual([]);
+  });
 });

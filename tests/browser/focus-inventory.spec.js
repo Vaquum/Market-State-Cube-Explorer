@@ -121,6 +121,25 @@ test.describe("B42 Focus and Show all", () => {
   });
 });
 
+test.describe("B42 a focused reference that alone passes the budget says so and stays", () => {
+  test("a month of funding lines over a 30-day view passes 20% of the plot by itself: focused, it is neither thinned nor hidden, and the page says so", async ({ page, probe, fakeFor, pane }) => {
+    const fake = await fakeFor("standard");
+    await page.setViewportSize({ width: 1500, height: 950 });
+    await page.goto(`${fake.url}/#w=30d&vis=2&lines=funding`);
+    await S.atRest(page, fake, probe);
+    await probe.waitForQuiet({ quietMs: 600, timeout: 60000 });
+    const data = () => page.locator("#ol-canvas").evaluate((el) => ({ occlusion: el.dataset.occlusion ?? "", references: el.dataset.references ?? "" }));
+    expect((await data()).references, "unfocused, the budget holds the funding lines back").toBe("0/1");
+    await page.locator("#ol-lines").click();
+    await page.locator('[data-line-focus="funding"]').click();
+    await expect.poll(async () => (await data()).occlusion, { message: "the focused mark alone passes the budget", timeout: 30000 }).toMatch(/!$/);
+    expect((await data()).references, "focused, it is drawn after all: a focused reference is never thinned or hidden").toBe("1/1");
+    await expect(page.locator("#ol-lines-summary")).toContainText("the focused reference alone passes the 20% budget; its row and detail are here");
+    const frame = await pane.last();
+    expect(frame.texts.some((t) => /The focused mark alone passes the 20% budget/.test(t.text)), "and the chart says it").toBe(true);
+  });
+});
+
 test.describe("B42 the inventory of references: shown over eligible, one reason for each that is not shown", () => {
   const view = (lines, t0, t1, p = "24600~26200") => `#t=${iso(t0)}~${iso(t1)}&p=${p}&r=6,3&vis=2&lines=${lines}&replay=1&at=${iso(TE + 44 * HOUR)}`;
   const summary = async (page) => {
@@ -158,6 +177,18 @@ test.describe("B42 the inventory of references: shown over eligible, one reason 
     await expect(reason("gdcross")).toHaveText("no event");
     await expect(reason("bb15m")).toHaveText("zoom in");
     await expect(page.locator('.ol-line-row[data-ref-key="sma200"]')).toHaveAttribute("data-ref-state", "warmup");
+  });
+
+  test("an average whose bars the cube could not give is missing, with the cube's reason on its row", async ({ page, probe, fakeFor, allowConsole }) => {
+    allowConsole(/Failed to load resource/);
+    const fake = await fakeFor({ trades: TRADES, cutoffIso: CUTOFF });
+    fake.on({ route: "/cube/bars" }).fail({ status: 500, body: { error: "the bars are down" } });
+    await page.setViewportSize({ width: 1500, height: 950 });
+    await page.goto(`${fake.url}/${view("ema21", TE - 3 * DAY, TE + 3 * DAY)}`);
+    await ready(page, fake, probe);
+    await expect.poll(async () => (await canvasData(page)).reasons, { message: "its bars are missing", timeout: 120000 }).toBe("missing:1");
+    expect((await canvasData(page)).references).toBe("0/1");
+    expect(await summary(page)).toContain("1 not read yet or could not be read");
   });
 
   test("a reference outside the price range is off screen; lines too close to draw are too close; both stay counted", async ({ page, probe, fakeFor }) => {

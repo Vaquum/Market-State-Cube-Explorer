@@ -249,4 +249,37 @@ test.describe("B40 the reference language: one hue and one stroke for a family, 
     await expect(page.locator("#ol-ray-count")).toContainText("untested levels");
     expect(await page.locator('[data-stroke-role="untested"] canvas').count(), "the untested key is painted").toBe(1);
   });
+
+  test("the Deribit expiries of a month's last Friday and a quarter's end are named on the line, in the same stroke as the weekly ones", async ({ page, probe, fakeFor, pane }) => {
+    // data to the 27th, so the view can stand on the days around the 25th: the last Friday of the month and of the third quarter (11 and 18 September are ordinary Fridays)
+    const fake = await fakeFor({ trades: tradesOf(ms("2026-08-02T00:00:00Z"), ms("2026-09-27T00:00:00Z"), price), cutoffIso: iso(ms("2026-09-27T00:00:00Z")) });
+    await page.setViewportSize({ width: 1500, height: 950 });
+    await page.goto(`${fake.url}/#t=${iso(ms("2026-09-08T00:00:00Z"))}~${iso(ms("2026-09-26T12:00:00Z"))}&p=24800~26200&r=6,3&vis=2&lines=deribit`);
+    await ready(page, fake, probe);
+    await probe.waitForQuiet({ quietMs: 600, timeout: 60000 });
+    const frame = await pane.last(),
+      c = await hues(page);
+    expect(frame.texts.some((t) => t.text === "Deribit quarterly"), "the quarterly expiry is named").toBe(true);
+    const deribit = frame.strokes.filter((k) => k.stroke === c["line-clock"] && vertical(k) && JSON.stringify(k.dash) === JSON.stringify([2, 2]));
+    expect(deribit.length, "the weekly, monthly and quarterly expiries are one pattern").toBe(1);
+    expect(deribit[0].width, "at the one stable width").toBe(1.5);
+    expect(deribit[0].path.length / 2, "three Fridays and the quarter's in view: 11, 18 and 25 September").toBeGreaterThanOrEqual(3);
+  });
+
+  test("the taker-buy part of the profile is a neutral inset with a key of its own and borrows no signed colour", async ({ page, probe, fakeFor, pane }) => {
+    const fake = await fakeFor({ trades: TRADES, cutoffIso: CUTOFF });
+    await page.setViewportSize({ width: 1500, height: 950 });
+    await page.goto(`${fake.url}/${ADDRESS("7d")}`);
+    await ready(page, fake, probe);
+    await probe.waitForQuiet({ quietMs: 600, timeout: 60000 });
+    const frame = await pane.last(),
+      c = await pane.colours(),
+      layout = (await page.locator("#ol-canvas").evaluate((el) => el.dataset.layout)).split(",").map(Number);
+    const track = (r) => r.x >= layout[7] - 1 && r.x <= layout[7] + 60;
+    expect(frame.rects.filter((r) => track(r) && r.alpha === 0.85 && r.fill === c.ink).length, "the taker-buy inset is drawn in the ink").toBeGreaterThan(0);
+    expect(frame.rects.filter((r) => track(r) && (r.fill === c.positive || r.fill === c.negative)), "and no bar of the track is a signed colour").toEqual([]);
+    await expect(page.locator("#ol-key-buyinset")).toBeVisible();
+    await expect(page.locator("#ol-key-buyinset")).toContainText("Taker-buy volume");
+    expect(await page.locator('[data-stroke-role="buyinset"] canvas').count(), "the key is painted").toBe(1);
+  });
 });

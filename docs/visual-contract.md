@@ -188,6 +188,7 @@ The footer key strip is hand-authored at the baseline (F-01 to F-10); S1 adds ge
 | F-13 | Footer key `#ol-key-selection` "Selection" | src/view.html; shown while a selection is drawn; new in S2 | Canvas mark: the two-tone frame with corner ticks | `IX` ink core, surface casing, swatch from `STROKE.selection` | STATE | #47 | B26 | done |
 | F-14 | Footer key `#ol-key-hover` "Linked cell" | src/view.html; shown while a cell is linked by the pointer or a table row; new in S2 | Canvas mark: the inset two-tone boundary | `IX` ink core, surface casing, swatch from `STROKE.hover` | STATE | #47 | B26 | done |
 | F-15 | Footer key `#ol-key-inspect` "Inspect focus" | src/view.html; hidden, shown by #48's Inspect cursor; new in S2 | Canvas mark: none yet; the bracket painter is `STROKE.inspect` (2 px ink core in 4 px of surface, corner brackets) so #48 draws it without a new painter | `IX` ink core, surface casing | STATE | #47, #48 | B26 | done |
+| F-16 | Footer key `#ol-key-buyinset` "Taker-buy volume (inset)" | src/view.html (new in S3); the `buyinset` role of `STROKE`; shown while a profile track draws its bars | Did not exist: the taker-buy inset of a profile row was unlabelled | `STATE` neutral ink: the inset is a part of the volume, never a signed role | `buyinset()` painter shared with `paintCurrentTrack()` | #48 | B40 | done |
 
 ### 3.5 Readout, number and prose consumers (R-)
 
@@ -733,10 +734,10 @@ Rendered from the Status column at S2's convergence: `done` is the work of S1 an
 | T | 35 | 17 | 0 | 0 | 0 | 18 |
 | C | 48 | 2 | 0 | 0 | 2 | 44 |
 | D | 21 | 7 | 0 | 0 | 3 | 11 |
-| F | 15 | 0 | 0 | 0 | 0 | 15 |
+| F | 16 | 0 | 0 | 0 | 0 | 16 |
 | R | 15 | 0 | 0 | 0 | 5 | 10 |
 | N | 38 | 0 | 0 | 0 | 0 | 38 |
-| all | 172 | 26 | 0 | 0 | 10 | 136 |
+| all | 173 | 26 | 0 | 0 | 10 | 137 |
 
 ## 11. Contributor checklist
 

@@ -28,7 +28,7 @@ function roles() {
 
 test("the stroke-role table: the state roles draw in the neutral inks, and only the profile's references (POC, Buy POC, value area, untested rays) are gold", () => {
   const table = roles();
-  assert.deepEqual([...table.keys()], ["empty", "open", "partial", "provisional", "moved", "detail", "selection", "hover", "inspect", "unavailable", "poc", "untested", "va", "bpoc", "pending"]);
+  assert.deepEqual([...table.keys()], ["empty", "open", "partial", "provisional", "moved", "detail", "selection", "hover", "inspect", "unavailable", "poc", "buyinset", "untested", "va", "bpoc", "pending"]);
   for (const [name, body] of table) {
     const used = [...body.matchAll(/colors\.(\w+)/g)].map((m) => m[1]);
     if (["poc", "bpoc", "va", "untested"].includes(name)) {

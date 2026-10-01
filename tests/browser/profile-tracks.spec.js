@@ -68,9 +68,13 @@ function priceAxis(frame) {
 
 // The bars of a track in a frame: the fills the page paints for it, found by colour and alpha, with the track's x.
 function tracksOf(frame, colours, muted, minX = 900) {
-  const cur = frame.rects.filter((r) => ((r.fill === muted && Math.abs(r.alpha - 0.32) < 1e-9) || (r.fill === colours.poc && Math.abs(r.alpha - 0.75) < 1e-9)) && r.h > 0 && r.w > 0 && r.x > minX),
-    ref = frame.rects.filter((r) => r.fill === colours.bar && Math.abs(r.alpha - 0.55) < 1e-9 && r.w > 0),
-    inset = frame.rects.filter((r) => r.fill === colours.ink && Math.abs(r.alpha - 0.6) < 1e-9 && r.x > minX);
+  // Both tracks' bars are the appearance's bar colour at 70% (3:1 against the surface), the current track's POC row the gold at 90%; the tracks are told
+  // apart by where they stand, the current one being the nearer to the heatmap.
+  const bars = frame.rects.filter((r) => r.fill === colours.bar && Math.abs(r.alpha - 0.7) < 1e-9 && r.w > 0 && r.h > 0 && r.x > minX),
+    curX = bars.length ? Math.min(...bars.map((r) => r.x)) : 0,
+    cur = [...bars.filter((r) => Math.abs(r.x - curX) < 0.5), ...frame.rects.filter((r) => r.fill === colours.poc && Math.abs(r.alpha - 0.9) < 1e-9 && r.h > 0 && r.w > 0 && r.x > minX)],
+    ref = bars.filter((r) => r.x > curX + 1),
+    inset = frame.rects.filter((r) => r.fill === colours.ink && Math.abs(r.alpha - 0.85) < 1e-9 && r.x > minX);
   return { cur, ref, inset };
 }
 async function mutedColour(page) {

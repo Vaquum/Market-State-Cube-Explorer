@@ -8248,7 +8248,7 @@
   // How many of each mark the last draw painted: the footer shows the key of each that is on the plot, and says how many of the tiny moved-through
   // cells could not be resolved.
   let markTally = false;
-  const markCount = { empty: 0, open: 0, partial: 0, provisional: 0, moved: 0, detail: 0, selection: 0, hover: 0, unavailable: 0, cone: 0, inspect: 0 };
+  const markCount = { empty: 0, open: 0, partial: 0, provisional: 0, moved: 0, detail: 0, selection: 0, hover: 0, unavailable: 0, cone: 0, inspect: 0, buyinset: 0 };
   // What each enabled reference did in this frame (PRD-0002 S3, section 2), by the key of its menu row: how many of its marks were drawn, were
   // held back by the budget, were outside the plot or too close to draw. The inventory below turns it into one status for each reference.
   const refTally = new Map();
@@ -8370,6 +8370,17 @@
       c.stroke();
       pocGlyph(c, x + w - 6, y + h / 2, "poc");
     },
+    // The taker-buy part of a profile row: a neutral ink inset in the row's bar, on the same axis. It is a part of the volume, not a signed role, so
+    // it never borrows the positive blue.
+    buyinset(c, x, y, w, h) {
+      c.globalAlpha = PROFILE_BAR_ALPHA;
+      c.fillStyle = last?.sc?.lut ? last.sc.lut.bar.css : colors.muted;
+      c.fillRect(x, y + 2, w, h - 4);
+      c.globalAlpha = 0.85;
+      c.fillStyle = colors.ink;
+      c.fillRect(x, y + h / 2 - 1, w * 0.55, 2);
+      c.globalAlpha = 1;
+    },
     // An untested POC's ray: the thin gold line from its column on, starting in a dot, as the plot draws it.
     untested(c, x, y, w, h) {
       c.strokeStyle = colors.poc;
@@ -8451,6 +8462,7 @@
     bpoc: { body: false },
     va: { body: false },
     untested: { body: false },
+    buyinset: { body: false },
     inspect: { body: true, box: [2.5, 2.5, 6, 6] },
   };
   const strokeKeys = { epoch: -1, dpr: 0 };
@@ -8494,6 +8506,7 @@
     show("key-selection", markCount.selection > 0);
     show("key-hover", markCount.hover > 0);
     show("key-inspect", markCount.inspect > 0);
+    show("key-buyinset", markCount.buyinset > 0);
     if (markCount.detail > 0) {
       const text = `Detail unresolved: ${markCount.detail} of ${markCount.detail + markCount.moved} moved-through cells`;
       if (el("key-detail-text").textContent !== text) el("key-detail-text").textContent = text;
@@ -8721,7 +8734,7 @@
     const counts = { cur: { low: 0, high: 0, drawn: 0 }, ref: { low: 0, high: 0, drawn: 0 } };
     if (G.profile) {
       const unit = TRACK_BARS;
-      paintCurrentTrack(query, b, state, plan, curAxis, unit, counts.cur);
+      paintCurrentTrack(query, b, state, plan, curAxis, unit, counts.cur, sc);
       if (G.tracks === 2 && under) paintReferenceTrack(under, b, plan, refAxis, unit, sc, counts.ref);
       paintProfileDomains(plan, curAxis, refAxis, state, under);
       // The level line and the pointer's row across the tracks
@@ -8760,7 +8773,7 @@
     profileUi.tracks = G.profile ? G.tracks : 0;
   }
   // The current track: rows of the view's (or selection's) Volume with the taker-buy subset as a neutral inset on the same axis.
-  function paintCurrentTrack(query, b, state, plan, axis, unit, count) {
+  function paintCurrentTrack(query, b, state, plan, axis, unit, count, sc) {
     const x0 = G.tx[0],
       shared = plan.mode !== "independent",
       ps = stepP(),
@@ -8795,14 +8808,16 @@
       if (at.clip === E.scale.CLIP.LOW) count.low++;
       else if (at.clip === E.scale.CLIP.HIGH) count.high++;
       const poc = S.poc && row.r === pocBin;
-      ctx.fillStyle = poc ? colors.poc : colors.muted;
-      ctx.globalAlpha = poc ? 0.75 : 0.32;
+      // A bar is read against the surface, so it reaches 3:1 in both themes: the appearance's bar colour at 70%, the POC row's gold at 90%
+      ctx.fillStyle = poc ? colors.poc : sc?.lut ? sc.lut.bar.css : colors.muted;
+      ctx.globalAlpha = poc ? PROFILE_POC_ALPHA : PROFILE_BAR_ALPHA;
       ctx.fillRect(x0, ya, unit * at.t, h);
       E.axis.coordinate(axis, buy, at);
       // The taker-buy subset: a neutral inset inside the row's bar, on the same axis (not a signed arm, not a second colour).
+      markCount.buyinset++;
       const inset = Math.max(1, Math.min(3, h * 0.36));
       ctx.fillStyle = colors.ink;
-      ctx.globalAlpha = 0.6;
+      ctx.globalAlpha = 0.85;
       ctx.fillRect(x0, ya + (h - inset) / 2, unit * at.t, inset);
     }
     ctx.globalAlpha = 1;
@@ -8875,7 +8890,7 @@
             else if (at.clip === E.scale.CLIP.HIGH) count.high++;
             if (!(at.t > 0)) continue;
             ctx.fillStyle = bar;
-            ctx.globalAlpha = 0.55;
+            ctx.globalAlpha = PROFILE_BAR_ALPHA;
             ctx.fillRect(x0, ya, unit * at.t, h);
           }
         } else {
@@ -8897,14 +8912,14 @@
             if (!diverging) {
               if (!(at.t > 0)) continue;
               ctx.fillStyle = bar;
-              ctx.globalAlpha = 0.55;
+              ctx.globalAlpha = PROFILE_BAR_ALPHA;
               ctx.fillRect(x0, ya, unit * at.t, h);
               continue;
             }
             if (!at.t) continue;
             const w = (unit / 2) * Math.abs(at.t);
             ctx.fillStyle = at.t > 0 ? arms[0] : arms[1];
-            ctx.globalAlpha = 0.7;
+            ctx.globalAlpha = PROFILE_ARM_ALPHA;
             ctx.fillRect(at.t > 0 ? mid : mid - w, ya, w, h);
           }
         }
@@ -12381,7 +12396,7 @@
           for (let i = 1; i < xs.length; i++) ctx.lineTo(xs[i], ys[i]);
         };
       ctx.strokeStyle = colors.surface;
-      ctx.globalAlpha = 0.85;
+      ctx.globalAlpha = 1;
       ctx.lineWidth = width + 2;
       path();
       ctx.stroke();
@@ -12405,8 +12420,9 @@
         xb: c.on ? right : xs[xs.length - 1],
       });
     }
+    // The casing is opaque: the line's core is read against the casing's own pixel, which is the surface, not against a tint of whatever lay under it.
     ctx.strokeStyle = colors.surface;
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 1;
     for (const [w, segs] of halo) {
       ctx.lineWidth = w;
       ctx.beginPath();
@@ -12432,7 +12448,7 @@
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
     for (const [x, y, colour] of ticks) {
-      line(x, y - 5, x, y + 5, colors.surface, 4, 0.85);
+      line(x, y - 5, x, y + 5, colors.surface, 4, 1);
       line(x, y - 5, x, y + 5, colour, 2, 1);
     }
     for (const [x, y, kind] of glyphs) pocGlyph(ctx, x - 2, y, kind);
@@ -12451,7 +12467,7 @@
         if (m.s.equal && !occlusion.off.has(`${m.key}|eq|${m.s.i}`)) {
           const x0 = G.X(m.s.equal.t),
             y0 = G.Y(m.s.equal.price / PR);
-          markLine(x0, y0, x, y, colors.surface, REFERENCE_STROKE + 2, 0.85);
+          markLine(x0, y0, x, y, colors.surface, REFERENCE_STROKE + 2, 1);
           markLine(x0, y0, x, y, colour, REFERENCE_STROKE, 1);
           ctx.font = `500 ${TYPE.s}px ${FONT}`;
           chartLabel(`${m.frame} ${m.s.kind === "high" ? "EQH" : "EQL"}`, x + 6, up ? y + 16 : y - 8, colour);
@@ -12463,7 +12479,7 @@
         ctx.lineTo(x + k, up ? tip + 1.6 * k : tip - 1.6 * k);
         ctx.closePath();
         ctx.fillStyle = colors.surface;
-        ctx.globalAlpha = 0.85;
+        ctx.globalAlpha = 1;
         ctx.lineWidth = 3;
         ctx.strokeStyle = colors.surface;
         ctx.stroke();
@@ -12511,7 +12527,7 @@
       const y = Math.round(G.Y(S.level)) + 0.5,
         width = Math.min(REFERENCE_STROKE + (refHot("level", "level") ? 1 : 0), REFERENCE_STROKE_MAX);
       ctx.setLineDash(E.role.REFERENCE.PATTERN.user);
-      line(G.x, y, right, y, colors.surface, width + 2, 0.85);
+      line(G.x, y, right, y, colors.surface, width + 2, 1);
       line(G.x, y, right, y, colors.ink, width, 1);
       ctx.setLineDash([]);
       levelDiamond(ctx, right - 7, y);
@@ -12677,7 +12693,7 @@
     for (const kind of S.lines.filter((k) => CLOCK[k])) {
       const rects = clockShown(kind).map((e) => {
         const x = G.X(e.t);
-        return [x - REFERENCE_STROKE, G.y, x + REFERENCE_STROKE, G.y + G.h];
+        return [x - (REFERENCE_STROKE + 2) / 2, G.y, x + (REFERENCE_STROKE + 2) / 2, G.y + G.h];
       });
       if (rects.length) candidates.push({ id: "clock|" + kind, hot: refHot(kind, "clock|" + kind), rank: 7, rects });
     }
@@ -12777,6 +12793,7 @@
           clockHits.push({ gap: g, box: [x0, Math.min(y0, y1 - 3), x1, Math.max(y1, y0 + 3)] });
         }
     }
+    const badges = [];
     for (const kind of kinds) {
       if (occlusion.off.has("clock|" + kind)) {
         refNote(kind, "occlusion");
@@ -12790,9 +12807,18 @@
         continue;
       }
       refNote(kind, "shown");
-      ctx.strokeStyle = colour;
-      ctx.lineWidth = REFERENCE_STROKE + (refHot(kind, "clock|" + kind) ? 1 : 0);
-      ctx.globalAlpha = 0.6;
+      // The Deribit expiries that are a month's or a quarter's are told apart by a name on the line, never by a heavier stroke
+      if (kind === "deribit")
+        for (const e of events)
+          if (e.weight > 1) {
+            const x = G.X(e.t);
+            if (x > G.x + 4 && x < G.x + G.w - 4) badges.push([e.weight === 3 ? "Deribit quarterly" : "Deribit monthly", x]);
+          }
+      // opaque: a reference boundary is 3:1 against what is under it, which a translucent neutral is not
+      // A calendar line has a thin casing of its own, one pixel a side and in its own pattern, so that it is read against the surface and not against
+      // the cells under it, and no continuous thick backing runs down the plot.
+      const core = REFERENCE_STROKE + (refHot(kind, "clock|" + kind) ? 1 : 0);
+      ctx.globalAlpha = 1;
       ctx.setLineDash(look.dash);
       ctx.beginPath();
       for (const e of events) {
@@ -12801,11 +12827,22 @@
         ctx.lineTo(x, G.y + G.h);
         clockHits.push({ event: e, x });
       }
+      ctx.strokeStyle = colors.surface;
+      ctx.lineWidth = core + 2;
+      ctx.stroke();
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = core;
       ctx.stroke();
     }
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
     ctx.restore();
+    // the name stands to the right of its line, or to its left where the plot ends first
+    ctx.font = `${TYPE.s}px ${FONT}`;
+    for (const [name, x] of badges) {
+      const room = x + 8 + ctx.measureText(name).width + 3 <= G.x + G.w;
+      chartLabel(name, room ? x + 5 : x - 5, G.y + 14, colors.muted, room ? "left" : "right");
+    }
   }
   // The clock lines under the pointer, all that fall at the nearest one's
   // time (funding at a day's start, an expiry at 08:00), within 3 px; or else
@@ -12989,6 +13026,10 @@
   }
   // A tag is an opaque plate of the surface: a 5 px bar of the line's hue, its name in the ink, its value in the ink. The text is always the ink on
   // the surface (12:1 or better in both themes), so no hue has to carry text, and the plate has a width that the occlusion plan can count.
+  // The profile tracks' bars against the surface: 3:1 in both themes (the bar colour from 0.7, the gold from 0.9, the signed arms from 0.8).
+  const PROFILE_BAR_ALPHA = 0.7,
+    PROFILE_POC_ALPHA = 0.9,
+    PROFILE_ARM_ALPHA = 0.8;
   const TAG_PAD = 5,
     TAG_BAR = 5,
     TAG_HEIGHT = 16;
@@ -14434,7 +14475,7 @@
       paneLabel = { s, width: G.w, text: fitted, w: ctx.measureText(fitted).width };
     }
     ctx.fillStyle = colors.surface;
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha = 1;
     ctx.fillRect(G.x + 2, top + 1, paneLabel.w + 8, 15);
     ctx.globalAlpha = 1;
     text(paneLabel.text, G.x + 6, top + 8.5, colors.muted, "left");

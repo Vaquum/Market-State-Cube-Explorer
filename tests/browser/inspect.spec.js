@@ -219,4 +219,29 @@ test.describe("B44 Inspect: its own cursor, moved by the keys of each surface", 
     expect((await cell(page)).c, "the same absolute cursor").toBe(now.c);
     await expect(page.locator("#ol-inspect")).toBeVisible();
   });
+
+  test("the detail of a reference takes the focus while it is open and gives the previous focus back", async ({ page, probe, fakeFor }) => {
+    const fake = await fakeFor("standard");
+    await open(page, fake, probe, "#w=7d&vis=2&lines=7d,30d");
+    // a focus of the user's: the 30-day line
+    await page.locator("#ol-lines").click();
+    await page.locator('[data-line-focus="30d"]').click();
+    await expect(page.locator("#ol-focus-chip")).toHaveText("Focus: 30 days · Show all");
+    await page.keyboard.press("Escape");
+    await page.locator("#ol-canvas").focus();
+    await page.keyboard.press("e");
+    await page.locator('[data-surface="references"]').click();
+    await page.locator("#ol-inspect").focus();
+    await page.keyboard.press("Home");
+    const first = await page.locator("#ol-inspect-position").textContent();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#ol-inspect-detail")).toBeVisible();
+    const taken = await page.locator("#ol-focus-chip").textContent();
+    expect(taken, "the detail's reference is the focus while it is open").not.toBe("Focus: 30 days · Show all");
+    expect(first, "the first reference of the list is the 7-day line").toMatch(/^7D · 1 of 2$/);
+    expect(taken.trim(), "named as the menu names it").toBe("Focus: 7 days · Show all");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#ol-inspect-detail")).toBeHidden();
+    await expect(page.locator("#ol-focus-chip"), "the previous focus is back").toHaveText("Focus: 30 days · Show all");
+  });
 });

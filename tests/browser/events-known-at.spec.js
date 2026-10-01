@@ -454,6 +454,7 @@ test.describe("B33 a crossing is known at the end of its day and a candidate whi
         // the newest crossing in view is the one that ends last
         const marker = arcs.reduce((a, b) => (b.x > a.x ? b : a));
         if (pane) {
+          expect(frame.texts.some((t) => t.text === "0"), "the zero of MACD is named in the pane's label column").toBe(true);
           expect(marker.up, "the marker points up where MACD crossed above its signal").toBe(want.up);
           expect(marker.fill, "and its colour is the role of that sign").toBe(want.up ? colours.positive : colours.negative);
         }

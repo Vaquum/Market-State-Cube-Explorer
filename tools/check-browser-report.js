@@ -10,8 +10,9 @@ function cases(report) {
     for (const spec of suite.specs ?? []) {
       if (!spec.id || !Array.isArray(spec.tests) || !spec.tests.length) throw new Error("Browser report contains an invalid spec");
       for (const test of spec.tests) {
-        if (typeof test.projectId !== "string" || !test.projectId) throw new Error("Browser report contains an invalid project");
-        result.push({ key: `${spec.id}:${test.projectId}`, spec, test });
+        // Blob merging preserves the public project name but omits the runner's internal projectId.
+        if (typeof test.projectName !== "string" || !test.projectName) throw new Error("Browser report contains an invalid project");
+        result.push({ key: `${spec.id}:${test.projectName}`, spec, test });
       }
     }
     for (const child of suite.suites ?? []) visit(child);

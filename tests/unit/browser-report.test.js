@@ -3,9 +3,17 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { verify } = require("../../tools/check-browser-report.js");
-const spec = (id) => ({ id, file: "hand.spec.js", title: id, ok: true, tests: [{ projectId: "chromium", expectedStatus: "passed", status: "expected", results: [{ status: "passed", retry: 0, errors: [] }] }] });
+const spec = (id) => ({ id, file: "hand.spec.js", title: id, ok: true, tests: [{ projectId: "chromium", projectName: "chromium", expectedStatus: "passed", status: "expected", results: [{ status: "passed", retry: 0, errors: [] }] }] });
 const report = (...ids) => ({ suites: [{ suites: [{ specs: ids.map(spec) }] }], errors: [] });
 const inventory = report("first", "second");
+
+test("blob-merged reports omit internal project IDs but must preserve the inventory's project names", () => {
+  const merged = report("first", "second");
+  for (const s of merged.suites[0].suites[0].specs) delete s.tests[0].projectId;
+  assert.equal(verify(merged, inventory), 2);
+  merged.suites[0].suites[0].specs[0].tests[0].projectName = "another-project";
+  assert.throws(() => verify(merged, inventory), /Unexpected browser case/);
+});
 
 test("complete full inventory passes; empty, missing, extra and duplicate cases fail", () => {
   assert.equal(verify(report("first", "second"), inventory), 2);
@@ -40,6 +48,6 @@ test("report-level errors and malformed inventories fail", () => {
   assert.throws(() => verify(r, inventory), /contains errors/);
   assert.throws(() => verify(report("first"), {}), /no suites/);
   const malformed = report("first");
-  delete malformed.suites[0].suites[0].specs[0].tests[0].projectId;
+  delete malformed.suites[0].suites[0].specs[0].tests[0].projectName;
   assert.throws(() => verify(r, malformed), /invalid project/);
 });

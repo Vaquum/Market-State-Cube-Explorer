@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 .venv/
 node_modules/
+# a symlink to a checkout's dependencies (not a directory) is dependencies too, and is never committed
+node_modules
 .env
 # Test and benchmark output: regenerated on every run, never committed.
 test-results/

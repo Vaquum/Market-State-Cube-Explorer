@@ -9,34 +9,25 @@
   --ol-line: light-dark(#d8e3db, #334a3c);
   /* Data: these colours encode the market and nothing else */
   --ol-poc: light-dark(#a87823, #dfb967);
-  --ol-evidence: light-dark(#7664a9, #b4a1df);
   /* Roles (visual version 2): a signed measure colours by role, never by side. The hexes are those of the
      retired buy, sell and neutral tokens, renamed by role (DR-20). */
   --ol-positive: light-dark(#2d769c, #73b8d4);
   --ol-negative: light-dark(#b3624b, #d89777);
   --ol-midpoint: light-dark(#b9c2bc, #5f6b64);
   /* Non-value marks: the occupancy outline and the ink of patterns and glyphs, from tokens that pass 3:1
-     on the surface (--ol-line and --ol-neutral do not and must not colour them) */
+     on the surface (--ol-line and --ol-midpoint do not and must not colour them) */
   --ol-occupancy: var(--ol-border);
   --ol-state: var(--ol-muted);
-  /* Interim names for the unsigned and reference marks that still use the taker sides (taker-buy subset
-     bar, Buy POC, RSI divergences), so that positive never appears in an unsigned context */
-  --ol-legacy-buy: light-dark(#2d769c, #73b8d4);
-  --ol-legacy-sell: light-dark(#b3624b, #d89777);
-  /* Lines: one colour per family, apart from the data's colours and from
-     each other in every colour vision; a line's timeframe shows in its
-     weight and saturation, in three tiers. Clock lines are neutral. */
+  /* Lines: one colour per reference family (E.role.REFERENCE), apart from the data's colours and from
+     each other in every colour vision. A line's timeframe is in its tag and name, never in its colour or
+     weight. Clock lines are neutral. */
   --ol-line-poc: var(--ol-poc);
   --ol-line-level: light-dark(#9471f5, #bb6bd9);
   --ol-line-average: light-dark(#6c661f, #8a9650);
   --ol-line-vwap: light-dark(#7c3514, #e2621a);
   --ol-line-clock: light-dark(#8c948f, #7d8a82);
-  --ol-tier-short-width: 1.25;
-  --ol-tier-short-chroma: 0.7;
-  --ol-tier-medium-width: 1.75;
-  --ol-tier-medium-chroma: 0.85;
-  --ol-tier-long-width: 2.5;
-  --ol-tier-long-chroma: 1;
+  /* Historical comparison is neutral, never a third hue beside the price levels' violet: its two sets are told apart by shape and label */
+  --ol-line-compare: var(--ol-muted);
   /* Interface: focus, selection, controls; never data */
   --ol-accent: var(--ol-ink);
   --ol-border: light-dark(#768d7e, #667f6f);
@@ -652,6 +643,11 @@
   flex: 1;
   text-align: left;
 }
+#origo-lens .ol-family-kin {
+  font-size: var(--fs-s);
+  font-weight: 400;
+  color: var(--ol-muted);
+}
 #origo-lens .ol-family-count {
   font-size: var(--fs-s);
   font-weight: 400;
@@ -673,10 +669,10 @@
 }
 /* The level line's: dashed, in the text colour, as on the chart. */
 #origo-lens .ol-level-swatch {
-  height: 0;
+  width: 22px;
+  height: 1.5px;
   border-radius: 0;
-  background: none;
-  border-top: 1.5px dashed var(--ol-ink);
+  background: var(--ol-ink);
 }
 /* The tooltip passes the pointer through, all but its one control: the level
    line's, which a tap on touch shows in the row section. */
@@ -803,6 +799,33 @@
   margin-bottom: var(--sp-2);
   font-size: var(--fs-m);
   font-weight: 500;
+}
+#origo-lens .ol-pop-actions {
+  display: inline-flex;
+  gap: var(--sp-2);
+}
+/* What the chart did with the references that are on: how many are shown and, for each that is not, the reason. */
+#origo-lens .ol-lines-summary {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-s);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-lines-summary:empty {
+  display: none;
+}
+#origo-lens .ol-line-focus {
+  flex: none;
+  margin-left: auto;
+}
+#origo-lens .ol-line-focus[aria-pressed="true"] {
+  background: var(--ol-on);
+  box-shadow: inset 0 0 0 1px var(--ol-accent);
+}
+#origo-lens .ol-line-row[data-ref-state]:not([data-ref-state="shown"]) .ol-line-value {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-focus-chip {
+  box-shadow: inset 0 0 0 1px var(--ol-accent);
 }
 #origo-lens .ol-res-pop {
   width: 296px;
@@ -1200,6 +1223,109 @@
 }
 #origo-lens .ol-tip-note {
   margin-top: var(--sp-1);
+}
+/* Inspect: the navigator of the cursor, over the plot's bottom left, with its readout, its edge messages, its steppers and the chooser that reach the same
+   record without a pointer or a precise one. */
+#origo-lens .ol-inspect {
+  position: absolute;
+  left: 64px;
+  bottom: 56px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  width: min(440px, calc(100% - 80px));
+  padding: var(--sp-2);
+  font-size: var(--fs-s);
+  font-variant-numeric: tabular-nums;
+  color: var(--ol-ink);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+  box-shadow: 0 var(--sp-1) var(--sp-5) var(--ol-shadow);
+}
+#origo-lens .ol-inspect[hidden],
+#origo-lens .ol-inspect-detail[hidden] {
+  display: none;
+}
+#origo-lens .ol-inspect:focus-visible {
+  outline: 2px solid var(--ol-accent);
+  outline-offset: 2px;
+}
+#origo-lens .ol-inspect-head,
+#origo-lens .ol-inspect-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1);
+}
+#origo-lens .ol-inspect-steps {
+  justify-content: flex-start;
+}
+#origo-lens .ol-inspect-steps select {
+  flex: 1 1 120px;
+  min-width: 0;
+  min-height: var(--h-m);
+}
+#origo-lens .ol-inspect-position {
+  font-weight: 500;
+}
+#origo-lens .ol-inspect-readout {
+  max-height: 168px;
+  overflow: auto;
+}
+#origo-lens .ol-inspect-boundary {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-inspect-boundary:empty {
+  display: none;
+}
+#origo-lens .ol-inspect[data-state="outside"] .ol-inspect-position,
+#origo-lens .ol-inspect[data-state="unavailable"] .ol-inspect-position {
+  color: var(--ol-muted);
+}
+#origo-lens .ol-inspect-chooser {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: var(--sp-1);
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 420px);
+  overflow: auto;
+  padding: var(--sp-1);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+  box-shadow: 0 var(--sp-1) var(--sp-5) var(--ol-shadow);
+}
+#origo-lens .ol-inspect-chooser[hidden] {
+  display: none;
+}
+#origo-lens .ol-inspect-chooser-head {
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-inspect-choice {
+  justify-content: flex-start;
+  min-height: 44px;
+  text-align: left;
+}
+#origo-lens .ol-inspect-detail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: var(--sp-1);
+  max-height: min(60vh, 420px);
+  overflow: auto;
+  padding: var(--sp-2);
+  background: var(--ol-surface);
+  border: 1px solid var(--ol-border);
+  border-radius: var(--r-m);
+  box-shadow: 0 var(--sp-1) var(--sp-5) var(--ol-shadow);
 }
 /* The replay transport, at the top of the plot on the replay line, and the
    lens's own controls at its top left while the lens is the tool; both placed
@@ -1682,7 +1808,7 @@
   display: block;
   width: 0;
   height: 5px;
-  background: var(--ol-evidence);
+  background: var(--ol-line-compare);
   border-radius: var(--r-s);
 }
 #origo-lens .ol-probability .ol-base-track {
@@ -1713,10 +1839,37 @@
   width: 15px;
   height: var(--sp-1);
   border-radius: var(--r-s);
-  background: var(--ol-evidence);
+  background: var(--ol-line-compare);
 }
 #origo-lens .ol-evidence-legend .ol-all-key {
-  background: var(--ol-muted);
+  background: var(--ol-line-compare);
+}
+/* The same two shapes the chart's median markers use: a square for the matching states, a ring for all states. */
+#origo-lens .ol-evidence-legend .ol-match-key,
+#origo-lens .ol-evidence-legend .ol-all-key {
+  position: relative;
+  overflow: visible;
+}
+#origo-lens .ol-evidence-legend .ol-match-key::after,
+#origo-lens .ol-evidence-legend .ol-all-key::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  outline: 1px solid var(--ol-surface);
+}
+#origo-lens .ol-evidence-legend .ol-match-key::after {
+  background: var(--ol-line-compare);
+}
+#origo-lens .ol-evidence-legend .ol-all-key::after {
+  border: 1.25px solid var(--ol-line-compare);
+  border-radius: 50%;
+  background: var(--ol-surface);
+  outline: 0;
 }
 #origo-lens .ol-evidence-brief {
   position: relative;
@@ -1946,6 +2099,14 @@
   }
 }
 @media (pointer: coarse) {
+  #origo-lens .ol-inspect button,
+  #origo-lens .ol-inspect select {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  #origo-lens .ol-inspect-head [role="tab"] {
+    padding: 0 var(--sp-3);
+  }
   /* Touch targets win over every size class. */
   #origo-lens button,
   #origo-lens button.ol-s,
@@ -1958,6 +2119,7 @@
   #origo-lens .ol-step button {
     min-width: 44px;
   }
+
   #origo-lens .ol-query-body textarea,
   #origo-lens input[type="text"],
   #origo-lens input[type="date"] {
@@ -2266,4 +2428,80 @@
   display: block;
   width: 11px;
   height: 11px;
+}
+/* A reference key's swatch is a line sample, wider than a state key's square. */
+#origo-lens .ol-data-key.ol-glyph.ol-ref-swatch,
+#origo-lens .ol-data-key.ol-glyph.ol-ref-swatch canvas {
+  width: 26px;
+}
+#origo-lens .ol-keys-ref > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+/* A table row that holds the keyboard shows it. */
+#origo-lens .ol-table tbody tr:focus-visible {
+  outline: 2px solid var(--ol-accent);
+  outline-offset: -2px;
+}
+
+/* The view summary in the Query tab: the same details list as a legend's popover, in sections, for a screenshot of the whole */
+#origo-lens .ol-summary {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--ol-line);
+}
+#origo-lens .ol-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+#origo-lens .ol-summary-head h3 {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+}
+#origo-lens .ol-summary-section h4 {
+  margin: var(--sp-2) 0 0;
+  font-size: inherit;
+  font-weight: 600;
+}
+#origo-lens .ol-summary-section .ol-legend-details {
+  margin: var(--sp-1) 0;
+}
+
+@media (pointer: coarse) {
+  /* A target is 44 px each way: the icon buttons were 44 high and 28 to 32 wide, the legend chips 24 high, a summary 24. The resolution plane's buttons
+     (they keep their compact size) and the canvas's own marks are the documented dense visuals, each with a large-target route: the steppers and the plane's keys, the
+     Inspect navigator with its steppers, chooser and tabs. */
+  #origo-lens .ol-bar .ol-seg .ol-icon-button,
+  #origo-lens button.ol-icon-button.ol-icon-button.ol-icon-button,
+  #origo-lens button.ol-s.ol-s {
+    min-width: 44px;
+  }
+  #origo-lens .ol-legend,
+  #origo-lens .ol-legend-chip {
+    height: auto;
+    min-height: 44px;
+  }
+  #origo-lens summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* Reduced motion, in the stylesheet as in the canvas: where the preference is on (and the moment it is turned on in a running session, which the
+   media query follows by itself) nothing of the page moves: no transition, no animation, no smooth scroll. */
+@media (prefers-reduced-motion: reduce) {
+  #origo-lens,
+  #origo-lens *,
+  #origo-lens *::before,
+  #origo-lens *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
 }

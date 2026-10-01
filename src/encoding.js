@@ -1032,6 +1032,14 @@
       apply: "Apply",
       notOffered: "Not offered for {measure}",
       appearance: "Appearance {id} (provisional, not human-validated)",
+      summaryTitle: "View summary",
+      summaryIntro: "What a screenshot of this view should say about its colours and lengths. It describes the view as drawn now: it is not an export and not a snapshot of the data.",
+      summaryCopy: "Copy summary",
+      summaryView: "View",
+      summaryAxes: "Axes",
+      summaryProfile: "Profile tracks",
+      summaryVintage: "Original vintage",
+      summaryLimit: "The numbers are the cube's as available now and can differ from the data as it stood when first seen: original vintages are not recorded. No hosted export and no immutable data snapshot is offered; the view code reopens this view and reads the cube again.",
     },
     migrate: {
       volume: "was the full-cell rate ranked over the drawn block; now observed Amount on a Value scale, Explore per resolution context",
@@ -4516,6 +4524,198 @@
     return spans;
   }
 
+  // E.role.REFERENCE (PRD-0002 S3, section 1): the reference language, one table for the canvas, the tags, the menu and toolbar keys, the
+  // footer keys and the inspector's tracks. A reference mark says WHAT it is by its family (the hue below), WHICH one by its label and
+  // endpoint glyph, and HOW it is known by its pattern; none of it by a stroke weight or a saturation, so a timeframe is never a colour. The
+  // hues are tested starting points (docs/visual-contract.md checks every pair that meets on the chart), not a promise to keep a failing hex.
+  //   STROKE   an ordinary reference stroke is 1.5 css px; the focused one adds one pixel; with its backing (one pixel each side) it is never
+  //            wider than 4.5 px, which is the occlusion budget's maximum.
+  //   PATTERN  inside the span a market reference is supported over: solid is observed or derived; dashed [5,4] is the held extension to the
+  //            edge; dotted [1,3] is a retrospective lead-in to a confirmation. The user's own Level is the one dash-dot, [8,3,2,3].
+  //   FAMILIES the seven roles. `colour` is the page's key for the canvas colour (the CSS custom property is `token`); `groups` are menu
+  //            subgroups of ONE family (they share its hue and are not advertised as separate hues); `identification` is what tells two
+  //            marks of one family apart; `glyph` names the endpoint glyph where one is part of the identity.
+  const rolReferenceFamilies = Object.freeze([
+    Object.freeze({
+      id: "profile",
+      name: "Volume profile",
+      role: "Volume-profile references",
+      colour: "poc",
+      token: "--ol-line-poc",
+      hue: "gold",
+      groups: Object.freeze(["Volume profile"]),
+      identification: Object.freeze(["POC", "Buy POC", "VAH", "VAL", "period", "endpoint glyph"]),
+      glyph: Object.freeze({ poc: "triangle", buyPoc: "diamond", valueArea: "square" }),
+    }),
+    Object.freeze({
+      id: "level",
+      name: "Price levels",
+      role: "Price levels",
+      colour: "level",
+      token: "--ol-line-level",
+      hue: "violet",
+      groups: Object.freeze(["Session levels", "Structure"]),
+      identification: Object.freeze(["Session or Structure subgroup", "exact kind", "timeframe"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "average",
+      name: "Averages and Bollinger",
+      role: "Averages and Bollinger",
+      colour: "average",
+      token: "--ol-line-average",
+      hue: "olive",
+      groups: Object.freeze(["Moving averages"]),
+      identification: Object.freeze(["indicator period", "bar timeframe", "Upper, Middle or Lower"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "vwap",
+      name: "VWAP",
+      role: "VWAP",
+      colour: "vwap",
+      token: "--ol-line-vwap",
+      hue: "rust",
+      groups: Object.freeze(["VWAP"]),
+      identification: Object.freeze(["Session or the exact anchor"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "clock",
+      name: "Clock",
+      role: "Clock",
+      colour: "clock",
+      token: "--ol-line-clock",
+      hue: "neutral",
+      groups: Object.freeze(["Clock"]),
+      identification: Object.freeze(["calendar-event label", "vertical geometry", "keyed event pattern"]),
+      glyph: null,
+    }),
+    Object.freeze({
+      id: "user",
+      name: "User Level",
+      role: "User Level",
+      colour: "ink",
+      token: "--ol-ink",
+      hue: "ink",
+      groups: Object.freeze(["Level"]),
+      identification: Object.freeze(["Level label", "endpoint diamond", "long dash-dot"]),
+      glyph: Object.freeze({ level: "diamond" }),
+    }),
+    Object.freeze({
+      id: "compare",
+      name: "Historical comparison",
+      role: "Historical comparison",
+      colour: "compare",
+      token: "--ol-line-compare",
+      hue: "neutral",
+      groups: Object.freeze(["Matching states", "All states"]),
+      identification: Object.freeze(["Matching states or All states", "square or circle median marker", "labelled interval track"]),
+      glyph: Object.freeze({ matching: "square", all: "circle" }),
+    }),
+  ]);
+  const rolReference = Object.freeze({
+    STROKE: Object.freeze({ ordinary: 1.5, focusExtra: 1, backing: 1, max: 4.5 }),
+    PATTERN: Object.freeze({
+      support: Object.freeze([]),
+      held: Object.freeze([5, 4]),
+      lead: Object.freeze([1, 3]),
+      user: Object.freeze([8, 3, 2, 3]),
+    }),
+    PATTERN_NAMES: Object.freeze({ support: "Solid: observed or derived", held: "Dashed: held to the edge", lead: "Dotted: lead-in to a confirmation", user: "Dash-dot: your Level" }),
+    FAMILIES: rolReferenceFamilies,
+  });
+  // E.role.referenceFamily(id) -> the family record; a RangeError for an id the table does not have.
+  function rolReferenceFamily(id) {
+    for (let i = 0; i < rolReferenceFamilies.length; i++) if (rolReferenceFamilies[i].id === id) return rolReferenceFamilies[i];
+    throw new RangeError("E.role.referenceFamily: unknown family " + String(id));
+  }
+
+  // E.role.REASONS / E.role.inventory (PRD-0002 S3, section 2): what the chart says about the references it was asked to draw. Every ENABLED and
+  // SUPPORTED reference (a menu row, the user's Level) has exactly one status, so the count of what is shown is always over everything that
+  // could be, and a reference that is not shown says why, in one of these words: `occlusion` (held back by the 20% budget), `density` (too
+  // close to its neighbours to draw at this zoom), `offscreen` (outside the view; its arrow tag at the edge and its row in the list remain),
+  // `warmup` (the indicator has no value yet), `missing` (its data is not read yet or could not be), `unsupported` (needs a closer zoom or the
+  // live cube) and `none` (there is no event to draw). The words, their order and their labels are this table's, never a page's.
+  const rolReasons = Object.freeze([
+    Object.freeze({ id: "shown", label: "shown", short: "shown" }),
+    Object.freeze({ id: "occlusion", label: "held back by the 20% budget", short: "held back" }),
+    Object.freeze({ id: "density", label: "too close together to draw at this zoom", short: "too close" }),
+    Object.freeze({ id: "offscreen", label: "off screen (its tag at the edge and its row remain)", short: "off screen" }),
+    Object.freeze({ id: "warmup", label: "warming up (no value yet)", short: "warming up" }),
+    Object.freeze({ id: "missing", label: "not read yet or could not be read", short: "not read" }),
+    Object.freeze({ id: "unsupported", label: "needs a closer zoom or the live cube", short: "zoom in" }),
+    Object.freeze({ id: "none", label: "no event to draw", short: "no event" }),
+  ]);
+  // E.role.inventory(entries) -> {eligible, shown, reasons: {id: count}, byReason: {id: [entry ids]}}: `entries` are {id, reason}; a reason that is
+  // not in the table throws, a repeated id throws, and `eligible` is every entry, so a suppressed reference is counted and never dropped.
+  function rolInventory(entries) {
+    const known = new Set(rolReasons.map((r) => r.id)),
+      seen = new Set(),
+      reasons = {},
+      byReason = {};
+    for (const r of rolReasons) {
+      reasons[r.id] = 0;
+      byReason[r.id] = [];
+    }
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (!known.has(e.reason)) throw new RangeError("E.role.inventory: unknown reason " + String(e.reason));
+      if (seen.has(e.id)) throw new RangeError("E.role.inventory: repeated reference " + String(e.id));
+      seen.add(e.id);
+      reasons[e.reason]++;
+      byReason[e.reason].push(e.id);
+    }
+    return { eligible: entries.length, shown: reasons.shown, reasons, byReason };
+  }
+
+  // E.role.SIGN (PRD-0002 S3, section 4): the redundant sign mark of a signed cell. Where a signed cell is at least MIN_PX css px across in BOTH
+  // directions, a small mark at its centre says the sign a second time, without hue: a plus above the midpoint, a minus below it, a ring at it
+  // (the midpoint is a drawn fill, never the surface, so its mark is a zero and not an absence). The fill still carries the number; the mark
+  // replaces nothing. Below MIN_PX no mark is drawn and the sign is read from the readout, the table and Inspect, which say so in the key.
+  // The mark sits at the centre of the cell, except in a cell RAISE_PX tall or more, where it sits at the centre of the cell's upper half: a
+  // line that crosses a row (the volume profile's POC always crosses the centre of its row) then passes under the mark's own height and not through it.
+  // The bars are STROKE css px thick and SIZE long, snapped to whole css px so that every pixel of a bar is the full ink (a 1.5 px line at one
+  // pixel per css px would blend into its neighbours and lose a quarter of its contrast); the ring is STROKE thick at RING_RADIUS. The marks
+  // are ink or the surface colour, whichever has the higher contrast over the fill underneath, so the fill is the only background they need.
+  //   shapes     the mark each signed role has (`positive`, `negative`, `midpoint`); a role that is not signed has none
+  //   coverage   the css px area a mark covers (its stroke, counted once where arms cross), so that a test can hold the largest mark to a share of the
+  //              smallest cell that carries it
+  const rolSign = Object.freeze({
+    MIN_PX: 12,
+    RAISE_PX: 16,
+    SIZE: 6,
+    STROKE: 2,
+    RING_RADIUS: 2,
+    SHAPES: Object.freeze({ positive: "plus", negative: "minus", midpoint: "zero" }),
+    NAMES: Object.freeze({ plus: "plus: above the midpoint", minus: "minus: below it", zero: "ring: at it" }),
+  });
+  // E.role.signShape(role) -> "plus" | "minus" | "zero" for the roles positive, negative and midpoint (by name), else null.
+  function rolSignShape(role) {
+    return Object.prototype.hasOwnProperty.call(rolSign.SHAPES, role) ? rolSign.SHAPES[role] : null;
+  }
+  // E.role.signCoverage(shape) -> css px of the cell the mark covers: a plus is two arms that cross, a minus one arm, a ring the annulus of its stroke.
+  function rolSignCoverage(shape) {
+    const s = rolSign.SIZE,
+      w = rolSign.STROKE;
+    if (shape === "plus") return 2 * s * w - w * w;
+    if (shape === "minus") return s * w;
+    if (shape === "zero") {
+      const outer = rolSign.RING_RADIUS + w / 2,
+        inner = Math.max(0, rolSign.RING_RADIUS - w / 2);
+      return Math.PI * (outer * outer - inner * inner);
+    }
+    throw new RangeError("E.role.signCoverage: unknown shape " + String(shape));
+  }
+  // E.role.signInk(fill, ink, surface) -> "ink" | "surface": the colour a sign mark is drawn in over `fill`, the one with the higher WCAG contrast
+  // (ties go to ink). The three are css colour strings as the page reads them (or [r, g, b] triples).
+  function rolSignInk(fill, ink, surface) {
+    const rgb = (c) => (Array.isArray(c) ? c : API.lut.parseColor(c));
+    const f = rgb(fill);
+    if (f === null) throw new RangeError("E.role.signInk: not a colour: " + String(fill));
+    return API.lut.contrast(rgb(ink), f) >= API.lut.contrast(rgb(surface), f) ? "ink" : "surface";
+  }
+
   API.role = Object.freeze({
     ROLES: rolRoles,
     GLYPHS: rolGlyphs,
@@ -4525,6 +4725,14 @@
     keyEntries: rolKeyEntries,
     occlusion: rolOcclusion,
     unionSpans: rolUnionSpans,
+    REFERENCE: rolReference,
+    referenceFamily: rolReferenceFamily,
+    REASONS: rolReasons,
+    inventory: rolInventory,
+    SIGN: rolSign,
+    signShape: rolSignShape,
+    signCoverage: rolSignCoverage,
+    signInk: rolSignInk,
   });
 
   // == §13-store ==

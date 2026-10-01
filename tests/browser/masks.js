@@ -22,7 +22,7 @@ const LIMITS = Object.freeze({
   textWidth: 240,
   // a label plate (a tag or a text's reserved box)
   plateHeight: 20,
-  plateWidth: 160,
+  plateWidth: 256,
   // a cap or a hairline drawn as a bar: at most this thick
   bar: 2,
   // a marker (a cross, a divergence's dot, a swing's triangle)

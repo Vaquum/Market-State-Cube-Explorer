@@ -50,11 +50,13 @@ function marketColours(page) {
     const probe = document.createElement("span");
     document.getElementById("origo-lens").append(probe);
     const out = {};
-    for (const name of ["poc", "evidence"]) {
+    for (const name of ["poc"]) {
       probe.style.color = `var(--ol-${name})`;
       out[name] = getComputedStyle(probe).color;
     }
     probe.remove();
+    // the evidence violet is retired (no token reads it any more): its two hexes are written out so that nothing can bring it back unseen
+    out.evidence = matchMedia("(prefers-color-scheme: dark)").matches ? "rgb(180, 161, 223)" : "rgb(118, 100, 169)";
     out.volume = matchMedia("(prefers-color-scheme: dark)").matches ? "rgb(128, 204, 161)" : "rgb(57, 132, 93)";
     return out;
   });

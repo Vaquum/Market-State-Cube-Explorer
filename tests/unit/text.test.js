@@ -220,6 +220,14 @@ const D11 = {
   "ui.apply": "Apply",
   "ui.notOffered": "Not offered for {measure}",
   "ui.appearance": "Appearance {id} (provisional, not human-validated)",
+  "ui.summaryTitle": "View summary",
+  "ui.summaryIntro": "What a screenshot of this view should say about its colours and lengths. It describes the view as drawn now: it is not an export and not a snapshot of the data.",
+  "ui.summaryCopy": "Copy summary",
+  "ui.summaryView": "View",
+  "ui.summaryAxes": "Axes",
+  "ui.summaryProfile": "Profile tracks",
+  "ui.summaryVintage": "Original vintage",
+  "ui.summaryLimit": "The numbers are the cube's as available now and can differ from the data as it stood when first seen: original vintages are not recorded. No hosted export and no immutable data snapshot is offered; the view code reopens this view and reads the cube again.",
   "migrate.volume": "was the full-cell rate ranked over the drawn block; now observed Amount on a Value scale, Explore per resolution context",
   "migrate.trades": "same as Volume; Trade size is Value with a cell of no trades undefined",
   "migrate.size": "same as Volume; Trade size is Value with a cell of no trades undefined",
@@ -350,7 +358,7 @@ function loadWithConsole(fake) {
 test("every key of D.11 exists in E.text with the exact English, and E.text has no other key", () => {
   for (const [key, text] of Object.entries(D11)) assert.equal(flat[key], text, key);
   assert.deepEqual(Object.keys(flat).sort(), Object.keys(D11).sort(), "the key sets are the same (no flat alias, no stray key)");
-  assert.equal(Object.keys(D11).length, 203, "D.11 lists 178 keys; DR-31 voids one and DR-41 adds 26 (24 role strings, key.zeroTick, key.open)");
+  assert.equal(Object.keys(D11).length, 211, "D.11 lists 178 keys; DR-31 voids one, DR-41 adds 26 (24 role strings, key.zeroTick, key.open) and PRD-0002 S3 adds 8 (the view summary)");
 });
 
 test("the keys are the nested names of D.11: groups, no flat aliases, functions beside the groups", () => {

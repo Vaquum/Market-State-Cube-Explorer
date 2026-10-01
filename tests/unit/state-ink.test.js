@@ -26,12 +26,12 @@ function roles() {
   return out;
 }
 
-test("the stroke-role table: the state roles draw in the neutral inks, and only the profile's POC roles are gold", () => {
+test("the stroke-role table: the state roles draw in the neutral inks, and only the profile's references (POC, Buy POC, value area, untested rays) are gold", () => {
   const table = roles();
-  assert.deepEqual([...table.keys()], ["empty", "open", "partial", "provisional", "moved", "detail", "selection", "hover", "inspect", "unavailable", "poc", "bpoc", "pending"]);
+  assert.deepEqual([...table.keys()], ["empty", "open", "partial", "provisional", "moved", "detail", "selection", "hover", "inspect", "unavailable", "poc", "sign", "buyinset", "untested", "va", "bpoc", "pending"]);
   for (const [name, body] of table) {
     const used = [...body.matchAll(/colors\.(\w+)/g)].map((m) => m[1]);
-    if (name === "poc" || name === "bpoc") {
+    if (["poc", "bpoc", "va", "untested"].includes(name)) {
       assert.ok(used.includes("poc"), `${name} is the gold profile role`);
       continue;
     }
@@ -49,8 +49,9 @@ test("the retired Volume green is gone from the stylesheet, the markup and the p
   for (const [name, text] of [["css", CSS], ["html", HTML], ["js", JS]]) assert.ok(!/--ol-volume\b/.test(text), `${name} still names --ol-volume`);
 });
 
-test("the evidence violet is used by the evidence's own marks and rules only", () => {
-  const uses = [...JS.matchAll(/colors\.evidence/g)].length;
-  assert.ok(uses >= 3 && uses <= 8, `${uses} uses of colors.evidence`);
-  for (const line of JS.split("\n").filter((l) => l.includes("colors.evidence"))) assert.ok(!/loading|coarse|unavailable|pending|provisional/.test(line), line.trim());
+test("the evidence violet is retired: nothing reads it, and the comparison's neutral is read by the cone and its anchor only", () => {
+  assert.equal([...JS.matchAll(/colors\.evidence/g)].length, 0, "colors.evidence is gone");
+  const lines = JS.split("\n").filter((l) => l.includes("colors.family.compare"));
+  assert.ok(lines.length >= 4 && lines.length <= 12, `${lines.length} uses of the comparison's neutral`);
+  for (const line of lines) assert.ok(!/loading|coarse|unavailable|pending|provisional/.test(line), line.trim());
 });

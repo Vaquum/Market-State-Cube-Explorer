@@ -257,14 +257,26 @@
         >
           <div class="ol-pop-head">
             <span id="ol-lines-title">Lines</span
-            ><button
-              type="button"
-              id="ol-lines-clear"
-              class="ol-action ol-s cursor-interaction"
+            ><span class="ol-pop-actions"
+              ><button
+                type="button"
+                id="ol-lines-showall"
+                class="ol-action ol-s cursor-interaction"
+                title="Show every enabled line again; a temporary focus is never saved"
+                disabled
+              >
+                Show all
+              </button
+              ><button
+                type="button"
+                id="ol-lines-clear"
+                class="ol-action ol-s cursor-interaction"
+              >
+                Clear
+              </button></span
             >
-              Clear
-            </button>
           </div>
+          <p class="ol-lines-summary" id="ol-lines-summary" role="status"></p>
           <section class="ol-family" data-family="profile">
             <button
               type="button"
@@ -334,6 +346,7 @@
             >
               <i class="ol-family-dot" aria-hidden="true"></i
               ><span class="ol-family-name">Session levels</span
+              ><span class="ol-family-kin">price levels</span
               ><span class="ol-family-count ol-num"></span>
               <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
@@ -360,6 +373,7 @@
             >
               <i class="ol-family-dot" aria-hidden="true"></i
               ><span class="ol-family-name">Structure</span
+              ><span class="ol-family-kin">price levels</span
               ><span class="ol-family-count ol-num"></span>
               <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
@@ -566,6 +580,22 @@
               <circle cx="7" cy="7" r="4.2" />
               <path d="m10.2 10.2 3.3 3.3" /></svg
             ><span class="ol-label">Lens</span>
+          </button
+          ><button
+            type="button"
+            id="ol-inspect-tool"
+            class="ol-icon-button cursor-interaction"
+            data-tool="inspect"
+            aria-pressed="false"
+            aria-label="Inspect"
+            aria-keyshortcuts="E"
+            data-keys="E"
+            data-hint="Move a cursor through cells, rows, columns and references with the keys; Enter opens a record's detail"
+          >
+            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2.5 5.5v-3h3M10.5 2.5h3v3M13.5 10.5v3h-3M5.5 13.5h-3v-3" />
+              <circle cx="8" cy="8" r="1.6" /></svg
+            ><span class="ol-label">Inspect</span>
           </button>
         </div>
       </div>
@@ -902,6 +932,16 @@
             tabindex="-1"
             hidden
           ></div>
+          <button
+            type="button"
+            class="ol-legend ol-legend-chip ol-focus-chip cursor-interaction"
+            id="ol-focus-chip"
+            title="A temporary focus on one reference line or family; nothing is saved. Click to show all."
+            aria-label="Focus"
+            hidden
+          >
+            <span id="ol-focus-chip-text"></span>
+          </button>
         </div>
         <div class="ol-marks" role="group" aria-label="Overlays">
           <label title="Each column's point of control, and the profile's (P and B) · Shift+P"
@@ -927,7 +967,7 @@
             ><canvas class="ol-ramp" id="ol-ramp" width="64" height="8" aria-hidden="true"></canvas
             ><i class="ol-legend-marker" id="ol-legend-marker" data-coordinate="" data-readout="" aria-hidden="true" hidden></i
           ></span>
-          <span id="ol-legend-text" class="ol-num">USDT per cell · log</span>
+          <span id="ol-legend-text" class="ol-num"></span>
         </button>
         <span id="ol-legend-marker-text" class="ol-sr" hidden></span>
         <div data-temporary="popover"
@@ -1065,6 +1105,15 @@
           ></span
           ><button
             type="button"
+            id="ol-lens-inspect"
+            class="ol-s cursor-interaction"
+            aria-label="Inspect the lens"
+            data-hint="Hold the lens still and move a cursor through its finer cells with the keys (E)"
+          >
+            Inspect
+          </button
+          ><button
+            type="button"
             id="ol-lens-pin"
             class="ol-s cursor-interaction"
             aria-label="Pin lens"
@@ -1073,6 +1122,50 @@
           >
             Pin
           </button>
+        </div>
+        <div
+          class="ol-inspect"
+          id="ol-inspect"
+          data-temporary="inspect"
+          role="group"
+          aria-label="Inspection"
+          aria-describedby="ol-inspect-position"
+          tabindex="0"
+          hidden
+        >
+          <div class="ol-inspect-head">
+            <div class="ol-seg" role="tablist" aria-label="What to inspect" id="ol-inspect-surfaces">
+              <button type="button" role="tab" data-surface="cells" aria-selected="true" class="cursor-interaction">Cells</button
+              ><button type="button" role="tab" data-surface="rows" aria-selected="false" tabindex="-1" class="cursor-interaction">Rows</button
+              ><button type="button" role="tab" data-surface="columns" aria-selected="false" tabindex="-1" class="cursor-interaction">Columns</button
+              ><button type="button" role="tab" data-surface="references" aria-selected="false" tabindex="-1" class="cursor-interaction">References</button
+              ><button type="button" role="tab" data-surface="lens" aria-selected="false" tabindex="-1" class="cursor-interaction">Lens</button>
+            </div>
+            <button type="button" id="ol-inspect-exit" class="ol-action ol-s cursor-interaction" title="Leave Inspect (Escape)">Exit</button>
+          </div>
+          <div class="ol-inspect-position" id="ol-inspect-position"></div>
+          <div class="ol-inspect-readout" id="ol-inspect-readout"></div>
+          <div class="ol-inspect-boundary" id="ol-inspect-boundary"></div>
+          <div class="ol-inspect-steps" role="group" aria-label="Move the cursor">
+            <button type="button" data-step="left" class="ol-icon-button cursor-interaction" aria-label="Previous time cell" title="Previous time cell (Left)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg></button
+            ><button type="button" data-step="right" class="ol-icon-button cursor-interaction" aria-label="Next time cell" title="Next time cell (Right)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg></button
+            ><button type="button" data-step="up" class="ol-icon-button cursor-interaction" aria-label="Next higher price row" title="Next higher price row (Up)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 10 5-5 5 5" /></svg></button
+            ><button type="button" data-step="down" class="ol-icon-button cursor-interaction" aria-label="Next lower price row" title="Next lower price row (Down)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 6 5 5 5-5" /></svg></button
+            ><select id="ol-inspect-reference" aria-label="Reference" title="Choose a reference"></select>
+          </div>
+          <span class="ol-sr" id="ol-inspect-live" role="status" aria-live="polite"></span>
+          <div class="ol-inspect-chooser" id="ol-inspect-chooser" role="dialog" aria-label="References at the tap" hidden></div>
+          <div class="ol-inspect-detail" id="ol-inspect-detail" role="dialog" aria-labelledby="ol-inspect-detail-title" hidden>
+            <div class="ol-pop-head">
+              <span id="ol-inspect-detail-title"></span
+              ><button type="button" id="ol-inspect-detail-close" class="ol-action ol-s cursor-interaction">Close</button>
+            </div>
+            <div id="ol-inspect-detail-body"></div>
+          </div>
         </div>
         <button
           type="button"
@@ -1176,7 +1269,7 @@
                 </button>
               </div>
             </div>
-            <table class="ol-table">
+            <table class="ol-table" id="ol-table">
               <thead>
                 <tr>
                   <th>
@@ -1356,6 +1449,23 @@
               </button>
             </div>
             <div id="ol-query-ready" class="ol-muted"></div>
+            <section class="ol-summary" id="ol-summary" aria-labelledby="ol-summary-title">
+              <div class="ol-summary-head">
+                <h3 id="ol-summary-title">View summary</h3
+                ><button
+                  type="button"
+                  id="ol-copy-summary"
+                  class="ol-action ol-s cursor-interaction"
+                  title="Copy this summary as text"
+                >
+                  Copy summary
+                </button>
+              </div>
+              <p class="ol-muted" id="ol-summary-intro">
+                What a screenshot of this view should say about its colours and lengths. It describes the view as drawn now: it is not an export and not a snapshot of the data.
+              </p>
+              <div id="ol-summary-body"></div>
+            </section>
           </div>
         </div>
       </div>
@@ -1394,12 +1504,21 @@
             ><i class="ol-data-key ol-glyph" data-stroke-role="inspect" aria-hidden="true"></i
             >Inspect focus</span
           ><span id="ol-keys-scale" class="ol-keys-scale"></span
+          ><span id="ol-key-buyinset" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="buyinset" aria-hidden="true"></i>Taker-buy volume (inset)</span
+          ><span id="ol-key-sign" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="sign" aria-hidden="true"></i
+            ><span id="ol-key-sign-text">+ above, − below, ring at the midpoint</span></span
           ><span id="ol-key-poc"
             ><i class="ol-data-key ol-glyph" data-stroke-role="poc" aria-hidden="true"></i>P · total POC</span
           ><span id="ol-key-bpoc"
             ><i class="ol-data-key ol-glyph" data-stroke-role="bpoc" aria-hidden="true"></i>B · buy POC</span
-          ><span id="ol-key-area" hidden>H/L · composite 70%</span
-          ><span id="ol-ray-count" hidden></span>
+          ><span id="ol-key-area" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="va" aria-hidden="true"></i>H/L · VAH and VAL, 70% value area</span
+          ><span id="ol-ray-count" hidden
+            ><i class="ol-data-key ol-glyph" data-stroke-role="untested" aria-hidden="true"></i
+            ><span id="ol-ray-count-text"></span></span
+          ><span id="ol-keys-ref" class="ol-keys-scale ol-keys-ref" aria-label="References"></span>
         </div>
         <span class="ol-gesture" id="ol-gesture"
           >Drag to pan · wheel to zoom · click to anchor</span
@@ -1773,8 +1892,8 @@
           <h3 id="ol-keys-tools">Tools</h3>
           <dl>
             <div>
-              <dt>Pan, select, lens</dt>
-              <dd><kbd>V</kbd> <kbd>S</kbd> <kbd>L</kbd></dd>
+              <dt>Pan, select, lens, inspect</dt>
+              <dd><kbd>V</kbd> <kbd>S</kbd> <kbd>L</kbd> <kbd>E</kbd></dd>
             </div>
             <div>
               <dt>Lens depth</dt>
@@ -1789,8 +1908,37 @@
               <dd><kbd>Enter</kbd></dd>
             </div>
             <div>
-              <dt>Close; clear the selection; then back to pan</dt>
+              <dt>Close; close an inspected record; leave Inspect; clear the selection; then back to pan</dt>
               <dd><kbd>Esc</kbd></dd>
+            </div>
+          </dl>
+        </section>
+        <section aria-labelledby="ol-keys-inspect">
+          <h3 id="ol-keys-inspect">Inspect (E)</h3>
+          <dl>
+            <div>
+              <dt>Cells and lens: previous or next time cell; next higher or lower price row</dt>
+              <dd><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dd>
+            </div>
+            <div>
+              <dt>Rows: next higher or lower row. Columns: previous or next column</dt>
+              <dd><kbd>↑</kbd> <kbd>↓</kbd> and <kbd>←</kbd> <kbd>→</kbd></dd>
+            </div>
+            <div>
+              <dt>References: previous or next reference in the list</dt>
+              <dd><kbd>↑</kbd> <kbd>↓</kbd></dd>
+            </div>
+            <div>
+              <dt>First or last visible item</dt>
+              <dd><kbd>Home</kbd> <kbd>End</kbd></dd>
+            </div>
+            <div>
+              <dt>Open or close the record's detail (nothing else: no anchor, Pin or Play)</dt>
+              <dd><kbd>Enter</kbd> or <kbd>Space</kbd></dd>
+            </div>
+            <div>
+              <dt>Read a point (a tap changes nothing but the cursor)</dt>
+              <dd>Click or tap</dd>
             </div>
           </dl>
         </section>

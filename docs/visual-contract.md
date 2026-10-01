@@ -736,13 +736,14 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B44 | `tests/browser/inspect.spec.js` | the Inspect tool: its own cursor, the keys of each surface, edges, Enter/Space/Escape order, the cursor through a pan and a change of level | S3 |
 | B45 | `tests/browser/reference-regression.spec.js` | the original build and this one offer the same Lines keys in the same families and give each the same value | S3 |
 | B46 | `tests/browser/inspect-lens.spec.js` | Inspect on the lens: the finer record against the reference's exact sum, the lens held still, Pin unchanged, the Rows strip's pixels unchanged | S3 |
-| B47 | `tests/browser/inspect-touch.spec.js` | coarse-pointer taps and holds with Inspect, the chooser for several references, and every DOM control a 44 px target | S3 |
+| B47 | `tests/browser/inspect-touch.spec.js` | coarse-pointer taps and holds with Inspect, the chooser for several references, every DOM control a 44 px target, and the large-target steppers reaching every level of the lattice (n = 0 to 20, m = 0 to 9) | S3 |
 | B48 | `tests/browser/help-motion.spec.js` | the key list, the tool buttons' keys, E in a text field, and reduced motion changed during the session in the canvas and the stylesheet | S3 |
 | B49 | `tests/browser/keyboard-matrix.spec.js` | every documented shortcut against the original's, each holder of the focus consuming its own keys, Enter and Space with a lens, a replay and Inspect | S3 |
 | B50 | `tests/browser/sign-marks.spec.js` | a signed measure draws one mark for each signed cell of 12 px or more and none below, the mark sits at the cell's centre over an unchanged fill and is measured as occlusion, and its key appears only with it | S3 |
 | B51 | `tests/browser/operator-cases.spec.js` | each data case of the operator protocol opened on the real page: what Inspect says about the named cells is what the predetermined answer says; the scale cases read from the page's own mapping ids | S3 |
 | B52 | `tests/browser/persistence-final.spec.js` | #46's portable state in fresh contexts after the final changes: an approximate Rows mapping of a rectangle from a link and from a code, a replay edge with an external override and the model status, a link on a cube whose history changed, a window view whose scale was fitted at another level (the notice names both), and the temporary Focus, Show all and Inspect carried by neither the link nor the code | S3 |
 | B53 | `tests/browser/view-summary.spec.js` | the Query tab's summary on a view with Rows, a lens, an Efficiency pane, a replay edge and a held scale: every item the PRD lists is there, equal to the popovers' own values, and the copy is the same words | S3 |
+| B54 | `tests/browser/focus-order.spec.js` | screen-reader and focus-order evidence: the accessibility tree of the navigator and the table, the announcement as terms and values (not run together), the surfaces as a native tablist with its arrows, Tab and Shift+Tab in document order, one tab stop in the table, and the modal's focus and its return | S3 |
 
 ## 10. Migration status per slice
 

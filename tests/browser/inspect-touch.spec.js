@@ -8,6 +8,7 @@
 //   3. a tap with several references within a finger's reach moves no cursor and shows a chooser, a 44 px row for each; choosing one reads it;
 //   4. every DOM control is a 44 px target each way; the resolution plane's buttons and the canvas's own marks are the documented dense visuals, each with a
 //      large-target route (the steppers and the plane's keys; the navigator, its steppers, its chooser and its tabs), and the routes are 44 px too.
+//   5. the large-target resolution steppers, tapped, reach every level of the lattice, n = 0 to 20 and m = 0 to 9 (docs/data-and-semantics.md), and make no anchor.
 // Oracles (none is the code under test): the address and history read back from the page, the page's own media queries, the geometry of the elements.
 const { test: base, expect } = require("./fixtures.js");
 const paneCanvas = require("./pane-canvas.js");
@@ -92,6 +93,45 @@ test.describe("B47 Inspect and touch", () => {
     await expect(page.locator("#ol-inspect")).toHaveAttribute("data-surface", "references");
     expect(await page.locator("#ol-inspect-position").textContent()).toContain(name.trim());
     expect(await state(page), "choosing changed nothing the page keeps").toEqual(before);
+  });
+
+  test("the large-target resolution steppers reach every level of the lattice, n = 0..20 and m = 0..9, with 44 px taps and nothing else changed", async ({ page, probe, fakeFor }) => {
+    const fake = await fakeFor("standard");
+    await open(page, fake, probe, "#w=7d&vis=2&mode=volume");
+    await page.locator("#ol-res").click();
+    const tap = async (selector) => {
+      const b = await page.locator(selector).boundingBox();
+      expect(Math.min(b.width, b.height), `${selector} is a 44 px target`).toBeGreaterThanOrEqual(44);
+      await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+      await page.waitForTimeout(120);
+    };
+    const level = async () => ({ n: Number((await page.locator("#ol-n").textContent()).replace(/\D/g, "")), m: Number((await page.locator("#ol-m").textContent()).replace(/\D/g, "")) });
+    // time: all the way down to the finest column, then all the way up to the coarsest; the lattice of the page's documentation (docs/data-and-semantics.md)
+    const seen = { n: new Set(), m: new Set() };
+    const walk = async (axis, down, up) => {
+      seen[axis].add((await level())[axis]);
+      for (let i = 0; i < 40 && (await page.locator(down).isEnabled()); i++) {
+        await tap(down);
+        seen[axis].add((await level())[axis]);
+      }
+      expect(await page.locator(down).isDisabled(), `${down} ends at the lattice's edge`).toBe(true);
+      for (let i = 0; i < 40 && (await page.locator(up).isEnabled()); i++) {
+        await tap(up);
+        seen[axis].add((await level())[axis]);
+      }
+      expect(await page.locator(up).isDisabled(), `${up} ends at the lattice's other edge`).toBe(true);
+    };
+    const before = await state(page);
+    await walk("n", "#ol-tminus", "#ol-tplus");
+    await walk("m", "#ol-pminus", "#ol-pplus");
+    expect([...seen.n].sort((a, b) => a - b), "every column level, with no gap").toEqual(Array.from({ length: 21 }, (_, k) => k));
+    expect([...seen.m].sort((a, b) => a - b), "every row level, with no gap").toEqual(Array.from({ length: 10 }, (_, k) => k));
+    const after = await state(page);
+    expect(after.cases, "no anchor was made by any of the taps").toBe(before.cases);
+    // the keys of the plane do the same work (the other large-target route) and a level the plane shows is the level the page is at
+    const here = await level();
+    expect(here.n).toBe(20);
+    expect(here.m).toBe(9);
   });
 
   test("every DOM control is a 44 px target each way; the plane and the canvas's marks are the dense visuals, with large-target routes that are 44 px too", async ({ page, probe, fakeFor }) => {

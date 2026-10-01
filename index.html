@@ -21095,6 +21095,16 @@
     const list = inspectReferences();
     return list.find((e) => e.id === inspect.ref) ?? list[0] ?? null;
   }
+  // The words a screen reader gets for a record the tooltip builders made: the heading and the sub-heading, then each term with its definition
+  // ("Row: 7.52 M USDT"), then the notes, each ended by a full stop, so that nothing runs into the next (a node's textContent joined a term to its value).
+  function inspectSpoken(root) {
+    const parts = [];
+    for (const node of root.children) {
+      if (node.tagName === "DL") for (const term of node.querySelectorAll("dt")) parts.push(`${term.textContent.trim()}: ${term.nextElementSibling?.textContent.trim() ?? ""}`);
+      else parts.push(node.textContent.trim());
+    }
+    return parts.filter(Boolean).join(". ");
+  }
   // The tooltip's own builders write the readout of the cursor into the tip, and the navigator shows a copy of what they wrote.
   function inspectRender(announce, redraw = true) {
     if (!inspect.on) return;
@@ -21160,7 +21170,7 @@
       } else tooltip(hover, { redraw: false });
       inspect.forced = was;
       readout.replaceChildren(...[...tip.childNodes].map((n) => n.cloneNode(true)));
-      summary = `${position}. ${tip.textContent}`;
+      summary = `${position}. ${inspectSpoken(tip)}`;
     } else if (state === "ready" && s === "lens") {
       const shown = inspectLensTip(tip, w);
       readout.replaceChildren(...[...tip.childNodes].map((n) => n.cloneNode(true)));
@@ -21551,7 +21561,7 @@
       if (b && !b.disabled) inspectSurface(b.dataset.surface);
     });
     el("inspect-surfaces").addEventListener("keydown", (e) => {
-      const tabs = qsa("#ol-inspect-surfaces [data-surface]:not(:disabled)"),
+      const tabs = [...qsa("#ol-inspect-surfaces [data-surface]:not(:disabled)")],
         at = tabs.findIndex((b) => b === document.activeElement);
       if (at < 0 || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
       e.preventDefault();

@@ -124,7 +124,10 @@ async function twoToneOver(page, fake, probe, pane, { address, select, prepare =
       const [px, py] = s.points[k];
       const inPlot = px >= plot[0] && px <= plot[0] + plot[2] && py >= plot[1] && py <= plot[1] + plot[3];
       const want = inPlot ? blend(blend(wasRow[k], surface, coverage(s.c, ring.casing.width, j, s.axis)), ink, coverage(s.c, ring.core.width, j, s.axis)) : wasRow[k];
-      for (let ch = 0; ch < 3; ch++) if (Math.abs(nowRow[k][ch] - want[ch]) > 2) problems.push(`${s.axis} edge ${s.c} pixel ${j} ch ${ch}: ${nowRow[k][ch]} against ${want[ch].toFixed(1)} from the geometry`);
+      // (4 of 255, as the other pixel tests allow: the selection's frame is a path, rasterised with its coverage quantised, so a pixel at a fractional edge is within a few
+      // levels of the exact blend; a coverage wrong by a sixteenth would move it by 12 or more. A cell the selection's edge cuts used to be painted twice there and its
+      // stacked edge pixel put such a section among those left out above; each pixel is painted once now and the section is judged.)
+      for (let ch = 0; ch < 3; ch++) if (Math.abs(nowRow[k][ch] - want[ch]) > 4) problems.push(`${s.axis} edge ${s.c} pixel ${j} ch ${ch}: ${nowRow[k][ch]} against ${want[ch].toFixed(1)} from the geometry`);
     });
     // (2) a component has 3:1 against the background under it (the pixel at the centre line, as it was without the selection)
     const under = wasRow[3];

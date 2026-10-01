@@ -2297,18 +2297,28 @@
     grid();
     if (under) paintBands(under, sc.rows);
     // The whole block's cells are drawn as they are, selection or not: a selection is a boundary, never a fade.
-    // The marks are counted once: in the whole block's pass when there is a selection (its cells are painted again inside it), else in the one pass.
-    markTally = true;
-    if (S.selection) {
-      if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u, sc.cellsFull);
-      else for (const z of full.cells) fillCell(z, full, u, sc.cellsFull);
-    }
-    markTally = !S.selection;
-    ctx.save();
+    // The marks are counted once: in the whole block's pass when there is a selection (the selection's own pass does not count them again), else in the one pass.
+    // Each pixel is painted by ONE pass: the block's outside the selection, the selection's inside it. A cell drawn as an outline alone (Geometry, an unsigned zero) has
+    // no backing to cover a second pass, and its antialiased edge pixels would stack their coverage and read bolder inside the selection than they do outside it.
     const x1 = G.X(b[0]),
       x2 = G.X(b[1]),
       y1 = G.Y(b[3]),
       y2 = G.Y(b[2]);
+    markTally = true;
+    if (S.selection) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(G.x, G.y, G.w, G.h);
+      ctx.rect(x1, y1, x2 - x1, y2 - y1);
+      ctx.clip("evenodd");
+      if (moving) paintMotion(null, mv.full, mv, mv.fullBounds || b, u, sc.cellsFull);
+      else for (const z of full.cells) fillCell(z, full, u, sc.cellsFull);
+      ctx.restore();
+      // the canvas's colours went back with the state: what the pass remembered of them is forgotten, so the next one sets its own
+      passFrame = null;
+    }
+    markTally = !S.selection;
+    ctx.save();
     ctx.beginPath();
     ctx.rect(x1, y1, x2 - x1, y2 - y1);
     ctx.clip();
@@ -4624,8 +4634,11 @@
     let readout = null;
     // A line or its tag under the pointer names the line; a clock line or a
     // CME gap, its event.
-    const onLine = inspect.forced === false ? null : (inspect.forced ?? (last && lineHits.length && inPlot(p) ? lineAt(p) : null)),
-      onClock = !onLine && inspect.forced !== false && last && clockHits.length && inPlot(p) ? clockAt(p) : null;
+    const hit = inspect.forced === false ? null : (inspect.forced ?? (last && lineHits.length && inPlot(p) ? lineAt(p) : null)),
+      // a CME gap chosen as a reference is read as the gap it is, with the details of its own
+      onGap = hit?.gap ? { gap: hit.gap } : null,
+      onLine = onGap ? null : hit,
+      onClock = onGap ?? (!onLine && inspect.forced !== false && last && clockHits.length && inPlot(p) ? clockAt(p) : null);
     hover.line = onLine?.id || null;
     // Cleared first, so a branch that names no readout (a line, a clock event, a profile row, an unavailable
     // cell) leaves none behind; a branch that does (the pane sections name theirs through paneTipFields,
@@ -4834,8 +4847,13 @@
     const out = [],
       cut = activeCutoff(),
       items = S.lines.length ? lineItems(cut) : [],
-      // a curve is named by its own name and, where its tag tells it apart from its siblings (Upper, Middle, Lower), the tag
-      curveName = (c) => (c.name && c.tag && c.tag !== c.name && !String(c.name).includes(c.tag) ? `${c.name} · ${c.tag}` : c.name || c.tag),
+      // a curve is named by its own name and, where its tag tells it apart from its siblings (Upper, Middle, Lower), the tag; a session's VWAP by its day
+      curveName = (c) =>
+        c.key === "svwap" && Number.isFinite(c.anchor)
+          ? `${c.name} · ${day(c.anchor)}`
+          : c.name && c.tag && c.tag !== c.name && !String(c.name).includes(c.tag)
+            ? `${c.name} · ${c.tag}`
+            : c.name || c.tag,
       push = (l, curve) => out.push({ id: l.id, key: l.key, name: curve ? curveName(l) : lineItemName(l), hit: { key: l.key, id: l.id, item: l, colour: lineStyle(l.family || "vwap").colour, ...(curve ? { curve: { points: l.r.points } } : {}) }, at: curve ? null : l.at, kind: curve ? "curve" : l.kind });
     for (const l of items) if (!l.eq) push(l, false);
     for (const c of items.curves ?? []) push(c, true);
@@ -4848,6 +4866,15 @@
     for (const c of items.crosses ?? []) {
       const id = `gdcross|${c.x.i}`;
       out.push({ id, key: c.key, name: `${c.golden ? "Golden cross" : "Death cross"} · ${when(c.t)}`, hit: { key: c.key, id, item: { kind: "cross", c }, colour: lineStyle("average").colour }, at: c.v / PR, kind: "cross" });
+    }
+    // the CME spot gaps are plotted records too, each with the hover details of its own
+    if (S.lines.includes("cme") && PACK.live) {
+      const bars = barSeries(6);
+      if (bars.state === "ready")
+        for (const g of cmeGaps(bars)) {
+          const id = `cmegap|${g.open}`;
+          out.push({ id, key: "cme", name: `CME gap · ${when(g.open)}`, hit: { key: "cme", id, gap: g, colour: lineStyle("clock").colour }, at: (g.hi + g.lo) / 2 / PR, kind: "gap" });
+        }
     }
     for (const kind of S.lines.filter((k) => CLOCK[k])) out.push({ id: "clock|" + kind, key: kind, name: CLOCK[kind].name, hit: null, at: null, kind: "clock" });
     if (S.level !== null) out.push({ id: "level", key: "level", name: "Level", hit: { key: "level", id: "level", colour: colors.ink }, at: S.level, kind: "level" });
@@ -5291,6 +5318,14 @@
         for (let i = 0; i < xs.length && !near; i++) if (Math.abs(xs[i] - p.x) <= INSPECT_REACH && Math.abs(ys[i] - p.y) <= INSPECT_REACH) near = true;
       } else if (h.y !== undefined && p.x >= h.xa - INSPECT_REACH && p.x <= h.xb + INSPECT_REACH && Math.abs(h.y - p.y) <= INSPECT_REACH) near = true;
       if (near) add(id);
+    }
+    // a CME gap is found by its outline, not its inside: a tap inside a wide gap is a reading of the cell it is on
+    for (const h of clockHits) {
+      if (!h.gap) continue;
+      const [x0, y0, x1, y1] = h.box,
+        inside = p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1,
+        reach = inside ? Math.min(p.x - x0, x1 - p.x, p.y - y0, y1 - p.y) : dist(h.box);
+      if (reach <= INSPECT_REACH) add(`cmegap|${h.gap.open}`);
     }
     if (S.level !== null) {
       const y = G.Y(S.level);
@@ -16375,7 +16410,9 @@
     if (motion.sources[src.id]) return null;
     return {
       key: ["motion", live.generation, src.id].join("|"),
-      path: `/cube/tile?n=${src.n}&m=${src.m}&b0=${src.b0}&b1=${src.b1}&motion=1`,
+      // The tile's end as the cube reported it is the data cutoff when the tile reaches it, and a cutoff is not a whole base column: the cube is asked for the whole
+      // column that holds it, the same span the tile itself was read over (a fraction is no b1 to the cube: "b1 must be an integer").
+      path: `/cube/tile?n=${src.n}&m=${src.m}&b0=${src.b0}&b1=${Math.ceil(src.b1)}&motion=1`,
       decode: async (body) => ({ part: await unpack(body.block, "motion:" + src.id), body }),
       apply: ({ part, body }) => {
         // A tile let go meanwhile has no use for its path and dwell.

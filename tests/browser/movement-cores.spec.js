@@ -174,6 +174,43 @@ test.describe("B36 the movement stroke is the only carrier of its value, and its
     console.log(`movement cores under a selection: ${same} pixels as they were, ${painted} under the selection's own marks, ${skipped} on cells its edge cuts`);
   });
 
+  // The block's cells are painted outside the selection and the selection's own inside it, so that no pixel is painted twice: an outline alone (Geometry has no backing to cover
+  // a second pass) would stack the coverage of its antialiased edge pixels and read bolder inside a selection than outside it.
+  test("an outline-only mark inside a selection is painted once: its antialiased edge pixels are those it has without the selection", async ({ page, probe, fakeFor, pane }) => {
+    const fake = await fakeFor("micro:paths");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1500, height: 950 });
+    await page.goto(`${fake.url}/#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24750~25500&r=0,0&mode=geometry&vis=2`);
+    await page.locator("#ol-loading").waitFor({ state: "hidden" });
+    await fake.idle({ quietMs: 600, timeoutMs: 20000 });
+    await page.locator("#ol-poc").uncheck({ force: true });
+    await probe.waitForQuiet({ quietMs: 500, timeout: 20000 });
+    const layout = await layoutOf(page),
+      box = await page.locator("#ol-canvas").boundingBox();
+    // the pixels across the top edge of every outline the frame draws (a 1 px stroke on a half pixel: at these coordinates the edge pixels hold fractions of its colour)
+    // (not those within 12 px of the plot's edge, where the selection's own frame and corner ticks are painted over them)
+    const outlines = (await pane.last()).strokeRects.filter(
+      (r) => r.width === 1 && r.alpha === 1 && r.w > 20 && r.h > 20 && r.y > layout[1] + 12 && r.y < layout[1] + layout[3] - 12 && r.x > layout[0] + 12 && r.x + r.w < layout[0] + layout[2] - 12,
+    );
+    expect(outlines.length, "Geometry outlines the occupied cells").toBeGreaterThan(3);
+    const points = outlines.flatMap((r) => [-1, 0, 1].map((k) => [Math.floor(r.x + r.w / 2) + 0.5, Math.floor(r.y) + k + 0.5]));
+    const fractional = outlines.filter((r) => Math.abs(r.y - Math.round(r.y)) > 0.1).length;
+    expect(fractional, "some edges are not on a pixel line: they are the antialiased ones the stacking would show in").toBeGreaterThan(0);
+    const was = await pixels(page, points);
+    // a selection over the whole plot: every outline is inside it
+    await page.keyboard.press("s");
+    await page.mouse.move(box.x + layout[0] + 3, box.y + layout[1] + 3);
+    await page.mouse.down();
+    await page.mouse.move(box.x + layout[0] + layout[2] - 3, box.y + layout[1] + layout[3] - 3, { steps: 8 });
+    await page.mouse.up();
+    await page.mouse.move(box.x + 3, box.y + box.height - 3);
+    await probe.waitForQuiet({ quietMs: 600, timeout: 20000 });
+    const now = await pixels(page, points);
+    points.forEach((p, i) => {
+      for (let ch = 0; ch < 3; ch++) expect(Math.abs(now[i][ch] - was[i][ch]), `the pixel at ${p.map((v) => v.toFixed(1))} channel ${ch}: ${now[i][ch]} inside the selection, ${was[i][ch]} without it`).toBeLessThanOrEqual(2);
+    });
+  });
+
   test("tiny unresolved marks: every cell the price only moved through has its exact readout, and the key counts them all", async ({ page, probe, fakeFor }) => {
     const fake = await fakeFor("micro:paths");
     await page.emulateMedia({ reducedMotion: "reduce" });

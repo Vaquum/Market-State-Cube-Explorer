@@ -105,6 +105,32 @@ test.describe("B47 Inspect and touch", () => {
     expect(chosen.c, "the same column as a tap at that time on a place with no reference").toBe((await where(page)).c);
   });
 
+  // the gap rectangle the plot draws (a 1 px outline at 70%): the one that is tall and wide enough for its middle to be farther than a finger's reach from every edge.
+  // (Each of the two taps below is on a page of its own: the readout a first tap leaves lies where the second would land.)
+  async function openGap(page, fake, probe, pane) {
+    await open(page, fake, probe, "#w=30d&vis=2&lines=cme");
+    const { box } = await plot(page),
+      gap = (await pane.last()).strokeRects.find((r) => r.alpha === 0.7 && r.width === 1 && r.w > 52 && r.h > 100);
+    expect(gap, "a tall gap is drawn on the standard cube's month").toBeTruthy();
+    await page.keyboard.press("e");
+    return { box, gap };
+  }
+  test("a CME gap is found by its outline: a tap on the border reads the gap", async ({ page, probe, fakeFor, pane }) => {
+    const { box, gap } = await openGap(page, await fakeFor("standard"), probe, pane);
+    await page.touchscreen.tap(box.x + gap.x, box.y + gap.y + gap.h / 2);
+    await probe.waitForQuiet({ quietMs: 500, timeout: 30000 });
+    expect((await where(page)).surface, "on its outline: the gap is read").toBe("references");
+    await expect(page.locator("#ol-inspect-readout")).toContainText("Friday close");
+    expect(await page.locator("#ol-inspect-position").textContent()).toMatch(/^CME gap · /);
+  });
+  test("a CME gap is not found by its inside: a tap well inside it reads the cell", async ({ page, probe, fakeFor, pane }) => {
+    const { box, gap } = await openGap(page, await fakeFor("standard"), probe, pane);
+    await page.touchscreen.tap(box.x + gap.x + gap.w / 2, box.y + gap.y + gap.h / 2);
+    await probe.waitForQuiet({ quietMs: 500, timeout: 30000 });
+    expect((await where(page)).surface, "inside the gap, away from its outline: the cell is read").toBe("cells");
+    await expect(page.locator("#ol-inspect-readout")).not.toContainText("Friday close");
+  });
+
   test("the large-target resolution steppers reach every level of the lattice, n = 0..20 and m = 0..9, with 44 px taps and nothing else changed", async ({ page, probe, fakeFor }) => {
     const fake = await fakeFor("standard");
     await open(page, fake, probe, "#w=7d&vis=2&mode=volume");

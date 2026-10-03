@@ -57,30 +57,16 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
       - name: Sync the checkout
         run: rsync -az --delete --exclude .git --exclude .env ./ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/"
-      - name: Write credentials and start
-        env:
-          EXPLORER_AUTH_USER: ${{ secrets.EXPLORER_AUTH_USER }}
-          EXPLORER_AUTH_PASS: ${{ secrets.EXPLORER_AUTH_PASS }}
-        run: |
-          test -n "$EXPLORER_AUTH_USER"
-          test -n "$EXPLORER_AUTH_PASS"
-          printf 'EXPLORER_AUTH_USER=%s\nEXPLORER_AUTH_PASS=%s\n' "$EXPLORER_AUTH_USER" "$EXPLORER_AUTH_PASS" \
-            | ssh "$DEPLOY_USER@$DEPLOY_HOST" "umask 077 && cat > '$DEPLOY_DIR/.env'"
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_DIR' && docker compose up -d --build --remove-orphans && docker compose ps"
+      - name: Start
+        run: ssh "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_DIR' && docker compose up -d --build --remove-orphans && docker compose ps"
       - name: Check the deployed explorer
-        env:
-          EXPLORER_AUTH_USER: ${{ secrets.EXPLORER_AUTH_USER }}
-          EXPLORER_AUTH_PASS: ${{ secrets.EXPLORER_AUTH_PASS }}
         run: |
-          # The credentials travel as one base64 token, never as shell text on the host.
-          token=$(printf '%s:%s' "$EXPLORER_AUTH_USER" "$EXPLORER_AUTH_PASS" | base64 -w0)
-          probe() { ssh "$DEPLOY_USER@$DEPLOY_HOST" "curl -s -o /dev/null -w '%{http_code}' --max-time 120 $1 http://127.0.0.1:8487/ || printf 000"; }
+          probe() { ssh "$DEPLOY_USER@$DEPLOY_HOST" "curl -s -o /dev/null -w '%{http_code}' --max-time 120 http://127.0.0.1:8487/ || printf 000"; }
           code=000
           for attempt in 1 2 3 4 5 6; do
-            code=$(probe "-H 'Authorization: Basic $token'" || printf 000)
+            code=$(probe || printf 000)
             test "$code" = "200" && break
             sleep 10
           done
           test "$code" = "200"
-          test "$(probe "" || printf 000)" = "401"
           ssh "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_DIR' && docker compose ps --format '{{.Name}} {{.Status}}'"

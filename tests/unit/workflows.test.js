@@ -314,8 +314,7 @@ describe("deploy.yml", () => {
     // matter most in the steps it left alone (a spot check, not a byte comparison with the old text).
     const steps = stepsOf(jobsOf(code(deployText)).deploy).map(stepText);
     const named = (title) => steps.find((s) => s.includes(`- name: ${title}`));
-    assert.ok(named("Write credentials and start").includes("docker compose up -d --build --remove-orphans && docker compose ps"));
-    assert.ok(named("Check the deployed explorer").includes('test "$(probe "" || printf 000)" = "401"'));
+    assert.ok(named("Start").includes("docker compose up -d --build --remove-orphans && docker compose ps"));
     assert.ok(named("Check the deployed explorer").includes('test "$code" = "200"'));
     assert.ok(named("Pin the host key").includes("chmod 600 ~/.ssh/known_hosts"));
     assert.ok(named("Validate deploy configuration").includes('test -n "$DEPLOY_KNOWN_HOSTS"'));

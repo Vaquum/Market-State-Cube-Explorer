@@ -16114,7 +16114,7 @@
     requestDraw();
     try {
       // Resolved against the page but without any credentials the page's own URL
-      // may carry; the browser attaches the session's Basic credentials itself.
+      // may carry; the portal login's cookie travels with the request.
       const target = new URL(
         `${want.path}&pack=${encodeURIComponent(PACK.state_token)}&proto=${PROTOCOL}`,
         location.href,

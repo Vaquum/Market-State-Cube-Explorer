@@ -81,7 +81,7 @@ jobs:
       - run: python3 -m py_compile tools/cube_bridge.py tools/market_state_reader.py tools/build.py
       # Only compares: a mismatch fails the job, nothing here rewrites a golden file to make itself pass.
       - run: npm run golden:check
-      - run: printf 'EXPLORER_AUTH_USER=x\nEXPLORER_AUTH_PASS=y\n' > .env && docker compose config -q
+      - run: docker compose config -q
   unit:
     needs: select
     if: ${{ needs.select.outputs.required == 'true' }}

@@ -1,14 +1,13 @@
 # The explorer on the Origo host, beside the market state cube: host network so the cube
 # service is 127.0.0.1:8486; the page is served on 127.0.0.1:8487 only, for a TLS front on
-# the host to proxy to. The cube's result volume is mounted read-only at the path the
-# service returns. Credentials live in .env.
+# the host to proxy to, behind the Vaquum portal login. The cube's result volume is mounted
+# read-only at the path the service returns.
 name: cube-explorer
 services:
   explorer:
     build: .
     image: cube-explorer:latest
     network_mode: host
-    env_file: .env
     volumes:
       - market-state:/opt/origo/market-state:ro
     tmpfs:

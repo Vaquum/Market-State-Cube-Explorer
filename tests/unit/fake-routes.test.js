@@ -359,23 +359,6 @@ describe("the pack, the tiers and the page", () => {
       await f.close();
     }
   });
-
-  it("Basic auth, when configured, guards everything but /healthz", async () => {
-    const f = await startFake({ profile: "mini", auth: { user: "u", pass: "p" } });
-    try {
-      const denied = await get(f, "/");
-      assert.equal(denied.status, 401);
-      assert.equal(denied.text, "Authentication required.");
-      assert.equal(denied.headers.get("www-authenticate"), 'Basic realm="Market State Cube", charset="UTF-8"');
-      assert.equal((await get(f, "/healthz")).status, 200);
-      const wrong = await get(f, "/", { Authorization: `Basic ${Buffer.from("u:x").toString("base64")}` });
-      assert.equal(wrong.status, 401);
-      const ok = await get(f, "/cube/pack?since=&proto=2", { Authorization: `Basic ${Buffer.from("u:p").toString("base64")}` });
-      assert.equal(ok.status, 200);
-    } finally {
-      await f.close();
-    }
-  });
 });
 
 describe("reads: the open column, the last closed column, coverage and summaries", () => {

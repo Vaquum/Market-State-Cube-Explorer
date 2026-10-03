@@ -21603,7 +21603,7 @@
   // A draw that changed what the cursor stands on (the view, the level, the data) reads it again, so a pan or a refresh never leaves a stale readout.
   function inspectSync() {
     if (!inspect.on) return;
-    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", inspectReferences().length, nav.shift].join("|");
+    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", S.mode === "candles" ? [candleVersion, motion.failed.size, candleEdge(), PACK.state_token].join(":") : "", inspectReferences().length, nav.shift].join("|");
     if (sig === inspect.sig) return;
     inspect.sig = sig;
     inspectRender(false, false);

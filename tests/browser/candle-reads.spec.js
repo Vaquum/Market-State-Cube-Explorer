@@ -63,3 +63,10 @@ test("a whole pack replacement preserves the exact replay edge and cannot expose
  await expect.poll(()=>bars(fake).length,{timeout:10000}).toBe(1);await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");await fake.idle();
  expect(+bars(fake)[0].query.b1).toBeCloseTo(100001/56250,9);await expect(row.locator("td").nth(2)).toHaveText("25,375");await expect(row.locator("td").nth(4)).toHaveText("24,875");await expect(row).toContainText("So far");
 });
+
+test("Inspect refreshes a stationary candle cursor when its pending read arrives",async({page,fakeFor})=>{
+ const fake=await fakeFor("micro:bars"),gate=fake.on({route:"/cube/bars"}).gate();
+ await page.goto(fake.url+"/"+view.replace("r=2,0","r=8,0"));await gate.arrived();await page.keyboard.press("e");
+ await expect(page.locator("#ol-inspect-readout")).toContainText("Reading candles");gate.open();
+ await expect(page.locator("#ol-inspect-readout")).toContainText("Open");await expect(page.locator("#ol-tip")).toHaveAttribute("data-open","25000");await expect(page.locator("#ol-tip")).toHaveAttribute("data-high","25375");
+});

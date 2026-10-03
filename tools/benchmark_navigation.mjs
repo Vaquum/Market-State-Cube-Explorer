@@ -423,7 +423,7 @@ async function main() {
   }
   const unexpected = samples.reduce((n, s) => n + s.unexpected, 0);
   if (unexpected) warnings.push(`the fakes logged ${unexpected} unexpected request(s) over all runs (a /cube/ read from a recorded page, a 404, or overlapping reads in one slot); see the samples`);
-  const noFits = samples.filter((s) => s.run === "steady" && s.build === "candidate" && s.fits === null).length;
+  const noFits = samples.filter((s) => s.run === "steady" && s.build === "candidate" && s.fits === null && !s.case.startsWith("candles-")).length;
   if (noFits) warnings.push(`${noFits} steady candidate run(s) had no data-fit-seq attribute (expected for a build that predates the observation surface; the baseline has none)`);
 
   const { json, markdown } = writeReport(

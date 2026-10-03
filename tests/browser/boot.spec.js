@@ -24,7 +24,7 @@
 // Clock note (S's finding): a page clock installed on an idle page restarts performance.now() near 0 and every stamp the page took earlier lies in
 // the future, so the stopped-pill test installs `page.clock` BEFORE navigation.
 //
-// What this does NOT prove: a production host (Basic auth, the bridge itself), browsers other than Chromium 153, real network timing.
+// What this does NOT prove: a production host (the portal login, the bridge itself), browsers other than Chromium 153, real network timing.
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");

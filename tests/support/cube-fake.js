@@ -17,7 +17,6 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const crypto = require("node:crypto");
 const { performance } = require("node:perf_hooks");
 const model = require("./bridge-model.js");
 const wire = require("./wire.js");
@@ -25,8 +24,6 @@ const { resolveProfile, msOfIso, MINUTE_MS, REPO_ROOT } = require("./profiles.js
 
 const { ValueError, CubeChanged, MarketStateError, PROTOCOL, OUTDATED, BAR_LEVELS, MAX_COLUMNS, MAX_TIME_EXPONENT, queryArgs, integer, level, rectangle } = model;
 
-const CHALLENGE = 'Basic realm="Market State Cube", charset="UTF-8"';
-const CREDENTIALS = /^basic +([A-Za-z0-9+/]+={0,2})$/i;
 const VENDOR = new Map([["d3.min.js", "application/javascript"], ["D3-LICENSE", "application/octet-stream"]]);
 
 const floorMinute = (ms) => ms - (((ms % MINUTE_MS) + MINUTE_MS) % MINUTE_MS);
@@ -191,7 +188,7 @@ function emptied(body) {
 
 class FakeCube {
   constructor(opts) {
-    this.opts = { mode: "live", profile: "mini", port: 0, host: "127.0.0.1", control: false, auth: null, quiet: 2, next: 3, pageVersion: "fake-page-1", packsHeld: 16, maxCells: model.MAX_CELLS, ...opts };
+    this.opts = { mode: "live", profile: "mini", port: 0, host: "127.0.0.1", control: false, quiet: 2, next: 3, pageVersion: "fake-page-1", packsHeld: 16, maxCells: model.MAX_CELLS, ...opts };
     if (!["live", "recorded"].includes(this.opts.mode)) throw new RangeError(`mode ${this.opts.mode}: use live or recorded`);
     this.pageRoot = path.resolve(this.opts.pageRoot ?? REPO_ROOT);
     this.entries = [];
@@ -244,16 +241,6 @@ class FakeCube {
     });
     this.port = this.server.address().port;
     this.url = `http://${this.opts.host}:${this.port}`;
-  }
-
-  allows(header) {
-    const { auth } = this.opts;
-    if (!auth) return true;
-    const match = CREDENTIALS.exec(header || "");
-    if (!match || match[1].length % 4) return false;
-    const given = Buffer.from(match[1], "base64");
-    const expected = Buffer.from(`${auth.user}:${auth.pass}`);
-    return given.length === expected.length && crypto.timingSafeEqual(given, expected);
   }
 
   async handle(req, res) {
@@ -325,12 +312,11 @@ class FakeCube {
     send(answered.status, answered.kind, answered.body, answered.headers);
   }
 
-  // The bridge's Handler.do_GET: order is healthz, auth, parse, proto check for /cube/*, route; errors map to 400 / 409 / 502.
+  // The bridge's Handler.do_GET: order is healthz, parse, proto check for /cube/*, route; errors map to 400 / 409 / 502.
   answer(req, pathname, args, entry) {
     const text = (status, body, headers) => ({ status, kind: "text/plain", body, headers });
     const json = (body, status = 200) => ({ status, json: body });
     if (pathname === "/healthz") return text(200, "ok");
-    if (!this.allows(req.headers.authorization)) return text(401, "Authentication required.", { "WWW-Authenticate": CHALLENGE });
     try {
       if (pathname.startsWith("/cube/") && this.opts.mode === "recorded") {
         entry.unexpected = `${pathname} requested from a recorded page`;

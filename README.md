@@ -65,7 +65,7 @@ Keys work anywhere on the page except in text fields, and every control's toolti
 
 ## Live cube data
 
-On the Origo host the explorer runs beside the market state cube ([PRD-0022](https://github.com/Vaquum/Origo/issues/462)) and reads it live. The cube's query service answers with paths to Arrow files on its own volume, so `tools/cube_bridge.py` runs where that volume is mounted: it asks the service for cells, reads the files through the cube's supported reader (`tools/market_state_reader.py`, a pinned copy from Origo 3.28.0) and serves `index.html` with a live pack in place of the recorded snapshot, behind HTTP Basic Auth.
+On the Origo host the explorer runs beside the market state cube ([PRD-0022](https://github.com/Vaquum/Origo/issues/462)) and reads it live. The cube's query service answers with paths to Arrow files on its own volume, so `tools/cube_bridge.py` runs where that volume is mounted: it asks the service for cells, reads the files through the cube's supported reader (`tools/market_state_reader.py`, a pinned copy from Origo 3.28.0) and serves `index.html` with a live pack in place of the recorded snapshot, behind the Vaquum portal login.
 
 The live pack holds the same three tiers as the snapshot: the last seven days at base resolution, 30 completed days at 15 minutes, and the whole history at 64 hours × 1,000 USDT. They are read up to the cube's own data cutoff, so the latest trades are in them: the base column that holds the cutoff is the **open** one, drawn and counted as unfinished. The partitions the tiers share are checked to carry the same revision and build id (the pack is read again if the cube changed underneath), and the pack token digests every pin it read. A partition's generation is not compared: attaching a new component to a build, as the cube's history upgrade does, moves it without changing any cell. It is rebuilt at most once a minute. Where the cube's archived days end, the chart marks where **provisional** minutes begin, which the day's archive may still revise; the top bar's state says the same.
 
@@ -131,13 +131,13 @@ Edit `src/`, then rebuild the committed `index.html`. The build uses Python's st
 
 The explorer runs on the Origo host, `37.27.112.167`, as the Compose project `cube-explorer` in `/opt/cube-explorer`:
 
-- `explorer` builds the `Dockerfile` (Python 3.12, pyarrow, numpy), mounts the cube's result volume `tdw-control-plane_market-state` read-only at `/opt/origo/market-state`, uses the host network so the cube service is `127.0.0.1:8486`, and serves the page on `127.0.0.1:8487` only, as a non-root user on a read-only filesystem. Credentials come from `/opt/cube-explorer/.env` (`EXPLORER_AUTH_USER`, `EXPLORER_AUTH_PASS`); without them the server refuses to start.
-- TLS is terminated by the host's shared Caddy ingress on port 443, deployed from [Vaquum/Loop](https://github.com/Vaquum/Loop) (`/opt/loop-api/Caddyfile`), whose `cube.vaquum.fi` site block proxies to `127.0.0.1:8487` with a Let's Encrypt certificate. The credentials therefore only ever travel over TLS. `cube.vaquum.fi` is a DNS-only A record for the host.
+- `explorer` builds the `Dockerfile` (Python 3.12, pyarrow, numpy), mounts the cube's result volume `tdw-control-plane_market-state` read-only at `/opt/origo/market-state`, uses the host network so the cube service is `127.0.0.1:8486`, and serves the page on `127.0.0.1:8487` only, as a non-root user on a read-only filesystem. It checks no credentials of its own.
+- TLS and the login are the host's Caddy ingress on port 443, deployed from [Vaquum/Portal](https://github.com/Vaquum/Portal) (`/opt/portal/caddy/Caddyfile`): its `cube.vaquum.fi` site passes a request on to `127.0.0.1:8487` only after the Vaquum portal login, over a Let's Encrypt certificate. `cube.vaquum.fi` is a DNS-only A record for the host.
 
-Every push to `main` deploys through `.github/workflows/deploy.yml`, which first runs the checks of `.github/workflows/check.yml` and continues only if they passed for that exact commit; then it syncs the checkout to the host with rsync, writes `.env` from the repository secrets, runs `docker compose up -d --build`, and checks over SSH that the explorer answers 200 with the credentials and 401 without. It needs the secrets `DEPLOY_SSH_KEY`, `EXPLORER_AUTH_USER` and `EXPLORER_AUTH_PASS` and the variables `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_DIR` and `DEPLOY_KNOWN_HOSTS`.
+Every push to `main` deploys through `.github/workflows/deploy.yml`, which first runs the checks of `.github/workflows/check.yml` and continues only if they passed for that exact commit; then it syncs the checkout to the host with rsync, runs `docker compose up -d --build`, and checks over SSH that the explorer answers 200. It needs the secret `DEPLOY_SSH_KEY` and the variables `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_DIR` and `DEPLOY_KNOWN_HOSTS`.
 
 Local check of the server, which needs the cube volume and service and therefore runs on the host:
 
 ```sh
-EXPLORER_AUTH_USER=admin EXPLORER_AUTH_PASS=… python3 tools/cube_bridge.py --port 8487
+python3 tools/cube_bridge.py --port 8487
 ```

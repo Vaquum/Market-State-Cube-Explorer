@@ -6,7 +6,7 @@ runs beside that volume. It asks the service for tiles, reads the files through 
 supported reader (``market_state_reader.py``, a pinned copy, which renews each file's 24-hour
 clock) and hands the page MSC2 blocks.
 
-Routes, all behind HTTP Basic Auth except ``/healthz``:
+Routes:
 
 - ``/``: ``index.html`` with a live pack in place of the recorded snapshot. The pack holds three
   tiers read up to the cube's data cutoff, so the latest trades are in it: the base column
@@ -52,8 +52,9 @@ Routes, all behind HTTP Basic Auth except ``/healthz``:
 Every ``/cube/`` route takes ``proto=2``, the page's protocol. A page loaded before it names
 none and can't read MSC2 blocks, so it is answered 409 with words telling its reader to reload.
 
-Credentials come from ``EXPLORER_AUTH_USER`` and ``EXPLORER_AUTH_PASS``; the server refuses to
-start without them. ``MARKET_STATE_URL`` names the cube service (default ``http://127.0.0.1:8486``).
+The server checks no credentials: it listens on 127.0.0.1 only, and the host's Caddy passes a
+request for cube.vaquum.fi on only after the Vaquum portal login (Vaquum/Portal).
+``MARKET_STATE_URL`` names the cube service (default ``http://127.0.0.1:8486``).
 
 MSC2 (little-endian): 32-byte header ``magic n m pad col0 col1 count 12x`` then columnar
 arrays volume f64, taker-buy volume f64, trades f64, taker-buy trades f64, column u32, row u32,
@@ -78,7 +79,6 @@ import argparse
 import base64
 import gzip
 import hashlib
-import hmac
 import json
 import math
 import os
@@ -137,8 +137,6 @@ CUBE_SLOT = threading.Lock()
 MOTION_SLOT = threading.Lock()
 CUBE_URL = os.environ.get("MARKET_STATE_URL", "http://127.0.0.1:8486")
 SOURCE = "Binance BTCUSDT spot · Origo market state cube"
-CHALLENGE = 'Basic realm="Market State Cube", charset="UTF-8"'
-CREDENTIALS = re.compile(r"^basic +([A-Za-z0-9+/]+={0,2})$", re.IGNORECASE)
 VENDOR_TYPES = {".js": "application/javascript", ".css": "text/css", ".txt": "text/plain", ".md": "text/markdown"}
 TIERS = (
     {"id": "overview", "n": 12, "m": 3},
@@ -492,9 +490,8 @@ def tails(old: dict, new: dict) -> dict | None:
 
 
 class Explorer:
-    def __init__(self, page: Path, user: str, password: str) -> None:
+    def __init__(self, page: Path) -> None:
         self.page = page
-        self.expected = f"{user}:{password}".encode()
         self.lock = threading.Lock()  # guards the fields below; never held while the cube is read
         self.building = threading.Lock()  # one pack build at a time
         self.pack: dict | None = None
@@ -513,12 +510,6 @@ class Explorer:
         # The page this server serves: an open page from an earlier deploy learns that it is
         # older than the server it asks, and offers a reload.
         self.version = hashlib.sha256(page.read_bytes()).hexdigest()[:12]
-
-    def allows(self, header: str | None) -> bool:
-        match = CREDENTIALS.match(header or "")
-        if not match or len(match.group(1)) % 4:
-            return False
-        return hmac.compare_digest(base64.b64decode(match.group(1)), self.expected)
 
     def current_pack(self) -> tuple[dict, float]:
         """The current pack and its age in seconds; rebuilt once it is older than a minute, or
@@ -913,9 +904,6 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/healthz":
             self.reply(200, "text/plain", b"ok")
             return
-        if not self.explorer.allows(self.headers.get("Authorization")):
-            self.reply(401, "text/plain", b"Authentication required.", {"WWW-Authenticate": CHALLENGE})
-            return
         try:
             args = parse_qs(url.query)
             if url.path.startswith("/cube/") and args.get("proto", [""])[0] != PROTOCOL:
@@ -1036,10 +1024,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8487)
     arguments = parser.parse_args(argv)
-    user, password = os.environ.get("EXPLORER_AUTH_USER"), os.environ.get("EXPLORER_AUTH_PASS")
-    if not user or not password:
-        raise SystemExit("EXPLORER_AUTH_USER and EXPLORER_AUTH_PASS are required.")
-    Handler.explorer = Explorer(arguments.page, user, password)
+    Handler.explorer = Explorer(arguments.page)
     with ThreadingHTTPServer((arguments.bind, arguments.port), Handler) as httpd:
         print(f"explorer on http://{arguments.bind}:{arguments.port} · cube at {CUBE_URL}", flush=True)
         httpd.serve_forever()

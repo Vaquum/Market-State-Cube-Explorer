@@ -1021,12 +1021,13 @@ def rectangle(args: dict, prices: bool) -> dict:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Serve the explorer on live market state cube data.")
     parser.add_argument("--page", type=Path, default=Path(__file__).resolve().parents[1] / "index.html")
-    parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8487)
     arguments = parser.parse_args(argv)
     Handler.explorer = Explorer(arguments.page)
-    with ThreadingHTTPServer((arguments.bind, arguments.port), Handler) as httpd:
-        print(f"explorer on http://{arguments.bind}:{arguments.port} · cube at {CUBE_URL}", flush=True)
+    # Loopback only, and not configurable: the server checks no credentials, so the portal-gated
+    # Caddy on this host must be the only way to it.
+    with ThreadingHTTPServer(("127.0.0.1", arguments.port), Handler) as httpd:
+        print(f"explorer on http://127.0.0.1:{arguments.port} · cube at {CUBE_URL}", flush=True)
         httpd.serve_forever()
     return 0
 

@@ -1,0 +1,15 @@
+# Candles validation — release outstanding
+
+PRD #61 / slice #62. Browser configuration limits were committed at b9323e8 (v2); c3de923 extends the immutable matrix to all specified candle combinations (v3), retaining every numerical limit. These files are diagnostic evidence; they do not certify release.
+
+The live cube answered a bounded recent bar at every n0..20 at cutoff 2026-10-03T13:40Z. All records had valid OHLC ordering. This is real service level/coverage evidence, not an independent per-trade reconstruction. Independent hand-authored BigInt trade vectors cover all levels and before/at/after timestamp boundaries in the unit suite.
+
+The endpoint/required-read experiment used the deployed bridge before #63 (baseline main 9d2ad11) and the candidate bridge staged in the container's writable /tmp. The cube's finalized historical support, held pins, ranges and cutoff were identical between paired arms. Each endpoint sample bypasses its held-answer cache to measure a real reader call; required-read samples compare the original request without load against the same request with one concurrent candle read. Ten alternating A/A pairs set per-case floors; five seeded A/B screening pairs trigger twenty confirmation pairs where the median exceeds the floor. Floors are max(2 ms, 5% baseline median, A/A p95 difference); confirmation uses a 99.9% bootstrap interval (10,000 resamples). No precision claim is made below these floors.
+
+**Release blocker:** required-read n6 confirmation exceeded its 76.94 ms floor: difference interval 97.82–612.54 ms. Existing bars endpoint cases detected no regression above their noise floors. Other required-read cases did not trigger confirmation; this does not establish zero added latency. The preceding main advanced to a42face during validation, so acceptance against that exact main also remains outstanding.
+
+The first experiment incorrectly included waiting for the candle worker's completion in the required-read timing. `invalid-required-timing.jsonl` is retained for audit and excluded from acceptance. `real-performance.jsonl` corrects that timing by stopping the required-read clock when that read returns, before waiting for the worker. No budget was changed after results.
+
+Scripts are retained as executed. They run inside the deployed container after staging the candidate bridge and predeclared v2 configuration under the indicated /tmp paths. They rely on the container's existing supported reader, pyarrow and numpy; they never modify served code. The older baseline Explorer constructor takes the page plus credentials; main #63 changes that constructor. Adapt baseline setup when repeating against newer main, retaining every statistical limit and the measured completion point.
+
+Outstanding: resolve/confirm the real required-read regression, run the full designated-machine D12 browser protocol against preceding main and 8c82ca1, exact-SHA CI and production rollout/rollback verification. Keep #61/#62 open. No deployment is authorized by this evidence alone.

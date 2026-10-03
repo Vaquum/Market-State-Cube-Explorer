@@ -2505,3 +2505,8 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Candle direction uses the signed-role inks; sample canvases use the price painter. */
+#origo-lens .ol-candle-legend { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-s); }
+#origo-lens .ol-candle-legend > span { display: inline-flex; align-items: center; gap: var(--sp-1); }
+#origo-lens .ol-candle-legend canvas { width: 16px; height: 18px; }

@@ -1162,6 +1162,7 @@
     dwell: msrMode("fixed", false, ["share"], false, { kind: "unsigned-share", lo: 0, hi: 1 }),
     cascade: msrMode("fixed", true, ["log2"], false, { kind: "log2-ratio", lo: -2, hi: 2, mid: 0 }),
     geometry: msrMode("occupancy", false, [], false, null),
+    candles: msrMode("occupancy", false, [], false, null),
   });
 
   // E.measure.ROWS (DD-73): the Rows measures, so the menu and E.policy.offers("rows", ...) hard-code
@@ -5107,7 +5108,7 @@
   const polPersistKeys = Object.freeze(["basis", "pathBasis", "transform", "curve", "rowsTransform", "cells", "rows", "local", "window", "lock"]);
   // The measures that need the live cube (the recorded page lists them off): Path and Dwell motion, and the
   // Rows time at price.
-  const polLiveOnlyCells = Object.freeze(["path", "dwell"]);
+  const polLiveOnlyCells = Object.freeze(["path", "dwell", "candles"]);
   const polLiveOnlyRows = Object.freeze(["time"]);
 
   function polDeepFreeze(v) {
@@ -7441,7 +7442,7 @@
     rdoRequire(level !== null && typeof level === "object" && Number.isFinite(level.n) && Number.isFinite(level.m), "cellsFrame needs the effective level {n, m}");
     const lut = spec.lut;
     rdoRequire(lut !== null && typeof lut === "object" && lut.unsigned !== undefined && lut.occupancy !== undefined, "cellsFrame needs a Lut (E.lut.build)");
-    const geometry = mode === "geometry";
+    const geometry = mode === "geometry" || mode === "candles";
     // Geometry has no mapping to wait for: without one it is simply ok (it is an outline, never "No
     // calibration").
     const map = geometry && (spec.mapping === null || spec.mapping === undefined) ? rdoMapping({ state: "ok", desc: null, policy: "fixed" }) : rdoMapping(spec.mapping);
@@ -7611,7 +7612,7 @@
     // What E.legend.build needs, and nothing else: the descriptor, the Lut, the role of the bar, the level,
     // the measure identity. Allocates, so it is asked only when the legend's id key changed (DD-90).
     function legendInput() {
-      if (meta === null) meta = rdoCellsMeta(kernel);
+      if (meta === null) meta = mode === "candles" ? { formula: null, measure: "candles", basis: null, unit: "usdt" } : rdoCellsMeta(kernel);
       let barRole = "unsigned";
       if (geometry) barRole = "outline";
       else if (map.desc === null) barRole = "outline";
@@ -9536,7 +9537,7 @@
   // The defaults of env. They repeat the page's own lists (WINDOWS, MODES, PANES, ROWS, LINE_KEYS) so the
   // module is usable, and testable, without a page; the page always passes its own.
   const cdcWindows = Object.freeze(["15m", "30m", "1h", "4h", "12h", "24h", "7d", "30d", "1y", "ytd", "lastyear", "all"]);
-  const cdcModes = Object.freeze(["volume", "flow", "delta", "cascade", "trades", "flowtrades", "size", "path", "dwell", "geometry"]);
+  const cdcModes = Object.freeze(["volume", "flow", "delta", "cascade", "trades", "flowtrades", "size", "path", "dwell", "geometry", "candles"]);
   const cdcPanes = Object.freeze(["cells", "volume", "delta", "trades", "size", "efficiency", "choppiness", "perpath", "rsi1d", "rsi4h", "macd1d"]);
   const cdcRowChoices = Object.freeze(["off", "volume", "delta", "relvol", "time"]);
   const cdcPeriodKeys = Object.freeze(["1d", "7d", "30d", "90d", "1y", "3y", "wk", "mo", "yr", "all"]);
@@ -10541,7 +10542,7 @@
           else dropped.push({ key: "sel", reason: "the selection is not four finite numbers" });
         }
         if (state.anchor !== null && state.anchor !== undefined) {
-          if (cdcIsFinite(state.anchor)) add(body, "at", cdcStamp(state.anchor, e));
+          if (cdcIsFinite(state.anchor)) add(body, "at", state.mode === "candles" ? new Date(API.time.baseToMs(state.anchor, e.T0, e.BASE)).toISOString() : cdcStamp(state.anchor, e));
           else dropped.push({ key: "at", reason: "the anchor is not a finite number" });
         }
         if (state.replay === true && cdcIsFinite(state.anchor)) add(body, "replay", "1");
@@ -10654,7 +10655,7 @@
     base.n = level ? Number(level[1]) : NaN;
     base.m = level ? Number(level[2]) : NaN;
     base.selection = q.has("sel") ? [...cdcPair(selParts[0], time), ...cdcPair(selParts[1] === undefined ? "" : selParts[1], rows)].map(Math.round) : null;
-    base.anchor = q.has("at") ? Math.round(time(q.get("at"))) : null;
+    base.anchor = q.has("at") ? (fields.mode === "candles" ? (Date.parse(q.get("at")) - e.T0 * 1000) / (e.BASE * 1000) : Math.round(time(q.get("at")))) : null;
     base.replay = q.get("replay") === "1";
     base.appearance = v2 && q.has("ap") ? q.get("ap") : null;
     const view = cdcCheckView(Object.assign(base, fields), e);
@@ -11428,6 +11429,81 @@
     squeezeLowest: indSqueezeLowest,
     divergencesOf: indDivergencesOf,
   });
+
+
+  // Exact OHLC records and screen geometry. No price-row partition or scalar color mapping.
+  const cndLimits = Object.freeze({ ranges: 64, records: 65536, bytes: 16 * 1024 * 1024, recordBytes: 192, bodyFraction: 0.65, bodyMinPx: 2 });
+  // E.candles.record: immutable validated OHLC with direction and exact measured coverage.
+  function cndRecord(bar, n, through) {
+    if (!Number.isInteger(n) || n < 0 || n > 20 || !Number.isInteger(bar.c) || bar.c < 0 || !Number.isFinite(through)) throw new TypeError("Invalid candle interval");
+    for (const field of ["open", "high", "low", "close"]) if (!Number.isFinite(bar[field]) || bar[field] <= 0) throw new TypeError("Invalid candle " + field);
+    if (bar.low > Math.min(bar.open, bar.close) || bar.high < Math.max(bar.open, bar.close) || bar.low > bar.high) throw new TypeError("Invalid candle OHLC order");
+    const step = 2 ** n, start = bar.c * step, stop = start + step;
+    if (through <= start) throw new TypeError("Candle begins after coverage");
+    return Object.freeze({ ...bar, n, start, stop, through: Math.min(stop, through), direction: bar.close > bar.open ? "up" : bar.close < bar.open ? "down" : "unchanged", state: through < stop ? "so-far" : "complete" });
+  }
+  // E.candles.project: continuous screen geometry, independent of the price grid.
+  function cndProject(record, X, Y, priceUnit, out = {}) {
+    const xa = X(record.start), xb = X(record.stop), yo = Y(record.open / priceUnit), yc = Y(record.close / priceUnit);
+    out.x = (xa + xb) / 2;
+    out.width = Math.abs(xb - xa) * cndLimits.bodyFraction;
+    out.top = Math.min(yo, yc);
+    out.bottom = Math.max(yo, yc);
+    out.high = Y(record.high / priceUnit);
+    out.low = Y(record.low / priceUnit);
+    out.wickOnly = out.width < cndLimits.bodyMinPx;
+    return out;
+  }
+  // E.candles.paint: directional body/wick using signed arms and neutral doji casing.
+  function cndPaint(ctx, record, X, Y, priceUnit, inks, scratch = {}) {
+    const g = cndProject(record, X, Y, priceUnit, scratch);
+    const color = record.direction === "up" ? inks.positive : record.direction === "down" ? inks.negative : inks.midpoint;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(g.x, g.high); ctx.lineTo(g.x, g.low);
+    // Midpoint ink alone does not meet stroke contrast: a neutral casing identifies the doji.
+    if (record.direction === "unchanged") {
+      ctx.lineWidth = 3; ctx.strokeStyle = inks.state; ctx.stroke();
+      ctx.lineWidth = 1; ctx.strokeStyle = color; ctx.stroke();
+    } else ctx.stroke();
+    if (g.wickOnly && g.low !== g.high) return g;
+    const width = Math.max(1, g.width), left = g.x - width / 2;
+    if (record.direction === "unchanged" || g.bottom - g.top < 1) {
+      ctx.beginPath(); ctx.moveTo(left, (g.top + g.bottom) / 2); ctx.lineTo(left + width, (g.top + g.bottom) / 2);
+      if (record.direction === "unchanged") { ctx.strokeStyle = inks.state; ctx.lineWidth = 3; ctx.stroke(); ctx.strokeStyle = color; ctx.lineWidth = 1; }
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = record.direction === "up" ? inks.surface : color;
+      ctx.fillRect(left, g.top, width, g.bottom - g.top);
+      ctx.strokeRect(left, g.top, width, g.bottom - g.top);
+    }
+    return g;
+  }
+  // E.candles.span: aligned viewport demand with one interval of buffer.
+  function cndSpan(n, a, b, edge, buffer = 1) {
+    const step = 2 ** n, start = Math.max(0, (Math.floor(a / step) - buffer) * step), stop = Math.min(edge, (Math.ceil(b / step) + buffer) * step);
+    return { n, a: start, b: Math.max(start, stop) };
+  }
+  // E.candles.Cache: bounded LRU storage of numerical candle ranges.
+  class CndCache {
+    constructor() { this.ranges = new Map(); this.records = 0; this.bytes = 0; }
+    clear() { this.ranges.clear(); this.records = this.bytes = 0; }
+    put(key, value) {
+      const count = value.bars.length, bytes = count * cndLimits.recordBytes;
+      if (count > cndLimits.records || bytes > cndLimits.bytes) throw new RangeError("Candle cache entry exceeds budget");
+      if (this.ranges.has(key)) this.drop(key);
+      this.ranges.set(key, value); this.records += count; this.bytes += bytes;
+      while (this.ranges.size > cndLimits.ranges || this.records > cndLimits.records || this.bytes > cndLimits.bytes) this.drop(this.ranges.keys().next().value);
+    }
+    drop(key) { const old = this.ranges.get(key); if (!old) return; this.records -= old.bars.length; this.bytes -= old.bars.length * cndLimits.recordBytes; this.ranges.delete(key); }
+    touch(key) { const old = this.ranges.get(key); if (old) { this.ranges.delete(key); this.ranges.set(key, old); } return old; }
+  }
+  // E.candles.Cache: create bounded numerical LRU storage, with the same constructor interface.
+  function cndCache() { return new CndCache(); }
+  API.candles = Object.freeze({ LIMITS: cndLimits, record: cndRecord, project: cndProject, paint: cndPaint, span: cndSpan, Cache: cndCache });
 
   // == §99-footer ==
   // @part 99-footer

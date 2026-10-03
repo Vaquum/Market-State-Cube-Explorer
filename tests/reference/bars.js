@@ -14,7 +14,8 @@ function bars(trades, { n, b0, b1 }) {
   const step = 1n << BigInt(n);
   const acc = new Map();
   for (const x of normalize(trades)) {
-    if (x.col < BigInt(b0) || x.col >= BigInt(b1)) continue;
+    // Compare timestamps at microsecond precision; replay may cut inside a base column.
+    if (x.t * 1000n < BigInt(Math.round(b0 * 56250000)) || x.t * 1000n >= BigInt(Math.round(b1 * 56250000))) continue;
     const col = x.col / step;
     let bar = acc.get(col);
     if (!bar) {

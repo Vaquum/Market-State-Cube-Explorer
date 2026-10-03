@@ -148,3 +148,11 @@ Run `actionlint .github/workflows/*.yml` (or the `rhysd/actionlint` image) after
 ## Words in these documents
 
 The prose lint in `tests/unit/role-lint.test.js` reads `docs/*.md` along with the sources. Name colour roles positive, negative and midpoint, as the rest of the repository does; the taker-buy data names (`bv`, `bt`, the buy share and so on) stay as they are.
+
+## Candles acceptance
+
+`candles.test.js` checks hand-calculated geometry, directional colors, doji, wick collapse, cache limits and codecs. `candle-bridge.test.js` checks all n0..20 against the independent BigInt calculator, before/at/after trade timestamps, and executes the production Python handler's bounds validation. The three browser specs `candles`, `candle-reads` and `candle-persistence` check rendering, keyboard/menu, Inspect/table, lens/Pin, replay, bounded reads, failures, discarded responses and recorded unavailability.
+
+`tools/benchmark/navigation.v2.json` preserves the v1 core and D12 protocol. `navigation.v3.json` extends this immutable configuration with old-week, Rows+references and replay cases before browser measurements. It adds paired Candles cases against the baseline's corresponding cell view, reporting incremental cost, read bytes and numerical-cache/decode observations. Core regressions retain the D12 gate; absolute budgets apply where the baseline meets them. Real-cube level and paired endpoint/required-read evidence is separate: fake timing never certifies the service. Keep incomplete or inconclusive gates outstanding.
+
+Rollback: build preceding main in a separate temporary directory, verify its existing views and bar layout with the parity/benchmark suite, then revert the Candles merge and push through the same exact-SHA deployment gate if a production fault requires rollback. Reopen #61/#62. A predeployment rollback build test does not claim a live rollback was performed.

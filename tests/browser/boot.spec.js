@@ -6,7 +6,7 @@
 // What it asserts, on the page the harness serves (the temporary build of the working tree; the committed index.html under CONVERGENCE=1):
 //   * the page bytes: the recorded fake serves the page unmodified, so what the browser receives is the file at the page root byte for byte;
 //     under CONVERGENCE=1 that file is the committed index.html and it is tracked by git; the inline encoding script IS src/encoding.js;
-//   * the module: `explorerEncoding` has exactly the 29 keys of API.md A.1, and the pinned `slate2` LUT hash is the same in Chromium as in
+//   * the module: `explorerEncoding` has exactly the 30 keys of API.md A.1, and the pinned `slate2` LUT hash is the same in Chromium as in
 //     hand-pinned text (the hash covers both themes, so the "light" and "dark" LUTs of one appearance have ONE hash);
 //   * no production hook: in a page loaded WITHOUT the probe the own properties of `window` that a blank page lacks are exactly `d3`,
 //     `explorerState` and `explorerEncoding` (DOM ids are named properties, not own properties); the shipped sources name no test global; no
@@ -17,7 +17,7 @@
 //   * the state pill: a cube that has had no data for 400 s is "stale"; a bridge that stops answering is "stopped" after 45 s (a page clock
 //     installed BEFORE the page loads, see below) and the loading line says so; a server that now serves another page makes the reload banner appear.
 //
-// Oracles (none is the code under test): the bytes of the file on disk and of the file in git (node:fs, git show), the 29 key names and the LUT
+// Oracles (none is the code under test): the bytes of the file on disk and of the file in git (node:fs, git show), the 30 key names and the LUT
 // hash copied from API.md A.1 and pinned by U18, the `data-state` and texts of the page's own pill as the DOM reports them, and the fake's
 // request log (a server-side record of what the page asked for).
 //
@@ -33,7 +33,7 @@ const { test, expect, environment } = require("./fixtures.js");
 const ROOT = path.resolve(__dirname, "..", "..");
 
 // The 29 keys of the frozen export (API.md A.1), typed out here. The module's own list is never read back.
-const KEYS_29 = ["LATTICE", "LIMITS", "THRESHOLDS", "TIMING", "VERSION", "axis", "codec", "cohort", "context", "hash", "indicators", "legend", "lifecycle", "lut", "measure", "model", "notice", "policy", "ratio", "readout", "relvol", "result", "role", "scale", "store", "text", "time", "util", "warn"];
+const KEYS_30 = ["LATTICE", "LIMITS", "THRESHOLDS", "TIMING", "VERSION", "axis", "candles", "codec", "cohort", "context", "hash", "indicators", "legend", "lifecycle", "lut", "measure", "model", "notice", "policy", "ratio", "readout", "relvol", "result", "role", "scale", "store", "text", "time", "util", "warn"];
 // The pinned hash of the slate2 LUT bytes (API.md A.1, U18) and the id that follows from it.
 const SLATE2 = { hash: "8f7890f7e400724c7191f42f31b9d2e9e0bf060ca619b003915fb6fbb418b672", id: "slate2-8f7890f7" };
 // The request paths a page of this build may issue (TESTPLAN B01): the page, its vendored script, and the seven cube routes.
@@ -71,7 +71,7 @@ test.describe("B01 the page under test", () => {
     }
   });
 
-  test("the inline encoding script is src/encoding.js, and the module has exactly the 29 keys of API.md A.1", async ({ page, fakeFor, probe }) => {
+  test("the inline encoding script is src/encoding.js, and the module has exactly the 30 keys of API.md A.1", async ({ page, fakeFor, probe }) => {
     const fake = await fakeFor("recorded");
     await page.goto(`${fake.url}/`);
     await atRest(page, fake, probe);
@@ -80,7 +80,7 @@ test.describe("B01 the page under test", () => {
     // The app script mentions the name too: the encoding is the script whose text contains the whole file.
     expect(inline.filter((text) => text.includes(source.trim())).length, "one inline script carries src/encoding.js verbatim").toBe(1);
     const keys = await page.evaluate(() => Object.keys(window.explorerEncoding).sort());
-    expect(keys).toEqual(KEYS_29);
+    expect(keys).toEqual(KEYS_30);
     expect(await page.evaluate(() => Object.isFrozen(window.explorerEncoding))).toBe(true);
   });
 

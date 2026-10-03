@@ -113,6 +113,7 @@ const ROWS = [
   { mode: "dwell", basis: "share", end: END, value: (z) => { const e = exposure(z, END); return e.seconds <= 0 ? null : z.w / e.seconds; } },
   { mode: "cascade", basis: "log2", cascade: cascadeEntry, value: (z) => (z.v > 0 && z.c % 2 === 0 ? Math.log2((4 * z.v) / PARENT) : null) },
   { mode: "geometry", basis: undefined, value: () => undefined },
+  { mode: "candles", basis: undefined, value: () => undefined },
 ];
 
 // Hand-coded transfer functions: the coordinate of a value under a descriptor, clipped to the window.
@@ -188,7 +189,7 @@ function specOf(row, desc, theme) {
     geom: GEOM,
     CUT: LIVE,
     replay: false,
-    mapping: row.mode === "geometry" ? null : fixedMode ? desc : { state: "ok", desc, policy: "explore", origin: "fit" },
+    mapping: ["geometry", "candles"].includes(row.mode) ? null : fixedMode ? desc : { state: "ok", desc, policy: "explore", origin: "fit" },
     lut: LUTS[theme],
     cascade: row.cascade || null,
     observation: { source: "fixture", instrument: "BTC/USDT", read: "cube", cutoffMs: 1790251320000, liveCutoffMs: 1790251320000, canonicalThroughMs: 1790208000000, token: null, provenance: [] },
@@ -217,9 +218,9 @@ for (const theme of ["light", "dark"]) {
   for (const row of ROWS) {
     const label = `${row.mode}${row.basis ? " " + row.basis : row.pathBasis ? " " + row.pathBasis : ""}`;
     const values = CELLS.map(row.value).filter((x) => x !== null && x !== undefined && Number.isFinite(x));
-    const handValue = row.mode === "geometry" ? null : values;
+    const handValue = ["geometry", "candles"].includes(row.mode) ? null : values;
 
-    for (const variant of row.mode === "geometry" ? [{ name: "occupancy", desc: null }] : descriptorsOf(row, handValue)) {
+    for (const variant of ["geometry", "candles"].includes(row.mode) ? [{ name: "occupancy", desc: null }] : descriptorsOf(row, handValue)) {
       test(`smoke (${theme}): ${label} / ${variant.name}: encode, readout and legend marker are one index, one coordinate, one colour`, () => {
         const spec = specOf(row, variant.desc, theme);
         const frame = E.readout.cellsFrame(spec);
@@ -241,7 +242,7 @@ for (const theme of ["light", "dark"]) {
           const want = row.value(z);
           E.result.assertJsonSafe(r);
 
-          if (row.mode === "geometry") {
+          if (["geometry", "candles"].includes(row.mode)) {
             // an outline: the occupancy role, no measurement, no coordinate, no marker
             assert.equal(ROLE_NAME[out.role], "occupancy");
             assert.equal(out.css, lut.occupancy.css);
@@ -316,7 +317,7 @@ for (const theme of ["light", "dark"]) {
           if (variant.name === "rank") seenIdx.set(out.value, out.t);
         }
 
-        if (row.mode !== "geometry") {
+        if (!["geometry", "candles"].includes(row.mode)) {
           assert.ok(defined >= 8, `${label}: the cohort exercises values (${defined})`);
           assert.ok(nonvalue + defined === CELLS.length, "every cell is one or the other");
         } else assert.equal(drawn, CELLS.length);

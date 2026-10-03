@@ -3,7 +3,7 @@
 // any part's own tests look inside it.
 //
 // Oracle: the list of exports below, transcribed by hand from API.md A.1 and A.3 (a name, and how many
-// arguments it takes: the fewest it needs and the most it documents), the 29 keys of A.1, and the values
+// arguments it takes: the fewest it needs and the most it documents), the 30 keys of A.1, and the values
 // A.3 states for the constants. Nothing is derived from the module under test. `Function.length` counts
 // parameters up to the first default, so each function is checked against a [fewest, most] range, not one
 // number: `baseToMs(base, T0 = ..., BASE = ...)` is [1, 3].
@@ -23,14 +23,15 @@ const { assemble, strip } = require("../support/assemble-encoding.js");
 const ROOT = path.resolve(__dirname, "../..");
 const FILE = path.join(ROOT, "src/encoding.js");
 
-// A.1: the 29 keys of the frozen export.
+// A.1: the 30 keys of the frozen export.
 const KEYS = ["VERSION", "LIMITS", "TIMING", "THRESHOLDS", "LATTICE", "text", "result", "time", "util", "hash", "measure", "ratio", "relvol",
-  "scale", "cohort", "lut", "role", "context", "store", "policy", "lifecycle", "axis", "warn", "model", "readout", "legend", "notice", "codec", "indicators"];
+  "scale", "cohort", "lut", "role", "context", "store", "policy", "lifecycle", "axis", "warn", "model", "readout", "legend", "notice", "codec", "indicators", "candles"];
 
 // A.3: F(fewest, most) is a function; the strings name what a non-function member is; V(x) is a literal.
 const F = (min, max = min) => ({ min, max });
 const V = (value) => ({ value });
 const SPEC = {
+  candles: { LIMITS: "object", record: F(3), project: F(4, 5), paint: F(6, 7), span: F(4, 5), Cache: F(0) },
   text: { fill: F(1, 2), fillStrict: F(1, 2) },
   result: { TAGS: "array", TAG: "object", make: F(1, 2), finite: F(1), isValue: F(1), precedence: F(1), assertJsonSafe: F(1), describe: F(1, 2) },
   time: { baseToMs: F(1, 3), msToBase: F(1, 3), utcDay: F(1) },
@@ -88,7 +89,7 @@ function checkExports(E) {
   const keys = Object.keys(E).sort();
   const want = [...KEYS].sort();
   for (const k of want) if (!keys.includes(k)) problems.push(`E.${k} is missing`);
-  for (const k of keys) if (!want.includes(k)) problems.push(`E.${k} is not one of the 29 keys of API.md A.1`);
+  for (const k of keys) if (!want.includes(k)) problems.push(`E.${k} is not one of the 30 keys of API.md A.1`);
   if (!Object.isFrozen(E)) problems.push("the export object is not frozen");
   for (const [ns, members] of Object.entries(SPEC)) {
     const space = E[ns];
@@ -140,20 +141,20 @@ function handMade({ omit = null, frozen = true } = {}) {
 test("the checker: a module with every documented export passes, and each kind of gap is named", () => {
   assert.deepEqual(checkExports(handMade()), []);
   assert.deepEqual(checkExports(handMade({ omit: "scale.plan" })), ["E.scale.plan is missing"]);
-  assert.deepEqual(checkExports(handMade({ frozen: false })).slice(0, 2), ["the export object is not frozen", "E.text is not frozen"]);
+  assert.deepEqual(checkExports(handMade({ frozen: false })).slice(0, 2), ["the export object is not frozen", "E.candles is not frozen"]);
   const wrongArity = handMade();
   const zero = () => {};
   const bad = Object.freeze({ ...wrongArity, util: Object.freeze({ ...wrongArity.util, clamp: zero }) });
   assert.deepEqual(checkExports(bad), ["E.util.clamp takes 0 arguments; the documented range is 3"]);
   const extra = Object.freeze({ ...wrongArity, axisOf: {} });
-  assert.deepEqual(checkExports(extra), ["E.axisOf is not one of the 29 keys of API.md A.1"]);
+  assert.deepEqual(checkExports(extra), ["E.axisOf is not one of the 30 keys of API.md A.1"]);
   const { indicators, ...without } = wrongArity;
   assert.match(checkExports(Object.freeze(without)).join("\n"), /E\.indicators is missing/);
   const notFn = Object.freeze({ ...wrongArity, hash: Object.freeze({ ...wrongArity.hash, sha256: 3 }) });
   assert.deepEqual(checkExports(notFn), ["E.hash.sha256 is not a function"]);
   const wrongConstant = Object.freeze({ ...wrongArity, TIMING: Object.freeze({ ...CONSTANTS.TIMING, AUTO_MS: 501 }) });
   assert.deepEqual(checkExports(wrongConstant), ["E.TIMING.AUTO_MS is 501; API.md A.3 says 500"]);
-  assert.equal(Object.keys(SPEC).length + 5, 29, "the 24 namespaces of SPEC and the 5 constants are the 29 keys");
+  assert.equal(Object.keys(SPEC).length + 5, 30, "the 25 namespaces of SPEC and the 5 constants are the 30 keys");
   assert.deepEqual([...Object.keys(SPEC), ...Object.keys(CONSTANTS)].sort(), [...KEYS].sort());
 });
 
@@ -192,7 +193,7 @@ function signature(E) {
     ? Object.entries(v).map(([n, m]) => [n, typeof m === "function" ? String(m) : JSON.stringify(m)]) : String(v)]));
 }
 
-real("every export of API.md A.3 exists with the documented arity, the export is exactly the 29 keys and frozen", () => {
+real("every export of API.md A.3 exists with the documented arity, the export is exactly the 30 keys and frozen", () => {
   assert.deepEqual(checkExports(enc()), []);
 });
 

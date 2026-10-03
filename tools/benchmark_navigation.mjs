@@ -82,7 +82,7 @@ function resolveCommit(ref) {
 function effective(config, smoke) {
   const byId = (list) => new Map(list.map((c) => [c.id, c]));
   if (!smoke) {
-    return { protocol: config.protocol, gesture: config.gesture, core: config.core, heavy: config.heavy };
+    return { protocol: config.protocol, gesture: config.gesture, core: config.core, heavy: [...config.heavy, ...(config.candleCases ?? [])] };
   }
   const s = config.smoke;
   const core = s.coreIds.map((id) => byId(config.core).get(id));
@@ -145,7 +145,7 @@ function readsOf(fake) {
   const cube = all.filter((e) => e.path.startsWith("/cube/"));
   const reads = {};
   for (const e of cube) reads[e.path] = (reads[e.path] ?? 0) + 1;
-  return { reads, readOrder: cube.slice(0, 200).map((e) => e.path), unexpected: all.filter((e) => e.unexpected).length };
+  return { bytes: cube.reduce((sum,e)=>sum+e.bytes,0), reads, readOrder: cube.slice(0, 200).map((e) => e.path), unexpected: all.filter((e) => e.unexpected).length };
 }
 
 // fits: the candidate's in-page fit commit counter (data-fit-seq of the Cells chip, INTEGRATION.md D.18); the baseline has none and
@@ -200,6 +200,7 @@ async function trial({ build, caseDef, config, gesture, mode, cpuThrottle, reduc
     await fake.idle({ quietMs: config.trial.idleQuietMs, timeoutMs: config.trial.idleTimeoutMs });
     const coldReads = readsOf(fake);
     const coldFits = await fitsOf(page);
+    const coldCandle = await evaluate(page, () => { const d=document.getElementById("ol-candle-legend")?.dataset; return d ? {ranges:+d.cacheRanges,records:+d.cacheRecords,bytes:+d.cacheBytes,decodeMs:+d.decodeMs,encodedBytes:+d.encodedBytes,decodedBytes:+d.decodedBytes} : null; });
 
     // Reset the view by hash: the page takes an address it did not write whole (popstate), so the steady run starts from the case's
     // view with everything it has already loaded and calibrated. The detour through an address that names no view makes sure the
@@ -215,8 +216,10 @@ async function trial({ build, caseDef, config, gesture, mode, cpuThrottle, reduc
     await fake.idle({ quietMs: config.trial.idleQuietMs, timeoutMs: config.trial.idleTimeoutMs });
     const steadyReads = readsOf(fake);
     const steadyFits = await fitsOf(page);
+    const steadyCandle = await evaluate(page, () => { const d=document.getElementById("ol-candle-legend")?.dataset; return d ? {ranges:+d.cacheRanges,records:+d.cacheRecords,bytes:+d.cacheBytes,decodeMs:+d.decodeMs,encodedBytes:+d.encodedBytes,decodedBytes:+d.decodedBytes} : null; });
 
-    const run = (r, reads, fits) => ({
+    const run = (r, reads, fits, candle) => ({
+      readBytes: reads.bytes, candle,
       draws: r.draws,
       frameIntervals: r.frameIntervals,
       inputToPaint: r.inputToPaint,
@@ -227,7 +230,7 @@ async function trial({ build, caseDef, config, gesture, mode, cpuThrottle, reduc
       errors: pageErrors.length,
       unexpected: reads.unexpected,
     });
-    return { cold: run(cold, coldReads, coldFits), steady: run(steady, steadyReads, steadyFits), timerResolutionMs, version: browser.version(), pageErrors };
+    return { cold: run(cold, coldReads, coldFits, coldCandle), steady: run(steady, steadyReads, steadyFits, steadyCandle), timerResolutionMs, version: browser.version(), pageErrors };
   } finally {
     await browser.close();
   }
@@ -328,7 +331,7 @@ async function main() {
     for (const [index, arm] of arms.entries()) {
       const build = arm === "A" ? reference : test;
       const role = arm === "A" ? referenceRole : testRole;
-      const result = await runTrial(build, caseDef);
+      const result = await runTrial(build, role === "candidate" ? caseDef : { ...caseDef, view: caseDef.comparisonView ?? caseDef.view });
       const base = { phase: entry.phase, vs: entry.vs, pair: entry.pair, order: index + 1, arm, build: role, case: entry.case };
       samples.push({ ...base, run: "cold", ...result.cold }, { ...base, run: "steady", ...result.steady });
     }

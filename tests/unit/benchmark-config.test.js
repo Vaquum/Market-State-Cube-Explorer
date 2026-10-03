@@ -546,3 +546,21 @@ describe("instrument.js", () => {
     assert.equal(page.window.__bench, bench);
   });
 });
+
+describe("P4-S1 predeclared v2", () => {
+  it("pins candle budgets, cases, cache and all real levels without changing v1", async () => {
+    const v2 = readJson(path.join(BENCH, "navigation.v2.json"));
+    const { validateConfig } = await load("schema.mjs");
+    assert.deepEqual(validateConfig(v2), []);
+    assert.equal(v2.schemaVersion, 2);
+    assert.deepEqual(v2.core, config().core);
+    assert.deepEqual(v2.protocol, config().protocol);
+    assert.deepEqual(v2.budgets, config().budgets);
+    assert.equal(v2.budgetCondition, "baseline-meets-budget");
+    assert.deepEqual(v2.candleCache, { ranges: 64, records: 65536, bytes: 16777216, recordBytes: 192 });
+    assert.deepEqual(v2.candleCases.map(x => x.id), ["candles-24h", "candles-7d", "candles-all", "candles-lens"]);
+    assert.deepEqual(v2.realHost.requiredLevels, Array.from({length:21},(_,n)=>n));
+    v2.candleCache.ranges++;
+    assert.ok(validateConfig(v2).some(x => x.includes("candleCache")));
+  });
+});

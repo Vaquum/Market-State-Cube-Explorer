@@ -60,8 +60,14 @@ const caseList = (c, path, list, { heavy }) => {
 export function validateConfig(config) {
   const c = checker();
   if (!c.object("config", config)) return c.errors;
-  c.ok("config.schemaVersion", config.schemaVersion === SCHEMA_VERSION, `must be ${SCHEMA_VERSION}`);
+  c.ok("config.schemaVersion", [1, 2].includes(config.schemaVersion), "must be 1 or 2");
   c.ok("config.kind", config.kind === CONFIG_KIND, `must be ${CONFIG_KIND}`);
+  if (config.schemaVersion === 2) {
+    c.ok("config.budgetCondition", config.budgetCondition === "baseline-meets-budget", "must preserve the baseline budget condition");
+    c.ok("config.candleCache", JSON.stringify(config.candleCache) === JSON.stringify({ranges:64,records:65536,bytes:16777216,recordBytes:192}), "must pin all candle cache caps");
+    caseList(c, "config.candleCases", config.candleCases, { heavy: true });
+    c.ok("config.realHost.requiredLevels", JSON.stringify(config.realHost?.requiredLevels) === JSON.stringify(Array.from({length:21},(_,n)=>n)), "must verify n0..20");
+  }
   c.int("config.seed", config.seed, 0);
 
   if (c.object("config.data", config.data)) {

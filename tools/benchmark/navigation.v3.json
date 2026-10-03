@@ -1,0 +1,305 @@
+{
+  "schemaVersion": 3,
+  "kind": "navigation-benchmark-config",
+  "note": "Extend the v2 candle matrix before browser candidate measurements. Preserve v2 and all protocol/cache/budget values; add old-week, Rows+references and replay cases required by PRD-0004.",
+  "seed": 20260930,
+  "data": {
+    "profile": "bench",
+    "seed": 20260924,
+    "cutoff": "2026-09-24T12:02:00.000000Z"
+  },
+  "viewport": {
+    "width": 1500,
+    "height": 950
+  },
+  "dpr": 1,
+  "browser": {
+    "mode": "chromium-new-headless",
+    "expectMajor": 153,
+    "reducedMotion": "reduce"
+  },
+  "trial": {
+    "loadTimeoutMs": 60000,
+    "idleQuietMs": 300,
+    "idleTimeoutMs": 20000,
+    "pauseMs": 300
+  },
+  "gesture": {
+    "wheel": {
+      "in": 12,
+      "out": 12,
+      "intervalMs": 40,
+      "deltaY": 100,
+      "at": "canvas-center"
+    },
+    "drags": [
+      {
+        "dx": 300,
+        "dy": 0
+      },
+      {
+        "dx": 0,
+        "dy": 300
+      },
+      {
+        "dx": -300,
+        "dy": 0
+      },
+      {
+        "dx": 0,
+        "dy": -300
+      }
+    ],
+    "dragSteps": 10,
+    "dragStepMs": 16
+  },
+  "protocol": {
+    "aaPairs": 10,
+    "screeningPairs": 5,
+    "confirmationPairs": 20,
+    "heavyPairs": 5,
+    "bootstrapResamples": 10000,
+    "alpha": 0.01,
+    "familySize": 16,
+    "floorPercentile": 0.95,
+    "floorMinMs": "measured timer resolution",
+    "environmentInconclusiveMeanDrawMs": 0.2
+  },
+  "budgets": {
+    "p95DrawMs": 10,
+    "p95FrameMs": 20,
+    "gestureIntervalOver33_3MsMaxShare": 0.01,
+    "p95InputToPaintMs": 50,
+    "drawOverMs": 16.7,
+    "frameOverMs": 50
+  },
+  "core": [
+    {
+      "id": "recorded-24h",
+      "mode": "recorded",
+      "view": "#w=24h"
+    },
+    {
+      "id": "recorded-7d",
+      "mode": "recorded",
+      "view": "#w=7d"
+    },
+    {
+      "id": "recorded-all",
+      "mode": "recorded",
+      "view": "#w=all"
+    },
+    {
+      "id": "recorded-old-week",
+      "mode": "recorded",
+      "view": "#t=2026-09-03T00:00Z~2026-09-10T00:00Z&p=76000~87500"
+    },
+    {
+      "id": "fake-live-24h",
+      "mode": "fake-live",
+      "view": "#w=24h"
+    },
+    {
+      "id": "fake-live-7d",
+      "mode": "fake-live",
+      "view": "#w=7d"
+    },
+    {
+      "id": "fake-live-all",
+      "mode": "fake-live",
+      "view": "#w=all"
+    },
+    {
+      "id": "fake-live-old-week",
+      "mode": "fake-live",
+      "view": "#t=2026-08-11T00:00Z~2026-08-18T00:00Z&p=24700~27200"
+    }
+  ],
+  "heavy": [
+    {
+      "id": "rows-volume",
+      "mode": "fake-live",
+      "view": "#w=30d&rows=volume",
+      "note": "Rows, Amount"
+    },
+    {
+      "id": "rows-relvol",
+      "mode": "fake-live",
+      "view": "#w=30d&rows=relvol",
+      "note": "Rows, relative volume"
+    },
+    {
+      "id": "movement-path",
+      "mode": "fake-live",
+      "view": "#w=7d&mode=path",
+      "note": "movement encoding Path"
+    },
+    {
+      "id": "movement-dwell",
+      "mode": "fake-live",
+      "view": "#w=7d&mode=dwell",
+      "note": "movement encoding Dwell"
+    },
+    {
+      "id": "reference-families",
+      "mode": "fake-live",
+      "view": "#w=30d&lines=1d,7d,30d,ema21,sma50,bb1d,svwap",
+      "note": "profile period lines, moving averages, Bollinger and session VWAP"
+    },
+    {
+      "id": "rsi",
+      "mode": "fake-live",
+      "view": "#w=30d&pane=rsi1d",
+      "note": "RSI pane"
+    },
+    {
+      "id": "macd",
+      "mode": "fake-live",
+      "view": "#w=30d&pane=macd1d",
+      "note": "MACD pane"
+    },
+    {
+      "id": "continuations",
+      "mode": "fake-live",
+      "view": "#w=24h&tab=continuations",
+      "note": "continuations tab"
+    },
+    {
+      "id": "lens",
+      "mode": "fake-live",
+      "view": "#w=24h",
+      "preGesture": {
+        "keys": [
+          "l"
+        ],
+        "moveTo": "canvas-center"
+      },
+      "note": "resolution lens on"
+    },
+    {
+      "id": "geometry-outline",
+      "mode": "fake-live",
+      "view": "#w=24h&mode=geometry",
+      "note": "Geometry outline"
+    }
+  ],
+  "smoke": {
+    "note": "What `npm run benchmark:smoke` runs: the same code path on a reduced protocol, to prove the tool works and its report validates. Its numbers are never evidence.",
+    "aaPairs": 2,
+    "screeningPairs": 2,
+    "confirmationPairs": 2,
+    "heavyPairs": 1,
+    "bootstrapResamples": 200,
+    "coreIds": [
+      "recorded-24h",
+      "fake-live-24h"
+    ],
+    "heavyIds": [
+      "rows-volume",
+      "lens"
+    ],
+    "gesture": {
+      "wheelIn": 4,
+      "wheelOut": 4,
+      "drags": 2
+    }
+  },
+  "budgetCondition": "baseline-meets-budget",
+  "candleCache": {
+    "ranges": 64,
+    "records": 65536,
+    "bytes": 16777216,
+    "recordBytes": 192
+  },
+  "candleCases": [
+    {
+      "id": "candles-24h",
+      "mode": "fake-live",
+      "view": "#w=24h&mode=candles",
+      "comparisonView": "#w=24h"
+    },
+    {
+      "id": "candles-7d",
+      "mode": "fake-live",
+      "view": "#w=7d&mode=candles",
+      "comparisonView": "#w=7d"
+    },
+    {
+      "id": "candles-all",
+      "mode": "fake-live",
+      "view": "#w=all&mode=candles",
+      "comparisonView": "#w=all"
+    },
+    {
+      "id": "candles-lens",
+      "mode": "fake-live",
+      "view": "#w=24h&mode=candles",
+      "comparisonView": "#w=24h",
+      "preGesture": {
+        "keys": [
+          "l"
+        ],
+        "moveTo": "canvas-center"
+      }
+    },
+    {
+      "id": "candles-old-week",
+      "mode": "fake-live",
+      "view": "#t=2026-08-11T00:00Z~2026-08-18T00:00Z&p=24700~27200&mode=candles",
+      "comparisonView": "#t=2026-08-11T00:00Z~2026-08-18T00:00Z&p=24700~27200"
+    },
+    {
+      "id": "candles-rows-references",
+      "mode": "fake-live",
+      "view": "#w=30d&mode=candles&rows=volume&lines=1d,7d,30d,ema21,sma50,bb1d,svwap",
+      "comparisonView": "#w=30d&rows=volume&lines=1d,7d,30d,ema21,sma50,bb1d,svwap"
+    },
+    {
+      "id": "candles-replay",
+      "mode": "fake-live",
+      "view": "#w=24h&mode=candles&replay=1&at=2026-09-24T06:00Z",
+      "comparisonView": "#w=24h&replay=1&at=2026-09-24T06:00Z"
+    }
+  ],
+  "realHost": {
+    "aaPairs": 10,
+    "screeningPairs": 5,
+    "confirmationPairs": 20,
+    "supportedLevels": [
+      2,
+      4,
+      6,
+      8,
+      9
+    ],
+    "requiredLevels": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+    ],
+    "maxBars": 4096,
+    "relativeRegressionFloor": 0.05,
+    "absoluteRegressionFloorMs": 2,
+    "endpoint": "/cube/bars",
+    "requiredRead": "/cube/query",
+    "note": "Pair on identical held state and range. Compare candidate bar_read with preceding main; required query latency under sequential candle demand versus no candle demand. Stop on cube revision or errors; no fake timing certification."
+  }
+}

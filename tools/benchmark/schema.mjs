@@ -60,9 +60,9 @@ const caseList = (c, path, list, { heavy }) => {
 export function validateConfig(config) {
   const c = checker();
   if (!c.object("config", config)) return c.errors;
-  c.ok("config.schemaVersion", [1, 2].includes(config.schemaVersion), "must be 1 or 2");
+  c.ok("config.schemaVersion", [1, 2, 3].includes(config.schemaVersion), "must be 1, 2 or 3");
   c.ok("config.kind", config.kind === CONFIG_KIND, `must be ${CONFIG_KIND}`);
-  if (config.schemaVersion === 2) {
+  if (config.schemaVersion >= 2) {
     c.ok("config.budgetCondition", config.budgetCondition === "baseline-meets-budget", "must preserve the baseline budget condition");
     c.ok("config.candleCache", JSON.stringify(config.candleCache) === JSON.stringify({ranges:64,records:65536,bytes:16777216,recordBytes:192}), "must pin all candle cache caps");
     caseList(c, "config.candleCases", config.candleCases, { heavy: true });

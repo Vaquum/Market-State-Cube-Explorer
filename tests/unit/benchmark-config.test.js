@@ -564,3 +564,9 @@ describe("P4-S1 predeclared v2", () => {
     assert.ok(validateConfig(v2).some(x => x.includes("candleCache")));
   });
 });
+it("v3 extends the immutable candle matrix without changing any acceptance number", async () => {
+ const v2=readJson(path.join(BENCH,"navigation.v2.json")),v3=readJson(path.join(BENCH,"navigation.v3.json"));
+ const {validateConfig}=await load("schema.mjs");assert.deepEqual(validateConfig(v3),[]);
+ for(const key of ["protocol","budgets","budgetCondition","candleCache","realHost","core"])assert.deepEqual(v3[key],v2[key],key);
+ assert.deepEqual(v3.candleCases.slice(0,4),v2.candleCases);assert.deepEqual(v3.candleCases.slice(4).map(x=>x.id),["candles-old-week","candles-rows-references","candles-replay"]);
+});

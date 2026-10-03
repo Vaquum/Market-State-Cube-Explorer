@@ -86,7 +86,7 @@ function effective(config, smoke) {
   }
   const s = config.smoke;
   const core = s.coreIds.map((id) => byId(config.core).get(id));
-  const heavy = s.heavyIds.map((id) => byId(config.heavy).get(id));
+  const heavy = [...s.heavyIds.map((id) => byId(config.heavy).get(id)), ...(config.candleCases ?? [])];
   const protocol = {
     ...config.protocol,
     aaPairs: s.aaPairs,
@@ -180,12 +180,14 @@ async function trial({ build, caseDef, config, gesture, mode, cpuThrottle, reduc
       const session = await context.newCDPSession(page);
       await session.send("Emulation.setCPUThrottlingRate", { rate: cpuThrottle });
     }
+    const loadStarted = performance.now();
     await page.goto(`${fake.url}/${caseDef.view}`, { waitUntil: "load", timeout: config.trial.loadTimeoutMs });
     // The page is ready when its loading line is hidden: all three blocks are decoded (#ol-loading is the same element in both builds).
     await page.waitForFunction(() => document.getElementById("ol-loading")?.hidden === true, null, { timeout: config.trial.loadTimeoutMs });
     await fake.idle({ quietMs: config.trial.idleQuietMs, timeoutMs: config.trial.idleTimeoutMs });
     await sleep(config.trial.pauseMs);
 
+    const coldLoadMs = performance.now() - loadStarted;
     const timerResolutionMs = await evaluate(page, () => window.__bench.timerResolution());
     const box = await page.locator("#ol-canvas").boundingBox();
     if (!box) throw new Error("#ol-canvas has no box: the page did not draw");
@@ -218,6 +220,19 @@ async function trial({ build, caseDef, config, gesture, mode, cpuThrottle, reduc
     const steadyFits = await fitsOf(page);
     const steadyCandle = await evaluate(page, () => { const node=document.getElementById("ol-candle-legend"), d=node && !node.hidden ? node.dataset : null; return d ? {ranges:+d.cacheRanges,records:+d.cacheRecords,bytes:+d.cacheBytes,decodeMs:+d.decodeMs,encodedBytes:+d.encodedBytes,decodedBytes:+d.decodedBytes} : null; });
 
+    const toggles = [];
+    if (caseDef.view.includes("mode=candles")) {
+      for (const target of ["Volume", "Candles"]) {
+        fake.clearLog();
+        await evaluate(page, () => window.__bench.begin());
+        await page.keyboard.press("k");
+        await page.waitForFunction(target => document.getElementById("ol-mode-text")?.textContent === target, target);
+        await fake.idle({ quietMs: config.trial.idleQuietMs, timeoutMs: config.trial.idleTimeoutMs });
+        await evaluate(page, () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        toggles.push({ target, ...await evaluate(page, () => window.__bench.end()), ...readsOf(fake) });
+      }
+    }
+
     const run = (r, reads, fits, candle) => ({
       readBytes: reads.bytes, candle,
       draws: r.draws,
@@ -230,7 +245,7 @@ async function trial({ build, caseDef, config, gesture, mode, cpuThrottle, reduc
       errors: pageErrors.length,
       unexpected: reads.unexpected,
     });
-    return { cold: run(cold, coldReads, coldFits, coldCandle), steady: run(steady, steadyReads, steadyFits, steadyCandle), timerResolutionMs, version: browser.version(), pageErrors };
+    return { cold: { ...run(cold, coldReads, coldFits, coldCandle), loadMs: coldLoadMs }, steady: { ...run(steady, steadyReads, steadyFits, steadyCandle), toggles }, timerResolutionMs, version: browser.version(), pageErrors };
   } finally {
     await browser.close();
   }

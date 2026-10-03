@@ -44,3 +44,22 @@ test("wide locked views request one centered bounded window and disclose pending
  const cutoff=fake.info().cutoffBase, midpoint=cutoff-7*1536/2;expect(Math.abs((+q.b0+ +q.b1)/2-midpoint)).toBeLessThanOrEqual(2);
  expect(fake.log().filter(r=>r.path==="/cube/tile")).toHaveLength(0);await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","pending");
 });
+
+test("a live delta refreshes only the forming candle and retains completed OHLC",async({page,fakeFor})=>{
+ const fake=await fakeFor("micro:bars",{next:3});await page.goto(fake.url+"/"+view);
+ await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");await fake.idle();
+ await page.keyboard.press("t");const first=page.locator('#ol-candle-table tbody tr[data-candle="0"]');const before=await first.textContent();
+ fake.clearLog();fake.advance({minutes:2,trades:[{t_ms:1250000,price:2625000,qty:400000,takerBuy:true}]});
+ const last=page.locator('#ol-candle-table tbody tr[data-candle="5"]');await expect(last.locator("td").nth(4)).toHaveText("26,250",{timeout:10000});await fake.idle();
+ expect(await first.textContent()).toBe(before);expect(bars(fake)).toHaveLength(1);expect(+bars(fake)[0].query.b0).toBe(20);expect(+bars(fake)[0].query.b1).toBe(23);
+});
+
+test("a whole pack replacement preserves the exact replay edge and cannot expose new future trades",async({page,fakeFor})=>{
+ const fake=await fakeFor("micro:bars",{next:3});const replay=view.replace("r=2,0","r=8,0")+"&replay=1&at=2021-01-01T00:01:40.001Z";await page.goto(fake.url+"/"+replay);
+ await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");await page.keyboard.press("t");
+ const row=page.locator('#ol-candle-table tbody tr[data-candle="0"]');await expect(row.locator("td").nth(4)).toHaveText("24,875");await fake.idle();fake.clearLog();
+ fake.holdPacks(1);fake.advance({minutes:2,trades:[{t_ms:1250000,price:2625000,qty:400000,takerBuy:true}]});
+ await expect.poll(()=>fake.log().filter(r=>r.path==="/cube/pack"&&r.answer==="pack").length,{timeout:10000}).toBe(1);
+ await expect.poll(()=>bars(fake).length,{timeout:10000}).toBe(1);await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");await fake.idle();
+ expect(+bars(fake)[0].query.b1).toBeCloseTo(100001/56250,9);await expect(row.locator("td").nth(2)).toHaveText("25,375");await expect(row.locator("td").nth(4)).toHaveText("24,875");await expect(row).toContainText("So far");
+});

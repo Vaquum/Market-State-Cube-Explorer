@@ -3,7 +3,7 @@
 const {test,expect}=require("./fixtures.js");
 const place=url=>[...new URLSearchParams(new URL(url).hash.slice(1))].filter(([k])=>["t","p","r","w","sel","at","rows","pane","period","lines"].includes(k));
 test("Candles replaces cells and K restores the prior mode without moving the camera",async({page,fakeFor})=>{
- const fake=await fakeFor("mini");await page.goto(fake.url+"/#w=24h&mode=delta");await expect(page.locator("#ol-mode-text")).toHaveText("Delta");const before=place(page.url());
+ const fake=await fakeFor("mini");await page.goto(fake.url+"/#t=2026-09-23T12:00Z~2026-09-24T12:00Z&p=24600~25400&r=4,0&mode=delta");await expect(page.locator("#ol-mode-text")).toHaveText("Delta");const before=place(page.url());
  await page.keyboard.press("k");await expect(page.locator("#ol-mode-text")).toHaveText("Candles");await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");expect(place(page.url())).toEqual(before);
  await page.keyboard.down("k");await page.keyboard.down("k");await page.keyboard.up("k");await expect(page.locator("#ol-mode-text")).toHaveText("Delta");expect(place(page.url())).toEqual(before);
  await page.locator("#ol-mode").click();await page.locator('[data-mode="candles"]').click();await expect(page.locator("#ol-mode-text")).toHaveText("Candles");

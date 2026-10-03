@@ -1,6 +1,6 @@
 # Candles validation — release outstanding
 
-PRD #61 / slice #62. Browser configuration limits were committed at b9323e8 (v2); c3de923 extends the immutable matrix to all specified candle combinations (v3), retaining every numerical limit. These files are diagnostic evidence; they do not certify release.
+PRD #61 / slice #62. Browser configuration limits were committed at b9323e8 (v2, rebased as f333cc4); c3de923 (rebased as 628895b) extends the immutable matrix to all specified candle combinations (v3), retaining every numerical limit. These files are diagnostic evidence; they do not certify release.
 
 The live cube answered a bounded recent bar at every n0..20 at cutoff 2026-10-03T13:40Z. All records had valid OHLC ordering. This is real service level/coverage evidence, not an independent per-trade reconstruction. Independent hand-authored BigInt trade vectors cover all levels and before/at/after timestamp boundaries in the unit suite.
 
@@ -12,4 +12,6 @@ The first experiment incorrectly included waiting for the candle worker's comple
 
 Scripts are retained as executed. They run inside the deployed container after staging the candidate bridge and predeclared v2 configuration under the indicated /tmp paths. They rely on the container's existing supported reader, pyarrow and numpy; they never modify served code. The older baseline Explorer constructor takes the page plus credentials; main #63 changes that constructor. Adapt baseline setup when repeating against newer main, retaining every statistical limit and the measured completion point.
 
-Outstanding: resolve/confirm the real required-read regression, run the full designated-machine D12 browser protocol against preceding main and 8c82ca1, exact-SHA CI and production rollout/rollback verification. Keep #61/#62 open. No deployment is authorized by this evidence alone.
+Outstanding: resolve/confirm the real required-read regression, run the full designated-machine D12 browser protocol against preceding main and 8c82ca1, exact-SHA CI and production rollout/rollback verification. Keep #61/#62 open. Production was authorized subject to passing these gates; this evidence does not permit rollout.
+
+Local correctness: on a42face plus the Candles branch, npm test passed 1,874 tests with six pre-existing skips; goldens, generated-page parity and syntax/bridge compilation passed. The final candle browser suite passed all 11 cases. A previous full browser run passed 642/645 cases; its three failures were one stale API-key expectation (fixed and retested) and two missing trace-artifact files caused by overlapping local Playwright runs (both retested successfully after rebasing). Full CI on the final PR commit remains required. Both-theme candle screenshots were inspected; bodies/wicks replace the cell surface.

@@ -9998,6 +9998,7 @@
   function candleRange(n, a, b) {
     if (!PACK.live) return { state: "unavailable", bars: [], end: 0, reason: "Candles — Live cube only" };
     const step = 2 ** n, start = Math.max(0, Math.floor(a / step) * step), stop = Math.min(candleEdge(), Math.ceil(b / step) * step);
+    if (stop <= start) return { state: "after-cutoff", bars: [], end: stop, reason: "After cutoff" };
     const memoKey = [live.generation, PACK.state_token, n, start, stop, CANON, candleVersion, motion.failed.size].join("|");
     if (candleMemo.has(memoKey)) return candleMemo.get(memoKey);
     const gap = candleGap(n, start, stop), held = candleHeld(n, start, stop), byColumn = new Map();
@@ -10009,17 +10010,19 @@
       }
       if (h.stop >= stop) end = Math.min(end, h.r.end);
     }
+    const window = candleWindow(n, a, b, candleEdge()), capped = stop - start > TILE_COLUMNS * step;
     const failed = gap && [...motion.failed].find(([key]) => {
       const [kind, gen, level, from, to, pack] = key.split("|");
-      return kind === "candles" && +gen === live.generation && +level === n && pack === PACK.state_token && +to > gap[0] && +from < gap[1];
+      return kind === "candles" && +gen === live.generation && +level === n && pack === PACK.state_token && +to > window.a && +from < window.b;
     });
-    const result = { state: gap ? failed ? "failed" : "pending" : "ready", reason: failed?.[1] ?? null, bars: [...byColumn.values()].sort((x, y) => x.c - y.c), end };
+    const reason = failed?.[1] ?? (capped && !candleGap(n, window.a, window.b) ? "Showing a 4,096-interval window; outer intervals pending" : null);
+    const result = { state: gap ? failed ? "failed" : "pending" : "ready", reason, bars: [...byColumn.values()].sort((x, y) => x.c - y.c), end };
     candleMemo.set(memoKey, result);
     while (candleMemo.size > 8) candleMemo.delete(candleMemo.keys().next().value);
     return result;
   }
   function candleStatus(r) {
-    return r.state === "unavailable" ? r.reason : r.state === "failed" ? `Candles unavailable: ${r.reason}` : r.state === "pending" ? "Reading candles…" : r.end < candleEdge() ? `Coverage through ${when(r.end)} UTC` : r.bars.length ? `Measured through ${when(r.end)} UTC` : "No trades in this interval";
+    return r.state === "unavailable" || r.state === "after-cutoff" ? r.reason : r.state === "failed" ? `Candles unavailable: ${r.reason}` : r.state === "pending" ? r.reason ?? "Reading candles…" : r.end < candleEdge() ? `Coverage through ${when(r.end)} UTC` : r.bars.length ? `Measured through ${when(r.end)} UTC` : "No trades in this interval";
   }
   function paintCandles(n, a, b) {
     const r = candleRange(n, a, b);

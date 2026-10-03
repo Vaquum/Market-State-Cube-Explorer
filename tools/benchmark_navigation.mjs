@@ -200,7 +200,7 @@ async function trial({ build, caseDef, config, gesture, mode, cpuThrottle, reduc
     await fake.idle({ quietMs: config.trial.idleQuietMs, timeoutMs: config.trial.idleTimeoutMs });
     const coldReads = readsOf(fake);
     const coldFits = await fitsOf(page);
-    const coldCandle = await evaluate(page, () => { const d=document.getElementById("ol-candle-legend")?.dataset; return d ? {ranges:+d.cacheRanges,records:+d.cacheRecords,bytes:+d.cacheBytes,decodeMs:+d.decodeMs,encodedBytes:+d.encodedBytes,decodedBytes:+d.decodedBytes} : null; });
+    const coldCandle = await evaluate(page, () => { const node=document.getElementById("ol-candle-legend"), d=node && !node.hidden ? node.dataset : null; return d ? {ranges:+d.cacheRanges,records:+d.cacheRecords,bytes:+d.cacheBytes,decodeMs:+d.decodeMs,encodedBytes:+d.encodedBytes,decodedBytes:+d.decodedBytes} : null; });
 
     // Reset the view by hash: the page takes an address it did not write whole (popstate), so the steady run starts from the case's
     // view with everything it has already loaded and calibrated. The detour through an address that names no view makes sure the
@@ -216,7 +216,7 @@ async function trial({ build, caseDef, config, gesture, mode, cpuThrottle, reduc
     await fake.idle({ quietMs: config.trial.idleQuietMs, timeoutMs: config.trial.idleTimeoutMs });
     const steadyReads = readsOf(fake);
     const steadyFits = await fitsOf(page);
-    const steadyCandle = await evaluate(page, () => { const d=document.getElementById("ol-candle-legend")?.dataset; return d ? {ranges:+d.cacheRanges,records:+d.cacheRecords,bytes:+d.cacheBytes,decodeMs:+d.decodeMs,encodedBytes:+d.encodedBytes,decodedBytes:+d.decodedBytes} : null; });
+    const steadyCandle = await evaluate(page, () => { const node=document.getElementById("ol-candle-legend"), d=node && !node.hidden ? node.dataset : null; return d ? {ranges:+d.cacheRanges,records:+d.cacheRecords,bytes:+d.cacheBytes,decodeMs:+d.decodeMs,encodedBytes:+d.encodedBytes,decodedBytes:+d.decodedBytes} : null; });
 
     const run = (r, reads, fits, candle) => ({
       readBytes: reads.bytes, candle,

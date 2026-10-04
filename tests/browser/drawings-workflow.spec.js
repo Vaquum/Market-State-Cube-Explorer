@@ -55,7 +55,8 @@ test("exact edit is atomic; fields own native Undo; lock and hide block canvas o
   await page.locator("#ol-drawing-color").fill("#Aa00Ff"); await page.locator("#ol-drawing-apply").click();
   await expect(page.locator("#ol-drawing-editor")).toBeHidden();
   const applied = await D.row(page, id); expect(applied).toMatchObject({ name: "Exact annotation", color: "#aa00ff", a: { timeMs: Date.parse("2026-09-23T16:00:00.123Z"), priceCents: 2480025 }, b: { timeMs: Date.parse("2026-09-24T04:00:00.456Z"), priceCents: 2510075 } });
-  await D.edit(page, id); await page.locator("#ol-drawing-name").focus(); await page.keyboard.press("End"); await page.keyboard.type(" typed");
+  await D.edit(page, id); await page.locator("#ol-drawing-name").focus(); await page.keyboard.press("End"); await page.keyboard.insertText(" typed");
+  await expect(page.locator("#ol-drawing-name")).toHaveValue("Exact annotation typed");
   await page.keyboard.press("ControlOrMeta+z"); await expect(page.locator("#ol-drawing-name")).toHaveValue("Exact annotation"); expect(await D.row(page, id)).toEqual(applied);
   await page.locator("#ol-drawing-cancel").click(); expect(await D.row(page, id)).toEqual(applied);
   await D.action(page, id, "lock"); await D.edit(page, id);

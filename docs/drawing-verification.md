@@ -17,3 +17,19 @@ Candidate `3557543` passed **1,903 unit tests** (six existing skips) and **all 6
 Browser coverage includes exact geometry, direct gestures and cancellation, keyboard ownership, touch/pinch, duplicate choice, visibility/lock/delete/Undo, shared overlay budget, Cells/Candles/Lens/Inspect/replay, complete-code replacement, tab recovery, quota failures, two old-writer rollbacks and ordered named-view updates. Independent unit fixtures and market/wire goldens remain separate from implementation.
 
 Local timing is diagnostic evidence, with pinned 0/20/200 objects, Volume/Candles, pan/endpoint edit/Play and five samples per case. It is not designated-machine performance certification. Human first-attempt sessions and physical-device recognition remain outstanding under the [operator checklist](operator-drawings.md); screenshots and automated tests do not complete them.
+
+## Local diagnostic receipt
+
+Candidate `3557543`, 90 samples (18 cases × five), Apple M1 Max / macOS arm64, Chromium153.0.8010.12. All20 actual endpoint edits applied, made zero `/cube/*` reads, and produced painted samples; no page errors. Worst endpoint-edit input-to-paint p95 was23.5ms; worst pan/edit p95 was23.9ms. Frame-interval p95 stayed at or below16.8ms.
+
+Maximum per-sample draw p95 in milliseconds, across Volume/Candles:
+
+| Action | 0 drawings | 20 drawings | 200 drawings |
+| --- | ---: | ---: | ---: |
+| Pan | 1.6 | 3.6 | 11.1 |
+| Endpoint edit (0 is empty-chart pan) | 1.6 | 3.7 | 6.5 |
+| Play | 6.7 | 9.2 | 14.7 |
+
+Dense pan/Play exceeded the inherited10ms draw target. One20-line Candles pan sample had1/60 intervals over33.3ms (1.67%, above the1% target). Volume Play's first input-to-paint p95 was218.4ms with0 lines and225.9ms with200; this metric includes waiting for the replay tick. These are local observations, without paired A/A floors or designated-machine certification; they add no automatic merge gate.
+
+Page SHA256: `e394d3e0d12fc536e00c7aa7edbdb965c025dff309daad2ed531b9dd32f867af`. Config SHA256: `a4643a0b47ec2e1646040c2a2a63bb97d815999b29f387804d252a15e02aec25`. Raw samples, frames, inputs, request logs and host/browser/config metadata remain in `reports/drawing-diagnostic-final/raw.json` (ignored local output).

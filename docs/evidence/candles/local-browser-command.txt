@@ -1,0 +1,1 @@
+node tools/benchmark_navigation.mjs --config tools/benchmark/navigation.v3.json --out reports/candles/local-full --baseline 8c82ca1f03d80d3f35ff1ab6326902f4286f7b92 --preceding a42face90982ebd2b272d54ff989b1f13bde3202 --candidate 6b4cd29045fb92ad9f92031a40793ff1867b1f69 --label candles-local-full

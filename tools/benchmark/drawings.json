@@ -1,0 +1,15 @@
+{
+  "note": "Pinned local diagnostic only. Reuses navigation instrumentation; no designated-machine or D12 certification. Empty-chart drag is a navigation baseline, not a drawing edit.",
+  "drawingCounts": [0, 20, 200],
+  "priceModes": ["volume", "candles"],
+  "actions": ["pan", "drag", "play"],
+  "viewport": {"width": 1500, "height": 950},
+  "data": {"profile": "bench", "seed": 20260924, "cutoff": "2026-09-24T12:02:00.000000Z"},
+  "camera": {"timeStart": "2026-09-23T12:00:00Z", "timeEnd": "2026-09-24T12:00:00Z", "priceLowCents": 2460000, "priceHighCents": 2540000},
+  "drawSteps": 20,
+  "stepMs": 16,
+  "pauseMs": 300,
+  "playMs": 2000,
+  "samples": 5,
+  "budgets": {"p95DrawMs": 10, "p95FrameMs": 20, "p95InputToPaintMs": 50, "gestureIntervalOver33_3MsMaxShare": 0.01}
+}

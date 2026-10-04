@@ -1,7 +1,7 @@
 "use strict";
 // persistence-fresh.spec.js (package P): B14, fresh-browser round trips and migration (TESTPLAN 3.4; API B.15, C.13; INTEGRATION D.9,
 // D.14 items 8 and 9; issue #46 Acc.6). Requirement ids: S1-077..080 (exact restoration), S1-119 (each tab keeps its own active
-// snapshot), S1-163..165 (version 2 everywhere, classification, migration), S1-168 and S1-170 (a view code is self-contained; a
+// snapshot), S1-163..165 (versioned storage, classification, migration), S1-168 and S1-170 (a view code is self-contained; a
 // scale is not a market-data snapshot), S1-172 (Back and Forward).
 //
 // What is asserted, on the page of the working tree against a `mini` fake cube (the persistence paths do not need `standard`'s
@@ -15,7 +15,7 @@
 //     view (no notice for it either);
 //   * two tabs of one browser keep their own active snapshot (no `storage` event following); the browser-wide cache is read once;
 //   * a legacy link and a legacy named view migrate with one notice per payload and tab, and the stored named view is not rewritten
-//     until the person saves it again; Back and Forward: a place change is an entry, a setting change is not;
+//     when re-saved as a protected complete v3 snapshot; Back and Forward: a place change is an entry, a setting change is not;
 //   * cv=l and sw= round-trip; an unknown or different appearance is refused with a notice and the default stays; a live advance
 //     leaves the address, history.length and history.state of a view with an Auto mapping untouched (DD-92).
 //
@@ -123,7 +123,7 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     // the view code: copied here, pasted there, gives the same view and the same address
     await S.openQuery(page);
     await page.locator("#ol-copy-view").click();
-    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:2\./);
+    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:3\./);
     const code = await S.clipboardText(page);
     const third = await freshContext();
     const pasted = await third.newPage();
@@ -177,7 +177,7 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     const link = await S.clipboardText(page);
     await S.openQuery(page);
     await page.locator("#ol-copy-view").click();
-    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:2\./);
+    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:3\./);
     const code = await S.clipboardText(page);
     // a fresh context, nothing stored: the link alone carries the calibration and the frozen axis
     const other = await freshContext();
@@ -381,7 +381,7 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect(reports[0].count).toBe(1);
   });
 
-  test("a legacy named view opens migrated and is not rewritten until it is saved again", async ({ page, context, fakeFor }) => {
+  test("a legacy named view opens migrated and re-saving protects a complete v3 snapshot while retaining legacy bytes", async ({ page, context, fakeFor }) => {
     const fake = await fakeFor("mini");
     const entry = { name: "Old flow", live: false, span: 10, lead: 0, auto: true, mode: "flow", pane: "cells", rows: "off", period: "90d", hash: "#w=7d&mode=flow", tA: 1, tB: 2, cut: 3, n: 6, m: 0, window: "7d", replay: false };
     await seed(context, { "views:v1": [entry] });
@@ -396,11 +396,14 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect((await S.noticeCodes(page)).filter((c) => c === "legacy-migrated")).toHaveLength(1);
     // the stored entry is exactly what it was
     expect((await S.storage(page)).local["views:v1"]).toBe(raw);
-    // saving it again stamps version 2
+    // Re-saving creates a protected complete v3 snapshot; the legacy record stays verbatim.
     await S.openViews(page);
     await page.locator("#ol-view-name").fill("Old flow");
     await page.locator("#ol-view-form button[type=submit], #ol-view-form .ol-solid").first().click();
-    await expect.poll(async () => JSON.parse((await S.storage(page)).local["views:v1"])[0].visualVersion).toBe(2);
+    await expect.poll(async () => (await S.namedEntries(page)).find((x) => x.name === "Old flow")?.visualVersion).toBe(3);
+    const protectedEntry = (await S.namedEntries(page)).find((x) => x.name === "Old flow");
+    expect(protectedEntry.payload).toMatchObject({ visualVersion: 3, drawings: { schemaVersion: 1, objects: [] } });
+    expect((await S.storage(page)).local["views:v1"]).toBe(raw);
   });
 
   test("Back and Forward: a place change is an entry, a setting change is not", async ({ page, fakeFor }) => {
@@ -432,15 +435,17 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     }
   });
 
-  test("the original build opens a vis=2 address and reads what this build stored (rollback, B22's persistence half)", async ({ page, fakeFor, baselinePage }) => {
+  test("the original build opens vis=2 addresses and legacy names while preserving protected v3 snapshots (rollback, B22)", async ({ page, context, fakeFor, baselinePage }) => {
     const fake = await fakeFor("mini");
+    const legacyNamed = { name: "Legacy kept", live: false, span: 10, lead: 0, auto: true, mode: "delta", pane: "cells", rows: "off", period: "90d", hash: "#w=24h&vis=2&ap=" + S.AP + "&mode=delta", tA: 1, tB: 2, cut: 3, n: 6, m: 0, window: "24h", replay: false, visualVersion: 2 };
+    await seed(context, { "views:v1": [legacyNamed] });
     const descriptor = S.address({ mode: "delta", scale: { basis: "intensity" } }, [S.valueRecord("delta", 4, 0, 1204551.25, 8830.5, { policy: "k", origin: "manual" })]);
     await page.goto(fake.url + "/" + descriptor.hash);
     await fake.idle();
     await S.openViews(page);
     await page.locator("#ol-view-name").fill("Kept");
     await page.locator("#ol-view-form button[type=submit]").click();
-    await expect.poll(async () => (await S.storage(page)).local["views:v1"]).toContain("Kept");
+    await expect.poll(async () => (await S.namedEntries(page)).map((x) => x.name)).toContain("Kept");
     // any action that saves writes the last view (a named view writes only its own list)
     await page.keyboard.press("Escape");
     await page.keyboard.press("i");
@@ -449,7 +454,7 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     // the keys, envelopes and entries this build writes are the ones the original build reads
     expect(JSON.parse(written.local["view:v5"])).toMatchObject({ version: 5, visualVersion: 2 });
     expect(JSON.parse(written.session["history:v1"])).toMatchObject({ visualVersion: 2 });
-    expect(JSON.parse(written.local["views:v1"])[0]).toMatchObject({ name: "Kept", visualVersion: 2 });
+    expect((await S.namedEntries(page)).find((x) => x.name === "Kept")).toMatchObject({ name: "Kept", visualVersion: 3, payload: { visualVersion: 3, drawings: { schemaVersion: 1, objects: [] } } });
     // the original build, given that storage and then an address with the version-2 parameters
     const seedStorage = ({ local, session }) => {
       try {
@@ -467,7 +472,10 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     // a stored last view with version-2 members: restored by its place and settings, the members it does not know ignored
     await expect.poll(async () => (await S.where(old)).hash).toBe("#w=24h&mode=delta");
     await S.openViews(old);
-    await expect(old.locator("#ol-saved")).toContainText("Kept");
+    await expect(old.locator("#ol-saved")).toContainText("Legacy kept");
+    // Old readers do not offer v3 snapshots, but leave their protected records intact.
+    await expect(old.locator("#ol-saved")).not.toContainText("Kept");
+    expect(await S.namedStorage(old)).toEqual(Object.fromEntries(Object.entries(strip(written.local)).filter(([k]) => k.startsWith("drawing-views:v1:")).map(([k, v]) => ["market-state-cube-explorer:" + k, v])));
     const { page: linked } = await baselinePage({ mode: "live", url: "/" + descriptor.hash });
     await linked.locator("#ol-canvas").waitFor();
     await expect.poll(async () => (await S.where(linked)).hash).toBe("#w=24h&mode=delta");

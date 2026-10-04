@@ -122,6 +122,21 @@ function storage(page) {
     return { local: read(localStorage), session: read(sessionStorage) };
   });
 }
+// The authoritative protected named registry, read directly from its verified pointer.
+// A missing record is an error; tests never substitute a shortened hash or legacy cache.
+async function namedEntries(page) {
+  const saved = await storage(page), raw = saved.local["drawing-views:v1:pointer"];
+  if (raw === undefined) return [];
+  const pointer = JSON.parse(raw), record = saved.local["drawing-views:v1:record:" + pointer.id];
+  if (record === undefined) throw new Error("protected named payload is missing");
+  const parsed = JSON.parse(record);
+  if (pointer.storageVersion !== 1 || parsed.storageVersion !== 1 || parsed.id !== pointer.id || !Array.isArray(parsed.entries)) throw new Error("invalid protected named registry");
+  return parsed.entries;
+}
+function namedStorage(page) {
+  return page.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith("market-state-cube-explorer:drawing-views:v1:")).map((k) => [k, localStorage.getItem(k)])));
+}
+
 // Open the Query tab of the drawer (where the view code and the import live).
 async function openQuery(page) {
   const panel = page.locator("#ol-panel-query");
@@ -168,5 +183,5 @@ async function openViews(page) {
 
 module.exports = {
   E, ENV, AP, ADDRESS_MAX, plain, view, address, cellsContext, valueRecord, rankRecord, DUPLICATE_VALUES, scOf, param, said, withoutSc,
-  gzipCode, bombCode, b64url, canvasHash, popoverAction, notices, noticeCodes, where, storage, openQuery, importCode, clipboardText, openViews,
+  gzipCode, bombCode, b64url, namedEntries, namedStorage, canvasHash, popoverAction, notices, noticeCodes, where, storage, openQuery, importCode, clipboardText, openViews,
 };

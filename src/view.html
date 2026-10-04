@@ -236,7 +236,7 @@
           aria-label="Lines"
           aria-keyshortcuts="P"
           data-keys="P"
-          data-hint="POC lines, session levels and the clock"
+          data-hint="Your drawings, calculated reference lines, session levels and the clock"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M1.5 4.5h13M1.5 8h9M1.5 11.5h11" />
@@ -272,7 +272,7 @@
                 id="ol-lines-clear"
                 class="ol-action ol-s cursor-interaction"
               >
-                Clear
+                Clear references and Level
               </button></span
             >
           </div>
@@ -565,6 +565,20 @@
                 stroke-dasharray="2 1.6"
               /></svg
             ><span class="ol-label">Select</span></button
+          ><button
+            type="button"
+            id="ol-trend"
+            class="ol-icon-button cursor-interaction"
+            data-tool="trend"
+            aria-pressed="false"
+            aria-label="Trend line"
+            aria-keyshortcuts="G"
+            data-keys="G"
+            data-hint="Click two points or drag to draw; return to Pan to adjust the line"
+          >
+            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4 12 8-8M2 11l2-1 2 1v2l-2 1-2-1zM10 3l2-1 2 1v2l-2 1-2-1z" />
+            </svg><span class="ol-label">Trend line</span></button
           ><button
             type="button"
             id="ol-lens"
@@ -980,6 +994,18 @@
           hidden
         ></div>
       </div>
+      <div id="ol-drawing-toolbar" class="ol-drawing-toolbar" data-drawing-ui role="group" aria-label="Active drawing" hidden>
+        <i id="ol-drawing-toolbar-swatch" class="ol-drawing-swatch" aria-hidden="true"></i>
+        <span id="ol-drawing-toolbar-name" class="ol-drawing-toolbar-name"></span>
+        <span id="ol-drawing-toolbar-status" class="ol-drawing-status"></span>
+        <label id="ol-drawing-keep-label" class="ol-drawing-check" hidden><input id="ol-drawing-keep" type="checkbox" />Keep drawing</label>
+        <button type="button" id="ol-drawing-edit" class="ol-action cursor-interaction">Edit</button>
+        <div class="ol-group ol-drawing-more-group">
+          <button type="button" id="ol-drawing-more" class="ol-action cursor-interaction" aria-haspopup="menu" aria-expanded="false" aria-controls="ol-drawing-actions">More</button>
+          <div id="ol-drawing-actions" class="ol-pop ol-pop-end ol-menu ol-drawing-actions" data-temporary="popover" data-drawing-ui role="menu" aria-label="Drawing actions" hidden></div>
+        </div>
+      </div>
+      <p id="ol-drawing-replay-status" class="ol-drawing-replay-note" role="status" aria-live="polite" hidden></p>
       <div class="ol-plot">
         <canvas
           id="ol-canvas"
@@ -1807,6 +1833,30 @@
       </div>
     </aside>
   </div>
+  <dialog id="ol-drawing-editor" class="ol-keys ol-drawing-dialog" data-temporary="modal" data-drawing-ui aria-labelledby="ol-drawing-editor-title">
+    <form id="ol-drawing-form" class="ol-keys-body" novalidate>
+      <div class="ol-keys-head"><h2 id="ol-drawing-editor-title">Edit trend line</h2><button type="button" id="ol-drawing-editor-close" class="ol-icon-button cursor-interaction" aria-label="Cancel editing"><svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button></div>
+      <p id="ol-drawing-editor-note" class="ol-keys-note">Free coordinates · UTC time and USDT price. Apply saves all fields together.</p>
+      <label class="ol-drawing-field" for="ol-drawing-name">Name<input id="ol-drawing-name" type="text" autocomplete="off" aria-describedby="ol-drawing-name-error" /><span id="ol-drawing-name-error" class="ol-drawing-error"></span></label>
+      <div class="ol-drawing-color-field"><label class="ol-drawing-field" for="ol-drawing-color">Color · #RRGGBB<input id="ol-drawing-color" type="text" spellcheck="false" autocomplete="off" maxlength="7" aria-describedby="ol-drawing-color-error" /><span id="ol-drawing-color-error" class="ol-drawing-error"></span></label><input id="ol-drawing-color-picker" type="color" aria-label="Choose drawing color" /></div>
+      <fieldset class="ol-drawing-anchor"><legend>Point A</legend>
+        <label class="ol-drawing-field" for="ol-drawing-a-time">Time · UTC<input id="ol-drawing-a-time" type="text" spellcheck="false" autocomplete="off" aria-describedby="ol-drawing-a-time-error" /><span id="ol-drawing-a-time-error" class="ol-drawing-error"></span></label>
+        <label class="ol-drawing-field" for="ol-drawing-a-price">Price · USDT<input id="ol-drawing-a-price" type="text" inputmode="decimal" autocomplete="off" aria-describedby="ol-drawing-a-price-error" /><span id="ol-drawing-a-price-error" class="ol-drawing-error"></span></label>
+      </fieldset>
+      <fieldset class="ol-drawing-anchor"><legend>Point B</legend>
+        <label class="ol-drawing-field" for="ol-drawing-b-time">Time · UTC<input id="ol-drawing-b-time" type="text" spellcheck="false" autocomplete="off" aria-describedby="ol-drawing-b-time-error" /><span id="ol-drawing-b-time-error" class="ol-drawing-error"></span></label>
+        <label class="ol-drawing-field" for="ol-drawing-b-price">Price · USDT<input id="ol-drawing-b-price" type="text" inputmode="decimal" autocomplete="off" aria-describedby="ol-drawing-b-price-error" /><span id="ol-drawing-b-price-error" class="ol-drawing-error"></span></label>
+      </fieldset>
+      <p id="ol-drawing-editor-error" class="ol-drawing-error" role="status" aria-live="polite"></p>
+      <div class="ol-drawing-dialog-actions"><button type="button" id="ol-drawing-editor-undo" class="ol-action cursor-interaction">Undo drawing</button><span class="ol-drawing-spacer"></span><button type="button" id="ol-drawing-cancel" class="ol-action cursor-interaction">Cancel</button><button type="submit" id="ol-drawing-apply" class="ol-action ol-solid cursor-interaction">Apply</button></div>
+    </form>
+  </dialog>
+  <dialog id="ol-drawing-chooser" class="ol-keys ol-drawing-dialog ol-drawing-choice-dialog" data-temporary="modal" data-drawing-ui aria-labelledby="ol-drawing-chooser-title">
+    <div class="ol-keys-body"><div class="ol-keys-head"><h2 id="ol-drawing-chooser-title">Choose drawing</h2><button type="button" id="ol-drawing-chooser-close" class="ol-icon-button cursor-interaction" aria-label="Cancel drawing choice"><svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button></div><div id="ol-drawing-choices" class="ol-drawing-choices"></div></div>
+  </dialog>
+  <dialog id="ol-drawing-confirm" class="ol-keys ol-drawing-dialog ol-drawing-choice-dialog" data-temporary="modal" data-drawing-ui role="alertdialog" aria-labelledby="ol-drawing-confirm-title" aria-describedby="ol-drawing-confirm-note">
+    <div class="ol-keys-body"><h2 id="ol-drawing-confirm-title">Delete drawings?</h2><p id="ol-drawing-confirm-note" class="ol-keys-note">This includes locked drawings. Undo restores the complete collection.</p><div class="ol-drawing-dialog-actions"><button type="button" id="ol-drawing-confirm-cancel" class="ol-action cursor-interaction">Cancel</button><button type="button" id="ol-drawing-confirm-delete" class="ol-action cursor-interaction">Delete all</button></div></div>
+  </dialog>
   <dialog class="ol-keys" id="ol-keys" data-temporary="modal" aria-labelledby="ol-keys-title">
     <div class="ol-keys-body">
       <div class="ol-keys-head">
@@ -1903,6 +1953,22 @@
             <div>
               <dt>Pan, select, lens, inspect</dt>
               <dd><kbd>V</kbd> <kbd>S</kbd> <kbd>L</kbd> <kbd>E</kbd></dd>
+            </div>
+            <div>
+              <dt>Draw a trend line; G again cancels</dt>
+              <dd><kbd>G</kbd></dd>
+            </div>
+            <div>
+              <dt>Edit the active drawing</dt>
+              <dd><kbd>Enter</kbd></dd>
+            </div>
+            <div>
+              <dt>Undo / redo a drawing in drawing context</dt>
+              <dd><kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>Z</kbd> / <kbd>Shift</kbd> <kbd>Z</kbd></dd>
+            </div>
+            <div>
+              <dt>Delete an active unlocked drawing</dt>
+              <dd><kbd>Delete</kbd></dd>
             </div>
             <div>
               <dt>Lens depth</dt>

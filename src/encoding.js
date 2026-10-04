@@ -1,5 +1,6 @@
 /* Measurement, scale, readout and persistence definitions shared by the page and the Node tests.
-   One factory, no dependencies: no DOM, no network, no d3, no storage, no clock, no randomness.
+   One factory, no dependencies: no DOM, no network, no d3, no storage or clock.
+   Loading is deterministic; manual drawing creation requests cryptographic UUIDs only when called.
    Plain script in the page (window.explorerEncoding), require() in Node. Assembled from parts; after the
    first assembly this file is the single source of truth and is edited directly. */
 (function (root, factory) {
@@ -4458,7 +4459,7 @@
   // E.role.occlusion(candidates, plot, opts) (PRD-0002 S2, the occlusion budget): persistent reference strokes, their backings and their label plates
   // may cover at most `budget` (20%) of the measured heatmap rectangle `plot` {x, y, w, h}, the overlaps counted once. The cover is held on a bounded
   // occupancy grid of `cell` css px squares (2), built from the marks' screen rectangles, so a frame never scans history or pixels. A candidate is
-  // {id, hot, rank, rects: [[x0, y0, x1, y1], ...]} (the rectangles its marks cover, backing and plate included). The focused ones (`hot`) come first,
+  // {id, hot, rank, rects: [[x0, y0, x1, y1], ...], strokes?, priority?}. Manual strokes charge clipped solid capsules; optional priority precedes hot/rank. The focused ones (`hot`) come first,
   // then by ascending `rank` (lower is kept longer), ties in the order given; a candidate that would take the cover past the budget is OFF unless it is
   // focused: the focused mark is never thinned or widened, and when it alone needs more than the budget the answer says so (`focusOver`).
   // -> {off: Set of ids, shown, eligible, used (grid cells), limit, cells, focusOver}
@@ -4490,10 +4491,54 @@
           }
         }
     };
-    const order = candidates.slice().sort((a, b) => Number(b.hot) - Number(a.hot) || a.rank - b.rank);
+    const claimCell = (c, r) => {
+      if (c < 0 || c >= cols || r < 0 || r >= rows) return;
+      const k = r * cols + c;
+      if (grid[k] === 0) { grid[k] = 2; claimed.push(k); }
+    };
+    // Scan only the capsule's narrow strip in each intersected row; never its diagonal bounding box.
+    const claimStroke = (stroke, remaining) => {
+      if (!stroke || !Number.isFinite(stroke.width) || stroke.width <= 0 || stroke.width > 4.5) throw new RangeError("occlusion: stroke width needs 0–4.5 CSS px");
+      const radius = stroke.width / 2;
+      const segment = API.drawings.clip(stroke.a, stroke.b, { x: plot.x - radius, y: plot.y - radius, w: plot.w + 2 * radius, h: plot.h + 2 * radius });
+      if (!segment) return;
+      const a = segment.a, b = segment.b, dy = b.y - a.y, dx = b.x - a.x, length2 = dx * dx + dy * dy, radius2 = radius * radius;
+      const cornerDistance2 = (x, y) => { const t = length2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / length2)); return (x - a.x - t * dx) ** 2 + (y - a.y - t * dy) ** 2; };
+      const r0 = Math.max(0, Math.floor((Math.min(a.y, b.y) - radius - plot.y) / size));
+      const r1 = Math.min(rows - 1, Math.floor((Math.max(a.y, b.y) + radius - plot.y) / size));
+      for (let r = r0; r <= r1; r++) {
+        const y0 = plot.y + r * size, y1 = Math.min(y0 + size, plot.y + plot.h);
+        let lo = 0, hi = 1;
+        if (dy !== 0) { const ta = (y0 - radius - a.y) / dy, tb = (y1 + radius - a.y) / dy; lo = Math.max(0, Math.min(ta, tb)); hi = Math.min(1, Math.max(ta, tb)); if (lo > hi) continue; }
+        const xa = a.x + lo * dx, xb = a.x + hi * dx;
+        const c0 = Math.max(0, Math.floor((Math.min(xa, xb) - radius - plot.x) / size));
+        const c1 = Math.min(cols - 1, Math.floor((Math.max(xa, xb) + radius - plot.x) / size));
+        for (let c = c0; c <= c1; c++) {
+          if (grid[r * cols + c] !== 0) continue;
+          const x0 = plot.x + c * size, x1 = Math.min(x0 + size, plot.x + plot.w);
+          const ax = Math.max(x0 - a.x, 0, a.x - x1), ay = Math.max(y0 - a.y, 0, a.y - y1);
+          const bx = Math.max(x0 - b.x, 0, b.x - x1), by = Math.max(y0 - b.y, 0, b.y - y1);
+          // Segment/rectangle SAT: rectangle axes plus the normal to the segment.
+          const normal0 = dx * (y0 - a.y) - dy * (x0 - a.x), normal1 = dx * (y1 - a.y) - dy * (x0 - a.x);
+          const normal2 = dx * (y0 - a.y) - dy * (x1 - a.x), normal3 = dx * (y1 - a.y) - dy * (x1 - a.x);
+          const crosses = Math.max(a.x, b.x) >= x0 && Math.min(a.x, b.x) <= x1 && Math.max(a.y, b.y) >= y0 && Math.min(a.y, b.y) <= y1 &&
+            Math.min(normal0, normal1, normal2, normal3) <= 0 && Math.max(normal0, normal1, normal2, normal3) >= 0;
+          if (crosses || ax * ax + ay * ay <= radius2 || bx * bx + by * by <= radius2 ||
+              cornerDistance2(x0, y0) <= radius2 || cornerDistance2(x0, y1) <= radius2 || cornerDistance2(x1, y0) <= radius2 || cornerDistance2(x1, y1) <= radius2) {
+            claimCell(c, r);
+            if (claimed.length > remaining) return; // already refused: no full-footprint work can change that decision
+          }
+        }
+      }
+    };
+    const order = candidates.slice().sort((a, b) => (a.priority ?? -1) - (b.priority ?? -1) || Number(b.hot) - Number(a.hot) || a.rank - b.rank);
     for (const m of order) {
       claimed.length = 0;
-      for (const r of m.rects) claim(r[0], r[1], r[2], r[3]);
+      for (const r of m.rects || []) claim(r[0], r[1], r[2], r[3]);
+      for (const stroke of m.strokes || []) {
+        claimStroke(stroke, m.hot ? Infinity : Math.max(0, out.limit - out.used));
+        if (!m.hot && out.used + claimed.length > out.limit) break;
+      }
       const cost = claimed.length;
       out.eligible++;
       const refuse = !m.hot && out.used + cost > out.limit;
@@ -10053,7 +10098,7 @@
   //   code text      origo-cube:2. and origo-cube:2j. -> v2; origo-cube:%7B and origo-cube:{ and plain JSON
   //                  with a `query` or `view` -> legacy; a plain cube query -> query (not a view: no notice);
   //                  any other tag -> reject
-  //   payload object visualVersion === 2 -> v2; absent and non-empty -> legacy; anything else -> reject
+  //   payload object visualVersion === 2/3 -> v2/v3 (complete codes); absent and non-empty -> legacy; otherwise reject
   //                  (the raw payload is the caller's to preserve); empty or null -> bare
   // `version` is 2 for v2, null for legacy and bare, and the version as SEEN (text or number) for a reject.
   function cdcClassify(x) {
@@ -10064,6 +10109,7 @@
     if (Object.prototype.hasOwnProperty.call(x, "visualVersion")) {
       const version = x.visualVersion;
       if (version === 2) return { kind: "v2", version: 2 };
+      if (version === 3) return { kind: "v3", version: 3 };
       return { kind: "reject", version, reason: "visual version " + (cdcIsFinite(version) || typeof version === "string" ? String(version) : "of another type") + " was made by a newer or unknown version" };
     }
     return Object.keys(x).length === 0 ? { kind: "bare", version: null } : { kind: "legacy", version: null };
@@ -10074,6 +10120,7 @@
     if (t.startsWith(cdcCodePrefix)) {
       const rest = t.slice(cdcCodePrefix.length);
       if (rest.startsWith("2.") || rest.startsWith("2j.")) return { kind: "v2", version: 2 };
+      if (rest.startsWith("3.") || rest.startsWith("3j.")) return { kind: "v3", version: 3 };
       if (/^(?:%7b|\{)/i.test(rest)) return { kind: "legacy", version: null };
       const tag = /^([A-Za-z0-9]+)\./.exec(rest);
       return { kind: "reject", version: tag ? tag[1] : null, reason: tag ? "made by a newer or unknown version (" + tag[1] + ")" : "an unrecognised view code" };
@@ -10725,7 +10772,11 @@
   const cdcCtxKeys = ["consumer", "instrument", "measure", "basis", "unit", "transform", "formula", "quality", "workspace", "n", "m", "period", "rowSize", "base", "bounds"];
   const cdcBaseKeys = ["consumer", "instrument", "measure", "basis", "unit", "transform", "formula", "quality", "workspace", "n", "m"];
   const cdcAllowed = Object.freeze({
-    "": ["visualVersion", "kind", "id", "query", "view", "appearance", "scales", "axes", "models", "observation"],
+    "": ["visualVersion", "kind", "id", "query", "view", "appearance", "scales", "axes", "models", "observation", "drawings"],
+    drawings: ["schemaVersion", "instrument", "visible", "objects"],
+    "drawings.objects[]": ["id", "name", "a", "b", "color", "visible", "locked", "ordinal"],
+    "drawings.objects[].a": ["timeMs", "priceCents"],
+    "drawings.objects[].b": ["timeMs", "priceCents"],
     query: ["t1", "t2", "p1", "p2", "tR", "pR"],
     view: ["mode", "pane", "poc", "area", "untested", "rows", "period", "level", "lines", "tab", "replay", "anchor", "horizon", "evidenceKind", "barrier", "follow", "auto", "window", "viewport", "selection", "scale", "profileCmp", "profileOpen"],
     "view.scale": ["basis", "pathBasis", "transform", "curve", "rowsTransform", "cells", "rows", "local", "window", "lock"],
@@ -10801,8 +10852,8 @@
   // encodePortable(payload, {deflate}) -> Promise<string> (B.15, C.13): the code of a view. `payload` is the
   // JSON of B.15 without its `id` (this fills it: the id96 of the canonical payload, an integrity check
   // the reader recomputes). The text is the canonical JSON (sorted keys, so the same view is the same code),
-  // gzip + base64url behind "origo-cube:2." when `deflate` (u8 -> Promise<u8>, gzip) is given, else
-  // percent-encoded behind "origo-cube:2j.". Every limit is enforced on WRITE: a payload that would not be
+  // gzip + base64url behind "origo-cube:2." or drawing-bearing "3." when `deflate` is given, else
+  // percent-encoded behind "origo-cube:2j."/"3j.". Every limit is enforced on WRITE: a payload that would not be
   // accepted back throws (CodeError naming why; LimitError for a size or count).
   async function cdcEncodePortable(payload, opts) {
     API.result.assertJsonSafe(payload);
@@ -10821,11 +10872,11 @@
     if (opts && typeof opts.deflate === "function") {
       const packed = await opts.deflate(bytes);
       if (packed === null || typeof packed !== "object" || typeof packed.length !== "number") throw cdcError("CodeError", "deflate did not return bytes", { code: "deflate" });
-      const code = cdcCodePrefix + "2." + API.hash.b64urlEncode(packed);
+      const code = cdcCodePrefix + full.visualVersion + "." + API.hash.b64urlEncode(packed);
       if (code.length > cdcCodeMax) throw cdcError("LimitError", "the code is longer than " + cdcCodeMax + " characters", { code: "limit" });
       return code;
     }
-    const code = cdcCodePrefix + "2j." + encodeURIComponent(text);
+    const code = cdcCodePrefix + full.visualVersion + "j." + encodeURIComponent(text);
     if (code.length > cdcTextCodeMax) throw cdcError("LimitError", "the code is longer than " + cdcTextCodeMax + " characters", { code: "limit" });
     return code;
   }
@@ -10834,8 +10885,8 @@
   // first, nothing applied until all pass: (1) text length, (2) classify, (3) base64url, (4) bounded
   // inflate, (5) fatal UTF-8, (6) nesting depth and JSON.parse with no reviver, (7) the structural walk:
   // allowlisted members, depth, string and array bounds, no prototype keys, results copied into fresh
-  // objects. `kind` is "v2", "legacy" or "query" (a bare cube query: not a view, no notice). The payload of a
-  // v2 code is checked further by validatePortable. Any failure REJECTS with a CodeError whose `reason`,
+  // objects. `kind` is "v2", "v3", "legacy" or "query" (a bare cube query: not a view, no notice). The payload of a
+  // complete code is checked further by validatePortable. Any failure REJECTS with a CodeError whose `reason`,
   // `code` and (when a version was named) `version` say why; a rejected code is never partly applied.
   async function cdcDecodePortable(text, opts) {
     const reject = (code, reason, version) => cdcError("CodeError", reason, { code, version: version === undefined ? null : version });
@@ -10844,7 +10895,7 @@
     const cls = cdcClassifyText(t);
     if (cls.kind === "reject") throw reject("version", cls.reason, cls.version);
     let json;
-    if (t.startsWith(cdcCodePrefix + "2.")) {
+    if (t.startsWith(cdcCodePrefix + "2.") || t.startsWith(cdcCodePrefix + "3.")) {
       if (t.length > cdcCodeMax) throw reject("too-large", "the code is longer than " + cdcCodeMax + " characters");
       const packed = API.hash.b64urlDecode(t.slice(cdcCodePrefix.length + 2));
       if (packed === null) throw reject("base64", "the code is not base64url");
@@ -10867,7 +10918,7 @@
       if (!t.startsWith(cdcCodePrefix) && !t.startsWith("{")) throw reject("structure", "this is not a view code");
       if (t.length > cdcTextCodeMax) throw reject("too-large", "the code is longer than " + cdcTextCodeMax + " characters");
       let rest = t.startsWith(cdcCodePrefix) ? t.slice(cdcCodePrefix.length) : t;
-      if (rest.startsWith("2j.")) rest = rest.slice(3);
+      if (rest.startsWith("2j.") || rest.startsWith("3j.")) rest = rest.slice(3);
       try {
         json = rest.startsWith("{") ? rest : decodeURIComponent(rest);
       } catch (error) {
@@ -10883,17 +10934,20 @@
       throw reject("json", "the code is not valid JSON");
     }
     if (!cdcIsObject(parsed)) throw reject("structure", "the code is not a view");
-    const coded = t.startsWith(cdcCodePrefix + "2.") || t.startsWith(cdcCodePrefix + "2j.");
+    const coded = /^origo-cube:[23]j?\./.test(t);
     const seen = cdcClassify(parsed);
     let kind = "query";
-    if (coded) kind = "v2";
+    if (coded) {
+      kind = cls.kind;
+      if (seen.kind !== kind) throw reject("version", "code version and payload visual version disagree", seen.version);
+    }
     else if (Object.prototype.hasOwnProperty.call(parsed, "visualVersion")) kind = seen.kind;
     else if (cdcIsObject(parsed.query) || cdcIsObject(parsed.view)) kind = "legacy";
     if (kind === "reject") throw reject("version", seen.reason, seen.version);
     if (kind === "bare" || Object.keys(parsed).length === 0) throw reject("structure", "the code is empty");
-    const walked = cdcWalk(parsed, kind === "v2" ? cdcAllowed : null, "", 0);
+    const walked = cdcWalk(parsed, kind === "v2" || kind === "v3" ? cdcAllowed : null, "", 0);
     if (walked.reason) throw reject("structure", walked.reason);
-    return { kind, version: kind === "v2" ? 2 : null, payload: walked.value, digest: cdcDigest(t) };
+    return { kind, version: kind === "v2" ? 2 : kind === "v3" ? 3 : null, payload: walked.value, digest: cdcDigest(t) };
   }
 
   const cdcConsumers = Object.freeze(["cells", "rows"]);
@@ -11062,11 +11116,16 @@
     };
     if (!cdcIsObject(obj)) return fail("a view payload is an object");
     const cls = cdcClassify(obj);
-    if (cls.kind !== "v2") return fail(cls.kind === "reject" ? cls.reason : "the payload names no visual version (it is a legacy payload)");
+    if (cls.kind !== "v2" && cls.kind !== "v3") return fail(cls.kind === "reject" ? cls.reason : "the payload names no visual version (it is a legacy payload)");
     const walked = cdcWalk(obj, cdcAllowed, "", 0);
     if (walked.reason) return fail(walked.reason);
     const p = walked.value;
     if (p.kind !== "view") return fail("the payload is not a view");
+    let drawings;
+    if (p.visualVersion === 3) {
+      if (!Object.prototype.hasOwnProperty.call(p, "drawings")) return fail("version 3 needs its complete drawing collection");
+      try { drawings = API.drawings.normalizeCollection(p.drawings); } catch (error) { return fail(error.message); }
+    } else if (Object.prototype.hasOwnProperty.call(p, "drawings")) return fail("drawing snapshots require visual version 3");
     if (typeof p.id !== "string" || !cdcIdPattern.test(p.id)) return fail("the payload id is missing");
     const body = {};
     for (const key of Object.keys(p)) if (key !== "id") body[key] = p[key];
@@ -11179,7 +11238,7 @@
     if (view.replay === true && !checkedView.replay) dropped.push({ key: "replay", reason: "a replay needs an anchor on this page" });
     if (view.anchor !== undefined && view.anchor !== null && checkedView.anchor === null) dropped.push({ key: "anchor", reason: "the anchor is not on this page" });
     const value = {
-      visualVersion: 2,
+      visualVersion: p.visualVersion,
       kind: "view",
       id: p.id,
       query: { t1: q.t1, t2: q.t2, p1: q.p1, p2: q.p2, tR: q.tR, pR: q.pR },
@@ -11190,6 +11249,7 @@
       models,
       observation: obs === undefined ? null : obs,
     };
+    if (p.visualVersion === 3) value.drawings = drawings;
     return { ok: true, reasons, value, dropped };
   }
 
@@ -11536,6 +11596,169 @@
   // E.candles.Cache: create bounded numerical LRU storage, with the same constructor interface.
   function cndCache() { return new CndCache(); }
   API.candles = Object.freeze({ LIMITS: cndLimits, record: cndRecord, project: cndProject, paint: cndPaint, span: cndSpan, Cache: cndCache });
+
+  // Manual annotations: committed domain values, projected geometry and bounded delta history.
+  // Unlike chart/version 2 state, complete drawing snapshots carry visualVersion 3.
+  const drwLimits = Object.freeze({ objects: 200, history: 100, timeMin: Date.UTC(2009, 0, 1), timeMax: Date.UTC(2100, 0, 1), priceMax: 1000000000 });
+  const drwInstrument = "binance:spot:BTCUSDT";
+  const drwOrdinals = new WeakMap();
+  const drwUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const drwOwn = (x, k) => Object.prototype.hasOwnProperty.call(x, k);
+  const drwObject = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+  function drwFail(message) { throw new RangeError("Drawings: " + message); }
+  function drwKeys(x, allowed, label) {
+    if (!drwObject(x)) drwFail(label + " must be an object");
+    for (const k of Object.keys(x)) if (!allowed.includes(k)) drwFail(label + " has unsupported field " + k);
+  }
+  function drwName(value) {
+    if (typeof value !== "string") drwFail("name must be plain text");
+    const name = value.trim();
+    if (!name || Array.from(name).length > 80 || /[\u0000-\u001f\u007f-\u009f]/u.test(value)) drwFail("name needs 1–80 characters without controls");
+    for (const c of name) { const cp = c.codePointAt(0); if (cp >= 0xd800 && cp <= 0xdfff) drwFail("name contains an unpaired surrogate"); }
+    return name;
+  }
+  function drwAnchor(raw) {
+    drwKeys(raw, ["timeMs", "priceCents"], "anchor");
+    if (!Number.isSafeInteger(raw.timeMs) || raw.timeMs < drwLimits.timeMin || raw.timeMs > drwLimits.timeMax) drwFail("time must be integer UTC milliseconds between 2009 and 2100");
+    if (!Number.isSafeInteger(raw.priceCents) || raw.priceCents < 0 || raw.priceCents > drwLimits.priceMax) drwFail("price must be integer cents between 0 and 1,000,000,000");
+    return { timeMs: raw.timeMs, priceCents: raw.priceCents };
+  }
+  function drwNormalizeObject(raw) {
+    drwKeys(raw, ["id", "name", "a", "b", "color", "visible", "locked", "ordinal"], "line");
+    if (typeof raw.id !== "string" || !drwUuid.test(raw.id)) drwFail("ID must be a lowercase UUIDv4");
+    if (typeof raw.color !== "string" || !/^#[0-9a-f]{6}$/i.test(raw.color)) drwFail("color must be #RRGGBB without alpha");
+    if (typeof raw.visible !== "boolean" || typeof raw.locked !== "boolean") drwFail("visibility and lock must be true or false");
+    if (!Number.isSafeInteger(raw.ordinal) || raw.ordinal < 0) drwFail("creation ordinal must be a nonnegative safe integer");
+    const a = drwAnchor(raw.a), b = drwAnchor(raw.b);
+    if (a.timeMs === b.timeMs && a.priceCents === b.priceCents) drwFail("Choose a different point");
+    return { id: raw.id, name: drwName(raw.name), a, b, color: raw.color.toLowerCase(), visible: raw.visible, locked: raw.locked, ordinal: raw.ordinal };
+  }
+  function drwEmpty() { return { schemaVersion: 1, instrument: drwInstrument, visible: true, objects: [] }; }
+  function drwNormalizeCollection(raw) {
+    drwKeys(raw, ["schemaVersion", "instrument", "visible", "objects"], "collection");
+    if (raw.schemaVersion !== 1) drwFail("unsupported drawing schema " + String(raw.schemaVersion));
+    if (raw.instrument !== drwInstrument) drwFail("collection belongs to a different instrument");
+    if (typeof raw.visible !== "boolean") drwFail("group visibility must be true or false");
+    if (!Array.isArray(raw.objects)) drwFail("objects must be a list");
+    if (raw.objects.length > drwLimits.objects) drwFail("maximum 200 drawings; no objects were removed");
+    const ids = new Set(), ordinals = new Set(), objects = raw.objects.map(drwNormalizeObject);
+    for (const o of objects) {
+      if (ids.has(o.id)) drwFail("repeated ID " + o.id);
+      if (ordinals.has(o.ordinal)) drwFail("repeated creation ordinal " + o.ordinal);
+      ids.add(o.id); ordinals.add(o.ordinal);
+    }
+    objects.sort((a, b) => a.ordinal - b.ordinal);
+    return { schemaVersion: 1, instrument: drwInstrument, visible: raw.visible, objects };
+  }
+  function drwId() {
+    if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+    if (typeof globalThis.crypto?.getRandomValues !== "function") drwFail("secure IDs are unavailable");
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16)); bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+    const h = Array.from(bytes, (x) => x.toString(16).padStart(2, "0")).join("");
+    return h.slice(0, 8) + "-" + h.slice(8, 12) + "-" + h.slice(12, 16) + "-" + h.slice(16, 20) + "-" + h.slice(20);
+  }
+  function drwNewObject(collection, opts) {
+    const c = drwNormalizeCollection(collection);
+    if (c.objects.length >= drwLimits.objects) drwFail("maximum 200 drawings; delete a line before creating another");
+    const ordinal = Math.max(drwOrdinals.get(collection) || 0, c.objects.reduce((n, o) => Math.max(n, o.ordinal + 1), 0));
+    if (!Number.isSafeInteger(ordinal)) drwFail("creation ordinal exhausted");
+    const o = opts || {};
+    drwOrdinals.set(collection, ordinal + 1);
+    return drwNormalizeObject({ id: o.id === undefined ? drwId() : o.id, name: o.name === undefined ? "Trend line " + (ordinal + 1) : o.name, a: o.a, b: o.b, color: o.color, visible: o.visible === undefined ? true : o.visible, locked: o.locked === undefined ? false : o.locked, ordinal });
+  }
+  function drwDuplicate(collection, id) {
+    const c = drwNormalizeCollection(collection), original = c.objects.find((o) => o.id === id);
+    if (!original) drwFail("line no longer exists");
+    const used = new Set(c.objects.map((o) => o.name)); let name;
+    for (let n = 1; ; n++) {
+      const suffix = " copy " + n; name = Array.from(original.name).slice(0, 80 - suffix.length).join("") + suffix;
+      if (!used.has(name)) break;
+    }
+    return drwNewObject(collection, { name, a: original.a, b: original.b, color: original.color, visible: true, locked: false });
+  }
+  function drwPoint(timeMs, priceUSDT) {
+    if (!Number.isFinite(timeMs) || !Number.isFinite(priceUSDT)) drwFail("coordinates must be finite");
+    return drwAnchor({ timeMs: Math.floor(timeMs + 0.5), priceCents: Math.floor(priceUSDT * 100 + 0.5) });
+  }
+  function drwTranslate(object, deltaTimeMs, deltaPriceUSDT) {
+    const o = drwNormalizeObject(object);
+    if (o.locked) drwFail("Unlock this drawing before moving it");
+    if (!Number.isFinite(deltaTimeMs) || !Number.isFinite(deltaPriceUSDT)) drwFail("movement must be finite");
+    const dt = Math.floor(deltaTimeMs + 0.5), dp = Math.floor(deltaPriceUSDT * 100 + 0.5);
+    return drwNormalizeObject({ ...o, a: { timeMs: o.a.timeMs + dt, priceCents: o.a.priceCents + dp }, b: { timeMs: o.b.timeMs + dt, priceCents: o.b.priceCents + dp } });
+  }
+  function drwParseTime(text) {
+    if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(text)) drwFail("time needs YYYY-MM-DDTHH:mm:ss[.SSS]Z");
+    const ms = Date.parse(text), canonical = text.includes(".") ? text : text.replace("Z", ".000Z");
+    if (!Number.isFinite(ms) || new Date(ms).toISOString() !== canonical) drwFail("time is not a valid UTC date");
+    return drwAnchor({ timeMs: ms, priceCents: 0 }).timeMs;
+  }
+  function drwParsePrice(text) {
+    if (typeof text !== "string" || !/^\d+(?:\.\d{1,2})?$/.test(text)) drwFail("price needs an unsigned decimal with at most two digits after the point");
+    const [whole, fractional = ""] = text.split("."), cents = Number(whole) * 100 + Number(fractional.padEnd(2, "0"));
+    return drwAnchor({ timeMs: drwLimits.timeMin, priceCents: cents }).priceCents;
+  }
+  function drwFormatTime(ms) { return new Date(drwAnchor({ timeMs: ms, priceCents: 0 }).timeMs).toISOString(); }
+  function drwFormatPrice(cents) { return (drwAnchor({ timeMs: drwLimits.timeMin, priceCents: cents }).priceCents / 100).toFixed(2); }
+  // Liang–Barsky clipping is bounded independently of the authored endpoints' distance.
+  function drwClip(a, b, rect) {
+    if (![a?.x, a?.y, b?.x, b?.y, rect?.x, rect?.y, rect?.w, rect?.h].every(Number.isFinite) || rect.w < 0 || rect.h < 0) return null;
+    const dx = b.x - a.x, dy = b.y - a.y; let lo = 0, hi = 1, loEdge = -1, hiEdge = -1;
+    const edges = [[-dx, a.x - rect.x], [dx, rect.x + rect.w - a.x], [-dy, a.y - rect.y], [dy, rect.y + rect.h - a.y]];
+    for (let i = 0; i < edges.length; i++) {
+      const [p, q] = edges[i];
+      if (p === 0) { if (q < 0) return null; }
+      else { const t = q / p; if (p < 0 && t > lo) { lo = t; loEdge = i; } else if (p > 0 && t < hi) { hi = t; hiEdge = i; } if (lo > hi) return null; }
+    }
+    const projected = (t, edge) => {
+      const p = { x: a.x + t * dx, y: a.y + t * dy };
+      // Set the actual clipping boundary exactly, avoiding far-origin cancellation on that axis.
+      if (edge === 0) p.x = rect.x; else if (edge === 1) p.x = rect.x + rect.w;
+      else if (edge === 2) p.y = rect.y; else if (edge === 3) p.y = rect.y + rect.h;
+      return p;
+    };
+    return { a: projected(lo, loEdge), b: projected(hi, hiEdge) };
+  }
+  function drwDistance(point, segment) {
+    const a = segment.a, b = segment.b, dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy;
+    const t = length2 === 0 ? 0 : Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / length2));
+    return Math.hypot(point.x - a.x - t * dx, point.y - a.y - t * dy);
+  }
+  function drwFreeze(c) { for (const o of c.objects) { Object.freeze(o.a); Object.freeze(o.b); Object.freeze(o); } Object.freeze(c.objects); return Object.freeze(c); }
+  function drwEqual(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function drwCreateStore(initial) {
+    let state = drwFreeze(drwNormalizeCollection(initial === undefined ? drwEmpty() : initial)), revision = 0;
+    const past = [], future = [];
+    let nextOrdinal = state.objects.reduce((n, o) => Math.max(n, o.ordinal + 1), 0);
+    drwOrdinals.set(state, nextOrdinal);
+    const delta = (before, after, label) => {
+      const a = new Map(before.objects.map((o) => [o.id, o])), b = new Map(after.objects.map((o) => [o.id, o])), changes = [];
+      for (const id of new Set([...a.keys(), ...b.keys()])) if (!drwEqual(a.get(id), b.get(id))) changes.push({ id, before: a.get(id) || null, after: b.get(id) || null });
+      return { label, visibleBefore: before.visible, visibleAfter: after.visible, changes };
+    };
+    const apply = (d, direction) => {
+      const objects = new Map(state.objects.map((o) => [o.id, o]));
+      for (const change of d.changes) { const o = change[direction]; if (o) objects.set(change.id, o); else objects.delete(change.id); }
+      state = Object.freeze({ ...state, visible: direction === "before" ? d.visibleBefore : d.visibleAfter, objects: Object.freeze([...objects.values()].sort((a, b) => a.ordinal - b.ordinal)) }); revision++;
+      drwOrdinals.set(state, nextOrdinal);
+    };
+    return Object.freeze({
+      get state() { return state; }, get nextOrdinal() { return nextOrdinal; }, get revision() { return revision; }, get canUndo() { return past.length > 0; }, get canRedo() { return future.length > 0; },
+      get undoLabel() { return past.length ? past[past.length - 1].label : ""; }, get redoLabel() { return future.length ? future[future.length - 1].label : ""; },
+      commit(label, next) {
+        if (typeof label !== "string" || !label.trim()) drwFail("transaction needs a label");
+        const value = drwFreeze(drwNormalizeCollection(next));
+        if (drwEqual(state, value)) return { changed: false, truncated: false, state };
+        const d = delta(state, value, label); past.push(d); const truncated = past.length > drwLimits.history;
+        if (truncated) past.shift(); future.length = 0; state = value; revision++;
+        nextOrdinal = Math.max(nextOrdinal, value.objects.reduce((n, o) => Math.max(n, o.ordinal + 1), 0)); drwOrdinals.set(state, nextOrdinal);
+        return { changed: true, truncated, state };
+      },
+      undo() { if (!past.length) return false; const d = past.pop(); apply(d, "before"); future.push(d); return true; },
+      redo() { if (!future.length) return false; const d = future.pop(); apply(d, "after"); past.push(d); return true; },
+    });
+  }
+  API.drawings = Object.freeze({ LIMITS: drwLimits, INSTRUMENT: drwInstrument, empty: drwEmpty, normalizeCollection: drwNormalizeCollection, normalizeObject: drwNormalizeObject, newObject: drwNewObject, duplicate: drwDuplicate, point: drwPoint, translate: drwTranslate, parseTime: drwParseTime, parsePrice: drwParsePrice, formatTime: drwFormatTime, formatPrice: drwFormatPrice, clip: drwClip, distance: drwDistance, createStore: drwCreateStore });
 
   // == §99-footer ==
   // @part 99-footer

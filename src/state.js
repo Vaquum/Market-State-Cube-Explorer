@@ -176,7 +176,160 @@
       return { ok: false, reason: describe(error) };
     }
   };
+  // Authored data has a protected namespace. Legacy view writers never touch these keys.
+  // A document forks its writer even when duplicate-tab sessionStorage inherited its pointer.
+  const drawingRoot = "drawings:v1:", drawingSessionKey = drawingRoot + "session", drawingIndexKey = drawingRoot + "index";
+  const namedRoot = "drawing-views:v1:", namedPointerKey = namedRoot + "pointer";
+  let drawingWriter = null, drawingSequence = 0, namedSequence = 0, namedBaseline = null;
+  const protectedId = () => {
+    const crypto = window.crypto || globalThis.crypto;
+    if (!crypto || typeof crypto.randomUUID !== "function") throw new Error("secure drawing storage identities are unavailable");
+    return crypto.randomUUID();
+  };
+  const writerId = () => drawingWriter || (drawingWriter = protectedId());
+  const protectedRead = (area, key) => {
+    const got = fetchText(area, key);
+    if (!got.ok) return { status: "unreadable", value: null, raw: null, reason: "storage is unavailable (" + describe(got.error) + ")" };
+    if (got.text === null) return { status: "absent", value: null, raw: null, reason: null };
+    try { return { status: "ok", value: JSON.parse(got.text), raw: got.text, reason: null }; }
+    catch { return { status: "unreadable", value: null, raw: got.text, reason: "saved authored data is not valid JSON" }; }
+  };
+  const verifiedWrite = (area, key, value) => {
+    const text = JSON.stringify(value); window[area].setItem(prefix + key, text);
+    if (window[area].getItem(prefix + key) !== text) throw new Error("authored storage write could not be verified");
+  };
+  const protectedKeys = (root) => {
+    const area = window.localStorage, keys = [];
+    for (let i = 0; i < area.length; i++) { const key = area.key(i); if (typeof key === "string" && key.startsWith(prefix + root + "record:")) keys.push(key.slice(prefix.length)); }
+    return keys;
+  };
+  const drawingRecord = (id) => {
+    const got = protectedRead("localStorage", drawingRoot + "record:" + id);
+    if (got.status !== "ok") return { ...got, collection: null };
+    const r = got.value;
+    if (!isObject(r) || r.storageVersion !== 1) return { ...got, status: "unknown-version", value: null, collection: null, reason: "unsupported authored recovery version" };
+    if (r.id !== id || typeof r.writer !== "string" || !Number.isSafeInteger(r.sequence) || r.sequence < 0 || !Number.isSafeInteger(r.revision) || r.revision < 0 || typeof r.pinned !== "boolean") return { ...got, status: "unreadable", value: null, collection: null, reason: "invalid authored recovery record" };
+    try { return { ...got, collection: window.explorerEncoding.drawings.normalizeCollection(r.collection) }; }
+    catch (error) { return { ...got, status: /unsupported drawing schema/.test(error.message) ? "unknown-version" : "unreadable", value: null, collection: null, reason: error.message }; }
+  };
+  const drawingRecoveries = () => {
+    try {
+      const recoveries = [];
+      for (const key of protectedKeys(drawingRoot)) {
+        const got = drawingRecord(key.slice((drawingRoot + "record:").length));
+        if (got.status === "ok") recoveries.push({ id: got.value.id, writer: got.value.writer, revision: got.value.revision, sequence: got.value.sequence, pinned: got.value.pinned, collection: got.collection });
+      }
+      return recoveries.sort((a, b) => b.sequence - a.sequence || a.id.localeCompare(b.id));
+    } catch { return []; }
+  };
+  const drawingLoad = () => {
+    const session = protectedRead("sessionStorage", drawingSessionKey), recoveries = drawingRecoveries();
+    if (session.status !== "ok") return { ...session, collection: null, recoveries };
+    if (!isObject(session.value) || session.value.storageVersion !== 1 || typeof session.value.id !== "string") return { status: "unknown-version", collection: null, raw: session.raw, reason: "unsupported or invalid drawing session", recoveries };
+    const got = drawingRecord(session.value.id);
+    if (got.status === "absent") return { status: "unreadable", collection: null, raw: session.raw, reason: "this tab's saved drawing revision is missing; choose a recovery", recoveries };
+    return { ...got, recoveries };
+  };
+  const drawingWrite = (collection, revision, pinned) => {
+    try {
+      const normalized = window.explorerEncoding.drawings.normalizeCollection(collection);
+      if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("invalid drawing revision");
+      const writer = writerId(), id = protectedId(), sequence = ++drawingSequence;
+      const record = { storageVersion: 1, id, writer, sequence, revision, pinned, collection: normalized };
+      verifiedWrite("localStorage", drawingRoot + "record:" + id, record);
+      // Reconcile from records, not a possibly raced/lost index. A pointer race loses no record.
+      const records = drawingRecoveries();
+      const own = records.filter((r) => r.writer === writer && !r.pinned).sort((a, b) => b.sequence - a.sequence);
+      const retained = new Set(own.slice(0, 2).map((r) => r.id));
+      verifiedWrite("localStorage", drawingIndexKey, { storageVersion: 1, ids: records.filter((r) => r.writer !== writer || r.pinned || retained.has(r.id)).map((r) => r.id) });
+      if (!pinned) verifiedWrite("sessionStorage", drawingSessionKey, { storageVersion: 1, writer, id });
+      // Only this document's own obsolete, unpinned revisions may be removed after verified pointers.
+      for (const r of own.slice(2)) {
+        if (!retained.has(r.id)) try { window.localStorage.removeItem(prefix + drawingRoot + "record:" + r.id); } catch { /* retaining extra recovery is safe */ }
+      }
+      return { ok: true, id };
+    } catch (error) { return { ok: false, reason: describe(error) }; }
+  };
+  const drawingRecover = (id) => { const got = drawingRecord(id); return { ...got, recoveries: drawingRecoveries() }; };
+  const validateNamedEntry = (entry) => {
+    if (!isObject(entry) || typeof entry.name !== "string" || !entry.name.trim()) throw new Error("named view needs its name");
+    if (![entry.span, entry.lead, entry.tA, entry.tB, entry.cut, entry.n, entry.m].every(Number.isFinite) || entry.span <= 0)
+      throw new Error("named view " + entry.name + " needs finite camera metadata and a positive span");
+    if (["live", "auto"].some((key) => entry[key] !== undefined && typeof entry[key] !== "boolean"))
+      throw new Error("named view " + entry.name + " needs boolean live/auto metadata");
+    if (entry.visualVersion === 3) {
+      if (!isObject(entry.payload) || entry.payload.visualVersion !== 3) throw new Error("named view needs its complete version-3 payload");
+      if (window.explorerEncoding.hash.utf8(window.explorerEncoding.hash.canonical(entry.payload)).length > window.explorerEncoding.LIMITS.PAYLOAD_MAX_BYTES) throw new Error("named view exceeds the complete payload byte limit");
+      const checked = window.explorerEncoding.codec.validatePortable(entry.payload, {});
+      if (!checked.ok) throw new Error("named view " + entry.name + ": " + checked.reasons.join("; "));
+    } else {
+      if (entry.visualVersion !== undefined && entry.visualVersion !== VISUAL_VERSION) throw new Error("unsupported named-view visual version");
+      if (typeof entry.hash !== "string" || !entry.hash || entry.payload !== undefined) throw new Error("legacy named view needs its chart address");
+    }
+    // Keep legacy metadata and the sealed original: normalized portable values are not wire payloads.
+    return JSON.parse(JSON.stringify(entry));
+  };
+  const validateNamedList = (list) => {
+    if (!Array.isArray(list)) throw new Error("protected named views must be a list");
+    const names = new Set();
+    return list.map((entry) => {
+      const checked = validateNamedEntry(entry);
+      if (names.has(checked.name)) throw new Error("repeated named view " + checked.name); names.add(checked.name);
+      return checked;
+    });
+  };
+  // The old namespace is read only by this new registry. Foreign entries stay there verbatim.
+  // Seed the first last-read baseline so a second tab cannot downgrade a concurrently upgraded view.
+  const legacyNamedBaseline = () => {
+    const got = read("views:v1"), entries = [], names = new Set();
+    if (got.status === "ok") for (const entry of got.value) {
+      if (entry?.visualVersion !== undefined && entry.visualVersion !== VISUAL_VERSION) continue;
+      try {
+        const checked = validateNamedEntry(entry);
+        if (!names.has(checked.name)) { entries.push(checked); names.add(checked.name); }
+      } catch { /* unusable legacy entries remain in their original namespace */ }
+    }
+    return entries;
+  };
+  const protectedNamedRead = () => {
+    const pointer = protectedRead("localStorage", namedPointerKey);
+    if (pointer.status !== "ok") return { ...pointer, entries: [] };
+    if (!isObject(pointer.value) || pointer.value.storageVersion !== 1 || typeof pointer.value.id !== "string") return { status: "unknown-version", entries: [], raw: pointer.raw, reason: "unsupported protected named-view pointer" };
+    const got = protectedRead("localStorage", namedRoot + "record:" + pointer.value.id);
+    if (got.status !== "ok") return { ...got, status: got.status === "absent" ? "unreadable" : got.status, entries: [], reason: got.reason || "protected named payload is missing" };
+    if (!isObject(got.value) || got.value.storageVersion !== 1) return { ...got, status: "unknown-version", value: null, entries: [], reason: "unsupported protected named-view version" };
+    try { return { ...got, entries: validateNamedList(got.value.entries) }; }
+    catch (error) { return { ...got, status: "unreadable", value: null, entries: [], reason: error.message }; }
+  };
+  const protectedNamedViews = () => {
+    const got = protectedNamedRead();
+    if (got.status === "ok") namedBaseline = JSON.parse(JSON.stringify(got.entries));
+    else if (got.status === "absent") namedBaseline = legacyNamedBaseline();
+    return got.entries;
+  };
+  const protectedSaveNamedViews = (list) => {
+    try {
+      const incoming = validateNamedList(list), current = protectedNamedRead();
+      if (current.status !== "ok" && current.status !== "absent") throw new Error(current.reason);
+      const baseline = namedBaseline || (current.status === "absent" ? legacyNamedBaseline() : current.entries);
+      const before = new Map(baseline.map((e) => [e.name, JSON.stringify(e)])), next = new Map(incoming.map((e) => [e.name, e]));
+      const merged = new Map(current.entries.map((e) => [e.name, e]));
+      for (const name of before.keys()) if (!next.has(name)) merged.delete(name);
+      for (const entry of incoming) if (current.status === "absent" || !before.has(entry.name) || before.get(entry.name) !== JSON.stringify(entry)) merged.set(entry.name, entry);
+      const entries = [...incoming.filter((e) => merged.has(e.name)).map((e) => merged.get(e.name)), ...[...merged.values()].filter((e) => !next.has(e.name))];
+      const id = protectedId(), record = { storageVersion: 1, id, writer: writerId(), sequence: ++namedSequence, entries };
+      verifiedWrite("localStorage", namedRoot + "record:" + id, record);
+      verifiedWrite("localStorage", namedPointerKey, { storageVersion: 1, id });
+      namedBaseline = entries; return { ok: true, id };
+    } catch (error) { return { ok: false, reason: describe(error) }; }
+  };
+  const protectedDrawings = Object.freeze({ load: drawingLoad, save: (collection, revision = 0) => drawingWrite(collection, revision, false), preserve: (collection) => drawingWrite(collection, 0, true), recover: drawingRecover });
+
   window.explorerState = {
+    drawings: protectedDrawings,
+    namedViews: protectedNamedViews,
+    namedViewsStatus: protectedNamedRead,
+    saveNamedViews: protectedSaveNamedViews,
     // Version 4 kept the workspace and the view in one object; version 5 splits them.
     saved: loadSaved(),
     save: (state) => store("view:v5", stamp(state)),

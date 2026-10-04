@@ -153,7 +153,7 @@ function parseDoc(text) {
 
 const COLUMNS = ["ID", "Consumer", "File / function / CSS rule", "Current", "Target role", "Measurement / channel", "Owner", "Tests", "Status"];
 const STATUSES = ["keep", "todo-S1", "todo-S2", "todo-S3", "done"];
-const OWNERS = ["#46", "#47", "#48", "#62"];
+const OWNERS = ["#46", "#47", "#48", "#62", "#66"];
 const ROW_ID = /^([CDFRTN])-(\d\d)([a-z]?)$/;
 const TEST_ID = /\b(?:U\d\d[a-z]?|B\d\d)\b/g;
 

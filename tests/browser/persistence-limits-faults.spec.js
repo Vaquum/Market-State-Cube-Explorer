@@ -130,13 +130,13 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     const pack = await packOf(page);
     const before = { where: await S.where(page) };
     const good = await codeOf(payloadOf(pack, [S.valueRecord("volume", 4, 0, 1204551.25, 8830.5)]));
-    const newer = S.gzipCode(JSON.stringify({ visualVersion: 3, kind: "view" }));
+    const newer = S.gzipCode(JSON.stringify({ visualVersion: 4, kind: "view" }));
     const cases = [
       { name: "bomb", text: S.bombCode(1), reason: /decompresses to more than 1048576 bytes/ },
       { name: "unknown tag", text: "origo-cube:9.abcdef", reason: /newer or unknown version \(9\)/ },
       // half of the gzip bytes, re-encoded: valid base64url, a stream that ends early
       { name: "truncated gzip", text: "origo-cube:2." + S.b64url(Buffer.from(good.slice("origo-cube:2.".length), "base64url").subarray(0, 120)), reason: /could not be decompressed/ },
-      { name: "newer visualVersion", text: newer, reason: /visual version 3 was made by a newer or unknown version/ },
+      { name: "newer visualVersion", text: newer, reason: /code version and payload visual version disagree/ },
     ];
     for (const c of cases) {
       const started = Date.now();
@@ -217,7 +217,7 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     await expect(page.locator("#ol-import-apply")).toBeEnabled();
   });
 
-  test("a browser that cannot compress writes the uncompressed code (origo-cube:2j.), and any browser reads it back", async ({ page, context, fakeFor, freshContext }) => {
+  test("a browser that cannot compress writes the uncompressed complete code (origo-cube:3j.), and any browser reads it back", async ({ page, context, fakeFor, freshContext }) => {
     await context.addInitScript(() => {
       delete window.CompressionStream;
     });
@@ -226,10 +226,10 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     await open(page, fake, "#w=24h&vis=2&ap=" + S.AP + "&mode=delta&bs=i");
     await S.openQuery(page);
     await page.locator("#ol-copy-view").click();
-    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:2j\./);
+    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:3j\./);
     const code = await S.clipboardText(page);
     // the uncompressed form is percent-encoded canonical JSON of the same payload
-    expect(JSON.parse(decodeURIComponent(code.slice("origo-cube:2j.".length)))).toMatchObject({ visualVersion: 2, kind: "view", appearance: { id: S.AP } });
+    expect(JSON.parse(decodeURIComponent(code.slice("origo-cube:3j.".length)))).toMatchObject({ visualVersion: 3, kind: "view", appearance: { id: S.AP }, drawings: { schemaVersion: 1, objects: [] } });
     const other = await freshContext();
     const tab = await other.newPage();
     await tab.goto(fake.url + "/");
@@ -268,7 +268,7 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     await expect(page.locator("#ol-views-status button")).toHaveText("Copy view code");
     // the offered code is the whole view
     await page.locator("#ol-views-status button").click();
-    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:2\./);
+    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:3\./);
     const full = await S.clipboardText(page);
     const other = await freshContext();
     const tab = await other.newPage();
@@ -291,7 +291,7 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     expect((after.match(/:q[A-Za-z0-9_-]{2000,}:/g) || []).length).toBe(2);
   });
 
-  test("a named view saved at a shortened address keeps the full code beside it, and opens exactly from it", async ({ page, fakeFor, freshContext }) => {
+  test("a named view saved at a shortened address keeps a complete v3 payload, and opens exactly from it", async ({ page, fakeFor, freshContext }) => {
     const fake = await fakeFor("mini");
     await open(page, fake);
     const pack = await packOf(page);
@@ -301,26 +301,27 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     await S.openViews(page);
     await page.locator("#ol-view-name").fill("Four ranks");
     await page.locator("#ol-view-form button[type=submit]").click();
-    await expect.poll(async () => (await S.storage(page)).local["views:v1"]).toContain("Four ranks");
-    const [entry] = JSON.parse((await S.storage(page)).local["views:v1"]);
-    // the entry is versioned, carries its (shortened) address, and the code that is exact
-    expect(entry.visualVersion).toBe(2);
+    await expect.poll(async () => (await S.namedEntries(page)).map((x) => x.name)).toContain("Four ranks");
+    const entry = (await S.namedEntries(page)).find((x) => x.name === "Four ranks");
+    // The entry carries its shortened address and complete sealed payload.
+    expect(entry.visualVersion).toBe(3);
     expect(entry.hash).toContain("q~");
-    expect(entry.code).toMatch(/^origo-cube:2\./);
-    expect(entry.code.length).toBeLessThanOrEqual(64 * 1024);
-    // in a fresh browser with only that list, opening the view restores the two mappings the address alone could not
+    expect(entry.payload).toMatchObject({ visualVersion: 3, drawings: { schemaVersion: 1, objects: [] } });
+    expect(Buffer.byteLength(JSON.stringify(entry.payload), "utf8")).toBeLessThanOrEqual(1048576);
+    // A fresh browser receives the complete protected record and pointer, without recipient-local lookups.
+    const protectedStorage = await S.namedStorage(page);
     const other = await freshContext();
     await other.addInitScript(
-      ({ prefix, list }) => {
+      (records) => {
         try {
           if (localStorage.getItem("__seeded")) return;
           localStorage.setItem("__seeded", "1");
-          localStorage.setItem(prefix + "views:v1", list);
+          for (const [key, value] of Object.entries(records)) localStorage.setItem(key, value);
         } catch {
           // a blank page has no storage
         }
       },
-      { prefix: STORE, list: JSON.stringify([entry]) },
+      protectedStorage,
     );
     const tab = await other.newPage();
     await tab.goto(fake.url + "/");
@@ -409,8 +410,8 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
   });
 
   test("storage written by another version is kept: a newer view, named views and history are named and never lost", async ({ page, context, fakeFor }) => {
-    const foreignView = JSON.stringify({ version: 5, visualVersion: 3, prefs: {}, view: "#w=7d&vis=3" });
-    const entry = { name: "Newer", live: false, span: 10, lead: 0, auto: true, mode: "volume", pane: "cells", rows: "off", period: "90d", hash: "#w=7d&vis=3", tA: 1, tB: 2, cut: 3, n: 6, m: 0, window: "7d", replay: false, visualVersion: 3 };
+    const foreignView = JSON.stringify({ version: 5, visualVersion: 4, prefs: {}, view: "#w=7d&vis=4" });
+    const entry = { name: "Newer", live: false, span: 10, lead: 0, auto: true, mode: "volume", pane: "cells", rows: "off", period: "90d", hash: "#w=7d&vis=4", tA: 1, tB: 2, cut: 3, n: 6, m: 0, window: "7d", replay: false, visualVersion: 4 };
     const mine = { ...entry, name: "Mine", hash: "#w=24h&vis=2&ap=" + S.AP, visualVersion: 2 };
     const junk = "not an entry";
     await context.addInitScript(
@@ -420,7 +421,7 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
           localStorage.setItem("__seeded", "1");
           localStorage.setItem(prefix + "view:v5", foreignView);
           localStorage.setItem(prefix + "views:v1", list);
-          sessionStorage.setItem(prefix + "history:v1", JSON.stringify({ visualVersion: 3, entries: [], index: 0 }));
+          sessionStorage.setItem(prefix + "history:v1", JSON.stringify({ visualVersion: 4, entries: [], index: 0 }));
         } catch {
           // a blank page has no storage
         }
@@ -437,16 +438,17 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     // the first write copies the foreign payload aside, verbatim, before replacing it
     await page.keyboard.press("m");
     await expect.poll(async () => (await S.storage(page)).local["backup:view:v5"]).toBe(foreignView);
-    await expect.poll(async () => (await S.storage(page)).session["backup:history:v1"]).toContain('"visualVersion":3');
+    await expect.poll(async () => (await S.storage(page)).session["backup:history:v1"]).toContain('"visualVersion":4');
     // a saved view keeps the entries of the newer build (and the one that is no entry) exactly as they were
     await S.openViews(page);
     await page.locator("#ol-view-name").fill("Another");
     await page.locator("#ol-view-form button[type=submit]").click();
-    await expect.poll(async () => JSON.parse((await S.storage(page)).local["views:v1"]).length).toBe(4);
-    const stored = JSON.parse((await S.storage(page)).local["views:v1"]);
-    expect(stored.find((x) => x.name === "Newer")).toEqual(entry);
-    expect(stored).toContain(junk);
-    expect(stored.map((x) => (typeof x === "string" ? x : x.name)).sort()).toEqual(["Another", "Mine", "Newer", junk].sort());
+    await expect.poll(async () => (await S.namedEntries(page)).length).toBe(2);
+    const stored = await S.namedEntries(page);
+    // Foreign and unusable entries stay byte-for-byte in their original namespace.
+    expect((await S.storage(page)).local["views:v1"]).toBe(JSON.stringify([entry, mine, junk]));
+    expect(stored.find((x) => x.name === "Mine")).toEqual(mine);
+    expect(stored.map((x) => x.name).sort()).toEqual(["Another", "Mine"]);
     // the newer build's entry is not shown as a row (this page cannot open it), and no cap was applied to anything
     await expect(page.locator("#ol-saved .ol-saved-row")).toHaveCount(2);
   });
@@ -470,7 +472,8 @@ test.describe("B15 persistence: limits, malformed input and failing storage", ()
     await S.openViews(page);
     await page.locator("#ol-view-name").fill("Two hundred and fifty-one");
     await page.locator("#ol-view-form button[type=submit]").click();
-    await expect.poll(async () => JSON.parse((await S.storage(page)).local["views:v1"]).length).toBe(251);
+    await expect.poll(async () => (await S.namedEntries(page)).length).toBe(251);
+    expect((await S.storage(page)).local["views:v1"]).toBe(JSON.stringify(many));
     await expect(page.locator("#ol-saved .ol-saved-row")).toHaveCount(251);
     // now the storage refuses writes: the save is reported and the rows on the page stay
     await page.evaluate(() => {

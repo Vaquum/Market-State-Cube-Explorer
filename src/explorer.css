@@ -2510,3 +2510,119 @@
 #origo-lens .ol-candle-legend { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-s); }
 #origo-lens .ol-candle-legend > span { display: inline-flex; align-items: center; gap: var(--sp-1); }
 #origo-lens .ol-candle-legend canvas { width: 16px; height: 18px; }
+
+/* Authored trend lines use the chart's controls, Lines inventory and dialog surfaces. */
+#origo-lens .ol-drawing-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--gutter);
+  border-bottom: 1px solid var(--ol-line);
+  background: var(--ol-surface);
+  font-size: var(--fs-s);
+}
+#origo-lens :is(.ol-drawing-toolbar, .ol-drawing-sheet-group)[hidden] { display: none; }
+#origo-lens .ol-drawing-toolbar-name {
+  min-width: 0;
+  max-width: min(30vw, 240px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+#origo-lens .ol-drawing-status { color: var(--ol-muted); font-size: var(--fs-s); }
+#origo-lens .ol-drawing-status:empty { display: none; }
+/* Keep endpoint readouts from resizing the plot after the first drawing contact. */
+#origo-lens .ol-drawing-toolbar:has(#ol-drawing-keep-label:not([hidden])) .ol-drawing-status {
+  flex-basis: 100%;
+  order: 5;
+  min-width: 0;
+  min-height: 3em;
+  line-height: 1.5;
+  white-space: pre-line;
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-drawing-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-m);
+  cursor: pointer;
+}
+#origo-lens .ol-drawing-check[hidden] { display: none; }
+#origo-lens .ol-drawing-more-group { margin-left: auto; }
+#origo-lens .ol-drawing-actions { width: 230px; }
+#origo-lens .ol-drawing-swatch {
+  flex: none;
+  display: inline-block;
+  width: 18px;
+  height: 12px;
+  background: var(--drawing-rgb, var(--ol-accent));
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  box-shadow: inset 0 0 0 1px var(--ol-ink);
+}
+#origo-lens .ol-drawing-section {
+  padding-bottom: var(--sp-3);
+  margin-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-drawing-section-head { display: flex; align-items: center; gap: var(--sp-2); }
+#origo-lens .ol-drawing-section-head h3 { flex: 1; margin: var(--sp-2) 0; font-size: var(--fs-m); font-weight: 500; }
+#origo-lens .ol-drawing-section-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); }
+#origo-lens .ol-drawing-section-tools .ol-drawing-check { margin-right: auto; }
+#origo-lens .ol-drawing-summary { margin: var(--sp-1) 0 var(--sp-2); font-size: var(--fs-s); color: var(--ol-muted); }
+#origo-lens .ol-drawing-list { display: flex; flex-direction: column; gap: var(--sp-1); }
+#origo-lens .ol-drawing-row { padding: var(--sp-2) 0; border-top: 1px solid var(--ol-line); }
+#origo-lens .ol-drawing-row-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+#origo-lens .ol-drawing-row-name { min-width: 0; flex: 1; overflow-wrap: anywhere; font-weight: 500; }
+#origo-lens .ol-drawing-row[data-active="true"] { border-left: 2px solid var(--ol-accent); padding-left: var(--sp-2); }
+#origo-lens .ol-drawing-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-1); }
+#origo-lens .ol-drawing-row-more { flex-basis: 100%; }
+#origo-lens .ol-drawing-row-more summary { font-size: var(--fs-s); }
+#origo-lens .ol-drawing-row-more-actions { display: flex; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-1) 0; }
+#origo-lens .ol-drawing-dialog { width: min(510px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+#origo-lens .ol-drawing-dialog:not([open]) { display: none; }
+#origo-lens .ol-drawing-dialog form { margin: 0; }
+#origo-lens .ol-drawing-field { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; margin-top: var(--sp-2); font-size: var(--fs-s); }
+#origo-lens .ol-drawing-field input { width: 100%; min-height: var(--h-l); box-sizing: border-box; font-variant-numeric: tabular-nums; }
+#origo-lens .ol-drawing-field input:disabled { color: var(--ol-muted); background: var(--ol-panel); }
+#origo-lens .ol-drawing-field input[aria-invalid="true"] { border-color: var(--ol-ink); box-shadow: inset 0 0 0 1px var(--ol-ink); }
+#origo-lens .ol-drawing-anchor { display: grid; grid-template-columns: minmax(0, 2fr) minmax(90px, 1fr); gap: var(--sp-2); margin: var(--sp-3) 0 0; padding: var(--sp-2); border: 1px solid var(--ol-line); border-radius: var(--r-m); }
+#origo-lens .ol-drawing-anchor legend { padding: 0 var(--sp-1); font-size: var(--fs-s); font-weight: 500; }
+#origo-lens .ol-drawing-anchor .ol-drawing-field { margin: 0; }
+#origo-lens .ol-drawing-color-field { display: flex; align-items: center; gap: var(--sp-2); }
+#origo-lens .ol-drawing-color-field .ol-drawing-field { flex: 1; }
+#origo-lens #ol-drawing-color-picker { flex: none; width: 44px; height: 44px; padding: 2px; margin-top: var(--sp-3); border: 1px solid var(--ol-border); border-radius: var(--r-m); background: var(--ol-surface); cursor: pointer; }
+#origo-lens .ol-drawing-error { margin: 0; font-size: var(--fs-s); color: var(--ol-ink); line-height: 1.4; }
+#origo-lens .ol-drawing-error:empty { display: none; }
+#origo-lens #ol-drawing-editor-error { margin-top: var(--sp-2); }
+#origo-lens .ol-drawing-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+#origo-lens .ol-drawing-spacer { flex: 1; }
+#origo-lens .ol-drawing-choice-dialog { width: min(360px, calc(100vw - 32px)); }
+#origo-lens .ol-drawing-choices { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-2); }
+#origo-lens .ol-drawing-choices button { justify-content: flex-start; text-align: left; min-height: 44px; height: auto; padding: var(--sp-2); }
+#origo-lens .ol-drawing-choices button span { overflow-wrap: anywhere; min-width: 0; }
+#origo-lens .ol-drawing-sheet-group { width: 100%; }
+@media (max-width: 760px) {
+  #origo-lens .ol-tools .ol-seg { flex-wrap: wrap; max-width: 100%; }
+  #origo-lens .ol-drawing-toolbar { gap: var(--sp-1); }
+  #origo-lens .ol-drawing-toolbar-name { max-width: none; flex: 1; }
+  #origo-lens .ol-drawing-toolbar .ol-drawing-status { flex-basis: 100%; order: 5; }
+  #origo-lens .ol-drawing-toolbar .ol-drawing-check { order: 4; }
+  #origo-lens .ol-drawing-toolbar :is(button, .ol-drawing-check) { min-height: 44px; }
+  #origo-lens .ol-drawing-dialog { width: 100%; max-width: 100%; max-height: 92dvh; margin: auto 0 0; border-radius: var(--r-l) var(--r-l) 0 0; box-sizing: border-box; }
+  #origo-lens .ol-drawing-dialog .ol-keys-body { padding: var(--sp-3); padding-bottom: max(var(--sp-3), env(safe-area-inset-bottom)); }
+  #origo-lens .ol-drawing-anchor { grid-template-columns: minmax(0, 1fr); }
+  #origo-lens .ol-drawing-dialog-actions button { min-height: 44px; }
+  #origo-lens .ol-drawing-field input { min-height: 44px; }
+  #origo-lens .ol-drawing-section-head h3 { font-size: var(--fs-m); }
+  #origo-lens .ol-drawing-section :is(button, summary, .ol-drawing-check) { min-height: 44px; }
+  #origo-lens .ol-drawing-sheet-group .ol-drawing-actions { width: 100%; }
+}
+@media (any-pointer: coarse) {
+  #origo-lens :is(.ol-drawing-toolbar, .ol-drawing-section, .ol-drawing-dialog, .ol-drawing-actions) :is(button, input:not([type="checkbox"]):not([type="radio"]), summary, .ol-drawing-check) { min-height: 44px; }
+}
+
+#origo-lens .ol-drawing-replay-note { margin: 0; padding: var(--sp-1) var(--gutter); font-size: var(--fs-s); line-height: 1.4; color: var(--ol-muted); border-bottom: 1px solid var(--ol-line); }
+#origo-lens .ol-drawing-replay-note[hidden] { display: none; }

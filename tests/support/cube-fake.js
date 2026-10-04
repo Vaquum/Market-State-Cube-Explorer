@@ -348,8 +348,9 @@ class FakeCube {
         return json(bridge.history(n, m, token));
       }
       if (pathname === "/cube/bars") {
-        const n = integer(args, "n"), b0 = integer(args, "b0"), b1 = integer(args, "b1");
-        if (!BAR_LEVELS.includes(n)) throw new ValueError("n must be 2, 4, 6, 8 or 9: bars of 3.75 minutes, 15 minutes, 1, 4 or 8 hours");
+        const n = integer(args, "n"), b0 = integer(args, "b0"), b1 = Number(args.b1?.[0]);
+        if (!Number.isFinite(b1)) throw new ValueError("b1 must be a finite base position");
+        if (!BAR_LEVELS.includes(n)) throw new ValueError("n must be 0..20: dyadic grid bars");
         const step = 2 ** n;
         if (!(b0 >= 0 && b0 < b1 && b0 % step === 0)) throw new ValueError("b0 must be a bar's edge and b1 after it");
         if (Math.ceil(b1 / step) - Math.floor(b0 / step) > MAX_COLUMNS) throw new ValueError(`more than ${MAX_COLUMNS} bars`);

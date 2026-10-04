@@ -969,6 +969,7 @@
           ></span>
           <span id="ol-legend-text" class="ol-num"></span>
         </button>
+        <span id="ol-candle-legend" class="ol-candle-legend" role="group" aria-label="Candle direction" hidden></span>
         <span id="ol-legend-marker-text" class="ol-sr" hidden></span>
         <div data-temporary="popover"
           class="ol-pop ol-pop-end ol-legend-pop"
@@ -1320,6 +1321,10 @@
                 </tr>
               </thead>
               <tbody id="ol-table-body"></tbody>
+            </table>
+            <table class="ol-table" id="ol-candle-table" aria-label="Candles in view: exact prices in USDT" hidden>
+              <thead><tr><th>Interval · UTC</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Direction</th><th>Status</th></tr></thead>
+              <tbody></tbody>
             </table>
           </div>
           <div
@@ -1891,6 +1896,10 @@
         <section aria-labelledby="ol-keys-tools">
           <h3 id="ol-keys-tools">Tools</h3>
           <dl>
+            <div>
+              <dt>Toggle Candles / previous encoding</dt>
+              <dd><kbd>K</kbd></dd>
+            </div>
             <div>
               <dt>Pan, select, lens, inspect</dt>
               <dd><kbd>V</kbd> <kbd>S</kbd> <kbd>L</kbd> <kbd>E</kbd></dd>

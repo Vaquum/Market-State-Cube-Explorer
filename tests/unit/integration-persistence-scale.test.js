@@ -184,7 +184,7 @@ test("(c) the codec's default lists agree with the catalogues of E.measure and E
     if (pane !== "cells") assert.ok(Object.prototype.hasOwnProperty.call(E.axis.CATALOGUE, "pane." + pane), `the pane ${pane} has a registered axis`);
   }
   // the modes of the catalogue are exactly the ten the page has
-  assert.deepEqual(Object.keys(E.measure.MODES).sort(), ["cascade", "delta", "dwell", "flow", "flowtrades", "geometry", "path", "size", "trades", "volume"]);
+  assert.deepEqual(Object.keys(E.measure.MODES).sort(), ["candles", "cascade", "delta", "dwell", "flow", "flowtrades", "geometry", "path", "size", "trades", "volume"]);
 });
 
 // ---- (d) the S.scale flow -------------------------------------------------------------------------------

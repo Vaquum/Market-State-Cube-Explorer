@@ -752,7 +752,7 @@
   }
   function activeCutoff() {
     return S.replay && S.anchor !== null
-      ? Math.min(CUT, Math.floor(S.anchor / stepT()) * stepT())
+      ? Math.min(CUT, (S.mode === "candles" ? S.anchor : Math.floor(S.anchor / stepT()) * stepT()))
       : CUT;
   }
   // The base edge that closes the data: the end of the open column, which
@@ -1132,7 +1132,7 @@
   // cannot use a preference reads it as its default, and the raw preference is never rewritten). Geometry
   // has nothing to calibrate.
   function cellsContext() {
-    if (S.mode === "geometry") return null;
+    if (S.mode === "geometry" || S.mode === "candles") return null;
     const eff = E.policy.effective(S.scale, S.mode);
     return E.context.cellsKey({
       measure: S.mode,
@@ -2307,7 +2307,7 @@
       y1 = G.Y(b[3]),
       y2 = G.Y(b[2]);
     markTally = true;
-    if (S.selection) {
+    if (S.selection && S.mode !== "candles") {
       ctx.save();
       ctx.beginPath();
       ctx.rect(G.x, G.y, G.w, G.h);
@@ -2322,13 +2322,14 @@
     markTally = !S.selection;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x1, y1, x2 - x1, y2 - y1);
+    ctx.rect(S.mode === "candles" ? G.x : x1, S.mode === "candles" ? G.y : y1, S.mode === "candles" ? G.w : x2 - x1, S.mode === "candles" ? G.h : y2 - y1);
     ctx.clip();
-    if (moving) paintMotion(shown, mv.shown, mv, b, u, sc.cells);
+    if (S.mode === "candles") paintCandles(renderN(), S.tA, S.tB);
+    else if (moving) paintMotion(shown, mv.shown, mv, b, u, sc.cells);
     else for (const z of shown.cells) fillCell(z, full, u, sc.cells);
     markTally = false;
     ctx.restore();
-    markings(shown, cut);
+    if (S.mode !== "candles") markings(shown, cut);
     occlusionPlan(cut);
     drawClock(cut);
     drawLines(cut);
@@ -2611,9 +2612,11 @@
     tableKey = "",
     copyFallbackActive = false;
   function renderN() {
+    if (S.mode === "candles") return S.n;
     return Math.max(S.n, sources[S.dataset]?.n || 0);
   }
   function renderM() {
+    if (S.mode === "candles") return S.m;
     return Math.max(S.m, sources[S.dataset]?.m || 0);
   }
   function displaySource() {
@@ -2860,6 +2863,15 @@
     return measured.has(spec.key) ? null : spec;
   }
   function fit() {
+    if (S.mode === "candles") {
+      const r = candleRange(renderN(), S.tA, S.tB);
+      if (r.state !== "ready" || !r.bars.length) return;
+      let low = Infinity, high = -Infinity;
+      for (const b of r.bars) { low = Math.min(low, b.low / PR); high = Math.max(high, b.high / PR); }
+      const pad = Math.max((high - low) * 0.1, low * 0.0001);
+      S.pA = Math.max(0, low - pad); S.pB = high + pad;
+      return;
+    }
     const src = displaySource();
     if (!src) return;
     const ts = 2 ** src.n,
@@ -3069,8 +3081,9 @@
     // it shows and the measure it reads. The cube has four measures per cell,
     // and each reaches the chart: volume, trades, and their taker-buy parts;
     // live, also how the price moved inside each cell, its path and dwell.
-    MODES = ["volume", "flow", "delta", "cascade", "trades", "flowtrades", "size", "path", "dwell", "geometry"],
+    MODES = ["volume", "flow", "delta", "cascade", "trades", "flowtrades", "size", "path", "dwell", "geometry", "candles"],
     MODE_INFO = {
+      candles: { name: "Candles", desc: "Exact open, high, low and close prices; blue up, clay down, neutral unchanged. K toggles candles." },
       volume: { name: "Volume", desc: "USDT traded in each cell (its Amount), shaded on a Value scale that Explore fits to the cells in view" },
       flow: { name: "Taker flow", desc: "Share of each cell's USDT bought by takers, on a fixed scale from 0 to 1 about one half" },
       delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT in each cell (its Amount), drawn about a midpoint of zero" },
@@ -3086,6 +3099,7 @@
       ["USDT", ["volume", "flow", "delta", "cascade"]],
       ["Trades", ["trades", "flowtrades", "size"]],
       ["Movement", ["path", "dwell"]],
+      ["Price", ["candles"]],
       ["Grid", ["geometry"]],
     ],
     MODE_NAMES = Object.fromEntries(MODES.map((k) => [k, MODE_INFO[k].name])),
@@ -3373,7 +3387,7 @@
         const v = obj.view,
           // Density folded into Volume: a code that asks for it opens as Volume.
           mode = v.mode === "density" ? "volume" : v.mode;
-        if (modes().includes(mode)) S.mode = mode;
+        if (modes().includes(mode) || mode === "candles") S.mode = mode;
         if (panes().includes(v.pane)) S.pane = v.pane;
         if (rowsChoices().includes(v.rows)) S.rows = v.rows;
         if (validPeriod(v.period)) S.period = v.period;
@@ -3718,6 +3732,9 @@
     cellsTimer = setTimeout(() => buildCells(query, b, mv), 80);
   }
   function buildCells(query, b, mv) {
+    el("table").hidden = S.mode === "candles";
+    el("candle-table").hidden = S.mode !== "candles";
+    if (S.mode === "candles") return buildCandleTable();
     for (const th of qsa(".ol-motion-col")) th.hidden = !mv;
     if (!query) {
       cellRows = new Map();
@@ -4706,6 +4723,9 @@
       tipMarker(null);
       if (redraw) requestDraw();
       return;
+    } else if (S.mode === "candles") {
+      candleTip(tip, renderN(), p.t);
+      syncRowHover(null);
     } else {
       const ts = stepT(),
         c = Math.floor(p.t / ts),
@@ -5051,6 +5071,7 @@
   }
   // The lens's finer record under the cursor, from the frame the lens drew: its cell at the lens's own level, with the readout the Cells have.
   function inspectLensTip(tip, w) {
+    if (S.mode === "candles") { candleTip(tip, Math.round(Math.log2(w.sp.ts)), w.c * w.sp.ts); tip.hidden = false; return tip.textContent; }
     const lp = w.sp.lens,
       q = lp?.q,
       z = q?.cells.find((x) => x.c === w.c && x.r === w.r) ?? null,
@@ -5259,7 +5280,10 @@
       ctx.clip();
     }
     let box = null;
-    if (s === "cells" || s === "lens") box = [G.X(w.c * w.sp.ts), G.Y((w.r + 1) * w.sp.ps), G.X((w.c + 1) * w.sp.ts) - G.X(w.c * w.sp.ts), G.Y(w.r * w.sp.ps) - G.Y((w.r + 1) * w.sp.ps)];
+    if (S.mode === "candles" && (s === "cells" || s === "lens")) {
+      const n = Math.round(Math.log2(w.sp.ts)), bar = candleRange(n, w.c * w.sp.ts, (w.c + 1) * w.sp.ts).bars.find((r) => r.c === w.c);
+      if (bar) { const g = E.candles.project(bar, G.X, G.Y, PR, candleScratch); box = [g.x - Math.max(8,g.width)/2, g.high - 3, Math.max(8,g.width), g.low - g.high + 6]; }
+    } else if (s === "cells" || s === "lens") box = [G.X(w.c * w.sp.ts), G.Y((w.r + 1) * w.sp.ps), G.X((w.c + 1) * w.sp.ts) - G.X(w.c * w.sp.ts), G.Y(w.r * w.sp.ps) - G.Y((w.r + 1) * w.sp.ps)];
     else if (s === "rows" && G.tracks) box = [G.tx[0] - 2, G.Y((w.r + 1) * w.sp.ps), (G.tracks > 1 ? G.tx[1] - G.tx[0] : 0) + TRACK_BARS + 4, G.Y(w.r * w.sp.ps) - G.Y((w.r + 1) * w.sp.ps)];
     else if (s === "columns" && G.ah > 0) box = [G.X(w.c * w.sp.ts), G.ay, G.X((w.c + 1) * w.sp.ts) - G.X(w.c * w.sp.ts), G.ah];
     else if (s === "references") {
@@ -5281,7 +5305,7 @@
   // A draw that changed what the cursor stands on (the view, the level, the data) reads it again, so a pan or a refresh never leaves a stale readout.
   function inspectSync() {
     if (!inspect.on) return;
-    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", inspectReferences().length, nav.shift].join("|");
+    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", S.mode === "candles" ? [candleVersion, motion.failed.size, candleEdge(), PACK.state_token].join(":") : "", inspectReferences().length, nav.shift].join("|");
     if (sig === inspect.sig) return;
     inspect.sig = sig;
     inspectRender(false, false);
@@ -5533,10 +5557,11 @@
       b.setAttribute("aria-checked", String(b.dataset.mode === S.mode)),
     );
     // The pane's choice, written only when it changes: update() runs on every input.
-    if (el("pane").dataset.pane !== S.pane) {
+    const paneName = S.mode === "candles" && S.pane === "cells" ? "Volume" : PANE_INFO[S.pane].name;
+    if (el("pane").dataset.pane !== S.pane || el("pane-text").textContent !== paneName) {
       el("pane").dataset.pane = S.pane;
-      el("pane-text").textContent = PANE_INFO[S.pane].name;
-      el("pane").setAttribute("aria-label", `Columns: ${PANE_INFO[S.pane].name}`);
+      el("pane-text").textContent = paneName;
+      el("pane").setAttribute("aria-label", `Columns: ${paneName}`);
       qsa("#ol-pane-menu [data-pane]").forEach((b) =>
         b.setAttribute("aria-checked", String(b.dataset.pane === S.pane)),
       );
@@ -6363,7 +6388,12 @@
       rowsChip = el("rows-legend");
     // the popovers built outside this function (an axis popover refreshed by renderUi) take the same inks
     scaleUi.inks = inks;
-    legendChannel("cells", sc.cells, sc, el("legend"), "legend-text", "ramp", 64);
+    el("legend").hidden = S.mode === "candles";
+    el("candle-legend").hidden = S.mode !== "candles";
+    if (S.mode === "candles") {
+      scaleUi.models.cells = null;
+      candleLegend();
+    } else legendChannel("cells", sc.cells, sc, el("legend"), "legend-text", "ramp", 64);
     // Rows show with the underlay; without a Rows frame there is nothing to map, and the chip says so.
     if (!under) {
       if (!rowsChip.hidden) {
@@ -7410,7 +7440,7 @@
     scaleUi.menuKey = key;
     // Local contrast is the lens's: offered, and shown, only where the measure has a scale to fit
     const toggle = el("lens-local");
-    el("lens-local-label").hidden = !E.policy.offers("cells", S.mode, s, Boolean(PACK.live)).local;
+    el("lens-local-label").hidden = S.mode === "candles" || !E.policy.offers("cells", S.mode, s, Boolean(PACK.live)).local;
     if (toggle.checked !== s.local) toggle.checked = s.local;
     for (const b of qsa("#ol-mode-menu [data-scale-item], #ol-rows-menu [data-scale-item]")) {
       const on = String(uiScaleChecked(b.dataset.scaleChannel, b.dataset.scaleItem));
@@ -7689,7 +7719,7 @@
       parts.push(group);
     }
     // The Scale section: basis, transform, policy, lock, Local contrast and Fit, from what the measure offers
-    parts.push(...uiScaleSection("cells"));
+    if (S.mode !== "candles") parts.push(...uiScaleSection("cells"));
     el("mode-menu").replaceChildren(...parts);
   }
   // The pane's measures, grouped as the encodings are, each with what it shows.
@@ -8384,7 +8414,7 @@
   // The cells of the drawn level, for a measure that is not Path or Dwell. A fixed measure has nothing to
   // fit, and Geometry no value: the caller (the settled tick) never asks for those, and the answer is none.
   function cellsCohortInputs(vp) {
-    if (S.mode === "geometry" || !vp.shown) return null;
+    if (S.mode === "geometry" || S.mode === "candles" || !vp.shown) return null;
     const inputs = cohortCells(vp, vp.shown.cells, Infinity, { state: vp.meas.state, updating: Boolean(vp.meas.updating) });
     if (S.mode === "cascade") inputs.cascade = cascadeInto;
     return inputs;
@@ -8412,6 +8442,7 @@
     const count = (id) => {
       if (keys) keys[id] = (keys[id] ?? 0) + 1;
     };
+    if (S.mode === "candles") return;
     if (S.mode === "geometry") {
       for (const z of vp.shown.cells) if (cellBox(z, 1, vp.ts, vp.ps, vp.cut)) count("occupied");
       return;
@@ -9885,6 +9916,182 @@
     update();
     save();
   }
+
+  // Candles are an alternative price surface, not a scalar cell measurement.
+  let candlePrevious = "volume", candleVersion = 0;
+  const candleCache = new E.candles.Cache(), candleMemo = new Map(), candleScratch = {}, candleMetrics = { decodeMs: 0, encodedBytes: 0, decodedBytes: 0 };
+  function candleEdge() { return Math.max(0, Math.min(Math.floor(CUT), S.replay ? activeCutoff() : Math.floor(CUT))); }
+  function candleWindow(n, a, b, edge) {
+    const r = E.candles.span(n, a, b, edge), step = 2 ** n;
+    if (r.b - r.a > TILE_COLUMNS * step) {
+      const center = (a + Math.min(b, edge)) / 2;
+      r.a = Math.max(0, Math.floor(center / step - TILE_COLUMNS / 2) * step);
+      r.b = Math.min(edge, r.a + TILE_COLUMNS * step);
+    }
+    return r;
+  }
+  function candleNeeds() {
+    if (S.mode !== "candles" || !PACK.live) return [];
+    for (const [key, r] of candleCache.ranges) if (r.generation !== live.generation) candleCache.drop(key);
+    const edge = candleEdge(), out = [candleWindow(renderN(), S.tA, S.tB, edge)];
+    if (lensShown()) {
+      const f = lensFrame();
+      if (f?.src) { const p = lensParts(f); out.push(candleWindow(p.n, p.lensBounds[0], p.lensBounds[1], edge)); }
+    }
+    return out.filter((r) => r.b > r.a);
+  }
+  // A new pack may reuse finalized intervals. The open interval and replaced provisional span cannot.
+  function candleStop(r) {
+    const step = 2 ** r.n, edge = candleEdge();
+    let stop = r.b;
+    if (r.b > edge || (r.b < edge && r.b % step !== 0)) stop = Math.min(stop, Math.floor(Math.min(r.b, edge) / step) * step);
+    if (r.token !== PACK.state_token) stop = Math.min(stop, Math.floor(r.end / step) * step);
+    if (r.canon !== null && CANON !== null && CANON > r.canon) stop = Math.min(stop, Math.floor(r.canon / step) * step);
+    return stop;
+  }
+  function candleHeld(n, a, b) {
+    const out = [];
+    for (const [key, r] of candleCache.ranges) {
+      if (r.generation !== live.generation || r.n !== n || r.b <= a || r.a >= b) continue;
+      const stop = candleStop(r);
+      if (stop > r.a) out.push({ key, r, stop });
+    }
+    for (const h of out) candleCache.touch(h.key);
+    return out.sort((x, y) => x.r.a - y.r.a || y.stop - x.stop);
+  }
+  function candleGap(n, a, b) {
+    let start = a;
+    for (const h of candleHeld(n, a, b)) {
+      if (h.r.a > start) return [start, Math.min(h.r.a, b)];
+      start = Math.max(start, h.stop);
+      if (start >= b) return null;
+    }
+    return start < b ? [start, b] : null;
+  }
+  function candleWant() {
+    for (const need of candleNeeds()) {
+      const gap = candleGap(need.n, need.a, need.b);
+      if (!gap) continue;
+      const { n } = need, a = gap[0], b = Math.min(gap[1], a + TILE_COLUMNS * 2 ** n);
+      const key = ["candles", live.generation, n, a, b, PACK.state_token].join("|");
+      if (motion.failed.has(key)) continue;
+      const token = PACK.state_token, generation = live.generation, canon = CANON;
+      return {
+        key, path: `/cube/bars?n=${n}&b0=${a}&b1=${b}`,
+        decode: async (body) => {
+          if (body.n !== n || body.b0 !== a || body.b1 !== b || body.state_token !== token || !Number.isFinite(body.end) || body.end > b || body.end < 0 || body.bars.n !== n || body.bars.count > TILE_COLUMNS) throw Error("Candle answer does not match its requested pack/level");
+          const started = performance.now(), raw = await unpackBars(body.bars);
+          let previous = -1;
+          const bars = raw.map((bar) => {
+            const record = E.candles.record(bar, n, body.end);
+            if (bar.c <= previous || record.start < a || record.start >= body.end) throw Error("Candle answer contains an invalid column");
+            previous = bar.c; return record;
+          });
+          return { body, bars, decodeMs: performance.now() - started };
+        },
+        apply: ({ body, bars, decodeMs }) => {
+          if (generation !== live.generation || token !== PACK.state_token || S.mode !== "candles") return;
+          const needs = candleNeeds();
+          if (!needs.some((r) => r.n === n && r.b > a && r.a < b)) return;
+          const reusable = [];
+          for (const [oldKey, r] of candleCache.ranges) {
+            if (r.generation !== generation || r.n !== n) continue;
+            const stop = candleStop(r);
+            if (stop > r.a) reusable.push([oldKey, { ...r, b: stop, end: Math.min(r.end, stop), bars: r.bars.filter((bar) => bar.start < stop && bar.through <= stop && (bar.stop <= stop || (r.token === token && r.b === candleEdge()))) }]);
+          }
+          candleCache.merge(key, { n, a, b, end: body.end, bars, token, generation, canon }, reusable,
+            (r) => r.generation === generation && needs.some((need) => need.n === r.n && need.b > r.a && need.a < candleStop(r)));
+          candleMetrics.decodeMs += decodeMs; candleMetrics.encodedBytes += body.bars.gzip_base64.length; candleMetrics.decodedBytes += 32 + bars.length * 68;
+          candleVersion++; candleMemo.clear();
+        },
+      };
+    }
+    return null;
+  }
+  function candleRange(n, a, b) {
+    if (!PACK.live) return { state: "unavailable", bars: [], end: 0, reason: "Candles — Live cube only" };
+    const step = 2 ** n, start = Math.max(0, Math.floor(a / step) * step), stop = Math.min(candleEdge(), Math.ceil(b / step) * step);
+    if (stop <= start) return { state: "after-cutoff", bars: [], end: stop, reason: "After cutoff" };
+    const memoKey = [live.generation, PACK.state_token, n, start, stop, CANON, candleVersion, motion.failed.size].join("|");
+    if (candleMemo.has(memoKey)) return candleMemo.get(memoKey);
+    const gap = candleGap(n, start, stop), held = candleHeld(n, start, stop), byColumn = new Map();
+    let end = stop;
+    for (const h of held) {
+      for (const r of h.r.bars) {
+        if (r.start < start || r.start >= Math.min(stop, h.stop) || r.through > stop) continue;
+        if (r.stop <= h.stop || (h.r.token === PACK.state_token && h.r.b === candleEdge())) byColumn.set(r.c, r);
+      }
+      if (h.stop >= stop) end = Math.min(end, h.r.end);
+    }
+    const window = candleWindow(n, a, b, candleEdge()), capped = stop - start > TILE_COLUMNS * step;
+    const failed = gap && [...motion.failed].find(([key]) => {
+      const [kind, gen, level, from, to, pack] = key.split("|");
+      return kind === "candles" && +gen === live.generation && +level === n && pack === PACK.state_token && +to > window.a && +from < window.b;
+    });
+    const reason = failed?.[1] ?? (capped && !candleGap(n, window.a, window.b) ? "Showing a 4,096-interval window; outer intervals pending" : null);
+    const result = { state: gap ? failed ? "failed" : "pending" : "ready", reason, bars: [...byColumn.values()].sort((x, y) => x.c - y.c), end, requestedEnd: stop };
+    candleMemo.set(memoKey, result);
+    while (candleMemo.size > 8) candleMemo.delete(candleMemo.keys().next().value);
+    return result;
+  }
+  function candleStatus(r) {
+    return r.state === "unavailable" || r.state === "after-cutoff" ? r.reason : r.state === "failed" ? `Candles unavailable: ${r.reason}` : r.state === "pending" ? r.reason ?? "Reading candles…" : r.end < r.requestedEnd ? `Coverage through ${when(r.end)} UTC` : r.bars.length ? `Measured through ${when(r.end)} UTC` : "No trades in this interval";
+  }
+  function paintCandles(n, a, b) {
+    const r = candleRange(n, a, b);
+    for (const bar of r.bars) E.candles.paint(ctx, bar, G.X, G.Y, PR, colors, candleScratch);
+    if (n === renderN() && a === S.tA && b === S.tB) candleLegend();
+    if (r.state !== "ready" || !r.bars.length) {
+      ctx.font = `${TYPE.s}px ${FONT}`; ctx.fillStyle = colors.state;
+      ctx.fillText(candleStatus(r), G.x + 12, G.y + 22);
+    }
+    return candleStatus(r);
+  }
+  function candleLegend() {
+    const node = el("candle-legend"), r = candleRange(renderN(), S.tA, S.tB), key = [renderN(), r.state, r.reason, r.end, r.requestedEnd, r.bars.length, colourEpoch].join("|");
+    Object.assign(node.dataset, { cacheRanges: String(candleCache.ranges.size), cacheRecords: String(candleCache.records), cacheBytes: String(candleCache.bytes), decodeMs: String(candleMetrics.decodeMs), encodedBytes: String(candleMetrics.encodedBytes), decodedBytes: String(candleMetrics.decodedBytes) });
+    if (node.dataset.key === key) return;
+    node.dataset.key = key;
+    node.replaceChildren();
+    for (const [name, raw] of [["Up", { open: 2, close: 3 }], ["Down", { open: 3, close: 2 }], ["Unchanged", { open: 2.5, close: 2.5 }]]) {
+      const sample = document.createElement("canvas"); sample.width = 16; sample.height = 18; sample.setAttribute("aria-hidden", "true");
+      E.candles.paint(sample.getContext("2d"), E.candles.record({ c: 0, high: 3.5, low: 1.5, ...raw }, 0, 1), (t) => t * 16, (p) => 21 - p * 6, 1, colors);
+      const span = document.createElement("span"); span.append(sample, document.createTextNode(name)); node.append(span);
+    }
+    const text = document.createElement("span"); text.textContent = `${dur(stepT() * BASE)} · ${candleStatus(r)}`; node.append(text);
+    node.setAttribute("aria-label", `Candles: blue hollow up, clay filled down, neutral unchanged. ${text.textContent}`);
+    node.dataset.state = r.state;
+  }
+  function candleTip(tip, n, t) {
+    const step = 2 ** n, c = Math.floor(t / step), r = candleRange(n, c * step, (c + 1) * step), bar = r.bars.find((x) => x.c === c);
+    tip.dataset.candle = bar ? String(c) : "";
+    const head = `Candle · ${range(c * step, (c + 1) * step)} UTC · ${dur(step * BASE)}`;
+    const rows = bar ? [["Open", price(bar.open)], ["High", price(bar.high)], ["Low", price(bar.low)], ["Close", price(bar.close)], ["Direction", bar.direction === "up" ? "Up" : bar.direction === "down" ? "Down" : "Unchanged"], ["Status", bar.state === "so-far" ? "So far" : "Complete"], ["Measured through", when(bar.through) + " UTC"], ["Source", CANON !== null && bar.stop > CANON ? "Live cube · provisional minutes" : "Live cube"]] : [];
+    tipRows(tip, head, "Exact prices · USDT", rows, !bar ? t >= candleEdge() ? "After cutoff" : candleStatus(r) : "The forming base interval is excluded; replay uses currently available history.");
+    for (const field of ["open", "high", "low", "close"]) if (bar) tip.dataset[field] = String(bar[field]); else delete tip.dataset[field];
+    scaleRt.tipReadout = null;
+  }
+  function buildCandleTable() {
+    const r = candleRange(renderN(), S.tA, S.tB), table = el("candle-table"), pages = Math.max(1, Math.ceil(r.bars.length / CELLS_PAGE));
+    tablePage = clamp(tablePage, 0, pages - 1);
+    const body = table.tBodies[0], frag = document.createDocumentFragment();
+    for (const bar of r.bars.slice(tablePage * CELLS_PAGE, (tablePage + 1) * CELLS_PAGE)) {
+      const row = document.createElement("tr"); row.tabIndex = -1; row.dataset.candle = bar.c;
+      for (const text of [range(bar.start, bar.stop), price(bar.open), price(bar.high), price(bar.low), price(bar.close), bar.direction, bar.state === "so-far" ? "So far" : "Complete"]) { const td = document.createElement("td"); td.textContent = text; row.append(td); }
+      row.addEventListener("focus", () => { if (!inspect.on) inspectEnter(); inspect.surface = "cells"; inspect.t = (bar.start + bar.stop) / 2; inspect.p = bar.close / PR; inspectRender(true); });
+      row.addEventListener("keydown", (e) => { const next = e.key === "ArrowDown" ? row.nextElementSibling : e.key === "ArrowUp" ? row.previousElementSibling : null; if (next) { e.preventDefault(); next.focus(); } });
+      frag.append(row);
+    }
+    if (frag.firstChild) frag.firstChild.tabIndex = 0;
+    const held = document.activeElement && body.contains(document.activeElement) ? document.activeElement.dataset.candle : null;
+    body.replaceChildren(frag);
+    if (held !== null) [...body.children].find((row) => row.dataset.candle === held)?.focus({ preventScroll: true });
+    el("table-caption").textContent = `${r.bars.length} candles in view · ${candleStatus(r)}`;
+    el("table-caption").dataset.state = r.state;
+    el("table-page").textContent = `${tablePage + 1} / ${pages}`;
+    el("table-back").disabled = tablePage === 0; el("table-next").disabled = tablePage === pages - 1;
+  }
+
   // Bars (/cube/bars): at a grid timeframe, each column's open, high, low and
   // close, its USDT, taker-buy USDT and BTC volume and its trades, the cube's
   // own measures (PRD-0023), read in path and dwell's second slot while a line
@@ -9908,6 +10115,7 @@
       v = new DataView(buf);
     if (String.fromCharCode(...new Uint8Array(buf, 0, 4)) !== "MSCB") throw Error("Invalid block of bars");
     const count = v.getUint32(16, true);
+    if (buf.byteLength !== 32 + count * 68 || count !== block.count || v.getUint8(4) !== block.n || v.getUint8(5) !== 20) throw Error("Invalid bar layout or level");
     let o = 32;
     const take = (Type) => {
       const a = new Type(buf, o, count);
@@ -14509,7 +14717,7 @@
   // parent column; under Geometry its volume.
   function paneMeasure() {
     if (S.pane !== "cells") return S.pane;
-    return { flow: "delta", flowtrades: "takertrades", path: "choppiness", dwell: "perpath", geometry: "volume" }[S.mode] || S.mode;
+    return { flow: "delta", flowtrades: "takertrades", path: "choppiness", dwell: "perpath", geometry: "volume", candles: "volume" }[S.mode] || S.mode;
   }
   // Each measure's name and unit, and its value from a column of the
   // rectangle's cells, or of their path and dwell (motion), up to where those
@@ -15950,6 +16158,7 @@
     return tileSpec(n, m, a, b);
   }
   function tileWant() {
+    if (S.mode === "candles") return null;
     const [n, m] = viewLevel();
     if (resolutionReadiness(n, m).status !== "unavailable") return null;
     const [a, b] = viewRange(),
@@ -15962,7 +16171,7 @@
   // is too wide for one tile.
   let lensSource = null;
   function lensTile() {
-    if (!PACK.live || !lensShown()) return null;
+    if (!PACK.live || !lensShown() || S.mode === "candles") return null;
     const f = lensFrame();
     if (!f) return null;
     const n = Math.max(0, renderN() - f.depth),
@@ -16177,7 +16386,7 @@
     movementMode = () => MOVEMENT.includes(S.mode),
     movementOn = () => Boolean(PACK.live) && (movementMode() || PANE_MOTION.includes(S.pane)),
     // The encodings this page can show: path and dwell need the live cube.
-    modes = () => (PACK.live ? MODES : MODES.filter((k) => !MOVEMENT.includes(k))),
+    modes = () => (PACK.live ? MODES : MODES.filter((k) => !MOVEMENT.includes(k) && k !== "candles")),
     // The pane's choices this page can show: choppiness and volume per path too.
     panes = () => (PACK.live ? PANES : PANES.filter((k) => !PANE_MOTION.includes(k) && !PANE_MEASURES[k]?.osc));
   const motion = {
@@ -16450,7 +16659,7 @@
   // to be read.
   function motionWant() {
     const viewing = movementOn();
-    if (!(viewing || (PACK.live && S.rows === "time") || barLevels().length || viewBarNeeds().length) || cube.stale) return null;
+    if (!(viewing || (PACK.live && S.rows === "time") || barLevels().length || viewBarNeeds().length || candleNeeds().length) || cube.stale) return null;
     if (["measure", "tile", "lens"].includes(cube.busy?.kind)) return null;
     for (const want of [measureWant(), tileWant(), lensWant()])
       if (want && !cube.failed.has(want.key)) return null;
@@ -16460,6 +16669,7 @@
         viewing ? motionSourceWant(displaySource()) : null,
         viewing ? motionMeasureWant() : null,
         lens ? motionSourceWant(lens) : null,
+        candleWant(),
         underlayDwellWant(),
         barsWant(),
       ].find((want) => want && !motion.failed.has(want.key)) || null
@@ -16531,6 +16741,7 @@
       if (!cube.stale) motion.failed.set(want.key, message);
     }
     motion.busy = null;
+    if (S.mode === "candles" && S.drawerOpen && S.drawer === "cells") buildCandleTable();
     if (cube.stale) pollLive();
     requestDraw();
     scaleArm();
@@ -17363,7 +17574,7 @@
       PR,
       CUT,
       windowKey,
-      modes,
+      modes: () => MODES.filter((k) => PACK.live || !MOVEMENT.includes(k)),
       panes,
       rowsChoices,
       validPeriod,
@@ -18050,6 +18261,7 @@
   function lensParts(f) {
     const { ta, tb, pa, pb, src, n, m } = f;
     if (!src) return null;
+    if (S.mode === "candles") return { src, n, m, ts: 2 ** n, ps: 2 ** m, start: 0, end: candleEdge(), b: Math.min(tb, candleEdge()), lensBounds: [Math.max(0, Math.floor(ta / 2 ** n) * 2 ** n), Math.min(Math.ceil(tb / 2 ** n) * 2 ** n, candleEdge()), pa, pb], q: summarize([], n, m), fine: n < renderN() };
     const [start, end] = sourceRange(src),
       a = Math.max(start, Math.floor(ta / 2 ** src.n) * 2 ** src.n),
       b = Math.min(end, activeCutoff(), Math.ceil(tb / 2 ** src.n) * 2 ** src.n),
@@ -18340,6 +18552,7 @@
   // (top of the scale, transform, policy, and at most one state) and the lens's own share of marks and area
   // outside it. The legend model behind the text is rebuilt only when an id it is made from changes.
   function lensLine(lens) {
+    if (S.mode === "candles") return "Exact OHLC · direction colors";
     if (S.mode === "geometry") return "Occupied cells";
     if (!lens.scope) return E.text.state.noCalibration;
     const report = E.warn.evaluate(lensRt.tally, { meaningful: E.measure.MODES[S.mode].kind === "unbounded" }),
@@ -18437,8 +18650,8 @@
           return a <= p.t && b > p.t;
         })
         .sort((a, b) => a.n - b.n || a.m - b.m),
-      src = candidates[0] || null,
-      n = src ? Math.max(src.n, renderN() - depth) : renderN(),
+      src = candidates[0] || (S.mode === "candles" ? displaySource() : null),
+      n = S.mode === "candles" ? clamp(renderN() - depth, 0, N_MAX) : src ? Math.max(src.n, renderN() - depth) : renderN(),
       m = src ? Math.max(src.m, renderM() - depth) : renderM();
     lensSource = src?.id || null;
     if (src) src.used = performance.now();
@@ -18454,7 +18667,7 @@
     // The tile is the chart's now: it stops being lens-only before confine() chooses the block to show.
     f.src.lens = false;
     if (PACK.blocks[f.src.id]) PACK.blocks[f.src.id].lens = false;
-    transition = reduce
+    transition = reduce || S.mode === "candles"
       ? null
       : { n: renderN(), m: renderM(), start: performance.now() };
     S.tA = f.ta;
@@ -18518,7 +18731,8 @@
       lensRt.clip.y1 = y + h;
       lensRt.tally.reset();
       let status = "";
-      if (mp) status = lensMotion(src, q, n, m, lensBounds, b, lens, mp);
+      if (S.mode === "candles") status = paintCandles(n, lensBounds[0], lensBounds[1]);
+      else if (mp) status = lensMotion(src, q, n, m, lensBounds, b, lens, mp);
       else
         for (const z of q.cells) {
           const xa = G.X(z.c * ts),
@@ -18555,8 +18769,8 @@
       const wanted = fine ? null : lensTile(),
         reading = wanted && loadState[wanted.id] === "loading",
         failed = wanted && cube.failed.has(["tile", live.generation, wanted.id].join("|"));
-      label = `${fine ? `Lens −${depth}` : src.n === 0 && src.m === 0 ? "Base cells" : "Finest loaded"} · ${dur(BASE * ts)} × ${price(PR * ps)} USDT`;
-      sub = fine
+      label = S.mode === "candles" ? `Candles · ${dur(BASE * ts)}` : `${fine ? `Lens −${depth}` : src.n === 0 && src.m === 0 ? "Base cells" : "Finest loaded"} · ${dur(BASE * ts)} × ${price(PR * ps)} USDT`;
+      sub = S.mode === "candles" ? "Exact OHLC · Enter pins" : fine
         ? "Finer cells · surroundings unchanged · Enter pins"
         : src.n === 0 && src.m === 0
           ? "Base cells · no finer level exists"
@@ -19127,6 +19341,7 @@
       else if (k === "d") setFollow(S.diagonal ? "free" : "diagonal");
       else if (k === "f") fitPrice("Fit price");
       else if (k === "," || k === ".") stepAnchor(k === "," ? -1 : 1);
+      else if (k === "k") { if (!e.repeat) setMode(S.mode === "candles" ? (modes().includes(candlePrevious) ? candlePrevious : "volume") : "candles"); }
       else if (k === "m") {
         const list = modes(),
           i = list.indexOf(S.mode) + (shift ? -1 : 1);
@@ -19219,6 +19434,8 @@
   }
   function setMode(mode) {
     if (!modes().includes(mode)) return;
+    if (mode === "candles" && S.mode !== "candles") candlePrevious = S.mode;
+    if (mode === "candles" || S.mode === "candles") transition = null;
     S.mode = mode;
     update();
     save();

@@ -41,8 +41,8 @@ Routes:
   Every answer with motion names where its measures end (``end``, a base position, and
   ``through``): the open column is measured once it completes, and while the cube is still
   measuring its history the measures end where the cube's do.
-- ``/cube/bars?n&b0&b1&pack``: bars at a grid timeframe (n = 2, 4, 6, 8 or 9: 3.75 minutes,
-  15 minutes, 1 hour, 4 hours or 8 hours) over base columns [b0, b1), b0 on a bar's edge: each
+- ``/cube/bars?n&b0&b1&pack``: bars at dyadic grid timeframes n = 0..20 over base positions [b0, b1),
+  b0 on a bar's edge; b1 may be fractional for an exact replay cutoff: each
   column's open, high, low and close, its USDT, taker-buy USDT and BTC volume, and its trades
   (MSCB), from the cube's measures at rows that hold every price, so each column is one cell.
   Like motion, they end at the pack's last complete base column or where the cube's measures
@@ -107,9 +107,9 @@ MOTION_FIELDS = ("vol", "tbvol", "cnt", "tbcnt", "path", "dwell", "high", "low",
 MOTION_MEASURES = ("path_length", "dwell", "high", "low")
 MOTION_HELD = 8
 TOUCHES_HELD = 32
-# Bars: the grid timeframes (3.75 minutes, 15 minutes, 1, 4 and 8 hours), read at rows of
+# Bars: dyadic timeframes n = 0..20, read at rows of
 # 125 × 2**20 USDT, one row holding every price, so each column is one cell.
-BAR_LEVELS = (2, 4, 6, 8, 9)
+BAR_LEVELS = tuple(range(21))
 BAR_PRICE_EXPONENT = 20
 BAR_MEASURES = ("base_volume", "high", "low", "open", "close")
 BAR_FIELDS = (
@@ -248,7 +248,7 @@ def read(
     return response, cells, summary, {pin[0]: list(pin[2:]) for pin in meta["pins"]}
 
 
-def bar_read(n: int, b0: int, b1: int) -> tuple[dict, dict, dict]:
+def bar_read(n: int, b0: int, b1: float) -> tuple[dict, dict, dict]:
     """The cube's bars at level n over base columns [b0, b1): each column with trades as one
     cell of rows that hold every price, with its open, high, low, close and BTC volume. With
     the cube's response and the pins it read."""
@@ -707,7 +707,7 @@ class Explorer:
         self.check(pins, held, token)
         return cells, response, summary, min(float(b1), base_units(response["data_cutoff"]))
 
-    def bars(self, n: int, b0: int, b1: int, token: str) -> dict:
+    def bars(self, n: int, b0: int, b1: float, token: str) -> dict:
         """Bars at level n over base columns [b0, b1) for the page holding pack ``token``, up to
         the pack's last complete base column, or where the cube's measures end: ``end``, a base
         position. The bar holding it is partial when it isn't a bar's edge. Kept per pack and
@@ -933,13 +933,19 @@ class Handler(BaseHTTPRequestHandler):
                 n, m = level(args)
                 self.json(self.explorer.history(n, m, args.get("pack", [""])[0]))
             elif url.path == "/cube/bars":
-                n, b0, b1 = integer(args, "n"), integer(args, "b0"), integer(args, "b1")
+                n, b0 = integer(args, "n"), integer(args, "b0")
+                try:
+                    b1 = float(args.get("b1", [""])[0])
+                except (ValueError, TypeError):
+                    raise ValueError("b1 must be a finite base position") from None
+                if not math.isfinite(b1):
+                    raise ValueError("b1 must be a finite base position")
                 if n not in BAR_LEVELS:
-                    raise ValueError("n must be 2, 4, 6, 8 or 9: bars of 3.75 minutes, 15 minutes, 1, 4 or 8 hours")
+                    raise ValueError("n must be 0..20: dyadic grid bars")
                 step = 2**n
                 if not (0 <= b0 < b1 and b0 % step == 0):
                     raise ValueError("b0 must be a bar's edge and b1 after it")
-                if -(-b1 // step) - b0 // step > MAX_COLUMNS:
+                if math.ceil(b1 / step) - b0 // step > MAX_COLUMNS:
                     raise ValueError(f"more than {MAX_COLUMNS} bars")
                 self.json(self.explorer.bars(n, b0, b1, args.get("pack", [""])[0]))
             elif url.path == "/cube/touched":

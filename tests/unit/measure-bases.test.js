@@ -86,7 +86,7 @@ test("catalogues: FORMULAS carry family, unit, sign, basis kind and version; row
 
 test("catalogues: MODES says which measure is unbounded, fixed or occupancy and what it offers", () => {
   const M = E.measure.MODES;
-  assert.deepEqual(Object.keys(M).sort(), ["cascade", "delta", "dwell", "flow", "flowtrades", "geometry", "path", "size", "trades", "volume"]);
+  assert.deepEqual(Object.keys(M).sort(), ["candles", "cascade", "delta", "dwell", "flow", "flowtrades", "geometry", "path", "size", "trades", "volume"]);
   for (const m of ["volume", "trades"]) {
     assert.equal(M[m].kind, "unbounded");
     assert.equal(M[m].signed, false);

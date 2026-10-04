@@ -48,6 +48,9 @@ Testing it: `tests/unit/color-matrix.test.js` (U60) fails when this file is not 
 | plane.on | Resolution plane, selected tile | plate | #d6e0d9 | #2e4035 | glyph, position, label | the tile's glyph and name, and the stepper routes (B29, B31) |
 | plane.hover | Menu row, hover and focus | plate | #dde6e0 | #2a3a30 | label, position | the row's name and the focus ring (B23, B29) |
 | plane.border | Control and plane border | plate | #768d7e | #667f6f | glyph, position | the control's own boundary and its label (B29, B31) |
+| candle.up | Candle up: hollow body | outline | #2d769c | #73b8d4 | glyph, legend, number | hollow / filled / cased doji; labelled key and exact directional OHLC readout (U90, B90) |
+| candle.down | Candle down: filled body | area | #b3624b | #d89777 | glyph, legend, number | hollow / filled / cased doji; labelled key and exact directional OHLC readout (U90, B90) |
+| candle.doji | Candle unchanged: neutral cased stroke | outline | #b9c2bc | #5f6b64 | glyph, legend, number | hollow / filled / cased doji; labelled key and exact directional OHLC readout (U90, B90) |
 
 ## Contexts
 
@@ -61,15 +64,16 @@ Testing it: `tests/unit/color-matrix.test.js` (U60) fails when this file is not 
 | marks | The marks among themselves, and with the references | 34 |
 | profiles | The profile track: bar, inset, POC and the state ink | 10 |
 | plane | The resolution plane, the menus and the controls | 6 |
+| candles | Directional candle bodies and wicks | 3 |
 
 ## Summary
 
-131 pairs, each in two themes.
+134 pairs, each in two themes.
 
 | Theme | Pairs | Separated (>= 8 under every condition) | Form | Redundant | FAIL |
 |---|---|---|---|---|---|
-| light | 131 | 93 | 24 | 14 | 0 |
-| dark | 131 | 96 | 22 | 13 | 0 |
+| light | 134 | 95 | 25 | 14 | 0 |
+| dark | 134 | 98 | 23 | 13 | 0 |
 
 ## The PRD's named pairs
 
@@ -231,3 +235,6 @@ Each cell is the least CIEDE2000 over the eight conditions, with the condition t
 | plane.on and plane.hover | plane | 1.5 | 1.4 (protan-1) | redundant | 2.0 | 1.8 (deutan-1) | redundant |
 | plane.on and plane.border | plane | 24.8 | 23.7 (protan-1) | separated | 22.0 | 21.7 (deutan-0.5) | separated |
 | plane.hover and plane.border | plane | 26.3 | 25.1 (protan-1) | separated | 23.8 | 23.4 (deutan-1) | separated |
+| candle.up and candle.down | candles | 45.2 | 3.6 (gray) | form | 42.9 | 2.6 (gray) | form |
+| candle.up and candle.doji | candles | 33.1 | 26.3 (gray) | separated | 30.1 | 25.0 (gray) | separated |
+| candle.down and candle.doji | candles | 36.4 | 22.7 (gray) | separated | 36.2 | 22.5 (gray) | separated |

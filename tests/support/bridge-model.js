@@ -28,7 +28,7 @@ const PACKS_HELD = 16;
 const MOTION_HELD = 8;
 const TOUCHES_HELD = 32;
 const BARS_HELD = 64;
-const BAR_LEVELS = [2, 4, 6, 8, 9];
+const BAR_LEVELS = Array.from({ length: 21 }, (_, n) => n);
 const VOLUME_ROUNDING = 1e-12; // how far two reads of the same cells' volume may differ: the last bits of a float sum
 const MAX_COLUMNS = 4096;
 const MAX_CELLS = 1000000;

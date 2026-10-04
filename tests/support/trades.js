@@ -323,13 +323,13 @@ class TradeStore {
   bars({ n, b0, b1 }) {
     const step = 2 ** n;
     const out = { open: [], high: [], low: [], close: [], vol: [], tbvol: [], btc: [], cnt: [], col: [] };
-    let i = lowerBound(this.col, b0);
-    while (i < this.t.length && this.col[i] < b1) {
+    let i = lowerBound(this.t, b0 * BASE_MS);
+    while (i < this.t.length && this.t[i] < b1 * BASE_MS) {
       const C = Math.floor(this.col[i] / step);
       let high = -Infinity, low = Infinity, vol = 0, tbvol = 0, btc = 0, cnt = 0;
       const open = this.price[i] / 100;
       let close = open;
-      for (; i < this.t.length && this.col[i] < b1 && Math.floor(this.col[i] / step) === C; i++) {
+      for (; i < this.t.length && this.t[i] < b1 * BASE_MS && Math.floor(this.col[i] / step) === C; i++) {
         const p = this.price[i] / 100;
         const notional = (this.price[i] * this.qty[i]) / 1e10;
         high = Math.max(high, p);

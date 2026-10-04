@@ -9,7 +9,7 @@
 //              a microtask after the callback returned) is not a draw; it is counted apart as `outsideSets`, as the probe does.
 //   FRAME      the timestamps of a heartbeat rAF loop that runs only while a gesture is recorded, so main-thread blocking shows up
 //              even in frames where the page drew nothing; intervals are differences of consecutive timestamps.
-//   INPUT TO   for each wheel and pointermove event (the events that move the view; a pointerdown changes nothing until the first
+//   INPUT TO   for each wheel, pointermove or K keydown event (the events that move the view; a pointerdown changes nothing until the first
 //   PAINT      move), the end of the first DRAW callback that began after the event minus event.timeStamp. It excludes the
 //              compositor and present latency (TESTPLAN.md B-L1). Events that no draw ever answers are counted as `unpainted`.
 //   TIMER      the smallest positive step of performance.now() seen in a tight loop: the floor under every A/A floor.
@@ -80,8 +80,8 @@
     });
   };
 
-  for (const type of ["wheel", "pointermove"]) {
-    window.addEventListener(type, (event) => { if (recording) pending.push(event.timeStamp); }, { capture: true, passive: true });
+  for (const type of ["wheel", "pointermove", "keydown"]) {
+    window.addEventListener(type, (event) => { if (recording && (type !== "keydown" || event.key.toLowerCase() === "k")) pending.push(event.timeStamp); }, { capture: true, passive: true });
   }
 
   const beat = (timestamp) => {

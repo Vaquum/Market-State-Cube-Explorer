@@ -117,7 +117,7 @@ describe("validation and error shapes", () => {
     ["touched: not whole parent columns", "touched", { n: 0, b0: 1, b1: 4 }, "b0 and b1 must be the edges of whole parent columns, b0 < b1"],
     ["touched: b1 not on a parent edge", "touched", { n: 1, b0: 0, b1: 6 }, "b0 and b1 must be the edges of whole parent columns, b0 < b1"],
     ["touched: more than 4096 columns", "touched", { n: 0, b0: 0, b1: 8194 }, "more than 4096 columns"],
-    ["bars: level set", "bars", { n: 3, b0: 0, b1: 8 }, "n must be 2, 4, 6, 8 or 9: bars of 3.75 minutes, 15 minutes, 1, 4 or 8 hours"],
+    ["bars: level set", "bars", { n: 21, b0: 0, b1: 8 }, "n must be 0..20: dyadic grid bars"],
     ["bars: b0 not a bar's edge", "bars", { n: 2, b0: 3, b1: 10 }, "b0 must be a bar's edge and b1 after it"],
     ["bars: b1 not after b0", "bars", { n: 2, b0: 8, b1: 8 }, "b0 must be a bar's edge and b1 after it"],
     ["bars: more than 4096 bars", "bars", { n: 2, b0: 0, b1: 4 * 4097 }, "more than 4096 bars"],

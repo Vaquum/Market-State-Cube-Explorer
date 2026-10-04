@@ -1,0 +1,23 @@
+{"utc": "2026-10-04T11:39:18.820119+00:00", "api": "http://127.0.0.1:8486", "canonical_through": "2026-10-04T00:00:00.000000+00:00", "data_cutoff": "2026-10-04T11:38:00.000000+00:00", "candidate_bridge_sha256": "c85c7b048a0dd9d810c798cdb6409f0adbe7e5c0c2e187e8f910043dd6f5eac7"}
+{"level": 0, "start": 3228669, "end": 3228670, "records": 1, "pins": 1, "valid_ohlc_order": true}
+{"level": 1, "start": 3228666, "end": 3228668, "records": 1, "pins": 1, "valid_ohlc_order": true}
+{"level": 2, "start": 3228660, "end": 3228664, "records": 1, "pins": 1, "valid_ohlc_order": true}
+{"level": 3, "start": 3228648, "end": 3228656, "records": 1, "pins": 1, "valid_ohlc_order": true}
+{"level": 4, "start": 3228624, "end": 3228640, "records": 1, "pins": 1, "valid_ohlc_order": true}
+{"level": 5, "start": 3228576, "end": 3228608, "records": 1, "pins": 1, "valid_ohlc_order": true}
+{"level": 6, "start": 3228480, "end": 3228544, "records": 1, "pins": 1, "valid_ohlc_order": true}
+{"level": 7, "start": 3228288, "end": 3228416, "records": 1, "pins": 1, "valid_ohlc_order": true}
+{"level": 8, "start": 3227904, "end": 3228160, "records": 1, "pins": 1, "valid_ohlc_order": true}
+{"level": 9, "start": 3227136, "end": 3227648, "records": 1, "pins": 1, "valid_ohlc_order": true}
+{"level": 10, "start": 3225600, "end": 3226624, "records": 1, "pins": 1, "valid_ohlc_order": true}
+{"level": 11, "start": 3221504, "end": 3223552, "records": 1, "pins": 2, "valid_ohlc_order": true}
+{"level": 12, "start": 3215360, "end": 3219456, "records": 1, "pins": 3, "valid_ohlc_order": true}
+{"level": 13, "start": 3203072, "end": 3211264, "records": 1, "pins": 6, "valid_ohlc_order": true}
+{"level": 14, "start": 3178496, "end": 3194880, "records": 1, "pins": 11, "valid_ohlc_order": true}
+{"level": 15, "start": 3112960, "end": 3145728, "records": 1, "pins": 22, "valid_ohlc_order": true}
+{"level": 16, "start": 3014656, "end": 3080192, "records": 1, "pins": 44, "valid_ohlc_order": true}
+{"level": 17, "start": 2752512, "end": 2883584, "records": 1, "pins": 86, "valid_ohlc_order": true}
+{"level": 18, "start": 2359296, "end": 2621440, "records": 1, "pins": 171, "valid_ohlc_order": true}
+{"level": 19, "start": 1572864, "end": 2097152, "records": 1, "pins": 342, "valid_ohlc_order": true}
+{"level": 20, "start": 0, "end": 1048576, "records": 1, "pins": 683, "valid_ohlc_order": true}
+{"pass": true, "levels": 21, "claim": "Supported reader returns real occupied OHLC with valid ordering; not independent per-trade reconstruction"}

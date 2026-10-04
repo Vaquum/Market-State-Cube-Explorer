@@ -20590,7 +20590,7 @@
       const entries = recoveries.map((record) => {
         const stamp = record.createdAt || record.time || record.at, parsed = stamp ? new Date(stamp) : null,
           label = record.label || record.name || (parsed && Number.isFinite(parsed.getTime()) ? parsed.toISOString() : "Saved drawing workspace");
-        return drawingUIButton(`${label}${Number.isInteger(record.count) ? ` · ${record.count} drawings` : ""}`, "recover", record.id);
+        return drawingUIButton(label, "recover", record.id);
       }); el("drawing-recover-list").replaceChildren(...entries); drawingRecoveryKey = recoveryKey;
     }
     el("drawing-recover").hidden = !recoveries.length;

@@ -70,3 +70,17 @@ test("Inspect refreshes a stationary candle cursor when its pending read arrives
  await expect(page.locator("#ol-inspect-readout")).toContainText("Reading candles");gate.open();
  await expect(page.locator("#ol-inspect-readout")).toContainText("Open");await expect(page.locator("#ol-tip")).toHaveAttribute("data-open","25000");await expect(page.locator("#ol-tip")).toHaveAttribute("data-high","25375");
 });
+
+test("more than 64 adjacent gap fills stay ready without an eviction/refetch loop",async({page,fakeFor})=>{
+ test.setTimeout(90000);
+ const fake=await fakeFor("mini",{next:300}),start=Date.parse("2026-09-23T08:00:00Z"),stop=Date.parse("2026-09-23T10:00:00Z");
+ const address=i=>"#t="+new Date(start+i*56250).toISOString()+"~"+new Date(stop+i*56250).toISOString()+"&p=24000~27000&r=0,0&mode=candles";
+ await page.goto(fake.url+"/"+address(0));await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");await fake.idle();
+ for(let i=1;i<=70;i++){
+  await page.evaluate(hash=>{location.hash=hash},address(i));
+  await expect.poll(()=>bars(fake).length,{timeout:5000}).toBe(i+1);
+  await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");
+ }
+ await fake.idle({quietMs:500});expect(bars(fake)).toHaveLength(71);await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");
+ expect(+await page.locator("#ol-candle-legend").getAttribute("data-cache-ranges")).toBeLessThanOrEqual(2);
+});

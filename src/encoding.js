@@ -11491,12 +11491,44 @@
   class CndCache {
     constructor() { this.ranges = new Map(); this.records = 0; this.bytes = 0; }
     clear() { this.ranges.clear(); this.records = this.bytes = 0; }
-    put(key, value) {
+    put(key, value, keep = () => false) {
       const count = value.bars.length, bytes = count * cndLimits.recordBytes;
       if (count > cndLimits.records || bytes > cndLimits.bytes) throw new RangeError("Candle cache entry exceeds budget");
       if (this.ranges.has(key)) this.drop(key);
       this.ranges.set(key, value); this.records += count; this.bytes += bytes;
-      while (this.ranges.size > cndLimits.ranges || this.records > cndLimits.records || this.bytes > cndLimits.bytes) this.drop(this.ranges.keys().next().value);
+      while (this.ranges.size > cndLimits.ranges || this.records > cndLimits.records || this.bytes > cndLimits.bytes) {
+        const victim = [...this.ranges].find(([, r]) => !keep(r));
+        this.drop(victim ? victim[0] : this.ranges.keys().next().value);
+      }
+    }
+    // Coalesce only caller-validated coverage; keep storage chunks bounded and active windows last.
+    merge(key, value, reusable, keep = () => false) {
+      let a = value.a, b = value.b;
+      const selected = new Map();
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const [oldKey, r] of reusable) {
+          if (selected.has(oldKey) || r.n !== value.n || r.generation !== value.generation || r.a > b || r.b < a) continue;
+          selected.set(oldKey, r); a = Math.min(a, r.a); b = Math.max(b, r.b); changed = true;
+        }
+      }
+      const byColumn = new Map();
+      let end = b;
+      for (const r of [...selected.values(), value]) {
+        for (const bar of r.bars) byColumn.set(bar.c, bar);
+        if (r.end < r.b && !(r !== value && value.a <= r.end && value.b >= r.b && value.end >= r.b)) end = Math.min(end, r.end);
+      }
+      const bars = [...byColumn.values()].sort((x, y) => x.c - y.c), chunks = [], width = 4096 * 2 ** value.n;
+      let cursor = 0;
+      for (let start = a; start < b; start += width) {
+        const stop = Math.min(b, start + width), first = cursor;
+        while (cursor < bars.length && bars[cursor].start < stop) cursor++;
+        chunks.push({ ...value, a: start, b: stop, end: Math.min(end, stop), bars: bars.slice(first, cursor) });
+      }
+      for (const oldKey of selected.keys()) this.drop(oldKey);
+      chunks.sort((x, y) => Number(keep(x)) - Number(keep(y)));
+      for (const chunk of chunks) this.put(key + ":" + chunk.a, chunk, keep);
     }
     drop(key) { const old = this.ranges.get(key); if (!old) return; this.records -= old.bars.length; this.bytes -= old.bars.length * cndLimits.recordBytes; this.ranges.delete(key); }
     touch(key) { const old = this.ranges.get(key); if (old) { this.ranges.delete(key); this.ranges.set(key, old); } return old; }

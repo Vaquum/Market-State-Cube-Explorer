@@ -5557,10 +5557,11 @@
       b.setAttribute("aria-checked", String(b.dataset.mode === S.mode)),
     );
     // The pane's choice, written only when it changes: update() runs on every input.
-    if (el("pane").dataset.pane !== S.pane) {
+    const paneName = S.mode === "candles" && S.pane === "cells" ? "Volume" : PANE_INFO[S.pane].name;
+    if (el("pane").dataset.pane !== S.pane || el("pane-text").textContent !== paneName) {
       el("pane").dataset.pane = S.pane;
-      el("pane-text").textContent = S.mode === "candles" && S.pane === "cells" ? "Volume" : PANE_INFO[S.pane].name;
-      el("pane").setAttribute("aria-label", `Columns: ${PANE_INFO[S.pane].name}`);
+      el("pane-text").textContent = paneName;
+      el("pane").setAttribute("aria-label", `Columns: ${paneName}`);
       qsa("#ol-pane-menu [data-pane]").forEach((b) =>
         b.setAttribute("aria-checked", String(b.dataset.pane === S.pane)),
       );
@@ -9940,15 +9941,19 @@
     return out.filter((r) => r.b > r.a);
   }
   // A new pack may reuse finalized intervals. The open interval and replaced provisional span cannot.
+  function candleStop(r) {
+    const step = 2 ** r.n, edge = candleEdge();
+    let stop = r.b;
+    if (r.b > edge || (r.b < edge && r.b % step !== 0)) stop = Math.min(stop, Math.floor(Math.min(r.b, edge) / step) * step);
+    if (r.token !== PACK.state_token) stop = Math.min(stop, Math.floor(r.end / step) * step);
+    if (r.canon !== null && CANON !== null && CANON > r.canon) stop = Math.min(stop, Math.floor(r.canon / step) * step);
+    return stop;
+  }
   function candleHeld(n, a, b) {
-    const step = 2 ** n, out = [];
+    const out = [];
     for (const [key, r] of candleCache.ranges) {
       if (r.generation !== live.generation || r.n !== n || r.b <= a || r.a >= b) continue;
-      let stop = r.b;
-      const edge = candleEdge();
-      if (r.b > edge || (r.b < edge && r.b % step !== 0)) stop = Math.min(stop, Math.floor(Math.min(r.b, edge) / step) * step);
-      if (r.token !== PACK.state_token) stop = Math.min(stop, Math.floor(r.end / step) * step);
-      if (r.canon !== null && CANON !== null && CANON > r.canon) stop = Math.min(stop, Math.floor(r.canon / step) * step);
+      const stop = candleStop(r);
       if (stop > r.a) out.push({ key, r, stop });
     }
     for (const h of out) candleCache.touch(h.key);
@@ -9986,8 +9991,16 @@
         },
         apply: ({ body, bars, decodeMs }) => {
           if (generation !== live.generation || token !== PACK.state_token || S.mode !== "candles") return;
-          if (!candleNeeds().some((r) => r.n === n && r.b > a && r.a < b)) return;
-          candleCache.put(key, { n, a, b, end: body.end, bars, token, generation, canon });
+          const needs = candleNeeds();
+          if (!needs.some((r) => r.n === n && r.b > a && r.a < b)) return;
+          const reusable = [];
+          for (const [oldKey, r] of candleCache.ranges) {
+            if (r.generation !== generation || r.n !== n) continue;
+            const stop = candleStop(r);
+            if (stop > r.a) reusable.push([oldKey, { ...r, b: stop, end: Math.min(r.end, stop), bars: r.bars.filter((bar) => bar.start < stop && bar.through <= stop && (bar.stop <= stop || (r.token === token && r.b === candleEdge()))) }]);
+          }
+          candleCache.merge(key, { n, a, b, end: body.end, bars, token, generation, canon }, reusable,
+            (r) => r.generation === generation && needs.some((need) => need.n === r.n && need.b > r.a && need.a < candleStop(r)));
           candleMetrics.decodeMs += decodeMs; candleMetrics.encodedBytes += body.bars.gzip_base64.length; candleMetrics.decodedBytes += 32 + bars.length * 68;
           candleVersion++; candleMemo.clear();
         },
@@ -10016,13 +10029,13 @@
       return kind === "candles" && +gen === live.generation && +level === n && pack === PACK.state_token && +to > window.a && +from < window.b;
     });
     const reason = failed?.[1] ?? (capped && !candleGap(n, window.a, window.b) ? "Showing a 4,096-interval window; outer intervals pending" : null);
-    const result = { state: gap ? failed ? "failed" : "pending" : "ready", reason, bars: [...byColumn.values()].sort((x, y) => x.c - y.c), end };
+    const result = { state: gap ? failed ? "failed" : "pending" : "ready", reason, bars: [...byColumn.values()].sort((x, y) => x.c - y.c), end, requestedEnd: stop };
     candleMemo.set(memoKey, result);
     while (candleMemo.size > 8) candleMemo.delete(candleMemo.keys().next().value);
     return result;
   }
   function candleStatus(r) {
-    return r.state === "unavailable" || r.state === "after-cutoff" ? r.reason : r.state === "failed" ? `Candles unavailable: ${r.reason}` : r.state === "pending" ? r.reason ?? "Reading candles…" : r.end < candleEdge() ? `Coverage through ${when(r.end)} UTC` : r.bars.length ? `Measured through ${when(r.end)} UTC` : "No trades in this interval";
+    return r.state === "unavailable" || r.state === "after-cutoff" ? r.reason : r.state === "failed" ? `Candles unavailable: ${r.reason}` : r.state === "pending" ? r.reason ?? "Reading candles…" : r.end < r.requestedEnd ? `Coverage through ${when(r.end)} UTC` : r.bars.length ? `Measured through ${when(r.end)} UTC` : "No trades in this interval";
   }
   function paintCandles(n, a, b) {
     const r = candleRange(n, a, b);
@@ -10035,7 +10048,7 @@
     return candleStatus(r);
   }
   function candleLegend() {
-    const node = el("candle-legend"), r = candleRange(renderN(), S.tA, S.tB), key = [renderN(), r.state, r.reason, r.end, r.bars.length, colourEpoch].join("|");
+    const node = el("candle-legend"), r = candleRange(renderN(), S.tA, S.tB), key = [renderN(), r.state, r.reason, r.end, r.requestedEnd, r.bars.length, colourEpoch].join("|");
     Object.assign(node.dataset, { cacheRanges: String(candleCache.ranges.size), cacheRecords: String(candleCache.records), cacheBytes: String(candleCache.bytes), decodeMs: String(candleMetrics.decodeMs), encodedBytes: String(candleMetrics.encodedBytes), decodedBytes: String(candleMetrics.decodedBytes) });
     if (node.dataset.key === key) return;
     node.dataset.key = key;

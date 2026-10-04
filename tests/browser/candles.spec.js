@@ -25,3 +25,24 @@ for(const theme of ["light","dark"])test(`candle raster ${theme}: hollow up, fil
  expect(pixels.up).toEqual(theme==="light"?[255,255,255]:[22,31,25]);expect(pixels.down).toEqual(theme==="light"?[179,98,75]:[216,151,119]);expect(pixels.wick).not.toEqual(pixels.up);expect(pixels.doji).not.toEqual(pixels.up);
  await page.screenshot({path:info.outputPath(`candles-${theme}.png`)});
 });
+
+test("Same as cells relabels Columns when entering Candles and restores its name on exit",async({page,fakeFor})=>{
+ const fake=await fakeFor("micro:bars");await page.goto(fake.url+"/#w=24h&mode=delta&pane=cells");
+ await expect(page.locator("#ol-pane-text")).toHaveText("Same as cells");
+ await page.keyboard.press("k");await expect(page.locator("#ol-pane-text")).toHaveText("Volume");await expect(page.locator("#ol-pane")).toHaveAttribute("aria-label","Columns: Volume");
+ await page.keyboard.press("k");await expect(page.locator("#ol-pane-text")).toHaveText("Same as cells");await expect(page.locator("#ol-pane")).toHaveAttribute("aria-label","Columns: Same as cells");
+ await page.goto(fake.url+"/#w=24h&mode=candles&pane=cells");await expect(page.locator("#ol-pane-text")).toHaveText("Volume");
+ await page.locator("#ol-mode").click();await page.locator('[data-mode="delta"]').click();await expect(page.locator("#ol-pane-text")).toHaveText("Same as cells");await expect(page.locator("#ol-pane")).toHaveAttribute("aria-label","Columns: Same as cells");
+});
+test("fully covered historical empty candles say No trades; historical bars say Measured through",async({page,fakeFor})=>{
+ const fake=await fakeFor("micro:bars");await page.goto(fake.url+"/#t=2021-01-01T00:07:30Z~2021-01-01T00:11:15Z&p=24800~25400&r=2,0&mode=candles");
+ await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");await expect(page.locator("#ol-candle-legend")).toContainText("No trades in this interval");
+ await page.keyboard.press("e");await expect(page.locator("#ol-inspect-readout")).toContainText("No trades in this interval");await page.keyboard.press("Escape");
+ await page.evaluate(()=>{location.hash="#t=2021-01-01T00:00Z~2021-01-01T00:03:45Z&p=24800~25400&r=2,0&mode=candles"});
+ await expect(page.locator("#ol-candle-legend")).toContainText("Measured through");await expect(page.locator("#ol-candle-legend")).not.toContainText("Coverage through");
+});
+test("historical reads with actual coverage short of the requested end retain Coverage through",async({page,fakeFor})=>{
+ const fake=await fakeFor("micro:bars");fake.motionThrough(10);
+ await page.goto(fake.url+"/#t=2021-01-01T00:07:30Z~2021-01-01T00:11:15Z&p=24800~25400&r=2,0&mode=candles");
+ await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");await expect(page.locator("#ol-candle-legend")).toContainText("Coverage through");
+});

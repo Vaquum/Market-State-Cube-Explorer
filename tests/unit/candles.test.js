@@ -66,7 +66,9 @@ test("Candles addresses preserve fractional replay anchors", async () => {
  const address="#w=24h&mode=candles&replay=1&at=2021-01-01T00:01:40.001Z";
  const read=E.codec.parseAddress(address,{CUT:1000,live:true});
  assert.equal(read.view.mode,"candles");assert.ok(Math.abs(read.view.anchor-100001/56250)<1e-9);
- const formatted=E.codec.formatAddress({...read.view,appearance:"slate2-8f7890f7"},{CUT:1000,live:true});assert.ok(formatted.hash.includes("00%3A01")||formatted.hash.includes("00:01:40.001"),formatted.hash);
+ const formatted=E.codec.formatAddress({...read.view,appearance:"slate2-8f7890f7"},{CUT:1000,live:true});
+ assert.equal(new URLSearchParams(formatted.hash.slice(1)).get("at"),"2021-01-01T00:01:40.001Z");
+ assert.equal(E.codec.parseAddress(formatted.hash,{CUT:1000,live:true}).view.anchor,read.view.anchor);
 });
 
 test("portable views retain Candles and raw scale preferences without applying them to direction", async () => {
@@ -75,4 +77,38 @@ test("portable views retain Candles and raw scale preferences without applying t
  assert.equal(decoded.payload.view.mode,"candles");
  assert.equal(decoded.payload.view.anchor,payload.view.anchor);
  assert.deepEqual(decoded.payload.view.scale,payload.view.scale);
+});
+
+test("adjacent tail fills coalesce without losing complete candles or empty coverage", () => {
+ const cache=new C.Cache(), make=(a,b,token)=>({n:0,a,b,end:b,generation:7,token,canon:null,bars:Array.from({length:b-a},(_,i)=>C.record({...raw,c:a+i},0,b))});
+ cache.merge("initial",make(0,128,"0"),[]);
+ for(let i=0;i<70;i++){
+  const tail=make(128+i,129+i,String(i+1));
+  cache.merge("tail"+i,tail,[...cache.ranges]);
+ }
+ assert.equal(cache.ranges.size,1);assert.equal(cache.records,198);
+ const joined=[...cache.ranges.values()][0];assert.equal(joined.a,0);assert.equal(joined.b,198);
+ assert.deepEqual(joined.bars.map(bar=>bar.c),Array.from({length:198},(_,i)=>i));
+ cache.merge("empty",{...make(198,199,"71"),bars:[]},[...cache.ranges]);
+ assert.equal(cache.ranges.size,1);assert.equal([...cache.ranges.values()][0].b,199);assert.equal(cache.records,198);
+});
+test("coalescing cannot bridge missing coverage or mix levels/generations; fresh overlap replaces a partial bar", () => {
+ const cache=new C.Cache(), range=(a,b,end=b)=>({n:2,a,b,end,generation:1,token:"now",canon:null,bars:[]});
+ cache.put("left",range(0,4));cache.put("hole",range(8,12));cache.put("other-level",{...range(4,8),n:1});cache.put("other-pack",{...range(4,8),generation:2});
+ cache.merge("far",range(12,16),[...cache.ranges]);
+ assert.equal(cache.ranges.size,4);assert.ok(cache.ranges.has("left"));assert.ok(cache.ranges.has("other-level"));assert.ok(cache.ranges.has("other-pack"));
+ const partial={...range(16,18,18),bars:[C.record({...raw,c:4},2,18)]};
+ cache.merge("partial",partial,[...cache.ranges]);
+ const complete={...range(16,20),bars:[C.record({...raw,c:4,close:25032},2,20)]};
+ cache.merge("complete",complete,[...cache.ranges]);
+ const joined=[...cache.ranges.values()].find(r=>r.a===8);assert.equal(joined.b,20);assert.equal(joined.end,20);assert.equal(joined.bars[0].close,25032);assert.equal(joined.bars[0].state,"complete");
+});
+test("long histories split into bounded storage chunks and retain active main/lens windows under eviction", () => {
+ const cache=new C.Cache(), keep=r=>r.n===2||(r.n===0&&(r.a===0||r.b===70*4096));
+ cache.put("lens",{n:2,a:0,b:4,end:4,generation:1,bars:[C.record({...raw,c:0},2,4)]});
+ cache.merge("history",{n:0,a:0,b:70*4096,end:70*4096,generation:1,bars:[]},[],keep);
+ assert.equal(cache.ranges.size,64);assert.ok(cache.ranges.has("lens"));
+ const main=[...cache.ranges.values()].filter(r=>r.n===0);
+ assert.ok(main.some(r=>r.a===0));assert.ok(main.some(r=>r.b===70*4096));
+ assert.ok(main.every(r=>r.b-r.a<=4096));assert.equal(cache.records,1);assert.equal(cache.bytes,192);
 });

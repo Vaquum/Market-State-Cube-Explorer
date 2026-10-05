@@ -170,3 +170,32 @@ for(const tool of ["pan","trend"])
     expect(await page.evaluate(()=>location.hash)).toBe(after);
     expect((await stored(page))?.captures.length??0).toBe(0);
   });
+
+for(const tool of ["pan","trend"])
+  test(`secondary-first ${tool} chord does not consume the next primary gesture release`,async({page,fakeFor,probe})=>{
+    const fake=await fakeFor("standard");await open(page,fake,probe);await page.locator(`[data-tool="${tool}"]`).click();
+    const a=await point(page),b={x:a.x+90,y:a.y-45},before=await page.evaluate(()=>location.hash);
+    // Capture above the menu's document listener to verify both real terminal releases, even when it owns one.
+    await page.evaluate(()=>{window.__chordReleases=[];window.addEventListener("pointerup",event=>{if(event.target===document.getElementById("ol-canvas"))window.__chordReleases.push({button:event.button,buttons:event.buttons,trusted:event.isTrusted});},true);});
+    await page.mouse.move(a.x,a.y);await page.mouse.down({button:"right"});
+    await expect(page.locator("#ol-cell-menu")).toBeVisible();await page.keyboard.press("Escape");
+    await expect(page.locator("#ol-cell-menu")).toHaveCount(0);
+    await page.mouse.down({button:"left"});await page.mouse.up({button:"right"});await page.mouse.up({button:"left"});
+    expect(await page.evaluate(()=>window.__chordReleases)).toEqual([{button:0,buttons:0,trusted:true}]);
+    await probe.waitForQuiet({quietMs:300});
+    expect(await page.evaluate(()=>location.hash)).toBe(before);
+    await expect(page.locator("#ol-canvas")).toHaveAttribute("data-drawing-count","0");
+    await page.mouse.move(a.x,a.y);await page.mouse.down({button:"left"});await page.mouse.move(b.x,b.y,{steps:6});
+    await page.mouse.down({button:"right"});await page.mouse.up({button:"left"});await page.mouse.up({button:"right"});
+    expect(await page.evaluate(()=>window.__chordReleases)).toEqual([{button:0,buttons:0,trusted:true},{button:2,buttons:0,trusted:true}]);
+    if(await page.locator("#ol-cell-menu").count())await page.keyboard.press("Escape");
+    await probe.waitForQuiet({quietMs:300});
+    if(tool==="trend") {
+      await expect(page.locator("#ol-canvas")).toHaveAttribute("data-drawing-count","1");
+      await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed","true");
+    } else expect(await page.evaluate(()=>location.hash)).not.toBe(before);
+    const after=await page.evaluate(()=>location.hash);
+    await page.mouse.move(b.x+60,b.y+30);await probe.waitForQuiet({quietMs:300});
+    expect(await page.evaluate(()=>location.hash)).toBe(after);
+    expect((await stored(page))?.captures.length??0).toBe(0);
+  });

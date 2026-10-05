@@ -14,6 +14,8 @@ async function defaults(page) {
   await expect(page.locator("#ol-follow")).toHaveAttribute("data-mode", "refit");
   await expect(page.locator("#ol-replay")).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("#ol-drawing-toolbar")).toBeHidden();
   await expect(page.locator("#ol-poc")).toBeChecked();
   await expect(page.locator("#ol-area")).not.toBeChecked();
   await expect(page.locator("#ol-untested")).not.toBeChecked();
@@ -26,7 +28,8 @@ async function defaults(page) {
 
 test("Reset canvas restores the default chart and persists it without a dialog when there is no authored work", async ({ page, fakeFor, probe }) => {
   const fake = await fakeFor("mini");
-  await D.open(page, fake, "&mode=candles&pane=delta&rows=volume&period=7d&level=25000&marks=poc,area,untested&f=diagonal&bs=i&cp=a&lk=1&replay=1&at=2026-09-24T00:00Z");
+  await D.open(page, fake, "&mode=candles&pane=delta&rows=volume&period=7d&level=25000&marks=poc,area,untested&lines=visible,vvwap&f=diagonal&bs=i&cp=a&lk=1&replay=1&at=2026-09-24T00:00Z");
+  expect(params(page).get("lines").split(",")).toEqual(["visible", "vvwap"]);
   await page.locator("#ol-lens").click();
   await page.getByRole("button", { name: "Reset canvas", exact: true }).click();
   await expect(page.locator("#ol-reset-confirm")).toBeHidden();
@@ -50,6 +53,7 @@ test("confirmation cancels without changes, clears hidden and locked drawings an
   await D.action(page, id, "visible");
   const original = await D.row(page, id);
   await D.closeManager(page);
+  await D.pan(page);
   // The cell menu stays mounted while measurements refresh table rows.
   const cell = D.point(await D.plot(page), .3, .4);
   await page.mouse.click(cell.x, cell.y, { button: "right" });
@@ -60,6 +64,7 @@ test("confirmation cancels without changes, clears hidden and locked drawings an
   await page.locator("#ol-view-form").getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator("#ol-saved")).toContainText("Before reset");
   await page.keyboard.press("Escape");
+  await D.trend(page);
   const beforeHash = page.url(), beforeComparison = await comparison(page);
   await page.locator("#ol-reset-canvas").click();
   await expect(page.locator("#ol-reset-confirm-note")).toContainText("1 drawing (1 locked) and 1 comparison cell");
@@ -70,6 +75,7 @@ test("confirmation cancels without changes, clears hidden and locked drawings an
   expect(page.url()).toBe(beforeHash);
   expect(await comparison(page)).toEqual(beforeComparison);
   expect(await D.row(page, id)).toEqual(original);
+  await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
   await page.locator("#ol-reset-canvas").click();
   await page.keyboard.press("Escape");
   await expect(page.locator("#ol-reset-canvas")).toBeFocused();

@@ -63,7 +63,7 @@ test("opening differing and explicitly empty complete snapshots offers Cancel/Ke
   await expect.poll(() => D.count(page)).toBe(1); expect((await D.rows(page)).map((r) => r.id)).toEqual([first.id]);
   expect(Object.values((await drawingStorage(page)).local).join("\n"), "pre-replacement collection has durable recovery").toContain(second.id);
   await page.locator("#ol-drawer-toggle").click(); await D.manager(page);
-  await page.locator("#ol-drawing-section").getByRole("button", { name: /^Undo/ }).click(); await expect.poll(() => D.rows(page)).toEqual(before);
+  await D.command(page, "undo"); await expect.poll(() => D.rows(page)).toEqual(before);
   await D.closeManager(page); payload.drawings = fixture.empty;
   await D.persistence.importCode(page, D.plainCode(payload)); await expect(dialog).toBeVisible(); await dialog.locator('[data-drawing-replace="replace"]').click();
   await expect.poll(() => D.count(page)).toBe(0);

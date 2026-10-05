@@ -1,14 +1,35 @@
 # Manual trend lines: candidate evidence
 
-This is the single implementation of [PRD-0005 #65](https://github.com/Vaquum/Market-State-Cube-Explorer/issues/65) / [P5-S1 #66](https://github.com/Vaquum/Market-State-Cube-Explorer/issues/66), based on main `4900a00` including Candles. Free two-point solid lines use the existing tools, Lines inventory, exact editor and Views.
+This is the single implementation of [PRD-0005 #65](https://github.com/Vaquum/Market-State-Cube-Explorer/issues/65) / [P5-S1 #66](https://github.com/Vaquum/Market-State-Cube-Explorer/issues/66), based on main `4900a00` including Candles. Free two-point solid lines use the existing tools, Lines inventory, exact editor and Views. Current drawing interaction uses persistent Trend line mode; historical receipts and screenshots below describe their recorded candidates.
+
+## Drawing interaction
+
+Trend line mode (G) owns creation and manipulation and stays selected after a line
+is created. On blank chart space, place A/B or press-drag-release. Press an existing
+line body to select and move it immediately, or an endpoint to resize it, without a
+prior selection click. A visible hover card does not intercept pickup. Endpoint
+handles and the active toolbar belong to Trend mode. Pan (V) navigates the chart
+without selecting, moving or resizing drawings.
+
+Right-click a line in Trend mode to open its menu, then choose **Delete line**;
+opening the menu itself changes nothing. Drawing Undo restores deletion. Lines →
+Your drawings is the first collapsed family, using the existing group and per-line
+visibility checkboxes only. Toggling visibility does not change the active tool.
+The Trend toolbar’s More menu owns line selection, exact coordinates, lock, duplicate,
+delete, Undo/Redo and export/recovery. Choose line reaches hidden, locked and off-screen
+objects. The toolbar
+reserves both coordinate readout lines before contact so placement and pickup do
+not resize the plot mid-gesture. The [operator checklist](operator-drawings.md)
+records first-attempt pickup, endpoint, mode ownership and context-menu cases;
+human sessions remain outstanding.
 
 ## Review surfaces
 
-![Desktop drawing and Lines management](images/trend-lines-desktop.png)
+![Earlier desktop drawing and Lines management](images/trend-lines-desktop.png)
 
 ![Phone exact-coordinate editor](images/trend-lines-phone.png)
 
-These are the implemented UI on the synthetic mini fixture. Names and RGB remain exact; the hollow hexagon identifies authored ink across themes. The phone editor uses the existing bottom-sheet form with 44 CSS-pixel controls.
+These historical screenshots show the earlier candidate on the synthetic mini fixture. Names and RGB remain exact; the hollow hexagon identifies authored ink across themes. The phone editor uses the existing bottom-sheet form with 44 CSS-pixel controls.
 
 ## Verification
 
@@ -64,8 +85,10 @@ parallel to the line, with its ink bottom6CSSpx above the visible segment and a 
 neutral contrast outline. There is no plate, pill or separate hit target.
 
 Placement centers on the main plot's clipped segment, sliding only along that line
-when needed to keep complete ink inside the plot. Long labels ellipsize at grapheme
-boundaries; the full text stays in Edit and snapshots. A segment too short or too
+when needed to keep complete ink inside the plot. With `Intl.Segmenter`, long labels
+ellipsize at grapheme boundaries. Without it, the full label draws intact when it
+fits and otherwise is omitted; widening the line can reveal it again. The full text
+stays in Edit and snapshots. A segment too short or too
 close to the upper edge omits its unfit label. Lens uses the same placement through
 regional clipping. The line and its rotated text share one overlay-budget candidate;
 narrow parallel strips charge the text footprint without a diagonal bounding box.

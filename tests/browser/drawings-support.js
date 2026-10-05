@@ -20,7 +20,7 @@ async function open(page, fake, extra = "") {
   await ready(page);
 }
 async function plot(page) {
-  // Toolbars can change plot height between Trend placement and committed Pan.
+  // Toolbars can change plot height between tool modes and active drawing cards.
   // Read the rendered layout after ResizeObserver and the next paint have settled.
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   return page.locator("#ol-canvas").evaluate((n) => {
@@ -41,22 +41,59 @@ async function rows(page) {
   })));
 }
 async function row(page, id) { return (await rows(page)).find((r) => r.id === id); }
-async function manager(page) {
-  if (await page.locator("#ol-lines-pop").isHidden()) await page.locator("#ol-lines").click();
-  await expect(page.locator("#ol-drawing-section")).toBeVisible();
+async function closeManager(page) {
+  if (await page.locator("#ol-lines-pop").isVisible() || await page.locator("#ol-drawing-actions").isVisible()) {
+    const mode = await page.locator("#ol-trend").getAttribute("aria-pressed");
+    await page.keyboard.press("Escape"); await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", mode);
+  }
 }
-async function closeManager(page) { if (await page.locator("#ol-lines-pop").isVisible()) await page.keyboard.press("Escape"); }
-async function action(page, id, command) {
-  await manager(page);
-  const target = page.locator(`[data-drawing-row="${id}"] [data-drawing-action="${command}"]`);
-  if (await target.isHidden()) await page.locator(`[data-drawing-row="${id}"] summary`).click();
-  await target.click();
+async function trend(page) {
+  if (await page.locator("#ol-trend").getAttribute("aria-pressed") !== "true") {
+    await closeManager(page); await page.locator("#ol-canvas").focus(); await page.keyboard.press("g");
+  }
+  await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
+}
+async function pan(page) {
+  await closeManager(page); await page.locator('[data-tool="pan"]').click();
+  await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed", "true");
+}
+async function lines(page) {
+  if (await page.locator("#ol-lines").isHidden() && await page.locator("#ol-sheet-toggle").isVisible()) await page.locator("#ol-sheet-toggle").click();
+  if (await page.locator("#ol-lines-pop").isHidden()) await page.locator("#ol-lines").click();
+  const section = page.locator("#ol-drawing-section"); await expect(section).toBeVisible();
+  if (await page.locator("#ol-family-drawing-head").getAttribute("aria-expanded") !== "true") await page.locator("#ol-family-drawing-head").click();
+}
+async function manager(page) {
+  await trend(page);
+  if (await page.locator("#ol-lines-pop").isVisible()) await closeManager(page);
+  if (await page.locator("#ol-drawing-actions").isHidden()) await page.locator("#ol-drawing-more").click();
+  await expect(page.locator("#ol-drawing-actions")).toBeVisible();
+}
+async function command(page, action) {
+  await manager(page); await page.locator(`#ol-drawing-actions [data-drawing-action="${action}"]`).click();
+}
+async function choose(page, id) {
+  await trend(page);
+  if (await active(page) !== id) {
+    await command(page, "choose");
+    await page.locator(`#ol-drawing-chooser [data-drawing-choice="${id}"]`).click();
+  }
+  await closeManager(page);
+  if (await page.locator("#ol-sheet-close").isVisible()) await page.locator("#ol-sheet-close").click();
+  await expect.poll(() => active(page)).toBe(id);
+}
+async function action(page, id, action) {
+  if (action === "visible") {
+    await lines(page); await page.locator(`[data-drawing-row="${id}"] [data-drawing-action="visible"]`).click(); return;
+  }
+  await choose(page, id);
+  if (action === "edit") { await page.locator("#ol-drawing-edit").click(); return; }
+  await command(page, action);
 }
 async function drawing(page, a = [.25, .75], b = [.75, .25], { drag = false, touch = false } = {}) {
   await closeManager(page);
-  await page.locator("#ol-canvas").focus();
-  await page.keyboard.press("g");
-  await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
+  if (await page.locator("#ol-sheet-close").isVisible()) await page.locator("#ol-sheet-close").click();
+  await trend(page); await page.locator("#ol-canvas").focus();
   const p = await plot(page), A = point(p, ...a), B = point(p, ...b), n = await count(page);
   if (touch) {
     await page.touchscreen.tap(A.x, A.y);
@@ -70,7 +107,7 @@ async function drawing(page, a = [.25, .75], b = [.75, .25], { drag = false, tou
   await expect.poll(() => count(page)).toBe(n + 1);
   const id = await active(page);
   expect(id, "new committed object is active").toMatch(/^[0-9a-f]{8}-[0-9a-f-]{27}$/);
-  await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
   const committedPlot = await plot(page);
   return { id, A: point(committedPlot, ...a), B: point(committedPlot, ...b), p: committedPlot };
 }
@@ -101,4 +138,4 @@ async function copyCode(page) {
   await expect.poll(() => persistence.clipboardText(page)).toMatch(/^origo-cube:3j?\./);
   return persistence.clipboardText(page);
 }
-module.exports = { CAMERA, HASH, ready, open, plot, point, expected, count, active, rows, row, manager, closeManager, action, drawing, drag, edit, decodeCode, plainCode, copyCode, persistence };
+module.exports = { CAMERA, HASH, ready, open, plot, point, expected, count, active, rows, row, manager, closeManager, trend, pan, lines, command, choose, action, drawing, drag, edit, decodeCode, plainCode, copyCode, persistence };

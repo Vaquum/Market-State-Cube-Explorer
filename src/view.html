@@ -993,6 +993,19 @@
           tabindex="-1"
           hidden
         ></div>
+        <button
+          type="button"
+          id="ol-reset-canvas"
+          class="ol-icon-button ol-reset-canvas cursor-interaction"
+          aria-label="Reset canvas"
+          aria-haspopup="dialog"
+          aria-controls="ol-reset-confirm"
+          data-hint="Start over with the default chart; clear drawings, references, selection, replay and comparison cells"
+        >
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 6a5 5 0 1 1 0 4M3 2.5V6h3.5" />
+          </svg>
+        </button>
       </div>
       <div id="ol-drawing-toolbar" class="ol-drawing-toolbar" data-drawing-ui role="group" aria-label="Active drawing" hidden>
         <i id="ol-drawing-toolbar-swatch" class="ol-drawing-swatch" aria-hidden="true"></i>
@@ -1879,6 +1892,16 @@
   </dialog>
   <dialog id="ol-drawing-confirm" class="ol-keys ol-drawing-dialog ol-drawing-choice-dialog" data-temporary="modal" data-drawing-ui role="alertdialog" aria-labelledby="ol-drawing-confirm-title" aria-describedby="ol-drawing-confirm-note">
     <div class="ol-keys-body"><h2 id="ol-drawing-confirm-title">Delete drawings?</h2><p id="ol-drawing-confirm-note" class="ol-keys-note">This includes locked drawings. Undo restores the complete collection.</p><div class="ol-drawing-dialog-actions"><button type="button" id="ol-drawing-confirm-cancel" class="ol-action cursor-interaction">Cancel</button><button type="button" id="ol-drawing-confirm-delete" class="ol-action cursor-interaction">Delete all</button></div></div>
+  </dialog>
+  <dialog id="ol-reset-confirm" class="ol-keys ol-drawing-dialog ol-drawing-choice-dialog" data-temporary="modal" role="alertdialog" aria-labelledby="ol-reset-confirm-title" aria-describedby="ol-reset-confirm-note">
+    <div class="ol-keys-body">
+      <h2 id="ol-reset-confirm-title">Reset canvas?</h2>
+      <p id="ol-reset-confirm-note" class="ol-keys-note"></p>
+      <div class="ol-drawing-dialog-actions">
+        <button type="button" id="ol-reset-cancel" class="ol-action cursor-interaction">Cancel</button>
+        <button type="button" id="ol-reset-apply" class="ol-action ol-solid cursor-interaction">Reset</button>
+      </div>
+    </div>
   </dialog>
   <dialog class="ol-keys" id="ol-keys" data-temporary="modal" aria-labelledby="ol-keys-title">
     <div class="ol-keys-body">

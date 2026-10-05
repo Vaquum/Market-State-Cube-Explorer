@@ -243,7 +243,7 @@ test.describe("B19: the model's provenance in the chip details (needs package U)
 
     await S.openQuery(page);
     await page.locator("#ol-copy-view").click();
-    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:2\./);
+    await expect.poll(() => S.clipboardText(page)).toMatch(/^origo-cube:3\./);
     const code = await S.clipboardText(page);
 
     const other = await freshContext();

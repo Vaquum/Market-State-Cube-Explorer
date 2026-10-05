@@ -2442,7 +2442,9 @@
         ctx.globalAlpha = 1;
       }
     }
+    drawingPaint();
     drawResolutionLens(sc);
+    drawingFrameCommit();
     inspectPaint();
     ctx.restore();
     const ro = readouts(cut);
@@ -2572,7 +2574,7 @@
           ? ""
           : S.lens || nav.alt || nav.hold || drag?.lens
             ? "zoom-in"
-            : S.select
+            : S.select || trendTool
               ? "crosshair"
               : drag
                 ? "grabbing"
@@ -2908,6 +2910,7 @@
     S.tB = Math.max(S.tA + 1, CUT + (CUT - S.tA) * 0.105);
   }
   function setWindow(key) {
+    drawingCancelOperation(); drawingKeyContext = false;
     const w = windowOf(key);
     S.window = key;
     S.selection = null;
@@ -3184,23 +3187,37 @@
   // written here; how it is shown is one loop over the codec's table (applyVisual), so a setting added to
   // the table is applied, written and read back by the same entry.
   function applyView(v) {
-    scaleRt.carried = null;
-    if (v.window) setWindow(v.window);
-    else {
-      [S.tA, S.tB, S.pA, S.pB] = [v.tA, v.tB, v.pA, v.pB];
-      S.window = "";
+    const previous = { state: structuredClone(S), carried: scaleRt.carried, local: scaleRt.local,
+      appearance: scaleRt.appearance, hover, transition, activeDrawingId, drawingKeyContext,
+      tipHidden: el("tip").hidden };
+    try {
+      drawingCancelOperation(); activeDrawingId = null; drawingKeyContext = false;
+      scaleRt.carried = null;
+      if (v.window) setWindow(v.window);
+      else {
+        [S.tA, S.tB, S.pA, S.pB] = [v.tA, v.tB, v.pA, v.pB];
+        S.window = "";
+      }
+      S.auto = v.auto;
+      if (!v.auto) { S.n = v.n; S.m = v.m; }
+      for (const k of ["selection", "anchor", "replay"]) S[k] = v[k];
+      // Descriptor-store/axis mutations wait until the checked camera and UI apply successfully.
+      const commitScales = applyVisual(v);
+      hover = null;
+      el("tip").hidden = true;
+      confine();
+      if (S.auto) autoLevel();
+      commitScales?.();
+    } catch (error) {
+      Object.assign(S, previous.state);
+      scaleRt.carried = previous.carried; scaleRt.local = previous.local;
+      if (scaleRt.appearance !== previous.appearance) { scaleRt.appearance = previous.appearance; themeChanged(); }
+      hover = previous.hover; transition = previous.transition;
+      activeDrawingId = previous.activeDrawingId; drawingKeyContext = previous.drawingKeyContext;
+      el("tip").hidden = previous.tipHidden;
+      drawingSyncUI(); requestDraw();
+      throw error;
     }
-    S.auto = v.auto;
-    if (!v.auto) {
-      S.n = v.n;
-      S.m = v.m;
-    }
-    for (const k of ["selection", "anchor", "replay"]) S[k] = v[k];
-    applyVisual(v);
-    hover = null;
-    el("tip").hidden = true;
-    confine();
-    if (S.auto) autoLevel();
   }
   // The Query tab: the six parameters of the rectangle, and what the numbers
   // shown are for them.
@@ -3304,14 +3321,14 @@
         status("The pasted text changed while it was being read. Apply it again.");
         return;
       }
-      if (decoded.kind === "v2") {
+      if (["v2", "v3"].includes(decoded.kind)) {
         const checked = E.codec.validatePortable(decoded.payload, viewEnv());
         if (!checked.ok) {
           status(`The view code was not applied: ${checked.reasons.join("; ")}`);
           postNotice({ code: "import-rejected", params: { reason: checked.reasons.join("; ") } });
           return;
         }
-        applyPortable(checked.value, checked.dropped);
+        await applyPortable(checked.value, checked.dropped);
       } else {
         applyLegacyImport(decoded.payload, decoded.kind === "legacy" ? text : null);
       }
@@ -3322,11 +3339,14 @@
   }
   // A version-2 code's validated pieces, in place at once: the view as the codec checked it (its own
   // window or rectangle, level, selection and replay), then the descriptors and the appearance.
-  function applyPortable(value, dropped) {
+  async function applyPortable(value, dropped) {
     try {
-      applyView(portableView(value, value.id));
+      const view = portableView(value, value.id);
+      if (value.drawings) { if (!await drawingReplace(value.drawings, () => applyView(view))) return; }
+      else applyView(view);
     } catch (error) {
-      el("copy-status").textContent = error.message;
+      el("copy-status").textContent = `The view code was not applied: ${error.reason || error.message}`;
+      postNotice({ code: "import-rejected", params: { reason: error.reason || error.message } });
       return;
     }
     recordView("Restored query");
@@ -4625,7 +4645,7 @@
   // and not for a hidden tip (tooltip always ends by showing it).
   function refreshTip() {
     const tip = el("tip");
-    if (hover && !tip.hidden && last?.sc && scaleRt.tipStamp !== last.sc.stamp) tooltip(hover, { redraw: false });
+    if (hover && !tip.hidden && last?.sc && (scaleRt.tipStamp !== last.sc.stamp || drawingTipRevision !== drawingStore.revision)) tooltip(hover, { redraw: false });
     // The readout key is named on the tip only while the tip shows (the pointer leaving, a pan or a tool hides
     // it without going through tooltip()); the attribute stays, empty, so a reader can always find it.
     if (tip.hidden && tip.dataset.readout) tip.dataset.readout = "";
@@ -4639,6 +4659,7 @@
     // again (refreshTip); a stamp stored only at the end would leave a pointer resting on the price axis,
     // where the tip is hidden at once, looking changed at every frame and drawing forever.
     hover = p;
+    drawingTipRevision = drawingStore.revision;
     scaleRt.tipStamp = last?.sc?.stamp ?? "";
     scaleRt.tipReadout = null;
     const tip = el("tip"),
@@ -4653,7 +4674,8 @@
     let readout = null;
     // A line or its tag under the pointer names the line; a clock line or a
     // CME gap, its event.
-    const hit = inspect.forced === false ? null : (inspect.forced ?? (last && lineHits.length && inPlot(p) ? lineAt(p) : null)),
+    const authored = inspect.forced === null && tool() === "pan" ? drawingHits(p)[0] : null;
+    const hit = inspect.forced === false ? null : (inspect.forced ?? (authored ? { id: "drawing|" + authored.id, drawing: authored.id } : null) ?? (last && lineHits.length && inPlot(p) ? lineAt(p) : null)),
       // a CME gap chosen as a reference is read as the gap it is, with the details of its own
       onGap = hit?.gap ? { gap: hit.gap } : null,
       onLine = onGap ? null : hit,
@@ -4859,7 +4881,7 @@
   // lines, the curves, the clock's kinds and the user's Level. Each entry has what the tooltip's builders take as a hit.
   function inspectReferences() {
     // once for a draw and a state of the lines: it walks the same items the plot is drawn from
-    const key = [last?.sc?.stamp ?? "", S.lines.join(","), S.level, S.tA, S.tB, S.pA, S.pB, S.n, S.m, activeCutoff()].join("|");
+    const key = [last?.sc?.stamp ?? "", S.lines.join(","), S.level, drawingStore.revision, S.tA, S.tB, S.pA, S.pB, S.n, S.m, activeCutoff()].join("|");
     if (inspect.listKey === key) return inspect.list;
     inspect.listKey = key;
     inspect.list = inspectReferencesNow();
@@ -4899,6 +4921,9 @@
         }
     }
     for (const kind of S.lines.filter((k) => CLOCK[k])) out.push({ id: "clock|" + kind, key: kind, name: CLOCK[kind].name, hit: null, at: null, kind: "clock" });
+    if (drawingCollection().visible) for (const object of [...drawingCollection().objects].sort((a, b) => a.ordinal - b.ordinal)) {
+      if (object.visible) out.push({ id: "drawing|" + object.id, key: "drawing", name: object.name, kind: "drawing", at: object.a.priceCents / 100 / PR, hit: { id: "drawing|" + object.id, drawing: object.id } });
+    }
     if (S.level !== null) out.push({ id: "level", key: "level", name: "Level", hit: { key: "level", id: "level", colour: colors.ink }, at: S.level, kind: "level" });
     const order = { profile: 1, session: 2, structure: 3, average: 4, vwap: 5, clock: 6 },
       sorted = out
@@ -5102,7 +5127,8 @@
   }
   function inspectEnter() {
     if (inspect.on) return;
-    inspect.prev = S.lens ? "lens" : S.select ? "select" : "pan";
+    inspect.prev = tool();
+    drawingCancelOperation(); activeDrawingId = null; trendTool = false;
     const lensWas = S.lens || nav.alt || nav.hold;
     inspect.on = true;
     S.select = false;
@@ -5145,6 +5171,7 @@
     el("inspect").hidden = true;
     el("tip").hidden = true;
     hover = null;
+    trendTool = inspect.prev === "trend";
     S.lens = inspect.prev === "lens";
     S.select = inspect.prev === "select";
     update();
@@ -5250,7 +5277,7 @@
     if (open) {
       if (inspect.surface === "references" && inspect.ref && inspect.ref !== "level") {
         const e = inspectEntry();
-        if (e) focusBegin({ key: e.key });
+        if (e) focusBegin(e.kind === "drawing" ? { drawing: e.hit.drawing } : { key: e.key });
       }
       renderInspectDetail();
       el("inspect-detail-close").focus();
@@ -5264,6 +5291,11 @@
     const body = el("inspect-detail-body"),
       readout = el("inspect-readout");
     body.replaceChildren(...[...readout.childNodes].map((n) => n.cloneNode(true)));
+    const entry = inspect.surface === "references" ? inspectEntry() : null;
+    if (entry?.kind === "drawing") {
+      const button = document.createElement("button"); button.type = "button"; button.textContent = "Edit drawing";
+      button.addEventListener("click", () => drawingEdit(entry.hit.drawing, "inspect")); body.append(button);
+    }
     el("inspect-detail-title").textContent = el("inspect-position").textContent;
   }
   // The cursor's mark on the plot: the strongest persistent mark of the interaction table, on the item it reads.
@@ -5305,7 +5337,7 @@
   // A draw that changed what the cursor stands on (the view, the level, the data) reads it again, so a pan or a refresh never leaves a stale readout.
   function inspectSync() {
     if (!inspect.on) return;
-    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", S.mode === "candles" ? [candleVersion, motion.failed.size, candleEdge(), PACK.state_token].join(":") : "", inspectReferences().length, nav.shift].join("|");
+    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", S.mode === "candles" ? [candleVersion, motion.failed.size, candleEdge(), PACK.state_token].join(":") : "", inspectReferences().length, drawingStore.revision, nav.shift].join("|");
     if (sig === inspect.sig) return;
     inspect.sig = sig;
     inspectRender(false, false);
@@ -5357,11 +5389,12 @@
       const y = G.Y(S.level);
       if (Math.abs(y - p.y) <= INSPECT_REACH && inPlot({ x: p.x, y })) add("level");
     }
+    for (const object of drawingCollection().objects) if (drawingStatus(object.id) === "Shown" && E.drawings.distance(p, drawingGeometry(object)) <= INSPECT_REACH) add("drawing|" + object.id);
     return [...found.values()];
   }
   function inspectChoose(list, p) {
     // where the finger was: a reference chosen from the list is read at that time and price, not at the previous cursor's
-    inspect.tapped = p ? { t: p.t, p: p.p } : null;
+    inspect.tapped = p ? { t: p.t, p: p.p, lens: drawingLensOwns(p) ? inspect.lens : null } : null;
     const box = el("inspect-chooser");
     box.replaceChildren(
       Object.assign(document.createElement("div"), { className: "ol-inspect-chooser-head", textContent: `${list.length} references here: choose one` }),
@@ -5379,9 +5412,20 @@
     el("inspect-live").textContent = `${list.length} references here: choose one`;
   }
   function inspectTap(p, touch = false) {
-    const hit = last && lineHits.length && inPlot(p) ? lineAt(p) : null,
-      f = lensShown() ? lensFrame() : null;
+    const authored = drawingHits(p, touch ? "touch" : "mouse", true)[0];
+    const hit = authored ? { id: "drawing|" + authored.id } : last && lineHits.length && inPlot(p) ? lineAt(p) : null,
+      f = lensShown() ? lensFrame() : null,
+      inLens = f && p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + f.h;
     el("inspect-chooser").hidden = true;
+    // Authored ink remains readable through Lens. Its market surface still has its own tab.
+    // Reference-only mouse/touch behavior stays on the existing route.
+    if (authored) {
+      const near = inspectNear(p).filter((entry) => !inLens || entry.kind === "drawing");
+      if (near.length > 1) return inspectChoose(near, p);
+      inspect.t = p.t; inspect.p = p.p; inspect.surface = "references";
+      inspect.ref = hit.id; if (!inLens) inspect.lens = null;
+      inspect.boundary = ""; return inspectRender(true);
+    }
     if (touch && !f) {
       const near = inspectNear(p);
       if (near.length > 1) return inspectChoose(near, p);
@@ -5490,14 +5534,15 @@
       const b = e.target.closest("[data-ref]");
       if (!b) return;
       el("inspect-chooser").hidden = true;
-      if (inspect.tapped) {
-        inspect.t = inspect.tapped.t;
-        inspect.p = inspect.tapped.p;
+      const tapped = inspect.tapped;
+      if (tapped) {
+        inspect.t = tapped.t;
+        inspect.p = tapped.p;
         inspect.tapped = null;
       }
       inspect.surface = "references";
       inspect.ref = b.dataset.ref;
-      inspect.lens = null;
+      inspect.lens = b.dataset.ref.startsWith("drawing|") ? tapped?.lens || null : null;
       inspect.boundary = "";
       inspectRender(true);
       el("inspect").focus();
@@ -5568,6 +5613,7 @@
     }
     renderRows();
     renderLines();
+    drawingSyncUI();
     for (const f of ["poc", "area", "untested"]) el(f).checked = S[f];
     el("key-poc").hidden = el("key-bpoc").hidden = !S.poc;
     el("key-area").hidden = !S.area;
@@ -5730,10 +5776,11 @@
           : "free";
   }
   function tool() {
-    return inspect.on ? "inspect" : S.lens ? "lens" : S.select ? "select" : "pan";
+    return inspect.on ? "inspect" : trendTool ? "trend" : S.lens ? "lens" : S.select ? "select" : "pan";
   }
   // How the price range follows a time zoom: one of four, never two at once.
   function setFollow(mode) {
+    drawingCancelOperation(); drawingKeyContext = false;
     const was = followMode();
     if (mode === was) return;
     S.refit = mode === "refit";
@@ -5763,10 +5810,21 @@
   // A tool stays chosen until another is: Select for as many rectangles as
   // wanted, the lens until it is left.
   function setTool(next) {
+    const previous = tool();
+    drawingCancelOperation();
+    drawingKeyContext = false;
+    if (next === "trend") {
+      if (!trendTool) drawingEntryTool = previous;
+      if (inspect.on) { inspect.prev = "pan"; inspectExit(); }
+      trendTool = true; S.select = S.lens = false;
+      hover = null; el("tip").hidden = true; update(); return;
+    }
+    if (["select", "lens", "inspect"].includes(next)) activeDrawingId = null;
     if (next === "inspect") {
       inspectEnter();
       return;
     }
+    trendTool = false;
     // choosing another tool leaves Inspect for that one
     if (inspect.on) {
       inspect.prev = next;
@@ -13293,6 +13351,11 @@
       });
       if (rects.length) candidates.push({ id: "clock|" + kind, hot: refHot(kind, "clock|" + kind), rank: 7, rects });
     }
+    const manual = drawingCandidates();
+    if (manual.length) {
+      for (const candidate of candidates) candidate.priority = candidate.id === "level" ? 0 : candidate.hot ? 2 : 5;
+      candidates.push(...manual);
+    }
     // The planner is the module's (E.role.occlusion): the grid, the order, the focused mark that is never thinned. It is run until the references
     // it keeps and the places their tags are laid out in agree (at most four times), the tags of the fixed ones and the notice that says something
     // was held back being claimed first: every persistent plate is inside the budget it reports on.
@@ -13320,7 +13383,7 @@
       }
       const placed = candidates.map((c) => {
         const at = c.tag ? (pos.has(c.id) ? pos.get(c.id) : tagLayout([...specs, { id: c.id, y: c.tag.y, w: c.tag.w }]).get(c.id)) : null;
-        return { id: c.id, hot: c.hot, rank: c.rank, rects: at ? [...c.rects, plate(at, c.tag)] : c.rects };
+        return { id: c.id, hot: c.hot, rank: c.rank, priority: c.priority, strokes: c.strokes, rects: at ? [...c.rects, plate(at, c.tag)] : c.rects };
       });
       const next = E.role.occlusion([...reserved, ...placed], plot, opts);
       for (const r of reserved) next.off.delete(r.id);
@@ -13749,6 +13812,16 @@
   }
   const SIDE_NAMES = { VAH: "value area high", VAL: "value area low", POC: "POC" };
   function lineTip(tip, h) {
+    if (h.drawing) {
+      const object = drawingById(h.drawing);
+      if (!object) { tip.hidden = true; return; }
+      tipRows(tip, object.name, "Your drawing · manual analysis", [
+        ["A · UTC", E.drawings.formatTime(object.a.timeMs)], ["A · USDT", E.drawings.formatPrice(object.a.priceCents)],
+        ["B · UTC", E.drawings.formatTime(object.b.timeMs)], ["B · USDT", E.drawings.formatPrice(object.b.priceCents)],
+        ["Color", object.color], ["Status", drawingStatus(object.id)], ["Locked", object.locked ? "yes" : "no"],
+      ], "User drawings may include later analysis; these endpoints are authored, not measured.");
+      return;
+    }
     if (h.key === "level") {
       tipRows(tip, "Level line", `${price(S.level * PR)} USDT`, [], nav.touchTip ? "" : "X clears it");
       if (nav.touchTip) tip.append(levelButton(Math.floor(S.level / stepP())));
@@ -14173,6 +14246,7 @@
   // The bar's button on every update; the popover only while it is open,
   // and in full as it opens.
   function renderLines() {
+    drawingMenuSection(el("lines-pop"));
     renderLinesButton();
     if (el("lines-pop").hidden) return;
     const on = new Set(S.lines),
@@ -14335,11 +14409,12 @@
   // wider and are never the ones the 20% budget leaves out. It does not enable or disable anything, does not recolour or fade any other
   // mark, and is kept nowhere: not in the address, not in a saved view, not in storage. "Show all" ends it. A detail that is opened for a
   // reference (the Inspect navigator's) takes the focus for as long as it is open and gives the previous focus back when it closes.
-  const focus = { key: null, family: null, saved: null };
+  const focus = { key: null, family: null, drawing: null, saved: null };
   const focusOn = (key) => (key === "level" ? S.level !== null : S.lines.includes(key));
   const focusFamilyOn = (id) => S.lines.some((k) => familyOf(k) === id);
   const refHot = (key, id) => hover?.line === id || (focus.key !== null && key === focus.key) || (focus.family !== null && familyOf(key) === focus.family);
   function focusName() {
+    if (focus.drawing !== null) return drawingById(focus.drawing)?.name || "Drawing";
     if (focus.key !== null) return focus.key === "level" ? "Level" : TOGGLES[focus.key]?.name || lineName(focus.key);
     return focus.family !== null ? FAMILIES.find((f) => f.id === focus.family).name : "";
   }
@@ -14351,26 +14426,27 @@
   function focusKey(key) {
     if (!focusOn(key)) return;
     focus.key = focus.key === key ? null : key;
-    focus.family = null;
+    focus.family = focus.drawing = null;
     focus.saved = null;
     focusChanged();
   }
   function focusFamily(id) {
     if (!focusFamilyOn(id)) return;
     focus.family = focus.family === id ? null : id;
-    focus.key = null;
+    focus.key = focus.drawing = null;
     focus.saved = null;
     focusChanged();
   }
   // Show all: the focus ends, and everything that is enabled is drawn by the budget's own order again.
   function focusClear() {
-    if (focus.key === null && focus.family === null && focus.saved === null) return;
-    focus.key = focus.family = focus.saved = null;
+    if (focus.key === null && focus.family === null && focus.drawing === null && focus.saved === null) return;
+    focus.key = focus.family = focus.drawing = focus.saved = null;
     focusChanged();
   }
   // A detail takes the focus (a reference key or a family) and, when it closes, the previous focus is restored.
   function focusBegin(spec) {
-    if (focus.saved === null) focus.saved = { key: focus.key, family: focus.family };
+    if (focus.saved === null) focus.saved = { key: focus.key, family: focus.family, drawing: focus.drawing };
+    focus.drawing = spec.drawing ?? null;
     focus.key = spec.key ?? null;
     focus.family = spec.family ?? null;
     focusChanged();
@@ -14379,13 +14455,15 @@
     if (focus.saved === null) return;
     focus.key = focus.saved.key;
     focus.family = focus.saved.family;
+    focus.drawing = focus.saved.drawing;
     focus.saved = null;
     focusChanged();
   }
   // A focus on something that is no longer on ends with it.
   function focusValidate() {
+    if (focus.drawing !== null && (!drawingCollection().visible || !drawingById(focus.drawing)?.visible)) { focus.drawing = null; renderFocus(); }
     if ((focus.key !== null && !focusOn(focus.key)) || (focus.family !== null && !focusFamilyOn(focus.family))) {
-      focus.key = focus.family = focus.saved = null;
+      focus.key = focus.family = focus.drawing = focus.saved = null;
       renderFocus();
     }
   }
@@ -14416,7 +14494,7 @@
     return b;
   }
   function renderFocus() {
-    const on = focus.key !== null || focus.family !== null,
+    const on = focus.key !== null || focus.family !== null || focus.drawing !== null,
       chip = el("focus-chip"),
       text = on ? `Focus: ${focusName()} · Show all` : "";
     if (chip.hidden === on) chip.hidden = !on;
@@ -14600,7 +14678,9 @@
       renderLines();
       // Into the list: the first line on in an open family, or else the first
       // family's head.
-      (root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:checked") ||
+      (root.querySelector(`[data-drawing-row="${activeDrawingId}"] [data-drawing-action="edit"]`) ||
+        (drawingCollection().objects.length && root.querySelector("[data-drawing-row] [data-drawing-action=edit]")) ||
+        root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:checked") ||
         root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:not(:disabled)") ||
         el("family-profile-head"))?.focus();
     });
@@ -17327,10 +17407,8 @@
   // Named views, kept by this browser for every tab. A view saved while it
   // shows the cutoff is live: it opens on the latest data with the same span
   // and fits the price range again, as the price has moved since.
-  // `foreign` holds what this page cannot show but must not lose: an entry a newer build stamped with
-  // another visual version, and any entry that is not a view at all. A list rewrite puts them back as they
-  // were, so a view made by another version survives this page's saves and deletes (and the list is never
-  // shortened by anything but the person deleting a view).
+  // The protected registry is authoritative after its first write. Legacy entries migrate together in
+  // their original order; legacy/foreign storage remains verbatim for preceding builds.
   const views = { list: [], foreign: [], undo: null };
   function loadViews() {
     let list = null;
@@ -17352,9 +17430,13 @@
       x &&
       typeof x.name === "string" &&
       typeof x.hash === "string" &&
-      [x.span, x.lead, x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite) &&
+      [x.span, x.lead, x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite) && x.span > 0 &&
+      (x.live === undefined || typeof x.live === "boolean") && (x.auto === undefined || typeof x.auto === "boolean") &&
       (x.visualVersion === undefined || x.visualVersion === 2);
-    views.list = Array.isArray(list) ? list.filter(usable) : [];
+    const protectedSnapshot = window.explorerState?.namedViews({ snapshot: true });
+    if (protectedSnapshot && !["ok", "absent"].includes(protectedSnapshot.status))
+      postNotice({ code: "import-rejected", key: "protected-views:" + protectedSnapshot.status, text: `Saved complete Views could not be read and remain preserved: ${protectedSnapshot.reason}` });
+    views.list = protectedSnapshot ? protectedSnapshot.entries : (Array.isArray(list) ? list.filter(usable) : []);
     views.foreign = Array.isArray(list) ? list.filter((x) => !usable(x)) : [];
   }
   // Every write is the whole list as it was read (plus the change), so two tabs saving at once both keep
@@ -17362,7 +17444,8 @@
   // here, and the list on the page stays as it is: nothing is dropped to make room.
   function storeViews() {
     try {
-      window.explorerState.saveViews([...views.list, ...views.foreign]);
+      const protectedResult = window.explorerState.saveNamedViews(views.list);
+      if (!protectedResult.ok) throw new Error(protectedResult.reason);
       return true;
     } catch (error) {
       viewsStatus("This browser's storage is unavailable, so views can't be saved.");
@@ -17378,41 +17461,25 @@
         ? `Last ${dur((CUT - S.tA) * BASE)}`
         : listRange(S.tA, Math.min(S.tB, CUT));
   }
-  // Every change starts from the list as stored, so two tabs saving at once
-  // both keep their views. A view is stamped with the visual version it was made under and carries its
-  // address; when that address had to be made shorter (scale ids only, or no scales) the full view code is
-  // kept beside it, unless it is larger than a browser's storage should be asked to hold for one view
-  // (then the view keeps the address and the banner says the code must be copied separately).
+  // Save the complete snapshot and its camera metadata from one instant, before compression awaits.
+  // The protected registry writes one verified pointer, with no shortened-code fallback.
   async function saveView(name) {
     name = name.trim().slice(0, 80);
     if (!name) {
       viewsStatus("Name the view to save it.");
       return;
     }
-    const view = {
-        name,
-        live: !S.window && atCutoff(),
-        span: S.tB - S.tA,
-        lead: S.tB - CUT,
-        auto: S.auto,
-        mode: S.mode,
-        pane: S.pane,
-        rows: S.rows,
-        period: S.period,
-        ...summary(),
-        visualVersion: 2,
-      },
-      level = addr.level;
-    if (level > 0) {
-      let code = null;
-      try {
-        code = await viewCode();
-      } catch {
-        // The code could not be made; the view keeps its address alone.
-      }
-      if (code !== null && code.length <= NAMED_CODE_MAX) view.code = code;
-      else postNotice({ code: "code-not-stored" });
-    }
+    const snapshot = {
+      name, live: !S.window && atCutoff(), span: S.tB - S.tA, lead: S.tB - CUT,
+      auto: S.auto, mode: S.mode, pane: S.pane, rows: S.rows, period: S.period,
+      ...summary(), visualVersion: 3,
+    }, payload = portablePayload();
+    let complete;
+    try {
+      const code = await E.codec.encodePortable(payload, typeof CompressionStream === "function" ? { deflate: deflateGzip } : {});
+      complete = (await E.codec.decodePortable(code, { inflate: inflateBounded })).payload;
+    } catch (error) { viewsStatus(`View not saved: ${error.reason || error.message}`); return; }
+    const view = { ...snapshot, payload: complete };
     loadViews();
     const i = views.list.findIndex((x) => x.name === name),
       replaced = i >= 0 ? views.list[i] : null;
@@ -17431,24 +17498,40 @@
   // rewritten: the stored entry stays as it was until the person saves the view again.
   async function openView(x) {
     let view = null;
-    if (typeof x.code === "string") {
+    if (x.visualVersion === 3) {
+      const checked = E.codec.validatePortable(x.payload, viewEnv());
+      if (!checked.ok) { postNotice({ code: "import-rejected", params: { reason: checked.reasons.join("; ") } }); return; }
+      view = portableView(checked.value, x.name);
+    }
+    if (!view && typeof x.code === "string") {
       try {
         view = await viewOfCode(x.code);
       } catch (error) {
         postNotice({ code: "import-rejected", params: { reason: error.reason ?? error.message } });
       }
     }
+    if (!view && typeof x.code === "string") return;
     view ??= readView(x.hash);
     if (!view) return;
     if (x.visualVersion === undefined) view.text = x.name + "\n" + x.hash;
     if (x.live && !view.window) {
       view.tB = CUT + x.lead;
       view.tA = view.tB - x.span;
+      if (![view.tA, view.tB].every(Number.isFinite) || !checkView(view)) {
+        postNotice({ code: "import-rejected", params: { reason: "Invalid saved live-view camera" } }); return;
+      }
     }
-    transition = reduce
-      ? null
-      : { n: renderN(), m: renderM(), start: performance.now() };
-    applyView(view);
+    try {
+      const apply = () => {
+        const priorTransition = transition;
+        transition = reduce ? null : { n: renderN(), m: renderM(), start: performance.now() };
+        try { applyView(view); } catch (error) { transition = priorTransition; throw error; }
+      };
+      if (view.drawings) { if (!await drawingReplace(view.drawings, apply)) return; }
+      else apply();
+    } catch (error) {
+      postNotice({ code: "import-rejected", params: { reason: error.reason || error.message } }); return;
+    }
     reportView(view);
     if (x.live) {
       fit();
@@ -17478,8 +17561,9 @@
     // A view saved under the same name since then stays.
     if (!views.list.some((x) => x.name === view.name))
       views.list.splice(Math.min(index, views.list.length), 0, view);
-    views.undo = null;
-    if (storeViews()) viewsStatus(`Restored “${view.name}”.`);
+    const previous = views.list.filter((x) => x !== view), undo = views.undo;
+    if (storeViews()) { views.undo = null; viewsStatus(`Restored “${view.name}”.`); }
+    else { views.list = previous; views.undo = undo; viewsStatus("The view could not be restored. Retry Undo.", true); }
     renderViews();
   }
   function viewsStatus(text, undo = false) {
@@ -17516,19 +17600,15 @@
   // ---- Persistence of the visual state (PRD-0002 S1, D9) ----
   // How the view is shown (the scale preferences, the active mappings, the appearance) travels in the
   // address, the stored last view, the tab's history, the named views and the portable view code, always
-  // marked visual version 2. The codec (E.codec) owns every format and every limit; this block is the
+  // marked version 2 for addresses/calibration and version 3 for complete codes. The codec (E.codec) owns every format and every limit; this block is the
   // page's side of it: what the state says, what a payload is allowed to change, what the person is told
   // when a write fails or a payload is refused, and the browser-wide cache of the live calibrations.
   // Nothing here refits, truncates or silently replaces anything: a payload this page cannot use is
   // reported and left where it is.
   //
-  // The most a named view keeps of its full view code (characters). A longer code is not stored with the
-  // view (the address is; the banner says the code must be copied separately), because one view should
-  // not be what fills a browser's storage.
-  const NAMED_CODE_MAX = 64 * 1024,
-    // A calibration commit or a policy action writes the address and the cache once it has settled, not
-    // once per change: Auto may commit twice a second and a write rewrites history and storage.
-    PERSIST_MS = 250,
+  // A calibration commit or a policy action writes the address and the cache once it has settled, not
+  // once per change: Auto may commit twice a second and a write rewrites history and storage.
+  const PERSIST_MS = 250,
     // The names of the address ladder, index = level (E.text.address.level has their words).
     LADDER = ["exact", "ids", "settings", "refused"],
     // The one-letter policy codes of the address grammar, by the store's policy words.
@@ -17835,8 +17915,8 @@
       themeChanged();
     } else postNotice({ code: "appearance-mismatch", params: { ap, current: running } });
   }
-  // The mapping records of a view in place: the preferences and the descriptors are replaced TOGETHER by
-  // what the view carries, so a link without a lock does not keep this tab's lock. A record that is only an
+  // Prepare a view's mapping records; publish store/axis changes after its camera applies successfully.
+  // Preferences and descriptors come from the view, so a link without a lock does not keep this tab's lock. A record that is only an
   // id is found in the live cache or left out; what cannot be placed is listed and the rest is applied.
   // Nothing is refitted: a context with no record fits afresh once the view settles.
   function adoptScales(v) {
@@ -17879,24 +17959,27 @@
     // What is protected from eviction while these are committed: the context in view and every held one.
     const cells = cellsContext(),
       keep = () => [...(cells ? [E.context.keyString(cells)] : []), ...Object.values(out.scale.held).map((r) => r.key)];
-    for (const { workspace, record } of out.commits) {
-      // The mapping the view carries is the active one, not a newer fit this tab made for the same context.
-      store.remove(workspace, record.key);
-      store.commit(workspace, record, keep);
-    }
-    for (const axis of scaleRt.axes.list(ws))
-      if (axis.policy === "frozen") scaleRt.axes.unfreeze(axis.id, { workspace: ws });
-    for (const axis of out.frozen) {
-      try {
-        scaleRt.axes.freeze(axis.id, { workspace: ws, domain: axis.domain, through: axis.through });
-      } catch (error) {
-        dropped.push({ chan: "a." + axis.id, reason: error.message });
+    const commit = () => {
+      for (const { workspace, record } of out.commits) {
+        // The mapping the view carries is the active one, not a newer fit this tab made for the same context.
+        store.remove(workspace, record.key);
+        store.commit(workspace, record, keep);
       }
-    }
+      for (const axis of scaleRt.axes.list(ws))
+        if (axis.policy === "frozen") scaleRt.axes.unfreeze(axis.id, { workspace: ws });
+      for (const axis of out.frozen) {
+        try {
+          scaleRt.axes.freeze(axis.id, { workspace: ws, domain: axis.domain, through: axis.through });
+        } catch (error) {
+          dropped.push({ chan: "a." + axis.id, reason: error.message });
+        }
+      }
+      dropped.push(...out.dropped);
+      if (dropped.length)
+        postNotice({ code: "scale-dropped", details: dropped.map((d) => `${d.chan}: ${d.reason}`) });
+    };
     scaleRt.local = out.lens;
-    dropped.push(...out.dropped);
-    if (dropped.length)
-      postNotice({ code: "scale-dropped", details: dropped.map((d) => `${d.chan}: ${d.reason}`) });
+    return commit;
   }
   // A view's visual fields in place, by the codec's table: the settings one by one, the scale preferences
   // and descriptors as a whole when the view carries descriptors (`records`, even an empty list), else the
@@ -17912,7 +17995,8 @@
           S.diagonal = v.follow === "diagonal";
         } else if (!path.startsWith("scale.")) S[path] = v[path];
       }
-    if (Array.isArray(v.records)) adoptScales(v);
+    let commitScales = null;
+    if (Array.isArray(v.records)) commitScales = adoptScales(v);
     else {
       const next = E.policy.sanitize(v.scale),
         scale = { ...S.scale };
@@ -17920,6 +18004,7 @@
       S.scale = scale;
     }
     if (v.appearance) applyAppearance(v.appearance);
+    return commitScales;
   }
 
   // ---- storage: the last persist, the cache ----
@@ -18022,8 +18107,9 @@
       cutMs = E.time.baseToMs(activeCutoff(), T0, BASE),
       visual = visualOf();
     return {
-      visualVersion: 2,
+      visualVersion: 3,
       kind: "view",
+      drawings: structuredClone(drawingCollection()),
       query: { t1: b[0], t2: b[1], p1: b[2], p2: b[3], tR: Math.round(S.n), pR: Math.round(S.m) },
       view: {
         // every field of the codec's table; `scale` is the ten raw preferences and nothing of the runtime state
@@ -18051,8 +18137,8 @@
       },
     };
   }
-  // The view code of the view as shown now: gzip and base64url behind origo-cube:2. (uncompressed behind
-  // origo-cube:2j. where the browser cannot compress). It throws, naming the reason, when the view cannot
+  // The view code of the view as shown now: gzip and base64url behind origo-cube:3. (uncompressed behind
+  // origo-cube:3j. where the browser cannot compress). It throws, naming the reason, when the view cannot
   // be written within the limits: nothing is shortened to make it fit.
   async function viewCode() {
     return E.codec.encodePortable(portablePayload(), typeof CompressionStream === "function" ? { deflate: deflateGzip } : {});
@@ -18061,7 +18147,7 @@
   // kept its code opens from it). It throws the codec's error, with a `reason`, when the code is refused.
   async function viewOfCode(code) {
     const decoded = await E.codec.decodePortable(code, { inflate: inflateBounded });
-    if (decoded.kind !== "v2") throw Object.assign(new Error("not a version-2 view code"), { reason: "not a version-2 view code" });
+    if (!["v2", "v3"].includes(decoded.kind)) throw Object.assign(new Error("not a supported complete view code"), { reason: "not a supported complete view code" });
     const checked = E.codec.validatePortable(decoded.payload, viewEnv());
     if (!checked.ok) throw Object.assign(new Error(checked.reasons.join("; ")), { reason: checked.reasons.join("; ") });
     return portableView(checked.value, code);
@@ -18069,7 +18155,8 @@
   function portableView(value, text) {
     return {
       ...value.view,
-      kind: "v2",
+      kind: value.visualVersion === 3 ? "v3" : "v2",
+      ...(value.drawings ? { drawings: value.drawings } : {}),
       records: value.scales,
       axes: value.axes.filter((a) => a.policy === "frozen"),
       appearance: value.appearance,
@@ -18138,7 +18225,9 @@
     const model = modelStatusLine("diagonal", S.n);
     nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)${model ? ` · ${model}` : ""}`;
     if (!nav.planeHover) setPlaneStatus(nav.planeStatus);
-    const gesture = S.lens
+    const gesture = trendTool
+      ? "Place A and B, or drag · G: previous tool · Esc: cancel · Keep drawing repeats"
+      : S.lens
       ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · V: pan"
       : S.select
         ? "Drag a rectangle to measure it · click to clear it · Esc: back to pan"
@@ -18169,6 +18258,8 @@
   // zoom gesture ends (see endZoom). With Shift it zooms the price range (and
   // time too when coupled); from the price axis, the price range alone.
   function zoomNavigation(k, p, priceOnly = false, priceAlone = false) {
+    if (drawingDrag) drawingCancelOperation();
+    drawingKeyContext = false;
     const tspan = S.tB - S.tA,
       pspan = S.pB - S.pA;
     if (!priceAlone && (!priceOnly || S.coupled)) {
@@ -18658,6 +18749,7 @@
     return { p, w, h, x, y, ta, tb, tbRaw, pa, pb, depth, src, n, m };
   }
   function pinLens() {
+    drawingCancelOperation(); drawingKeyContext = false;
     const f = lensFrame();
     if (!f || !f.src) return false;
     // Pin promotes the lens's region and level to the chart, so the Cells and Rows contexts may change: say
@@ -18784,6 +18876,7 @@
         sub = "Finer coverage ends inside lens";
       }
     }
+    drawingPaint({ x, y, w, h });
     ctx.restore();
     // The lens is a region replacement, named as one: a solid two-tone frame (1.5 ink in a 3.5 casing) and, under it, its
     // caption. It lies inside the heatmap and never over the external Rows strip.
@@ -18910,11 +19003,12 @@
       canvas.setPointerCapture(e.pointerId);
       nav.pointers.set(e.pointerId, p);
       nav.last = p;
-      nav.alt = e.altKey;
+      nav.alt = !drawingDrag && e.altKey;
       el("tip").hidden = true;
       nav.touchTip = false;
       noteGesture();
       if (nav.pointers.size === 2) {
+        drawingCancelOperation(); drawingCancelledPointers.clear();
         clearTimeout(nav.holdTimer);
         nav.hold = false;
         const [a, b] = [...nav.pointers.values()],
@@ -18931,7 +19025,11 @@
         drag = null;
         return;
       }
+      if (drawingPointerDown(e, p)) { setCursor(p); return; }
+      const manualHits = tool() === "pan" && !e.altKey ? drawingHits(p, e.pointerType) : [];
       drag = {
+        drawingHits: manualHits,
+        drawingBlankActive: tool() === "pan" && !manualHits.length && Boolean(activeDrawingId),
         start: p,
         view: [S.tA, S.tB, S.pA, S.pB],
         moved: false,
@@ -18941,7 +19039,7 @@
         axis: axis ? { price: clamp(p.p, S.pA, S.pB), y: p.y } : null,
       };
       setCursor(p);
-      if (e.pointerType === "touch" && !axis)
+      if (e.pointerType === "touch" && !axis && !manualHits.length)
         nav.holdTimer = setTimeout(() => {
           if (drag && !drag.moved) {
             nav.hold = true;
@@ -18956,7 +19054,7 @@
       const p = at(e);
       nav.last = p;
       if (e.pointerType !== "touch") nav.touchTip = false;
-      nav.alt = e.altKey;
+      nav.alt = !drawingDrag && e.altKey;
       setCursor(p);
       if (nav.pointers.has(e.pointerId)) nav.pointers.set(e.pointerId, p);
       if (nav.pinch && nav.pointers.size >= 2) {
@@ -18980,6 +19078,7 @@
         noteGesture();
         return;
       }
+      if (drawingPointerMove(e, p)) { noteGesture(); return; }
       if (drag?.axis) {
         // Only up and down scale: a drag sideways changes nothing.
         if (Math.abs(p.y - drag.start.y) > 4) drag.moved = true;
@@ -19044,6 +19143,11 @@
       noteGesture();
     });
     const finishPointer = (e) => {
+      if (drawingPointerUp(e, at(e))) {
+        nav.alt = Boolean(e.altKey);
+        if (nav.alt) { requestDraw(); scheduleCube(); }
+        noteGesture(); return;
+      }
       clearTimeout(nav.holdTimer);
       nav.pointers.delete(e.pointerId);
       if (nav.pinch) {
@@ -19075,6 +19179,16 @@
         // column clicked, for the continuations.
         cleared = click && S.select && S.selection !== null;
       // A tap with Inspect is a reading and nothing else: no anchor, no selection, no evidence tab, no replay edge, no history entry
+      if (click && drag.drawingHits?.length) {
+        drawingAnchorTime = p.t;
+        if (drag.drawingHits.length > 1) drawingChooser(drag.drawingHits, p.t, canvas);
+        else drawingActivate(drag.drawingHits[0].id, p.t);
+        drag = null; nav.hold = false; setCursor(p); update(); return;
+      }
+      if (click && drag.drawingBlankActive) {
+        drawingActivate(null); drag = null; nav.hold = false; setCursor(p); update(); return;
+      }
+      drawingKeyContext = false;
       if (click && inspect.on) inspectTap(p, e.pointerType === "touch");
       else if (click && S.select) S.selection = null;
       else if (click && inPlot(p) && p.t < activeCutoff()) {
@@ -19128,7 +19242,9 @@
       },
       true,
     );
+    canvas.addEventListener("lostpointercapture", (e) => { if (drawingDrag?.pointerId === e.pointerId) drawingCancelOperation(); });
     canvas.addEventListener("pointercancel", (e) => {
+      drawingCancelOperation();
       // A cancelled pinch or price scale has already moved the view: it ends as
       // a lifted one.
       if (nav.pinch || drag?.axis) return finish(e);
@@ -19198,6 +19314,11 @@
     );
     canvas.addEventListener("dblclick", (e) => {
       if (!ready) return;
+      if (trendTool || performance.now() - drawingLastCreate < 350) { e.preventDefault(); return; }
+      if (tool() === "pan") {
+        const hits = drawingHits(at(e), e.pointerType);
+        if (hits.length) { drawingEdit(hits[0].id, "chart"); e.preventDefault(); return; }
+      }
       const p = at(e);
       if (!inPlot(p)) return;
       if (e.shiftKey) priceByHand();
@@ -19224,6 +19345,8 @@
           Boolean(bracket) ||
           e.key.startsWith("Arrow") ||
           ["+", "=", "-", "_", ",", "."].includes(e.key);
+      if (ready && drawingKey(e, target)) { e.preventDefault(); nav.pressed.add(id); return; }
+      if (drawingDialogOpen()) return;
       // A held key repeats only steps: the arrows, zoom, levels and the anchor.
       // Any other key the chart took acts once a press, whatever is pressed or
       // focused while it is held: a held toggle doesn't flicker, a held Space
@@ -19245,6 +19368,7 @@
       )
         return;
       if (e.key === "Alt") {
+        if (drawingDrag) { nav.alt = false; e.preventDefault(); return; }
         nav.alt = true;
         el("tip").hidden = true;
         setCursor();
@@ -19365,7 +19489,7 @@
       else if (
         k === " " &&
         S.replay &&
-        !target?.closest("button, a, summary, [role=tab], [role=separator]")
+        !target?.closest("button, input, label, a, summary, [role=tab], [role=separator]")
       )
         setPlaying(!player.timer);
       else if (k === "c") {
@@ -19381,6 +19505,8 @@
       else if (k === "h") el("hist").click();
       else if (k === "w") openMenu("window");
       else return;
+      drawingKeyContext = false;
+      if (drawingDrag) drawingCancelOperation();
       e.preventDefault();
       nav.pressed.add(id);
     });
@@ -19402,6 +19528,7 @@
       }
     });
     window.addEventListener("blur", () => {
+      drawingCancelOperation();
       // Losing focus lets go of every key and pointer, and ends a zoom gesture
       // or a price scale under the name of the input it cut short.
       const label = nav.pinch ? "Pinch" : nav.zoomKeys.size ? "Zoom" : "",
@@ -19426,6 +19553,7 @@
 
   // Commands shared by the controls and their keys.
   function chooseWindow(w) {
+    drawingCancelOperation(); drawingKeyContext = false;
     if (pop.open?.panel === el("window-menu")) closePop(true);
     setWindow(w);
     recordView("Window");
@@ -19433,6 +19561,7 @@
     save();
   }
   function setMode(mode) {
+    drawingCancelOperation(); drawingKeyContext = false;
     if (!modes().includes(mode)) return;
     if (mode === "candles" && S.mode !== "candles") candlePrevious = S.mode;
     if (mode === "candles" || S.mode === "candles") transition = null;
@@ -19522,6 +19651,7 @@
   // Escape closes what is open first, then clears the selection, then goes
   // back to Pan from Select or the lens.
   function escapeKey() {
+    if (trendTool) { drawingCancelOperation(); setTool(drawingEntryTool); return; }
     if (closePop(true)) return;
     if (root.dataset.sheet === "open") {
       setSheet(false);
@@ -19887,6 +20017,713 @@
     scheduleLive(Number(PACK.next) || 20);
   }
 
+  // Manual analysis is a tab-owned collection, independent of market queries and view history.
+  let drawingStore = E.drawings.createStore(E.drawings.empty());
+  let activeDrawingId = null, trendTool = false, drawingKeep = false, drawingEntryTool = "pan",
+    drawingAnchorTime = null, drawingDraft = null, drawingDrag = null, drawingEditorPreview = null,
+    drawingKeyContext = false, drawingLastCreate = 0, drawingLastColor = null, drawingTipRevision = -1,
+    drawingUnsaved = false, drawingStorageReason = "", drawingRecoveries = [],
+    drawingStorageNoticeId = null, drawingStorageNoticeRun = 0;
+  const drawingCancelledPointers = new Set();
+  const drawingCollection = () => drawingStore.state;
+  const drawingById = (id) => drawingCollection().objects.find((o) => o.id === id);
+  const drawingHistory = () => drawingStore;
+  const drawingStorageStatus = () => ({ unsaved: drawingUnsaved, reason: drawingStorageReason, recoveries: drawingRecoveries });
+  const drawingPlot = () => ({ x: G.x, y: G.y, w: G.w, h: G.h });
+  const drawingPixel = (p) => ({ x: G.X((p.timeMs / 1000 - T0) / BASE), y: G.Y(p.priceCents / 100 / PR) });
+  const drawingPoint = (p) => E.drawings.point((T0 + p.t * BASE) * 1000, p.p * PR);
+  function drawingNotice(text) {
+    linesStatus(text); el("copy-status").textContent = text;
+    if (!el("drawing-toolbar").hidden) el("drawing-toolbar-status").textContent = text;
+    if (/Unsaved|need recovery|View not opened/.test(text)) {
+      const key = drawingStorageNoticeId ? `drawing-storage:${drawingStorageNoticeRun}` : `drawing-storage:${++drawingStorageNoticeRun}`;
+      drawingStorageNoticeId = postNotice({ code: "storage-failed", key, text: text + " Open Lines for Export, Retry save or Recover drawings." }).id;
+    }
+  }
+  function drawingPersist() {
+    const wasUnsaved = drawingUnsaved;
+    const result = window.explorerState?.drawings?.save(drawingCollection(), drawingStore.revision);
+    drawingUnsaved = !result?.ok;
+    drawingStorageReason = result?.reason || (result?.ok ? "" : "Browser storage is unavailable");
+    if (drawingUnsaved) drawingNotice(`Unsaved drawings: ${drawingStorageReason}. Export a complete view code or retry.`);
+    else if (wasUnsaved) {
+      if (drawingStorageNoticeId) noticeHide(drawingStorageNoticeId);
+      drawingStorageNoticeId = null; drawingNotice("Drawings saved.");
+    }
+    drawingSyncUI();
+    if (result?.ok) {
+      const latest = window.explorerState.drawings.load();
+      drawingRecoveries = (latest.recoveries || []).map(({ collection, ...record }) => ({ ...record, count: collection.objects.length, label: `${record.pinned ? "Preserved" : "Saved"} revision ${record.revision} · ${collection.objects.length} drawings` }));
+    }
+    return Boolean(result?.ok);
+  }
+  function drawingLoad() {
+    const result = window.explorerState?.drawings?.load();
+    drawingRecoveries = (result?.recoveries || []).map(({ collection, ...record }) => ({ ...record, count: collection.objects.length, label: `${record.pinned ? "Preserved" : "Saved"} revision ${record.revision} · ${collection.objects.length} drawings` }));
+    if (result?.status === "ok") drawingStore = E.drawings.createStore(result.collection);
+    else if (result && result.status !== "absent") {
+      drawingUnsaved = true;
+      drawingStorageReason = result.reason;
+      drawingNotice(`Saved drawings need recovery: ${result.reason}. The saved records remain available.`);
+    }
+  }
+  function drawingCommit(label, next) {
+    const result = drawingStore.commit(label, next);
+    if (!result.changed) return false;
+    if (!drawingById(activeDrawingId) || !next.visible || !drawingById(activeDrawingId)?.visible) activeDrawingId = null;
+    drawingKeyContext = true;
+    drawingEditorPreview = null;
+    if (result.truncated) drawingNotice("The oldest drawing undo was discarded; 100 transactions remain.");
+    drawingPersist();
+    update();
+    return true;
+  }
+  function drawingMutate(label, change) {
+    const next = structuredClone(drawingCollection());
+    change(next);
+    return drawingCommit(label, next);
+  }
+  function drawingActivate(id, hitTime = null) {
+    drawingAnchorTime = Number.isFinite(hitTime) ? hitTime : null;
+    if (id && tool() !== "pan") setTool("pan");
+    activeDrawingId = drawingById(id) ? id : null;
+    drawingKeyContext = Boolean(activeDrawingId);
+    drawingSyncUI();
+    requestDraw();
+  }
+  function drawingPreviewObject(object) { drawingEditorPreview = object; requestDraw(); }
+  function drawingApplyEdit(id, patch) {
+    const original = drawingById(id);
+    if (!original) throw new Error("This drawing no longer exists.");
+    const next = E.drawings.normalizeObject({ ...original, ...patch });
+    if (original.locked && (JSON.stringify(original.a) !== JSON.stringify(next.a) || JSON.stringify(original.b) !== JSON.stringify(next.b)))
+      throw new Error("Unlock this drawing before changing its endpoints.");
+    if (JSON.stringify(original.a) !== JSON.stringify(next.a) || JSON.stringify(original.b) !== JSON.stringify(next.b)) drawingAnchorTime = null;
+    drawingLastColor = next.color;
+    drawingMutate("Edit drawing", (c) => { c.objects[c.objects.findIndex((o) => o.id === id)] = next; });
+    drawingEditorPreview = null;
+    return true;
+  }
+  function drawingCancelOperation(all = true) {
+    if (drawingDrag) drawingCancelledPointers.add(drawingDrag.pointerId);
+    drawingDrag = null;
+    if (all) drawingDraft = null;
+    drawingEditorPreview = null;
+    clearTimeout(nav.holdTimer);
+    nav.hold = false;
+    requestDraw();
+    drawingSyncUI();
+  }
+  function drawingColor() {
+    if (drawingLastColor) return drawingLastColor;
+    const probe = document.createElement("span"); probe.style.color = "var(--ol-accent)"; root.append(probe);
+    const css = getComputedStyle(probe).color; probe.remove();
+    const match = css.match(/^#([0-9a-f]{6})$/i);
+    if (match) return "#" + match[1].toUpperCase();
+    const rgb = css.match(/\d+(?:\.\d+)?/g);
+    return rgb?.length >= 3 ? "#" + rgb.slice(0, 3).map((n) => Math.round(Number(n)).toString(16).padStart(2, "0")).join("").toUpperCase() : "#356EC8";
+  }
+  function drawingNewDefaults() {
+    const a = E.drawings.point((T0 + ((S.tA + S.tB) / 2 - (S.tB - S.tA) / 10) * BASE) * 1000, ((S.pA + S.pB) / 2) * PR),
+      b = E.drawings.point((T0 + ((S.tA + S.tB) / 2 + (S.tB - S.tA) / 10) * BASE) * 1000, ((S.pA + S.pB) / 2) * PR);
+    return E.drawings.newObject(drawingCollection(), { a, b, color: drawingColor() });
+  }
+  function drawingApplyNew(patch) {
+    const object = E.drawings.newObject(drawingCollection(), { ...patch, color: patch.color });
+    drawingMutate("Create drawing", (c) => { c.visible = true; c.objects.push(object); });
+    trendTool = false; if (inspect.on) { inspect.prev = "pan"; inspectExit(); }
+    S.lens = S.select = false; drawingLastColor = object.color; drawingEditorPreview = null;
+    drawingActivate(object.id); update(); return true;
+  }
+  function drawingCreate(a, b) {
+    try {
+      const object = E.drawings.newObject(drawingCollection(), { a, b, color: drawingColor() });
+      drawingMutate("Create drawing", (c) => { c.visible = true; c.objects.push(object); });
+      activeDrawingId = object.id; drawingAnchorTime = null;
+      drawingLastColor = object.color;
+      drawingDraft = null;
+      drawingLastCreate = performance.now();
+      if (!drawingKeep) { trendTool = false; S.lens = S.select = false; }
+      drawingSyncUI(); update();
+      return object;
+    } catch (error) { drawingNotice(error.message); return null; }
+  }
+  function drawingCommand(action, id, value) {
+    const object = drawingById(id);
+    if (action === "new") { closePop(); setSheet(false); setTool("trend"); canvas.focus(); return; }
+    if (action === "keep") { drawingKeep = Boolean(value ?? id); drawingSyncUI(); requestDraw(); return; }
+    if (action === "cancel") { drawingCancelOperation(); return; }
+    if (action === "anchor") {
+      const t = Number.isFinite(value) ? value : drawingAnchorTime;
+      if (Number.isFinite(t) && t < activeCutoff()) { S.anchor = (Math.floor(t / stepT()) + 1) * stepT(); S.tab = "evidence"; update(); recordView("Anchor"); save(); }
+      return;
+    }
+    if (action === "focus" && (!object || !drawingCollection().visible || !object.visible)) return;
+    if (action === "focus") { focus.drawing = focus.drawing === id ? null : id; focus.key = focus.family = focus.saved = null; focusChanged(); return; }
+    if (action === "export") { copyText(viewCode, "Complete view code with drawings"); return; }
+    if (action === "retry") { drawingPersist(); return; }
+    if (action === "recover") {
+      const recovered = window.explorerState?.drawings?.recover(id);
+      if (recovered?.status === "ok") drawingReplace(recovered.collection).then((ok) => { if (ok) { update(); drawingNotice("Recovered drawings."); } });
+      else drawingNotice(recovered?.reason || "This recovery is unavailable.");
+      return;
+    }
+    if (action === "undo" || action === "redo") {
+      let editor = null;
+      if (drawingEditorOpen()) {
+        const pending = drawingEditorPending(); editor = drawingEditorState; drawingCloseEditor(true);
+        if (pending) return;
+      }
+      if (drawingDrag || drawingDraft || drawingEditorPreview) { drawingCancelOperation(); return; }
+      if (drawingStore[action]()) {
+        activeDrawingId = null; drawingKeyContext = true; drawingPersist(); update();
+        if (editor) drawingRestoreFocus(editor.origin, editor.id, editor.origin.index);
+      }
+      return;
+    }
+    if (action === "group-visible") {
+      drawingMutate("Show/hide drawings", (c) => { c.visible = Boolean(value ?? id); });
+      if (!drawingCollection().visible) { activeDrawingId = null; drawingKeyContext = false; }
+    } else if (action === "delete-all") { drawingMutate("Delete all drawings", (c) => { c.objects = []; }); }
+    else if (object && action === "duplicate") {
+      try {
+        const made = E.drawings.duplicate(drawingCollection(), id);
+        drawingMutate("Duplicate drawing", (c) => { c.visible = true; c.objects.push(made); });
+        drawingActivate(made.id);
+      } catch (error) { drawingNotice(error.message); }
+    } else if (object && action === "delete") drawingMutate("Delete drawing", (c) => { c.objects = c.objects.filter((o) => o.id !== id); });
+    else if (object && (action === "visible" || action === "lock")) {
+      drawingMutate(action === "lock" ? "Lock/unlock drawing" : "Show/hide drawing", (c) => { c.objects.find((o) => o.id === id)[action === "lock" ? "locked" : "visible"] = Boolean(value); });
+      if (action === "visible" && !value) drawingKeyContext = Boolean(activeDrawingId);
+    }
+    drawingSyncUI(); requestDraw();
+  }
+  function drawingGeometry(object, rect = drawingPlot()) {
+    if (!G.w || !G.h) return null;
+    const a = drawingPixel(object.a), b = drawingPixel(object.b), clipped = E.drawings.clip(a, b, rect);
+    if (!clipped) return null;
+    const inside = (p) => p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h,
+      anchors = [a, b].filter(inside);
+    if (!anchors.length) {
+      const length = Math.hypot(clipped.b.x - clipped.a.x, clipped.b.y - clipped.a.y), inset = Math.min(8, length / 2);
+      if (length) anchors.push({ x: clipped.a.x + (clipped.b.x - clipped.a.x) * inset / length, y: clipped.a.y + (clipped.b.y - clipped.a.y) * inset / length });
+    }
+    return { ...clipped, anchors, endpoints: { a, b } };
+  }
+  function drawingStatus(id) {
+    const o = drawingById(id);
+    if (!o || !drawingCollection().visible || !o.visible) return "Hidden";
+    if (!drawingGeometry(o)) return "Off screen";
+    return occlusion.off.has("drawing|" + id) ? "Held back" : "Shown";
+  }
+  function drawingCandidates() {
+    if (!drawingCollection().visible) return [];
+    const out = [];
+    for (const object of drawingCollection().objects) {
+      if (!object.visible) continue;
+      const g = drawingGeometry(object);
+      if (!g) continue;
+      out.push({ id: "drawing|" + object.id, hot: focus.drawing === object.id,
+        priority: focus.drawing === object.id ? 1 : activeDrawingId === object.id ? 3 : 4,
+        rank: object.ordinal, rects: g.anchors.map((p) => {
+          const half = object.id === activeDrawingId && !object.locked && tool() === "pan" ? 5.75 : 4.5;
+          return [p.x - half, p.y - half, p.x + half, p.y + half];
+        }),
+        strokes: [{ a: g.a, b: g.b, width: 3.5 }] });
+    }
+    return out;
+  }
+  function drawingHex(p, color) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const x = p.x + 3 * Math.cos(i * Math.PI / 3), y = p.y + 3 * Math.sin(i * Math.PI / 3);
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.closePath(); ctx.lineWidth = 3; ctx.strokeStyle = drawingCasing(color); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = color; ctx.stroke();
+  }
+  function drawingCasing(color) {
+    const rgb = color.slice(1).match(/../g).map((s) => parseInt(s, 16) / 255),
+      luminance = rgb.map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((s, v, i) => s + v * [.2126, .7152, .0722][i], 0);
+    return luminance > .179 ? "#000000" : "#FFFFFF";
+  }
+  function drawingPaintObject(object, preview = false, rect = drawingPlot()) {
+    const g = drawingGeometry(object, rect);
+    if (!g) return;
+    ctx.save(); ctx.beginPath(); ctx.rect(rect.x, rect.y, rect.w, rect.h); ctx.clip();
+    ctx.globalAlpha = preview ? .8 : 1; ctx.setLineDash([]); ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(g.a.x, g.a.y); ctx.lineTo(g.b.x, g.b.y);
+    ctx.lineWidth = 3.5; ctx.strokeStyle = drawingCasing(object.color); ctx.stroke();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = object.color; ctx.stroke();
+    if (!preview && object.id === activeDrawingId && !object.locked && !trendTool && !inspect.on && !S.select && !S.lens) {
+      for (const p of Object.values(g.endpoints)) {
+        if (p.x < rect.x || p.x > rect.x + rect.w || p.y < rect.y || p.y > rect.y + rect.h) continue;
+        ctx.fillStyle = colors.surface; ctx.strokeStyle = colors.ink; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+      }
+    }
+    for (const p of g.anchors) drawingHex(p, object.color);
+    ctx.restore();
+  }
+  function drawingPaint(rect = drawingPlot()) {
+    if (drawingCollection().visible) for (const object of drawingCollection().objects) {
+      if (!object.visible || occlusion.off.has("drawing|" + object.id)) continue;
+      drawingPaintObject(drawingEditorPreview?.id === object.id ? drawingEditorPreview : drawingDrag?.preview?.id === object.id ? drawingDrag.preview : object, Boolean(drawingEditorPreview?.id === object.id || drawingDrag?.preview?.id === object.id), rect);
+    }
+    if (drawingEditorPreview && !drawingById(drawingEditorPreview.id)) drawingPaintObject(drawingEditorPreview, true, rect);
+    if (drawingDraft?.b) drawingPaintObject({ a: drawingDraft.a, b: drawingDraft.b, color: drawingColor() }, true, rect);
+  }
+  function drawingFrameCommit() {
+    canvas.dataset.drawingCount = String(drawingCollection().objects.length);
+    canvas.dataset.drawingRevision = String(drawingStore.revision);
+    canvas.dataset.drawingActive = activeDrawingId || "";
+    const shown = drawingCollection().objects.filter((o) => drawingStatus(o.id) === "Shown"),
+      cutoff = (T0 + activeCutoff() * BASE) * 1000;
+    canvas.dataset.drawingReplay = S.replay && shown.length ? "User drawings may include later analysis" + (shown.some((o) => { const g = drawingGeometry(o); return Math.max(G.X.invert(g.a.x), G.X.invert(g.b.x)) * BASE * 1000 + T0 * 1000 > cutoff + .5; }) ? " · User drawings extend beyond replay" : "") : "";
+    drawingSyncUI();
+  }
+  function drawingLensOwns(p) {
+    if (!lensShown()) return false;
+    const f = lensFrame();
+    return f && p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + f.h;
+  }
+  function drawingHits(p, pointerType = "mouse", readOnly = false) {
+    if (!inPlot(p) || !readOnly && drawingLensOwns(p) || !drawingCollection().visible) return [];
+    const radius = pointerType === "touch" ? 22 : 4;
+    return drawingCollection().objects.filter((o) => drawingStatus(o.id) === "Shown").map((o) => {
+      const g = drawingGeometry(o), distance = E.drawings.distance(p, g);
+      return { id: o.id, object: o, distance };
+    }).filter((hit) => hit.distance <= radius).sort((a, b) => Number(b.id === activeDrawingId) - Number(a.id === activeDrawingId) || a.distance - b.distance || a.object.ordinal - b.object.ordinal);
+  }
+  function drawingHandle(p, pointerType) {
+    const o = drawingById(activeDrawingId);
+    if (!o || o.locked || drawingStatus(o.id) !== "Shown" || drawingLensOwns(p)) return null;
+    const g = drawingGeometry(o), radius = pointerType === "touch" ? 22 : 10,
+      da = !inPlot(g.endpoints.a) ? Infinity : Math.hypot(p.x - g.endpoints.a.x, p.y - g.endpoints.a.y), db = !inPlot(g.endpoints.b) ? Infinity : Math.hypot(p.x - g.endpoints.b.x, p.y - g.endpoints.b.y);
+    return Math.min(da, db) <= radius ? da <= db ? "a" : "b" : E.drawings.distance(p, g) <= (pointerType === "touch" ? 22 : 4) ? "body" : null;
+  }
+  function drawingPointerDown(e, p) {
+    drawingCancelledPointers.delete(e.pointerId);
+    const surface = [window.innerWidth, window.innerHeight, canvas.clientWidth, canvas.clientHeight, S.tA, S.tB, S.pA, S.pB].join(",");
+    if (!inPlot(p) || drawingLensOwns(p)) return false;
+    if (trendTool) {
+      try {
+        const point = drawingPoint(p);
+        drawingDrag = { pointerId: e.pointerId, surface, start: p, kind: "create", moved: false, second: Boolean(drawingDraft), a: drawingDraft?.a || point, b: point };
+        drawingDraft = { a: drawingDrag.a, b: point };
+        drawingKeyContext = true; drag = null; hover = null; clearTimeout(nav.holdTimer); requestDraw();
+      } catch (error) { drawingNotice(error.message); }
+      return true;
+    }
+    if (tool() !== "pan" || e.altKey) return false;
+    const handle = drawingHandle(p, e.pointerType), hits = drawingHits(p, e.pointerType);
+    if (handle) {
+      drawingDrag = { pointerId: e.pointerId, surface, start: p, kind: handle, original: drawingById(activeDrawingId), moved: false, hits };
+      drag = null; clearTimeout(nav.holdTimer); hover = null; return true;
+    }
+    return false;
+  }
+  function drawingPointerMove(e, p) {
+    if (!drawingDrag) {
+      if (trendTool && drawingDraft && inPlot(p) && !drawingLensOwns(p)) {
+        try { drawingDraft.b = drawingPoint(p); requestDraw(); } catch { /* Out-of-domain previews stay at their last valid position. */ }
+      }
+      if (trendTool) { el("tip").hidden = true; hover = null; return true; }
+      return false;
+    }
+    if (e.pointerId !== drawingDrag.pointerId) return true;
+    const d = drawingDrag;
+    d.moved ||= Math.abs(p.x - d.start.x) + Math.abs(p.y - d.start.y) > 4;
+    if (!d.moved) return true;
+    try {
+      if (d.kind === "create") { d.b = drawingPoint(p); drawingDraft.b = d.b; }
+      else {
+        d.preview = d.kind === "body" ? E.drawings.translate(d.original, (p.t - d.start.t) * BASE * 1000, (p.p - d.start.p) * PR) : E.drawings.normalizeObject({ ...d.original, [d.kind]: drawingPoint(p) });
+      }
+      d.invalid = false;
+    } catch { d.invalid = true; d.preview = null; }
+    requestDraw(); return true;
+  }
+  function drawingPointerUp(e, p) {
+    if (drawingCancelledPointers.delete(e.pointerId)) { nav.pointers.delete(e.pointerId); return true; }
+    const d = drawingDrag;
+    if (!d || e.pointerId !== d.pointerId) return false;
+    drawingDrag = null; nav.pointers.delete(e.pointerId); nav.hold = false;
+    if (d.surface !== [window.innerWidth, window.innerHeight, canvas.clientWidth, canvas.clientHeight, S.tA, S.tB, S.pA, S.pB].join(",") || !inPlot(p) || drawingLensOwns(p) || d.invalid) { drawingDraft = null; drawingNotice("Drawing gesture cancelled."); requestDraw(); return true; }
+    if (d.kind === "create") {
+      if (d.moved || d.second) { const b = drawingPoint(p); if (!drawingCreate(d.a, b)) drawingDraft = { a: d.a, b }; }
+      else drawingDraft = { a: d.a, b: d.a };
+    } else if (d.moved && d.preview) drawingApplyEdit(d.original.id, d.preview);
+    else {
+      drawingAnchorTime = p.t;
+      if (d.hits.length > 1) drawingChooser(d.hits, p.t, canvas); else drawingActivate(d.original.id, p.t);
+    }
+    update(); return true;
+  }
+  function drawingKey(e, target) {
+    if (e.defaultPrevented || e.isComposing || target?.closest('input:not([type="checkbox"]):not([type="radio"]),select,textarea,[contenteditable]:not([contenteditable="false"])')) return false;
+    if (drawingDialogOpen()) return false;
+    const held = e.repeat && nav.pressed.has(e.code || e.key),
+      chart = !target || target === canvas || target === root || target === document.body,
+      owns = drawingUIOwns(target) || chart && ["pan", "trend"].includes(tool()) && Boolean(activeDrawingId || drawingDraft || drawingDrag || drawingKeyContext);
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && owns) {
+      const k = e.key.toLowerCase();
+      if (k === "z" || k === "y") { if (!held) drawingCommand(k === "y" || e.shiftKey ? "redo" : "undo"); return true; }
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (e.key.toLowerCase() === "g" && !root.querySelector("dialog[open]")) { if (!held) setTool(trendTool ? drawingEntryTool : "trend"); return true; }
+    if (!chart) return false;
+    if (e.key === "Escape" && (drawingDrag || drawingDraft)) { if (!held) drawingCancelOperation(); return true; }
+    if (e.key === "Escape" && activeDrawingId) { if (!held) drawingActivate(null); return true; }
+    if (["Delete", "Backspace"].includes(e.key) && activeDrawingId && tool() === "pan") {
+      if (!held && !drawingById(activeDrawingId)?.locked) drawingCommand("delete", activeDrawingId); return true;
+    }
+    if (e.key === "Enter" && activeDrawingId && tool() === "pan") { if (!held) drawingEdit(activeDrawingId, "chart"); return true; }
+    return false;
+  }
+  async function drawingReplace(incoming, apply = null) {
+    const collection = E.drawings.normalizeCollection(incoming), previous = drawingCollection();
+    if (JSON.stringify(collection) === JSON.stringify(previous)) { apply?.(); return true; }
+    drawingCancelOperation();
+    let answer = "replace";
+    if (previous.objects.length) {
+      answer = await new Promise((resolve) => {
+        const dialog = document.createElement("dialog"); dialog.id = "ol-drawing-replace"; dialog.className = "ol-drawing-dialog"; dialog.dataset.drawingUi = "";
+        const title = document.createElement("h2"); title.textContent = "Open drawings from this view?";
+        const text = document.createElement("p"); text.textContent = `This view contains ${collection.objects.length} drawings. You have ${previous.objects.length} drawings in this tab.`;
+        dialog.append(title, text);
+        const finish = (choice) => { dialog.close(); dialog.remove(); resolve(choice); };
+        for (const [choice, label] of [["replace", `Replace with ${collection.objects.length} drawings`], ["keep", `Keep my ${previous.objects.length} drawings`], ["cancel", "Cancel"]]) {
+          const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.dataset.drawingReplace = choice; button.addEventListener("click", () => finish(choice)); dialog.append(button);
+        }
+        dialog.addEventListener("cancel", (e) => { e.preventDefault(); finish("cancel"); });
+        dialog.addEventListener("keydown", (e) => e.stopPropagation());
+        root.append(dialog); dialog.showModal();
+      });
+    }
+    if (answer === "cancel") return false;
+    if (answer === "keep") { apply?.(); return true; }
+    if (previous.objects.length) {
+      const preserved = window.explorerState?.drawings?.preserve(previous);
+      if (preserved?.ok) drawingRecoveries = [...drawingRecoveries, { id: preserved.id, pinned: true, count: previous.objects.length, label: `Preserved prior workspace · ${previous.objects.length} drawings` }];
+      if (!preserved?.ok) { drawingUnsaved = true; drawingStorageReason = preserved?.reason || "The prior drawings could not be preserved"; drawingNotice(`View not opened: ${drawingStorageReason}. Export your drawings or retry.`); drawingSyncUI(); return false; }
+    }
+    apply?.();
+    drawingCommit("Replace drawings", collection); activeDrawingId = null; return true;
+  }
+
+  // Insert inside the explorer IIFE; call drawingInitUI() once from bindUI.
+  // Inventory always reads committed objects. Editor preview has its own revision.
+  let drawingEditorState = null, drawingChoiceOrigin = null, drawingDeleteOrigin = null;
+  let drawingInventoryKey = "";
+  let drawingUIInitialized = false, drawingRowsKey = "", drawingRecoveryKey = "", drawingActionsKey = "", drawingToolbarKey = "";
+  const drawingFieldIds = ["name", "color", "a-time", "a-price", "b-time", "b-price"];
+  function drawingWrite(node, value) {
+    const text = String(value ?? ""); if (node.textContent !== text) node.textContent = text;
+  }
+  function drawingAttr(node, name, value) {
+    const text = String(value); if (node.getAttribute(name) !== text) node.setAttribute(name, text);
+  }
+  function drawingUIOwns(target = document.activeElement) { return Boolean(target?.closest?.("[data-drawing-ui]")); }
+  function drawingDialogOpen() { return Boolean(root.querySelector("dialog[data-drawing-ui][open]")); }
+  function drawingEditorOpen() { return Boolean(drawingEditorState && el("drawing-editor").open); }
+  function drawingEditorPending() {
+    return Boolean(drawingEditorState && (drawingEditorState.isNew || drawingFieldIds.some((key, i) => el(`drawing-${key}`).value !== drawingEditorState.fields[i])));
+  }
+  function drawingSyncEditorUndo() {
+    const pending = drawingEditorPending(), button = el("drawing-editor-undo");
+    button.disabled = !pending && !drawingStore.canUndo;
+    drawingWrite(button, pending ? "Cancel draft" : "Undo drawing");
+    button.title = pending ? "Discard unapplied drawing edits" : drawingStore.undoLabel ? `Undo: ${drawingStore.undoLabel}` : "No drawing changes to undo";
+  }
+  function drawingChooserOpen() { return el("drawing-chooser").open; }
+  function drawingUICmd(action, id, value) {
+    try {
+      const result = drawingCommand(action, id, value);
+      if (result?.catch) result.catch((error) => drawingNotice(error.message || String(error)));
+      drawingSyncUI(); return result;
+    } catch (error) { drawingNotice(error.message || String(error)); return false; }
+  }
+  function drawingUIButton(text, action, id, value, menu = false) {
+    const button = document.createElement("button");
+    button.type = "button"; button.className = (menu ? "ol-item" : "ol-action ol-s") + " cursor-interaction";
+    button.textContent = text; button.dataset.drawingAction = action;
+    if (id) button.dataset.drawingId = id;
+    if (menu) button.setAttribute("role", "menuitem");
+    button.addEventListener("click", () => {
+      const at = drawingCollection().objects.findIndex((o) => o.id === id);
+      if (action === "new-exact") { drawingNewExact(button); return; }
+      if (action === "edit") { drawingEdit(id, button); return; }
+      if (action === "move") { closePop(); setSheet(false); drawingActivate(id); canvas.focus({ preventScroll: true }); return; }
+      if (action === "delete-all") { drawingConfirmDelete(button); return; }
+      if (menu) closePop();
+      drawingUICmd(action, id, typeof value === "function" ? value() : value);
+      if (action === "duplicate" && el("drawing-section")) {
+        el("drawing-section").querySelector(`[data-drawing-row="${activeDrawingId}"] [data-drawing-action="move"]`)?.focus({ preventScroll: true });
+      } else if (action === "delete" && !button.isConnected && el("drawing-section")) {
+        const rows = [...el("drawing-section").querySelectorAll("[data-drawing-row]")];
+        (rows[Math.min(at, rows.length - 1)]?.querySelector('[data-drawing-action="edit"]') || el("drawing-new"))?.focus({ preventScroll: true });
+      } else if (menu) canvas.focus({ preventScroll: true });
+    }); return button;
+  }
+  function drawingRestoreFocus(origin, id, index = 0) {
+    if (origin?.list) {
+      if (PHONE.matches) setSheet(true);
+      if (el("lines-pop").hidden) openLines();
+      drawingMenuSection(el("lines-pop")); drawingSyncUI();
+      const rows = [...el("drawing-section").querySelectorAll("[data-drawing-row]")],
+        row = rows.find((r) => r.dataset.drawingRow === id) || rows[Math.max(0, Math.min(index, rows.length - 1))];
+      (row?.querySelector('[data-drawing-action="edit"]') || el("drawing-new"))?.focus({ preventScroll: true });
+    } else canvas.focus({ preventScroll: true });
+  }
+  function drawingOrigin(origin, id) {
+    const node = origin instanceof Element ? origin : document.activeElement,
+      list = origin === "lines" || Boolean(node?.closest?.(".ol-drawing-section"));
+    return { list, index: list ? drawingCollection().objects.findIndex((o) => o.id === id) : 0 };
+  }
+  function drawingFieldError(key, message) {
+    drawingAttr(el(`drawing-${key}`), "aria-invalid", Boolean(message)); drawingWrite(el(`drawing-${key}-error`), message);
+  }
+  function drawingReadEdit(showErrors = true) {
+    if (!drawingEditorState) return null;
+    const original = drawingEditorState.isNew ? drawingEditorState.object : drawingById(drawingEditorState.id); if (!original) return null;
+    const patch = { name: el("drawing-name").value.trim(), color: el("drawing-color").value.toLowerCase(), a: {}, b: {} }, errors = {};
+    if (!patch.name || [...patch.name].length > 80 || /[\u0000-\u001f\u007f-\u009f]/u.test(patch.name)) errors.name = "Use 1–80 characters without control characters.";
+    if (!/^#[0-9a-f]{6}$/.test(patch.color)) errors.color = "Enter six hexadecimal digits, for example #3366cc.";
+    for (const point of ["a", "b"]) for (const [field, member, parse] of [["time", "timeMs", E.drawings.parseTime], ["price", "priceCents", E.drawings.parsePrice]]) {
+      try { patch[point][member] = parse(el(`drawing-${point}-${field}`).value); }
+      catch (error) { errors[`${point}-${field}`] = error.message || String(error); }
+    }
+    let object = null;
+    if (!Object.keys(errors).length) {
+      try { object = E.drawings.normalizeObject({ ...original, ...patch }); }
+      catch (error) { errors["b-price"] = error.message || String(error); }
+    }
+    if (showErrors) for (const key of drawingFieldIds) drawingFieldError(key, errors[key] || "");
+    return Object.keys(errors).length ? null : { object, patch };
+  }
+  function drawingEditPreview() {
+    const result = drawingReadEdit(); drawingPreviewObject(result?.object || null);
+    if (result && el("drawing-color-picker").value !== result.patch.color) el("drawing-color-picker").value = result.patch.color;
+    drawingWrite(el("drawing-editor-error"), ""); drawingSyncEditorUndo();
+  }
+  function drawingNewExact(origin = "lines") {
+    try { drawingEdit(null, origin, drawingNewDefaults()); }
+    catch (error) { drawingNotice(error.message || String(error)); }
+  }
+  function drawingEdit(id, origin = "chart", draft = null) {
+    const object = draft || drawingById(id); if (!object) return;
+    if (drawingEditorOpen()) drawingCloseEditor(true);
+    const from = drawingOrigin(origin, id);
+    drawingCancelOperation(); closePop(); setSheet(false);
+    drawingEditorState = { id: object.id, origin: from, isNew: Boolean(draft), object: draft };
+    el("drawing-editor").dataset.drawingId = object.id;
+    drawingWrite(el("drawing-editor-title"), draft ? "New trend line" : "Edit trend line");
+    el("drawing-name").value = object.name; el("drawing-color").value = el("drawing-color-picker").value = object.color;
+    for (const point of ["a", "b"]) {
+      el(`drawing-${point}-time`).value = E.drawings.formatTime(object[point].timeMs);
+      el(`drawing-${point}-price`).value = E.drawings.formatPrice(object[point].priceCents);
+      el(`drawing-${point}-time`).disabled = el(`drawing-${point}-price`).disabled = object.locked;
+    }
+    for (const key of drawingFieldIds) drawingFieldError(key, "");
+    drawingWrite(el("drawing-editor-error"), "");
+    drawingWrite(el("drawing-editor-note"), object.locked ? "Drawing locked. Name and color remain editable; unlock in Lines to move its points." : "Free coordinates · UTC time and USDT price. Apply saves all fields together.");
+    drawingEditorState.fields = drawingFieldIds.map((key) => el(`drawing-${key}`).value);
+    drawingSyncEditorUndo();
+    el("drawing-editor").showModal();
+    if (draft) drawingPreviewObject(draft);
+    el("drawing-name").focus({ preventScroll: true }); el("drawing-name").select();
+  }
+  function drawingCloseEditor(cancel = true) {
+    if (!drawingEditorState) return false;
+    const previous = drawingEditorState; drawingEditorState = null; drawingPreviewObject(null);
+    if (el("drawing-editor").open) el("drawing-editor").close(cancel ? "cancel" : "apply");
+    delete el("drawing-editor").dataset.drawingId;
+    drawingRestoreFocus(previous.origin, previous.isNew && !cancel ? activeDrawingId : previous.id, previous.origin.index);
+    if (previous.isNew && cancel && previous.origin.list) el("drawing-new-exact")?.focus({ preventScroll: true });
+    return true;
+  }
+  function drawingCloseChooser() {
+    if (!el("drawing-chooser").open) return false;
+    el("drawing-chooser").close(); const origin = drawingChoiceOrigin; drawingChoiceOrigin = null;
+    if (origin?.isConnected && origin.focus) origin.focus({ preventScroll: true }); else canvas.focus({ preventScroll: true });
+    return true;
+  }
+  function drawingChooser(candidates, time, origin = canvas) {
+    drawingCloseChooser(); closePop(); const choices = el("drawing-choices"); choices.replaceChildren();
+    drawingChoiceOrigin = origin instanceof Element ? origin : canvas;
+    for (const candidate of candidates) {
+      const id = typeof candidate === "string" ? candidate : candidate.id || candidate.object?.id || candidate.drawing?.id, object = drawingById(id);
+      if (!object) continue;
+      const button = document.createElement("button"), swatch = document.createElement("i"), name = document.createElement("span");
+      button.type = "button"; button.className = "ol-action cursor-interaction"; button.dataset.drawingChoice = id;
+      swatch.className = "ol-drawing-swatch"; swatch.style.setProperty("--drawing-rgb", object.color); swatch.setAttribute("aria-hidden", "true");
+      name.textContent = object.name + (object.locked ? " · Locked" : ""); button.append(swatch, name);
+      button.addEventListener("click", () => { drawingCloseChooser(); drawingActivate(id, time); canvas.focus({ preventScroll: true }); }); choices.append(button);
+    }
+    const anchor = drawingUIButton("Anchor evidence here", "anchor", null, time); anchor.addEventListener("click", drawingCloseChooser); choices.append(anchor);
+    el("drawing-chooser").showModal(); choices.querySelector("button")?.focus({ preventScroll: true });
+  }
+  function drawingConfirmDelete(origin) {
+    const objects = drawingCollection().objects; if (!objects.length) return;
+    closePop(); drawingDeleteOrigin = origin; el("drawing-confirm").dataset.ids = objects.map((o) => o.id).join(",");
+    drawingWrite(el("drawing-confirm-title"), `Delete ${objects.length} drawings, including ${objects.filter((o) => o.locked).length} locked?`);
+    if (!el("drawing-confirm").open) el("drawing-confirm").showModal(); el("drawing-confirm-cancel").focus({ preventScroll: true });
+  }
+  function drawingCloseConfirm() {
+    if (!el("drawing-confirm").open) return false;
+    el("drawing-confirm").close(); const origin = drawingDeleteOrigin; drawingDeleteOrigin = null;
+    if (origin?.isConnected) origin.focus({ preventScroll: true }); else canvas.focus({ preventScroll: true }); return true;
+  }
+  function drawingMenuSection(parent) {
+    let section = el("drawing-section");
+    if (!section) {
+      section = document.createElement("section"); section.id = "ol-drawing-section"; section.className = "ol-drawing-section"; section.dataset.drawingUi = ""; section.setAttribute("aria-labelledby", "ol-drawing-section-title");
+      section.innerHTML = '<div class="ol-drawing-section-head"><h3 id="ol-drawing-section-title">Your drawings</h3></div><div class="ol-drawing-section-tools"></div><p id="ol-drawing-summary" class="ol-drawing-summary" role="status"></p><p id="ol-drawing-menu-replay" class="ol-drawing-summary"></p><div id="ol-drawing-list" class="ol-drawing-list"></div><p id="ol-drawing-storage-status" class="ol-drawing-summary" role="status"></p><div id="ol-drawing-storage-actions" class="ol-drawing-section-tools"></div><details id="ol-drawing-recover"><summary>Recover drawings</summary><p class="ol-drawing-summary">Rolling history: up to 24 recent saves and 8 prior replacements. Older recoveries expire; this tab’s drawings stay intact. Save a View or export a complete code to keep a snapshot.</p><div id="ol-drawing-recover-list" class="ol-drawing-choices"></div></details>';
+      const head = section.querySelector(".ol-drawing-section-head"), tools = section.querySelector(".ol-drawing-section-tools"), create = drawingUIButton("New", "new");
+      create.id = "ol-drawing-new"; create.setAttribute("aria-label", "New trend line"); create.addEventListener("click", () => { closePop(); setSheet(false); canvas.focus({ preventScroll: true }); }); head.append(create);
+      const exact = drawingUIButton("Coordinates", "new-exact"); exact.id = "ol-drawing-new-exact";
+      exact.setAttribute("aria-label", "New trend line with exact coordinates"); head.append(exact);
+      const visibility = document.createElement("label"), box = document.createElement("input"); visibility.className = "ol-drawing-check"; box.type = "checkbox"; box.id = "ol-drawing-group-visible";
+      box.addEventListener("change", () => drawingUICmd("group-visible", null, box.checked)); visibility.append(box, document.createTextNode("Show drawings"));
+      const undo = drawingUIButton("Undo", "undo"), redo = drawingUIButton("Redo", "redo"), remove = drawingUIButton("Delete all", "delete-all");
+      undo.id = "ol-drawing-undo"; redo.id = "ol-drawing-redo"; remove.id = "ol-drawing-delete-all"; tools.append(visibility, undo, redo, remove);
+      const exportButton = drawingUIButton("Export complete view code", "export"), retry = drawingUIButton("Retry save", "retry"); exportButton.id = "ol-drawing-export"; retry.id = "ol-drawing-retry";
+      section.querySelector("#ol-drawing-storage-actions").append(exportButton, retry); parent.insertBefore(section, parent.querySelector(".ol-family"));
+    }
+    drawingSyncInventory(); return section;
+  }
+  function drawingRow(object) {
+    const row = document.createElement("div"), head = document.createElement("div"), swatch = document.createElement("i"), name = document.createElement("span"), status = document.createElement("span"), actions = document.createElement("div"), details = document.createElement("details"), summary = document.createElement("summary"), more = document.createElement("div");
+    row.className = "ol-drawing-row"; row.dataset.drawingRow = object.id; row.dataset.id = object.id;
+    head.className = "ol-drawing-row-head"; swatch.className = "ol-drawing-swatch"; swatch.setAttribute("aria-hidden", "true"); name.className = "ol-drawing-row-name"; status.className = "ol-drawing-status"; head.append(swatch, name, status);
+    actions.className = "ol-drawing-row-actions"; actions.append(drawingUIButton("Move", "move", object.id), drawingUIButton("Edit", "edit", object.id), drawingUIButton("Hide", "visible", object.id, () => !drawingById(object.id)?.visible));
+    details.className = "ol-drawing-row-more"; summary.textContent = "More actions"; more.className = "ol-drawing-row-more-actions";
+    more.append(drawingUIButton("Lock", "lock", object.id, () => !drawingById(object.id)?.locked), drawingUIButton("Focus", "focus", object.id), drawingUIButton("Duplicate", "duplicate", object.id), drawingUIButton("Delete", "delete", object.id));
+    details.append(summary, more); actions.append(details); row.append(head, actions); return row;
+  }
+  function drawingSyncInventory() {
+    const section = el("drawing-section"); if (!section) return;
+    const inventoryKey = [drawingStore.revision, activeDrawingId, focus.drawing, drawingUnsaved, drawingStorageReason, drawingRecoveries.length, drawingRecoveries[0]?.id, el("lines-pop").hidden ? "closed" : [S.tA, S.tB, S.pA, S.pB, [...occlusion.off].join(",")].join("|")].join("|");
+    if (inventoryKey === drawingInventoryKey) return;
+    drawingInventoryKey = inventoryKey;
+    const collection = drawingCollection(), objects = collection.objects, history = drawingHistory(), list = el("drawing-list"), key = objects.map((o) => o.id).join(",");
+    if (key !== drawingRowsKey) {
+      const existing = new Map([...list.querySelectorAll("[data-drawing-row]")].map((r) => [r.dataset.drawingRow, r]));
+      for (const [id, row] of existing) if (!objects.some((o) => o.id === id)) row.remove();
+      for (const object of objects) list.append(existing.get(object.id) || drawingRow(object)); drawingRowsKey = key;
+    }
+    for (const row of list.querySelectorAll("[data-drawing-row]")) {
+      const object = drawingById(row.dataset.drawingRow), state = drawingStatus(object.id);
+      for (const [attr, value] of Object.entries({ name: object.name, color: object.color, visible: String(object.visible), locked: String(object.locked), active: String(object.id === activeDrawingId), state, timeA: object.a.timeMs, timeB: object.b.timeMs, priceA: object.a.priceCents, priceB: object.b.priceCents, aTimeMs: object.a.timeMs, aPriceCents: object.a.priceCents, bTimeMs: object.b.timeMs, bPriceCents: object.b.priceCents })) if (row.dataset[attr] !== String(value)) row.dataset[attr] = String(value);
+      drawingWrite(row.querySelector(".ol-drawing-row-name"), object.name); drawingWrite(row.querySelector(".ol-drawing-status"), [object.locked ? "Locked" : "", state === "Shown" ? "" : state].filter(Boolean).join(" · "));
+      const swatch = row.querySelector(".ol-drawing-swatch"); if (swatch.style.getPropertyValue("--drawing-rgb") !== object.color) swatch.style.setProperty("--drawing-rgb", object.color);
+      for (const [action, text, pressed] of [["visible", object.visible ? "Hide" : "Show", object.visible], ["lock", object.locked ? "Unlock" : "Lock", object.locked]]) {
+        const button = row.querySelector(`[data-drawing-action="${action}"]`); drawingWrite(button, text); drawingAttr(button, "aria-label", `${text} ${object.name}`); drawingAttr(button, "aria-pressed", pressed);
+      }
+      for (const action of ["move", "edit", "duplicate", "delete", "focus"]) drawingAttr(row.querySelector(`[data-drawing-action="${action}"]`), "aria-label", `${action[0].toUpperCase() + action.slice(1)} ${object.name}`);
+      row.querySelector('[data-drawing-action="move"]').disabled = object.locked;
+      row.querySelector('[data-drawing-action="focus"]').disabled = !collection.visible || !object.visible;
+      drawingAttr(row.querySelector('[data-drawing-action="focus"]'), "aria-pressed", focus.drawing === object.id);
+    }
+    drawingWrite(el("drawing-menu-replay"), canvas.dataset.drawingReplay || "");
+    el("drawing-menu-replay").hidden = !canvas.dataset.drawingReplay;
+    const enabled = objects.filter((o) => collection.visible && o.visible).length, shown = objects.filter((o) => drawingStatus(o.id) === "Shown").length;
+    drawingWrite(el("drawing-summary"), objects.length ? `${shown} shown / ${enabled} enabled / ${objects.length} total` : "No drawings yet. Draw two points or drag on the price chart.");
+    el("drawing-group-visible").checked = collection.visible; el("drawing-new").disabled = el("drawing-new-exact").disabled = objects.length >= 200; el("drawing-delete-all").disabled = !objects.length;
+    for (const action of ["undo", "redo"]) {
+      const button = el(`drawing-${action}`), available = history[action === "undo" ? "canUndo" : "canRedo"], label = history[`${action}Label`];
+      button.disabled = !available; button.title = label ? `${action === "undo" ? "Undo" : "Redo"}: ${label}` : ""; drawingAttr(button, "aria-label", button.title || (action === "undo" ? "Undo drawing" : "Redo drawing"));
+    }
+    const storage = drawingStorageStatus(); drawingWrite(el("drawing-storage-status"), storage.unsaved ? `Unsaved drawings${storage.reason ? ": " + storage.reason : ""}` : ""); el("drawing-retry").hidden = !storage.unsaved;
+    const recoveries = storage.recoveries || [], recoveryKey = JSON.stringify(recoveries);
+    if (recoveryKey !== drawingRecoveryKey) {
+      const entries = recoveries.map((record) => {
+        const stamp = record.createdAt || record.time || record.at, parsed = stamp ? new Date(stamp) : null,
+          label = record.label || record.name || (parsed && Number.isFinite(parsed.getTime()) ? parsed.toISOString() : "Saved drawing workspace");
+        return drawingUIButton(label, "recover", record.id);
+      }); el("drawing-recover-list").replaceChildren(...entries); drawingRecoveryKey = recoveryKey;
+    }
+    el("drawing-recover").hidden = !recoveries.length;
+  }
+  function drawingSyncUI() {
+    if (!drawingUIInitialized) return;
+    canvas.dataset.drawingCount = String(drawingCollection().objects.length); canvas.dataset.drawingRevision = String(drawingStore.revision); canvas.dataset.drawingActive = activeDrawingId || "";
+    const object = activeDrawingId ? drawingById(activeDrawingId) : null, toolbar = el("drawing-toolbar"),
+      state = object ? drawingStatus(object.id) : "", replay = canvas.dataset.drawingReplay || "",
+      draft = drawingDraft ? [drawingDraft.a.timeMs, drawingDraft.a.priceCents, drawingDraft.b?.timeMs, drawingDraft.b?.priceCents] : null,
+      key = JSON.stringify([Boolean(trendTool), drawingKeep, object?.id, object?.name, object?.color, object?.locked, state, replay, draft]);
+    if (key !== drawingToolbarKey) {
+      toolbar.hidden = !trendTool && !object; toolbar.dataset.activeId = object?.id || "";
+      drawingWrite(el("drawing-toolbar-name"), trendTool ? "Trend line · Free" : object?.name || ""); el("drawing-toolbar-name").title = object?.name || "";
+      const placement = draft ? ["a", "b"].filter((point) => drawingDraft[point]).map((point) => `${point.toUpperCase()} · ${E.drawings.formatTime(drawingDraft[point].timeMs)} · ${E.drawings.formatPrice(drawingDraft[point].priceCents)} USDT`).join("\n") : "Click two points or drag";
+      drawingWrite(el("drawing-toolbar-status"), object && !trendTool ? [object.locked ? "Locked" : "", state === "Shown" ? "" : state].filter(Boolean).join(" · ") : placement);
+      el("drawing-toolbar-swatch").hidden = !object; if (object) el("drawing-toolbar-swatch").style.setProperty("--drawing-rgb", object.color);
+      el("drawing-keep-label").hidden = !trendTool; el("drawing-keep").checked = drawingKeep; el("drawing-edit").hidden = !object;
+      const note = el("drawing-replay-status"); note.replaceChildren(...replay.split(" · ").filter(Boolean).flatMap((text, i) => { const span = document.createElement("span"); span.textContent = text; return i ? [" · ", span] : [span]; })); note.hidden = !replay;
+      drawingToolbarKey = key;
+    }
+    if (drawingEditorState && !drawingEditorState.isNew && !drawingById(drawingEditorState.id)) drawingCloseEditor(true);
+    if (toolbar.hidden && pop.open?.panel === el("drawing-actions")) closePop();
+    drawingSyncInventory(); if (!el("drawing-actions").hidden) drawingBuildActions(); drawingPlaceActions();
+  }
+  function drawingBuildActions() {
+    const panel = el("drawing-actions"), object = activeDrawingId ? drawingById(activeDrawingId) : null, history = drawingHistory(),
+      key = [object?.id, object?.visible, object?.locked, history.canUndo, history.canRedo, drawingAnchorTime === null].join("|");
+    if (drawingActionsKey === key && panel.childElementCount) return; drawingActionsKey = key;
+    const focused = panel.contains(document.activeElement) ? document.activeElement.dataset.drawingAction : null, buttons = [];
+    if (object) {
+      buttons.push(drawingUIButton("Move / select", "move", object.id, null, true), drawingUIButton("Edit exact coordinates", "edit", object.id, null, true), drawingUIButton(object.visible ? "Hide drawing" : "Show drawing", "visible", object.id, !object.visible, true), drawingUIButton(object.locked ? "Unlock drawing" : "Lock drawing", "lock", object.id, !object.locked, true), drawingUIButton("Focus drawing", "focus", object.id, null, true), drawingUIButton("Duplicate drawing", "duplicate", object.id, null, true), drawingUIButton("Delete drawing", "delete", object.id, null, true)); buttons[0].disabled = object.locked;
+      const anchor = drawingUIButton("Anchor evidence here", "anchor", object.id, undefined, true); anchor.disabled = drawingAnchorTime === null; buttons.push(anchor);
+    }
+    const undo = drawingUIButton("Undo drawing", "undo", null, null, true), redo = drawingUIButton("Redo drawing", "redo", null, null, true); undo.disabled = !history.canUndo; redo.disabled = !history.canRedo; buttons.push(undo, redo);
+    panel.replaceChildren(...buttons); if (focused) panel.querySelector(`[data-drawing-action="${focused}"]`)?.focus({ preventScroll: true });
+  }
+  function drawingPlaceActions() {
+    const panel = el("drawing-actions"), group = el("drawing-more").parentElement; let sheet = el("drawing-sheet-group");
+    if (!sheet) { sheet = document.createElement("div"); sheet.id = "ol-drawing-sheet-group"; sheet.className = "ol-group ol-drawing-sheet-group"; el("controls").append(sheet); }
+    const parent = PHONE.matches ? sheet : group; if (panel.parentElement !== parent) parent.append(panel); sheet.hidden = !PHONE.matches || panel.hidden;
+  }
+  function drawingInitUI() {
+    if (drawingUIInitialized) return; drawingUIInitialized = true;
+    el("drawing-keep").addEventListener("change", () => drawingUICmd("keep", null, el("drawing-keep").checked)); el("drawing-edit").addEventListener("click", () => drawingEdit(activeDrawingId, "chart"));
+    el("drawing-more").addEventListener("click", () => {
+      const panel = el("drawing-actions"), button = el("drawing-more");
+      if (pop.open?.panel === panel) { closePop(); drawingPlaceActions(); return; }
+      closePop(); drawingBuildActions(); panel.hidden = false; button.setAttribute("aria-expanded", "true"); pop.open = { button, panel }; drawingPlaceActions(); if (PHONE.matches) setSheet(true); focusMenuItem(panel, 0);
+    });
+    el("drawing-actions").addEventListener("keydown", (event) => {
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault(); event.stopPropagation(); const items = menuItems(el("drawing-actions")), i = items.indexOf(document.activeElement); focusMenuItem(el("drawing-actions"), event.key === "Home" ? 0 : event.key === "End" ? -1 : i + (event.key === "ArrowDown" ? 1 : -1));
+      } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closePop(true); drawingPlaceActions(); }
+    });
+    PHONE.addEventListener("change", () => { closePop(); drawingPlaceActions(); }); drawingPlaceActions();
+    for (const key of drawingFieldIds) el(`drawing-${key}`).addEventListener("input", drawingEditPreview);
+    el("drawing-color-picker").addEventListener("input", () => { el("drawing-color").value = el("drawing-color-picker").value; drawingEditPreview(); });
+    el("drawing-form").addEventListener("submit", (event) => {
+      event.preventDefault(); const result = drawingReadEdit(); if (!result) { el("drawing-form").querySelector('[aria-invalid="true"]')?.focus({ preventScroll: true }); return; }
+      try {
+        const applied = drawingEditorState.isNew ? drawingApplyNew(result.patch) : drawingApplyEdit(drawingEditorState.id, result.patch);
+        if (applied) drawingCloseEditor(false);
+      } catch (error) { drawingWrite(el("drawing-editor-error"), error.message || String(error)); }
+    });
+    for (const id of ["drawing-cancel", "drawing-editor-close"]) el(id).addEventListener("click", () => drawingCloseEditor(true));
+    el("drawing-editor-undo").addEventListener("click", () => drawingUICmd("undo")); el("drawing-chooser-close").addEventListener("click", drawingCloseChooser); el("drawing-confirm-cancel").addEventListener("click", drawingCloseConfirm);
+    el("drawing-confirm-delete").addEventListener("click", () => { if (el("drawing-confirm").dataset.ids !== drawingCollection().objects.map((o) => o.id).join(",")) { drawingConfirmDelete(drawingDeleteOrigin); return; } drawingCloseConfirm(); drawingUICmd("delete-all"); });
+    for (const [id, close] of [["drawing-editor", drawingCloseEditor], ["drawing-chooser", drawingCloseChooser], ["drawing-confirm", drawingCloseConfirm]]) {
+      const dialog = el(id); dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(true); }); dialog.addEventListener("keydown", (event) => { event.stopPropagation();
+      if (id === "drawing-editor" && (event.ctrlKey || event.metaKey) && ["z", "y"].includes(event.key.toLowerCase()) && !event.target.closest('input,select,textarea,[contenteditable]')) { event.preventDefault(); if (!event.repeat && !event.isComposing) drawingUICmd(event.key.toLowerCase() === "y" || event.shiftKey ? "redo" : "undo"); return; }
+      if (event.key === "Escape") { event.preventDefault(); close(true); } }); dialog.addEventListener("click", (event) => { if (event.target === dialog) close(true); });
+    }
+    el("drawing-choices").addEventListener("keydown", (event) => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return; event.preventDefault(); const items = [...el("drawing-choices").querySelectorAll("button")], i = items.indexOf(document.activeElement), next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (i + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length; items[next]?.focus({ preventScroll: true });
+    }); drawingSyncUI();
+  }
+
+  drawingInitUI();
+  document.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target !== canvas && !event.target.closest("[data-drawing-ui]") && event.target.closest("button,input,select,a,[role=tab]")) drawingKeyContext = false;
+  }, true);
   bindRoot();
   bindEvidence();
   bindNavigation();
@@ -19897,6 +20734,7 @@
     el("fresh").hidden = !PACK.live;
     for (const kbd of qsa("[data-key]")) kbd.textContent = KEYS[kbd.dataset.key];
     getColors();
+    drawingLoad();
     sources.recent = await unpack(PACK.blocks.recent, "recent");
     // Decoded blocks keep their metadata only: a tab open all day holds no payloads.
     delete PACK.blocks.recent.gzip_base64;
@@ -19923,6 +20761,7 @@
     title();
     new ResizeObserver(() => {
       if (ready) {
+        if (drawingDrag) drawingCancelOperation();
         geometry();
         if (S.auto) autoLevel();
         update();

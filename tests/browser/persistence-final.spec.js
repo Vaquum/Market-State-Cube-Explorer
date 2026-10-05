@@ -33,7 +33,7 @@ async function copyBoth(page) {
   const link = await P.clipboardText(page);
   await P.openQuery(page);
   await page.locator("#ol-copy-view").click();
-  await expect.poll(() => P.clipboardText(page)).toMatch(/^origo-cube:2\./);
+  await expect.poll(() => P.clipboardText(page)).toMatch(/^origo-cube:3\./);
   return { link, code: await P.clipboardText(page) };
 }
 async function openLink(freshContext, link, ready) {
@@ -229,10 +229,10 @@ test.describe("B52 portable state after the final changes", () => {
     // the code carries the same state whether or not a line is in focus: both are DECODED (a code that cannot be is a failure, not a comparison of lengths) and the
     // payloads are the same payload, so the Focus is in neither
     const decode = (code) => page.evaluate(async (text) => {
-      const gz = /^origo-cube:2\.([A-Za-z0-9_-]+)$/.exec(text);
-      const plainJson = /^origo-cube:2j\.(.*)$/s.exec(text);
+      const gz = /^origo-cube:3\.([A-Za-z0-9_-]+)$/.exec(text);
+      const plainJson = /^origo-cube:3j\.(.*)$/s.exec(text);
       if (plainJson) return JSON.parse(decodeURIComponent(plainJson[1]));
-      if (!gz) throw new Error("not a version 2 code: " + text.slice(0, 40));
+      if (!gz) throw new Error("not a version 3 complete code: " + text.slice(0, 40));
       const bytes = Uint8Array.from(atob(gz[1].replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
       const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
       return JSON.parse(await new Response(stream).text());

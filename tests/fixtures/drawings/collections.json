@@ -1,0 +1,51 @@
+{
+  "one": {
+    "schemaVersion": 1,
+    "instrument": "binance:spot:BTCUSDT",
+    "visible": true,
+    "objects": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "name": "Independent diagonal",
+        "a": {
+          "timeMs": 1790164800000,
+          "priceCents": 2480025
+        },
+        "b": {
+          "timeMs": 1790208000000,
+          "priceCents": 2510075
+        },
+        "color": "#ff00ff",
+        "visible": true,
+        "locked": false,
+        "ordinal": 0
+      }
+    ]
+  },
+  "empty": {
+    "schemaVersion": 1,
+    "instrument": "binance:spot:BTCUSDT",
+    "visible": true,
+    "objects": []
+  },
+  "identity": {
+    "colors": [
+      "#000000",
+      "#ffffff",
+      "#808080",
+      "#ff0000",
+      "#00ff00",
+      "#0000ff",
+      "#a87823",
+      "#dfb967"
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "deviceScaleFactors": [
+      1,
+      2
+    ]
+  }
+}

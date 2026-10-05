@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic",
+  "source": "PRD-0005 (#65) and P5-S1 (#66) fixed schema/domain and identity cases",
+  "extractedOn": "2026-10-04",
+  "seed": null,
+  "generator": "Hand-authored fixtures; independent Node SHA-256 resealing of portable snapshots",
+  "expectationSource": "hand-computed",
+  "notes": "Independent affine camera interpolation, strict UTC calendar/decimal grammar, Euclidean segment/capsule geometry and source-over pixel composition. No market observations or app drawing helpers are used to calculate expected authored anchors, validation failures or finite identity samples."
+}

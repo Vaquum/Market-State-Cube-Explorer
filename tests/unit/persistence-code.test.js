@@ -291,15 +291,16 @@ test("legacy percent-encoded codes are still accepted; a bare cube query is a qu
 // ---- version, size and bounded decompression ------------------------------------------------------------------
 
 test("an unknown version is rejected whole, with the version seen: a newer code tag, a newer visualVersion, a non-integer", async () => {
-  const e1 = await rejects(C.decodePortable("origo-cube:3.abcdef"), "version", /newer or unknown version \(3\)/);
-  assert.equal(e1.version, "3");
+  const e1 = await rejects(C.decodePortable("origo-cube:4.abcdef"), "version", /newer or unknown version \(4\)/);
+  assert.equal(e1.version, "4");
   await rejects(C.decodePortable("origo-cube:zzz"), "version", /unrecognised/);
-  const future = code2(gz(canon({ visualVersion: 3, kind: "view" })));
-  const v = C.validatePortable((await C.decodePortable(future, { inflate: zlibInflate })).payload, {});
+  const future = "origo-cube:4." + Buffer.from(gz(canon({ visualVersion: 4, kind: "view" }))).toString("base64url");
+  await rejects(C.decodePortable(future, { inflate: zlibInflate }), "version", /version \(4\)/);
+  const v = C.validatePortable({visualVersion: 4, kind: "view"}, {});
   assert.equal(v.ok, false);
-  assert.match(v.reasons[0], /visual version 3 was made by a newer or unknown version/);
-  const plainFuture = await rejects(C.decodePortable('{"visualVersion":3,"kind":"view"}'), "version", /version 3/);
-  assert.equal(plainFuture.version, 3);
+  assert.match(v.reasons[0], /visual version 4 was made by a newer or unknown version/);
+  const plainFuture = await rejects(C.decodePortable('{"visualVersion":4,"kind":"view"}'), "version", /version 4/);
+  assert.equal(plainFuture.version, 4);
   for (const bad of [2.1, "2", 1, null]) {
     const r = C.validatePortable({ visualVersion: bad, kind: "view" }, {});
     assert.equal(r.ok, false, JSON.stringify(bad));

@@ -14,11 +14,11 @@ Run both with `node --test tests/unit/role-lint.test.js tests/unit/visual-contra
 
 **Row ids.** `T-` design token, `C-` canvas consumer, `D-` DOM consumer, `F-` footer key, `R-` readout, number or prose consumer, `N-` new in S1 (does not exist at the baseline). A letter suffix splits one baseline consumer (C-09a to C-09d). Ids stay stable once shipped.
 
-**Target roles** (parent D3, D6, D8). `Q-fill` quantitative fill (opaque); `Q-line` quantitative outline; `UM` unsigned magnitude (ordered low-chroma); `+`, `-`, `mid` positive, negative and midpoint; `OCC` occupancy (a known trade occupancy, no magnitude); `REF:<family>` family reference (Profile gold, Price levels violet, Averages olive, VWAP rust, Clock neutral, User Level ink, Historical comparison neutral); `STATE` neutral keyed state (pending, failed, unsupported, undefined, open, partial, provisional, coverage); `IX` interaction (selection, hover, table-hover, focus, inspect, lens frame); `RP` temporary region replacement (lens, tooltip, popover, replay and lens control surfaces); `CHR` structural chrome (grid, axes, text, plates, control backgrounds; not a measurement); `DATA-NAME` legitimate taker-buy naming (kept).
+**Target roles** (parent D3, D6, D8). `Q-fill` quantitative fill (opaque); `Q-line` quantitative outline; `UM` unsigned magnitude (ordered low-chroma); `+`, `-`, `mid` positive, negative and midpoint; `OCC` occupancy (a known trade occupancy, no magnitude); `REF:<family>` family reference (Profile gold, Price levels violet, Averages olive, VWAP rust, Clock neutral, User Level ink, Historical comparison neutral); `STATE` neutral keyed state (pending, failed, unsupported, undefined, open, partial, provisional, coverage); `IX` interaction (selection, hover, table-hover, focus, inspect, lens frame); `RP` temporary region replacement (lens, tooltip, popover, replay and lens control surfaces); `CHR` structural chrome (grid, axes, text, plates, control backgrounds; not a measurement); `DATA-NAME` legitimate taker-buy naming (kept); `annotation.trend.rgb` authored RGB identity, with no measurement, market direction or reference-family meaning.
 
 **Channels** (parent D4). `CELL` unbounded Cells colour (Explore, per resolution context); `ROW` unbounded Rows colour (Explore, per row and period context); `FIXED` fixed domain (shares, log2 ratios, RSI); `AXIS` ordinary Columns lengths and MACD (Auto axis); `PROF` current and reference profile length (independent Auto axis); `LENS` lens colour (the shared active Cells mapping unless Local contrast); `NAV` main price and time axes; `-` none.
 
-**Owner** is the list of slices with work on the row, as issue numbers: #46 (S1), #47 (S2), #48 (S3), #62 (P4-S1 Candles). A row that no slice changes carries #48, whose audit of composed contrast, focus and text verifies that it still meets the target. Per-slice detail is written in the Target cell as `[slices: ...]` where it is not just one slice.
+**Owner** is the list of slices with work on the row, as issue numbers: #46 (S1), #47 (S2), #48 (S3), #62 (P4-S1 Candles), #66 (P5-S1 manual trend lines). A row that no slice changes carries #48, whose audit of composed contrast, focus and text verifies that it still meets the target. Per-slice detail is written in the Target cell as `[slices: ...]` where it is not just one slice.
 
 **Status** is the first slice with outstanding work: `todo-S1`, `todo-S2`, `todo-S3`; `keep` means legitimate with no change planned; `done` means all planned work is complete. When K finishes the S1 part of a row that still has S2 or S3 work, the status becomes the next slice's `todo`; a row is `done` only when nothing is left. `todo-S2` and `todo-S3` rows are consumers that must keep working in S1 and that S1 must not repaint.
 
@@ -69,6 +69,7 @@ Contrast is WCAG contrast of the hex against `--ol-surface` (`#fff` / `#161f19`)
 | T-33 | Design token `--ol-legacy-sell` (new in S1) | src/explorer.css custom-property block (W1-D adds it next to the old tokens); JS `colors.<key>` through `getColors`; encoding.js LUT constants (CSS equality test) | Does not exist at baseline; value `#b3624b` / `#d89777` | Interim name. As `--ol-legacy-buy`, for the sell-side of the same pending consumers. | - | #46, #47, #48 | U35, B33 | done |
 | T-34 | The `colors` object and its probe | src/explorer.js: `getColors` 693-730 (probe key list 696-711 with `colors.panel` read but never used; family probe 716-719; tier probe 722-727; ends in `buildRamp`), `colourEpoch` 4127-4133, theme listener 12455-12461 | 14 keys `bg, surface, panel, ink, muted, line, volume, buy, sell, poc, evidence, time, accent, neutral`, then `colors.family`, `colors.tiers`, then the ramp; every value is an opaque `rgb()` string; the theme flip refreshes only `colors`, the LUT and the canvas | Key list without `buy, sell, neutral, time`, with `positive, negative, midpoint, occupancy, state, legacyBuy, legacySell`; the final `buildRamp()` becomes `themeChanged()`; new tokens with alpha never go through `colors.*` | - | #46, #48 | U35, U18, B04, U58 | done |
 | T-35 | Design token `--ol-line-compare` (new in S3) | src/explorer.css custom-property block next to the line family tokens; JS `colors.family.compare` through `getColors`; the cone, its anchor line and the evidence tracks | Does not exist at baseline (the violet `--ol-evidence` carried the continuation) | `REF:Historical comparison neutral`: the muted ink, so the comparison is never a third hue beside the price levels' violet; its two sets are told apart by shape and label | - | #48 | U58, B41 | done |
+| T-36 | Per-object authored RGB `--drawing-rgb` | src/explorer.css `.ol-drawing-swatch`; src/explorer.js `drawingRow`, `drawingSyncInventory`, `drawingSyncUI` | Exact normalized six-digit RGB, independent of theme; a filled hexagon swatch with structural border | `annotation.trend.rgb`: object identity; visible name and exact RGB accompany the swatch; no quantitative or market meaning | - | #66 | U92, B61 | keep |
 
 ### 3.2 Canvas consumers (C-)
 
@@ -136,8 +137,11 @@ The `draw()` order at the baseline is: 973 background, 981 coverage, 982 grid, 9
 | C-25 | Transient lens | `drawResolutionLens` 11247-11386, `lensMotion` 11412, `lensCascade` 11389, `lensCaption` 11449 | opaque `surface`; cells via `cellColour(z, q, deltaMax)` with lens-local rank scale and lens-local `deltaMax`; movement lens-local; POC line `poc` 1.5; frame and caption frame `accent` 1.5; caption legend strings hard-coded 11297-11310 | `RP`; lens colour = shared active Cells mapping unless explicit Local contrast with its own descriptor and legend; frame two-tone (S2) [slices: S1 (mapping, legend, Local contrast), S2 (frame/plate), S3 (finer-record readout)] | LENS | #46, #47, #48 | U24, U26, U27, U20, U21, U23, B12, B46 | done |
 | C-26 | Canvas text and plates (all) | `text` 757, `chartLabel` 768 (users: 1040, 1050, 1051, 2138-2147, 2213, 7740, 7780, 9557, 9558), `chip` 791, `drawLineTags` 7947, `paneLegend` 8855, `lensCaption` 11449, profile letters 4465, axes 870 | default `colors.muted` 11 px; labels in family or evidence colour directly on data | `CHR` with opaque plates where needed [slices: S3 (audit); S1 only for legend/axis text it generates] | - | #46, #48 | U19, U20, B43 | done |
 | C-27 | Legend / axis text written by draw | `draw` 1116-1121 (`legendText` 4137, `LEGEND_TITLES` 4155, `legendRamp` 4171, `underlayLegend` 4636, `motionLegend` 10471) | see D-01, D-02 | generated from role/mapping records | - | #46 | U20, B23 | done |
+| C-28 | Manual trend-line core, casing, authored glyph and edit handles | src/explorer.js `drawingPaintObject`, `drawingHex`, `drawingCasing`, `drawingPaint`, `drawingGeometry`, `drawingCandidates` | 1.5 CSS px solid exact-RGB core on a 3.5 px black/white casing; hollow six-vertex glyph at visible anchors, or an inset clipped boundary when both anchors are off screen; active Pan handles use `colors.surface` and `colors.ink` | `annotation.trend.rgb` + `IX`: same continuous chart projection across Cells, Candles and Lens; viewport-clipped capsules and glyphs share the persistent planner; Hidden, Off screen and Held back remain distinct | CHART, LENS | #66 | U92, B58, B61, B62 | keep |
 
 Notes: C-06 to C-08 share the `design.gap` and minimum-size code that S2 owns. C-01 to C-04 and C-08a all end in one `fillRect` (4344-4351 and 10419), so one mapping seam covers them. C-11b and C-11d are DATA-NAME features drawn with retired ROLE tokens: the lint keys on the token (`colors.buy`), never on the variable `bv` or `bpoc`.
+
+Manual RGB is an authored carrier class, not a member of the fixed theme palette. C-28 retains its hollow hexagon and a named exact-identity route even when its RGB equals a cell, family reference, surface or another drawing. B61 checks the finite fixture colors, both themes and DPR1/2: exact RGB, bounded casing, core/casing contrast, glyph geometry and sampled raster coverage. It does not certify all composed backgrounds, slopes, offsets or human recognition; the manual operator gates remain in `docs/operator-drawings.md`.
 
 ### 3.3 DOM consumers (D-): legends, keys, dots, resolution state and evidence tracks
 
@@ -166,6 +170,7 @@ The recorded runtime census (light and dark, 1500x950, popovers open) found exac
 | D-19 | Hint bubble, key caps, shortcuts dialog | CSS 749-774, 524-541, 1791-1803, 1718-1789; JS `keyCap` 3436, `showHint` 3743 (calls `keyCap` 3765) | `kbd` panel/border tokens; hint plate `ink` with `bg` text | `CHR` [slices: S3 (help update)] | - | #48 | - | keep |
 | D-20 | Loading and update banners | view.html 698-706; CSS 1022-1034 | `--ol-panel` strip, muted/ink text | `STATE`/`CHR` [slices: -] | - | #48 | - | keep |
 | D-21 | Icons | `svgIcon` 1766, `ICONS` 1705-1715 (used by `menuItem` builders 3462-3619 and `#ol-follow-icon` 3015); static SVG in view.html; CSS `.ol-icon` 92-101 | `stroke: currentColor`, no hue, no fill | `CHR` [slices: -] | - | #48 | - | keep |
+| D-22 | Your drawings inventory, active toolbar, exact editor, chooser and recovery notices | src/view.html `#ol-drawing-toolbar`, `#ol-drawing-editor`, `#ol-drawing-chooser`, `#ol-drawing-replay-status`; src/explorer.js `drawingMenuSection`, `drawingSyncUI`, `drawingReadEdit`, `drawingSyncInventory`; src/explorer.css `.ol-drawing-*` | Native buttons, checkboxes, text inputs and dialogs; committed row identity/coordinates/state; isolated editor draft; coarse-pointer controls and inputs at least44 px | `CHR` + `IX` + `annotation.trend.rgb`: named keyboard route, exact UTC/USDT and RGB readback; explicit replay and Unsaved notices; cancel restores focus and leaves committed state intact | CHART, LENS | #66 | U92, U93, B57, B59, B60, B61 | keep |
 
 ### 3.4 Footer keys (F-)
 
@@ -693,6 +698,9 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | U65 | `tests/unit/completion-matrix.test.js` | the parent completion matrix: D1 to D12 each with an owner, a place, evidence and a status; what is the operator's is OUTSTANDING and never passed; the test files it names exist; its row count is the contract's | #48 |
 | U90 | `tests/unit/candles.test.js` | Exact candle geometry, direction and bounded cache | #62 |
 | U91 | `tests/unit/candle-bridge.test.js` | All candle levels, MSCB and timestamp cutoff vectors | #62 |
+| U92 | `tests/unit/drawings.test.js` | Schema, exact coordinate parsing, clipping, finite segment distance, creation/duplication and transaction history | #66 |
+| U93 | `tests/unit/drawing-storage.test.js` | Protected authored records, failed writes, replacement preservation and concurrent named Views | #66 |
+| U94 | `tests/unit/drawing-benchmark.test.js` | Diagnostic matrix counts, price modes, actions and budgets; no performance-pass claim | #66 |
 | U64 | `tests/unit/view-summary.test.js` | the summary's contract with its sources: every field the PRD names is produced from a record the popovers read, the strings are `E.text`'s, and nothing leaves the page unless copied | #48 |
 | B01 | `tests/browser/boot.spec.js` | boot in recorded and live mode, the 29 module keys, production globals | H7b |
 | B02 | `tests/browser/recorded-snapshot.spec.js` | real recorded blocks through the page | K |
@@ -753,6 +761,12 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B53 | `tests/browser/view-summary.spec.js` | the Query tab's summary on a view with Rows, a lens, an Efficiency pane, a replay edge and a held scale: every item the PRD lists is there, equal to the popovers' own values, and the copy is the same words | S3 |
 | B55 | `tests/browser/inspect-review.spec.js` | the Inspect tool where its first version was wrong (PR #53): an arrow with no meaning is consumed and never pans, Rows and Columns read their own axis only, an oscillator's columns (RSI on days and on 4-hour bars, MACD) are its bars, no two references are named alike (the session VWAP's days by their date), the equal pairs, the crosses and the CME gaps are in the list, an arrow on a navigator tab is consumed, a Cells reading is never a line under the cursor, a chosen reference is read from any surface, a calendar reference says whether it is drawn, and the lens keeps the unfinished state | S3 |
 | B56 | `tests/browser/fractional-cutoff.spec.js` | path and dwell on a cube whose cutoff is not a whole base column (issue #49): a tile that reaches the cutoff is read again for its movement over the whole column that holds it, so no view of a week, a year or all history is refused with "b1 must be an integer" and none says path and dwell could not be read | S3 |
+| B57 | `tests/browser/drawings-workflow.spec.js` | Creation, movement, exact editor, committed inventory, visibility, lock, duplicate, delete and transaction Undo/Redo | #66 |
+| B58 | `tests/browser/drawings-integration.spec.js` | Candles, Lens, continuous projection, cancellation, Inspect and reference coexistence | #66 |
+| B59 | `tests/browser/drawings-touch.spec.js` | Touch placement and hold arbitration, pinch cancellation, exact editor target sizes and focus | #66 |
+| B60 | `tests/browser/drawings-persistence.spec.js` | Complete v3 codes, replacement choice, legacy imports, protected storage and concurrent saved Views | #66 |
+| B61 | `tests/browser/drawings-colors.spec.js` | Finite exact-RGB/casing/hexagon raster samples in both themes at DPR1/2; no universal contrast or recognition claim | #66 |
+| B62 | `tests/browser/drawings-budget.spec.js` | Max-count painted IDs match Shown/Held back inventory and Focus recovers a held drawing | #66 |
 
 ## 10. Migration status per slice
 
@@ -760,13 +774,13 @@ Rendered from the Status column at S2's convergence: `done` is the work of S1 an
 
 | Prefix | Rows | keep | todo-S1 | todo-S2 | todo-S3 | done |
 |---|---|---|---|---|---|---|
-| T | 35 | 17 | 0 | 0 | 0 | 18 |
-| C | 48 | 2 | 0 | 0 | 0 | 46 |
-| D | 21 | 7 | 0 | 0 | 0 | 14 |
+| T | 36 | 18 | 0 | 0 | 0 | 18 |
+| C | 49 | 3 | 0 | 0 | 0 | 46 |
+| D | 22 | 8 | 0 | 0 | 0 | 14 |
 | F | 17 | 0 | 0 | 0 | 0 | 17 |
 | R | 15 | 0 | 0 | 0 | 0 | 15 |
-| N | 40 | 0 | 0 | 0 | 0 | 40 |
-| all | 176 | 26 | 0 | 0 | 0 | 150 |
+| N | 41 | 0 | 0 | 0 | 0 | 41 |
+| all | 180 | 29 | 0 | 0 | 0 | 151 |
 
 ## 11. Contributor checklist
 
@@ -789,7 +803,7 @@ A new visual feature states each of the following before it merges, in its PR an
 - The glyph or pattern for each state the measurement can be in (zero, undefined, no reference, negative-infinite, finite under or overflow, pending, failed, unsupported, open, outside support) and that a number is never drawn for a missing value.
 - Contrast: text at least 4.5:1, essential boundaries at least 3:1 against the actual backdrop.
 - Its accessible identification: a name a screen reader hears (an accessible name or a readout, not only a hue or a hover), a keyboard route to its readout (a table row, a surface of Inspect), and the generated key that names it with its count.
-- Its carrier in `tests/fixtures/palette/co-occurrence.json` and the contexts where it meets other carriers, and a regenerated `docs/color-matrix.md` (`node tests/support/color-matrix.js --write`): every pair under CIEDE2000 8 in grayscale or a colour-vision simulation needs an on-scene label, glyph, pattern, sign mark or place of its own and a route to its exact identity, and a line keeps its label even where hue would separate it.
+- Fixed-palette carriers in `tests/fixtures/palette/co-occurrence.json` and the contexts where it meets other carriers, and a regenerated `docs/color-matrix.md` (`node tests/support/color-matrix.js --write`): every pair under CIEDE2000 8 in grayscale or a colour-vision simulation needs an on-scene label, glyph, pattern, sign mark or place of its own and a route to its exact identity, and a line keeps its label even where hue would separate it. Authored `annotation.trend.rgb` is variable RGB rather than a theme-token entry: register its form, exact-identity route and finite composed-raster evidence here, and state the remaining contrast/recognition gates; the fixed-palette matrix does not establish separation for arbitrary RGB.
 
 ### 11.4 Generated legend
 
@@ -798,7 +812,7 @@ A new visual feature states each of the following before it merges, in its PR an
 
 ### 11.5 Persistence
 
-- Each new setting is part of the version-2 schema, survives a portable code and an address (within 8,192 characters, degrading as documented), is validated on import, and has a default that may be omitted. A legacy payload without it reads as the default.
+- Chart settings use the version-2 schema and survive a portable code and an address (within 8,192 characters, degrading as documented), with validated imports and omit-able defaults. Authored drawings use protected schema1 storage and complete version-3 codes/saved Views with an explicit empty collection; chart addresses and browser history carry no drawings. Legacy/v2 imports retain the current collection. See `docs/drawing-api.md` for preservation, replacement and failed-write recovery.
 - Nothing is stored that cannot be read back, nothing is executed from a payload, and a failed write is shown.
 
 ### 11.6 Tests

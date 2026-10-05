@@ -122,6 +122,17 @@ function storage(page) {
     return { local: read(localStorage), session: read(sessionStorage) };
   });
 }
+// The production storage boundary merges immutable named transactions. Assert its
+// status before reading entries; never substitute a chart hash or a legacy cache.
+async function namedEntries(page) {
+  const status = await page.evaluate(() => window.explorerState.namedViewsStatus());
+  if (!["ok", "absent"].includes(status.status) || !Array.isArray(status.entries)) throw new Error("protected named registry: " + (status.reason || status.status));
+  return status.entries;
+}
+function namedStorage(page) {
+  return page.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter((k) => /^market-state-cube-explorer:drawing-views:v[12]:/.test(k)).map((k) => [k, localStorage.getItem(k)])));
+}
+
 // Open the Query tab of the drawer (where the view code and the import live).
 async function openQuery(page) {
   const panel = page.locator("#ol-panel-query");
@@ -168,5 +179,5 @@ async function openViews(page) {
 
 module.exports = {
   E, ENV, AP, ADDRESS_MAX, plain, view, address, cellsContext, valueRecord, rankRecord, DUPLICATE_VALUES, scOf, param, said, withoutSc,
-  gzipCode, bombCode, b64url, canvasHash, popoverAction, notices, noticeCodes, where, storage, openQuery, importCode, clipboardText, openViews,
+  gzipCode, bombCode, b64url, namedEntries, namedStorage, canvasHash, popoverAction, notices, noticeCodes, where, storage, openQuery, importCode, clipboardText, openViews,
 };

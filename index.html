@@ -2528,6 +2528,122 @@
 #origo-lens .ol-candle-legend > span { display: inline-flex; align-items: center; gap: var(--sp-1); }
 #origo-lens .ol-candle-legend canvas { width: 16px; height: 18px; }
 
+/* Authored trend lines use the chart's controls, Lines inventory and dialog surfaces. */
+#origo-lens .ol-drawing-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--gutter);
+  border-bottom: 1px solid var(--ol-line);
+  background: var(--ol-surface);
+  font-size: var(--fs-s);
+}
+#origo-lens :is(.ol-drawing-toolbar, .ol-drawing-sheet-group)[hidden] { display: none; }
+#origo-lens .ol-drawing-toolbar-name {
+  min-width: 0;
+  max-width: min(30vw, 240px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+#origo-lens .ol-drawing-status { color: var(--ol-muted); font-size: var(--fs-s); }
+#origo-lens .ol-drawing-status:empty { display: none; }
+/* Keep endpoint readouts from resizing the plot after the first drawing contact. */
+#origo-lens .ol-drawing-toolbar:has(#ol-drawing-keep-label:not([hidden])) .ol-drawing-status {
+  flex-basis: 100%;
+  order: 5;
+  min-width: 0;
+  min-height: 3em;
+  line-height: 1.5;
+  white-space: pre-line;
+  font-variant-numeric: tabular-nums;
+}
+#origo-lens .ol-drawing-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--h-m);
+  cursor: pointer;
+}
+#origo-lens .ol-drawing-check[hidden] { display: none; }
+#origo-lens .ol-drawing-more-group { margin-left: auto; }
+#origo-lens .ol-drawing-actions { width: 230px; }
+#origo-lens .ol-drawing-swatch {
+  flex: none;
+  display: inline-block;
+  width: 18px;
+  height: 12px;
+  background: var(--drawing-rgb, var(--ol-accent));
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  box-shadow: inset 0 0 0 1px var(--ol-ink);
+}
+#origo-lens .ol-drawing-section {
+  padding-bottom: var(--sp-3);
+  margin-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-drawing-section-head { display: flex; align-items: center; gap: var(--sp-2); }
+#origo-lens .ol-drawing-section-head h3 { flex: 1; margin: var(--sp-2) 0; font-size: var(--fs-m); font-weight: 500; }
+#origo-lens .ol-drawing-section-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); }
+#origo-lens .ol-drawing-section-tools .ol-drawing-check { margin-right: auto; }
+#origo-lens .ol-drawing-summary { margin: var(--sp-1) 0 var(--sp-2); font-size: var(--fs-s); color: var(--ol-muted); }
+#origo-lens .ol-drawing-list { display: flex; flex-direction: column; gap: var(--sp-1); }
+#origo-lens .ol-drawing-row { padding: var(--sp-2) 0; border-top: 1px solid var(--ol-line); }
+#origo-lens .ol-drawing-row-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+#origo-lens .ol-drawing-row-name { min-width: 0; flex: 1; overflow-wrap: anywhere; font-weight: 500; }
+#origo-lens .ol-drawing-row[data-active="true"] { border-left: 2px solid var(--ol-accent); padding-left: var(--sp-2); }
+#origo-lens .ol-drawing-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-1); }
+#origo-lens .ol-drawing-row-more { flex-basis: 100%; }
+#origo-lens .ol-drawing-row-more summary { font-size: var(--fs-s); }
+#origo-lens .ol-drawing-row-more-actions { display: flex; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-1) 0; }
+#origo-lens .ol-drawing-dialog { width: min(510px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+#origo-lens .ol-drawing-dialog:not([open]) { display: none; }
+#origo-lens .ol-drawing-dialog form { margin: 0; }
+#origo-lens .ol-drawing-field { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; margin-top: var(--sp-2); font-size: var(--fs-s); }
+#origo-lens .ol-drawing-field input { width: 100%; min-height: var(--h-l); box-sizing: border-box; font-variant-numeric: tabular-nums; }
+#origo-lens .ol-drawing-field input:disabled { color: var(--ol-muted); background: var(--ol-panel); }
+#origo-lens .ol-drawing-field input[aria-invalid="true"] { border-color: var(--ol-ink); box-shadow: inset 0 0 0 1px var(--ol-ink); }
+#origo-lens .ol-drawing-anchor { display: grid; grid-template-columns: minmax(0, 2fr) minmax(90px, 1fr); gap: var(--sp-2); margin: var(--sp-3) 0 0; padding: var(--sp-2); border: 1px solid var(--ol-line); border-radius: var(--r-m); }
+#origo-lens .ol-drawing-anchor legend { padding: 0 var(--sp-1); font-size: var(--fs-s); font-weight: 500; }
+#origo-lens .ol-drawing-anchor .ol-drawing-field { margin: 0; }
+#origo-lens .ol-drawing-color-field { display: flex; align-items: center; gap: var(--sp-2); }
+#origo-lens .ol-drawing-color-field .ol-drawing-field { flex: 1; }
+#origo-lens #ol-drawing-color-picker { flex: none; width: 44px; height: 44px; padding: 2px; margin-top: var(--sp-3); border: 1px solid var(--ol-border); border-radius: var(--r-m); background: var(--ol-surface); cursor: pointer; }
+#origo-lens .ol-drawing-error { margin: 0; font-size: var(--fs-s); color: var(--ol-ink); line-height: 1.4; }
+#origo-lens .ol-drawing-error:empty { display: none; }
+#origo-lens #ol-drawing-editor-error { margin-top: var(--sp-2); }
+#origo-lens .ol-drawing-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+#origo-lens .ol-drawing-spacer { flex: 1; }
+#origo-lens .ol-drawing-choice-dialog { width: min(360px, calc(100vw - 32px)); }
+#origo-lens .ol-drawing-choices { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-2); }
+#origo-lens .ol-drawing-choices button { justify-content: flex-start; text-align: left; min-height: 44px; height: auto; padding: var(--sp-2); }
+#origo-lens .ol-drawing-choices button span { overflow-wrap: anywhere; min-width: 0; }
+#origo-lens .ol-drawing-sheet-group { width: 100%; }
+@media (max-width: 760px) {
+  #origo-lens .ol-tools .ol-seg { flex-wrap: wrap; max-width: 100%; }
+  #origo-lens .ol-drawing-toolbar { gap: var(--sp-1); }
+  #origo-lens .ol-drawing-toolbar-name { max-width: none; flex: 1; }
+  #origo-lens .ol-drawing-toolbar .ol-drawing-status { flex-basis: 100%; order: 5; }
+  #origo-lens .ol-drawing-toolbar .ol-drawing-check { order: 4; }
+  #origo-lens .ol-drawing-toolbar :is(button, .ol-drawing-check) { min-height: 44px; }
+  #origo-lens .ol-drawing-dialog { width: 100%; max-width: 100%; max-height: 92dvh; margin: auto 0 0; border-radius: var(--r-l) var(--r-l) 0 0; box-sizing: border-box; }
+  #origo-lens .ol-drawing-dialog .ol-keys-body { padding: var(--sp-3); padding-bottom: max(var(--sp-3), env(safe-area-inset-bottom)); }
+  #origo-lens .ol-drawing-anchor { grid-template-columns: minmax(0, 1fr); }
+  #origo-lens .ol-drawing-dialog-actions button { min-height: 44px; }
+  #origo-lens .ol-drawing-field input { min-height: 44px; }
+  #origo-lens .ol-drawing-section-head h3 { font-size: var(--fs-m); }
+  #origo-lens .ol-drawing-section :is(button, summary, .ol-drawing-check) { min-height: 44px; }
+  #origo-lens .ol-drawing-sheet-group .ol-drawing-actions { width: 100%; }
+}
+@media (any-pointer: coarse) {
+  #origo-lens :is(.ol-drawing-toolbar, .ol-drawing-section, .ol-drawing-dialog, .ol-drawing-actions) :is(button, input:not([type="checkbox"]):not([type="radio"]), summary, .ol-drawing-check) { min-height: 44px; }
+}
+
+#origo-lens .ol-drawing-replay-note { margin: 0; padding: var(--sp-1) var(--gutter); font-size: var(--fs-s); line-height: 1.4; color: var(--ol-muted); border-bottom: 1px solid var(--ol-line); }
+#origo-lens .ol-drawing-replay-note[hidden] { display: none; }
+
     </style>
   </head>
   <body>
@@ -2770,7 +2886,7 @@
           aria-label="Lines"
           aria-keyshortcuts="P"
           data-keys="P"
-          data-hint="POC lines, session levels and the clock"
+          data-hint="Your drawings, calculated reference lines, session levels and the clock"
         >
           <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M1.5 4.5h13M1.5 8h9M1.5 11.5h11" />
@@ -2806,7 +2922,7 @@
                 id="ol-lines-clear"
                 class="ol-action ol-s cursor-interaction"
               >
-                Clear
+                Clear references and Level
               </button></span
             >
           </div>
@@ -3099,6 +3215,20 @@
                 stroke-dasharray="2 1.6"
               /></svg
             ><span class="ol-label">Select</span></button
+          ><button
+            type="button"
+            id="ol-trend"
+            class="ol-icon-button cursor-interaction"
+            data-tool="trend"
+            aria-pressed="false"
+            aria-label="Trend line"
+            aria-keyshortcuts="G"
+            data-keys="G"
+            data-hint="Click two points or drag to draw; return to Pan to adjust the line"
+          >
+            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4 12 8-8M2 11l2-1 2 1v2l-2 1-2-1zM10 3l2-1 2 1v2l-2 1-2-1z" />
+            </svg><span class="ol-label">Trend line</span></button
           ><button
             type="button"
             id="ol-lens"
@@ -3514,6 +3644,18 @@
           hidden
         ></div>
       </div>
+      <div id="ol-drawing-toolbar" class="ol-drawing-toolbar" data-drawing-ui role="group" aria-label="Active drawing" hidden>
+        <i id="ol-drawing-toolbar-swatch" class="ol-drawing-swatch" aria-hidden="true"></i>
+        <span id="ol-drawing-toolbar-name" class="ol-drawing-toolbar-name"></span>
+        <span id="ol-drawing-toolbar-status" class="ol-drawing-status"></span>
+        <label id="ol-drawing-keep-label" class="ol-drawing-check" hidden><input id="ol-drawing-keep" type="checkbox" />Keep drawing</label>
+        <button type="button" id="ol-drawing-edit" class="ol-action cursor-interaction">Edit</button>
+        <div class="ol-group ol-drawing-more-group">
+          <button type="button" id="ol-drawing-more" class="ol-action cursor-interaction" aria-haspopup="menu" aria-expanded="false" aria-controls="ol-drawing-actions">More</button>
+          <div id="ol-drawing-actions" class="ol-pop ol-pop-end ol-menu ol-drawing-actions" data-temporary="popover" data-drawing-ui role="menu" aria-label="Drawing actions" hidden></div>
+        </div>
+      </div>
+      <p id="ol-drawing-replay-status" class="ol-drawing-replay-note" role="status" aria-live="polite" hidden></p>
       <div class="ol-plot">
         <canvas
           id="ol-canvas"
@@ -4341,6 +4483,30 @@
       </div>
     </aside>
   </div>
+  <dialog id="ol-drawing-editor" class="ol-keys ol-drawing-dialog" data-temporary="modal" data-drawing-ui aria-labelledby="ol-drawing-editor-title">
+    <form id="ol-drawing-form" class="ol-keys-body" novalidate>
+      <div class="ol-keys-head"><h2 id="ol-drawing-editor-title">Edit trend line</h2><button type="button" id="ol-drawing-editor-close" class="ol-icon-button cursor-interaction" aria-label="Cancel editing"><svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button></div>
+      <p id="ol-drawing-editor-note" class="ol-keys-note">Free coordinates · UTC time and USDT price. Apply saves all fields together.</p>
+      <label class="ol-drawing-field" for="ol-drawing-name">Name<input id="ol-drawing-name" type="text" autocomplete="off" aria-describedby="ol-drawing-name-error" /><span id="ol-drawing-name-error" class="ol-drawing-error"></span></label>
+      <div class="ol-drawing-color-field"><label class="ol-drawing-field" for="ol-drawing-color">Color · #RRGGBB<input id="ol-drawing-color" type="text" spellcheck="false" autocomplete="off" maxlength="7" aria-describedby="ol-drawing-color-error" /><span id="ol-drawing-color-error" class="ol-drawing-error"></span></label><input id="ol-drawing-color-picker" type="color" aria-label="Choose drawing color" /></div>
+      <fieldset class="ol-drawing-anchor"><legend>Point A</legend>
+        <label class="ol-drawing-field" for="ol-drawing-a-time">Time · UTC<input id="ol-drawing-a-time" type="text" spellcheck="false" autocomplete="off" aria-describedby="ol-drawing-a-time-error" /><span id="ol-drawing-a-time-error" class="ol-drawing-error"></span></label>
+        <label class="ol-drawing-field" for="ol-drawing-a-price">Price · USDT<input id="ol-drawing-a-price" type="text" inputmode="decimal" autocomplete="off" aria-describedby="ol-drawing-a-price-error" /><span id="ol-drawing-a-price-error" class="ol-drawing-error"></span></label>
+      </fieldset>
+      <fieldset class="ol-drawing-anchor"><legend>Point B</legend>
+        <label class="ol-drawing-field" for="ol-drawing-b-time">Time · UTC<input id="ol-drawing-b-time" type="text" spellcheck="false" autocomplete="off" aria-describedby="ol-drawing-b-time-error" /><span id="ol-drawing-b-time-error" class="ol-drawing-error"></span></label>
+        <label class="ol-drawing-field" for="ol-drawing-b-price">Price · USDT<input id="ol-drawing-b-price" type="text" inputmode="decimal" autocomplete="off" aria-describedby="ol-drawing-b-price-error" /><span id="ol-drawing-b-price-error" class="ol-drawing-error"></span></label>
+      </fieldset>
+      <p id="ol-drawing-editor-error" class="ol-drawing-error" role="status" aria-live="polite"></p>
+      <div class="ol-drawing-dialog-actions"><button type="button" id="ol-drawing-editor-undo" class="ol-action cursor-interaction">Undo drawing</button><span class="ol-drawing-spacer"></span><button type="button" id="ol-drawing-cancel" class="ol-action cursor-interaction">Cancel</button><button type="submit" id="ol-drawing-apply" class="ol-action ol-solid cursor-interaction">Apply</button></div>
+    </form>
+  </dialog>
+  <dialog id="ol-drawing-chooser" class="ol-keys ol-drawing-dialog ol-drawing-choice-dialog" data-temporary="modal" data-drawing-ui aria-labelledby="ol-drawing-chooser-title">
+    <div class="ol-keys-body"><div class="ol-keys-head"><h2 id="ol-drawing-chooser-title">Choose drawing</h2><button type="button" id="ol-drawing-chooser-close" class="ol-icon-button cursor-interaction" aria-label="Cancel drawing choice"><svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button></div><div id="ol-drawing-choices" class="ol-drawing-choices"></div></div>
+  </dialog>
+  <dialog id="ol-drawing-confirm" class="ol-keys ol-drawing-dialog ol-drawing-choice-dialog" data-temporary="modal" data-drawing-ui role="alertdialog" aria-labelledby="ol-drawing-confirm-title" aria-describedby="ol-drawing-confirm-note">
+    <div class="ol-keys-body"><h2 id="ol-drawing-confirm-title">Delete drawings?</h2><p id="ol-drawing-confirm-note" class="ol-keys-note">This includes locked drawings. Undo restores the complete collection.</p><div class="ol-drawing-dialog-actions"><button type="button" id="ol-drawing-confirm-cancel" class="ol-action cursor-interaction">Cancel</button><button type="button" id="ol-drawing-confirm-delete" class="ol-action cursor-interaction">Delete all</button></div></div>
+  </dialog>
   <dialog class="ol-keys" id="ol-keys" data-temporary="modal" aria-labelledby="ol-keys-title">
     <div class="ol-keys-body">
       <div class="ol-keys-head">
@@ -4437,6 +4603,22 @@
             <div>
               <dt>Pan, select, lens, inspect</dt>
               <dd><kbd>V</kbd> <kbd>S</kbd> <kbd>L</kbd> <kbd>E</kbd></dd>
+            </div>
+            <div>
+              <dt>Draw a trend line; G again cancels</dt>
+              <dd><kbd>G</kbd></dd>
+            </div>
+            <div>
+              <dt>Edit the active drawing</dt>
+              <dd><kbd>Enter</kbd></dd>
+            </div>
+            <div>
+              <dt>Undo / redo a drawing in drawing context</dt>
+              <dd><kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>Z</kbd> / <kbd>Shift</kbd> <kbd>Z</kbd></dd>
+            </div>
+            <div>
+              <dt>Delete an active unlocked drawing</dt>
+              <dd><kbd>Delete</kbd></dd>
             </div>
             <div>
               <dt>Lens depth</dt>
@@ -4759,7 +4941,290 @@
       return { ok: false, reason: describe(error) };
     }
   };
+  // Authored data has a protected namespace. Legacy view writers never touch these keys.
+  // A document forks its writer even when duplicate-tab sessionStorage inherited its pointer.
+  const drawingRoot = "drawings:v1:", drawingSessionKey = drawingRoot + "session", drawingIndexKey = drawingRoot + "index";
+  const namedRoot = "drawing-views:v1:", namedPointerKey = namedRoot + "pointer", namedMergedRoot = "drawing-views:v2:";
+  let drawingWriter = null, drawingSequence = 0, namedBaseline = null, namedReadFailure = null;
+  const protectedUuid = (value) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
+  const protectedId = () => {
+    const crypto = window.crypto || globalThis.crypto;
+    if (typeof crypto?.randomUUID === "function") return crypto.randomUUID();
+    if (typeof crypto?.getRandomValues !== "function") throw new Error("secure drawing storage identities are unavailable");
+    const bytes = crypto.getRandomValues(new Uint8Array(16)); bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+    const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+    return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-" + hex.slice(12, 16) + "-" + hex.slice(16, 20) + "-" + hex.slice(20);
+  };
+  const writerId = () => drawingWriter || (drawingWriter = protectedId());
+  const protectedRead = (area, key) => {
+    const got = fetchText(area, key);
+    if (!got.ok) return { status: "unreadable", value: null, raw: null, reason: "storage is unavailable (" + describe(got.error) + ")" };
+    if (got.text === null) return { status: "absent", value: null, raw: null, reason: null };
+    try { return { status: "ok", value: JSON.parse(got.text), raw: got.text, reason: null }; }
+    catch { return { status: "unreadable", value: null, raw: got.text, reason: "saved authored data is not valid JSON" }; }
+  };
+  const verifiedWrite = (area, key, value) => {
+    const text = JSON.stringify(value); window[area].setItem(prefix + key, text);
+    if (window[area].getItem(prefix + key) !== text) throw new Error("authored storage write could not be verified");
+  };
+  const protectedKeys = (root) => {
+    const area = window.localStorage, keys = [];
+    for (let i = 0; i < area.length; i++) { const key = area.key(i); if (typeof key === "string" && key.startsWith(prefix + root + "record:")) keys.push(key.slice(prefix.length)); }
+    return keys;
+  };
+  const drawingRecordCache = new Map();
+  const freezeProtected = (value) => { if (value && typeof value === "object" && !Object.isFrozen(value)) { for (const member of Object.values(value)) freezeProtected(member); Object.freeze(value); } return value; };
+  const drawingRecord = (id) => {
+    const key = drawingRoot + "record:" + id, text = fetchText("localStorage", key), cached = drawingRecordCache.get(id);
+    if (text.ok && cached?.raw === text.text) return cached;
+    drawingRecordCache.delete(id);
+    const got = protectedRead("localStorage", key);
+    if (got.status !== "ok") return { ...got, collection: null };
+    const r = got.value;
+    if (!isObject(r) || r.storageVersion !== 1) return { ...got, status: "unknown-version", value: null, collection: null, reason: "unsupported authored recovery version" };
+    if (!protectedUuid(id) || r.id !== id || !protectedUuid(r.writer) || !Number.isSafeInteger(r.sequence) || r.sequence < 0 || !Number.isSafeInteger(r.revision) || r.revision < 0 || typeof r.pinned !== "boolean" || (r.createdAt !== undefined && (!Number.isSafeInteger(r.createdAt) || r.createdAt < 0))) return { ...got, status: "unreadable", value: null, collection: null, reason: "invalid authored recovery record" };
+    try {
+      const collection = freezeProtected(window.explorerEncoding.drawings.normalizeCollection(r.collection)), validated = freezeProtected({ ...got, value: { ...r, collection }, collection });
+      drawingRecordCache.set(id, validated);
+      if (drawingRecordCache.size > 64) drawingRecordCache.delete(drawingRecordCache.keys().next().value);
+      return validated;
+    }
+    catch (error) { return { ...got, status: /unsupported drawing schema/.test(error.message) ? "unknown-version" : "unreadable", value: null, collection: null, reason: error.message }; }
+  };
+  const drawingRecoveries = () => {
+    try {
+      const recoveries = [];
+      for (const key of protectedKeys(drawingRoot)) {
+        const got = drawingRecord(key.slice((drawingRoot + "record:").length));
+        if (got.status === "ok") recoveries.push({ id: got.value.id, writer: got.value.writer, revision: got.value.revision, sequence: got.value.sequence, pinned: got.value.pinned, createdAt: got.value.createdAt ?? 0, collection: got.collection });
+      }
+      return recoveries.sort((a, b) => b.createdAt - a.createdAt || b.sequence - a.sequence || a.id.localeCompare(b.id));
+    } catch { return []; }
+  };
+  const drawingLoad = (recoveries = drawingRecoveries()) => {
+    const session = protectedRead("sessionStorage", drawingSessionKey);
+    if (session.status !== "ok") return { ...session, collection: null, recoveries };
+    const value = session.value;
+    if (!isObject(value) || ![1, 2].includes(value.storageVersion)) return { status: "unknown-version", collection: null, raw: session.raw, reason: "unsupported or invalid drawing session", recoveries };
+    if (value.storageVersion === 2) {
+      try {
+        if (!protectedUuid(value.id) || !protectedUuid(value.writer) || !Number.isSafeInteger(value.revision) || value.revision < 0) throw new Error("invalid complete drawing session");
+        return { ...session, collection: window.explorerEncoding.drawings.normalizeCollection(value.collection), recoveries };
+      } catch (error) { return { status: /unsupported drawing schema/.test(error.message) ? "unknown-version" : "unreadable", collection: null, raw: session.raw, reason: error.message, recoveries }; }
+    }
+    if (!protectedUuid(value.id)) return { status: "unreadable", collection: null, raw: session.raw, reason: "invalid drawing session identity", recoveries };
+    const got = drawingRecord(value.id);
+    if (got.status === "absent") return { status: "unreadable", collection: null, raw: session.raw, reason: "this tab's saved drawing revision is missing; choose a recovery", recoveries };
+    if (got.status === "ok") {
+      // Migrate the pointer once so another tab's subsequent history pruning cannot erase this tab.
+      try { verifiedWrite("sessionStorage", drawingSessionKey, { storageVersion: 2, id: value.id, writer: got.value.writer, revision: got.value.revision, collection: got.collection }); }
+      catch (error) { return { status: "unreadable", collection: null, raw: session.raw, reason: "the tab's drawing snapshot could not be protected (" + describe(error) + "); choose recovery or export", recoveries }; }
+    }
+    return { ...got, recoveries };
+  };
+  const drawingWrite = (collection, revision, pinned) => {
+    try {
+      const normalized = window.explorerEncoding.drawings.normalizeCollection(collection);
+      if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("invalid drawing revision");
+      if (!pinned) {
+        const previous = drawingLoad([]);
+        if (!["ok", "absent"].includes(previous.status)) {
+          if (previous.raw === null) throw new Error(previous.reason);
+          // Deduplicate a verified byte-for-byte copy before replacing an unreadable tab snapshot.
+          const digest = window.explorerEncoding.hash.hex(window.explorerEncoding.hash.sha256(window.explorerEncoding.hash.utf8(JSON.stringify(previous.raw)))),
+            key = drawingRoot + "unreadable-session:" + digest, backup = protectedRead("localStorage", key);
+          if (backup.status === "absent") verifiedWrite("localStorage", key, { storageVersion: 1, raw: previous.raw });
+          else if (backup.status !== "ok" || backup.value?.storageVersion !== 1 || backup.value.raw !== previous.raw)
+            throw new Error("unreadable drawing session backup conflicts; the original session remains preserved");
+        }
+      }
+      const before = drawingRecoveries(), writer = writerId(), id = protectedId(), sequence = ++drawingSequence,
+        createdAt = Math.max(Date.now(), ...before.map((record) => record.createdAt + 1));
+      if (!Number.isSafeInteger(createdAt)) throw new Error("drawing recovery timestamp exhausted");
+      const record = { storageVersion: 1, id, writer, sequence, revision, pinned, createdAt, collection: normalized };
+      verifiedWrite("localStorage", drawingRoot + "record:" + id, record);
+      // Recovery history is rolling; each tab's complete session snapshot remains its own authority.
+      const records = drawingRecoveries(), ordinary = records.filter((r) => !r.pinned), pins = records.filter((r) => r.pinned);
+      const retained = new Set(ordinary.filter((r) => r.writer === writer).slice(0, 2).map((r) => r.id));
+      for (const r of ordinary) if (retained.size < 24) retained.add(r.id);
+      for (const r of pins.slice(0, 8)) retained.add(r.id);
+      verifiedWrite("localStorage", drawingIndexKey, { storageVersion: 1, ids: [...retained] });
+      if (!pinned) verifiedWrite("sessionStorage", drawingSessionKey, { storageVersion: 2, writer, id, revision, collection: normalized });
+      let expired = 0;
+      for (const r of records) if (!retained.has(r.id)) {
+        try { window.localStorage.removeItem(prefix + drawingRoot + "record:" + r.id); expired++; } catch { /* an extra recovery is safe */ }
+      }
+      return { ok: true, id, expired };
+    } catch (error) { return { ok: false, reason: describe(error) }; }
+  };
+  const drawingRecover = (id) => { const got = drawingRecord(id); return { ...got, recoveries: drawingRecoveries() }; };
+  const validateNamedEntry = (entry) => {
+    if (!isObject(entry) || typeof entry.name !== "string" || !entry.name.trim()) throw new Error("named view needs its name");
+    if (![entry.span, entry.lead, entry.tA, entry.tB, entry.cut, entry.n, entry.m].every(Number.isFinite) || entry.span <= 0)
+      throw new Error("named view " + entry.name + " needs finite camera metadata and a positive span");
+    if (["live", "auto"].some((key) => entry[key] !== undefined && typeof entry[key] !== "boolean"))
+      throw new Error("named view " + entry.name + " needs boolean live/auto metadata");
+    if (entry.visualVersion === 3) {
+      if (!isObject(entry.payload) || entry.payload.visualVersion !== 3) throw new Error("named view needs its complete version-3 payload");
+      if (window.explorerEncoding.hash.utf8(window.explorerEncoding.hash.canonical(entry.payload)).length > window.explorerEncoding.LIMITS.PAYLOAD_MAX_BYTES) throw new Error("named view exceeds the complete payload byte limit");
+      const checked = window.explorerEncoding.codec.validatePortable(entry.payload, {});
+      if (!checked.ok) throw new Error("named view " + entry.name + ": " + checked.reasons.join("; "));
+    } else {
+      if (entry.visualVersion !== undefined && entry.visualVersion !== VISUAL_VERSION) throw new Error("unsupported named-view visual version");
+      if (typeof entry.hash !== "string" || !entry.hash || entry.payload !== undefined) throw new Error("legacy named view needs its chart address");
+    }
+    // Keep legacy metadata and the sealed original: normalized portable values are not wire payloads.
+    return JSON.parse(JSON.stringify(entry));
+  };
+  const validateNamedList = (list) => {
+    if (!Array.isArray(list)) throw new Error("protected named views must be a list");
+    const names = new Set();
+    return list.map((entry) => {
+      const checked = validateNamedEntry(entry);
+      if (names.has(checked.name)) throw new Error("repeated named view " + checked.name); names.add(checked.name);
+      return checked;
+    });
+  };
+  // The old namespace is read only by this new registry. Foreign entries stay there verbatim.
+  // Seed the first last-read baseline so a second tab cannot downgrade a concurrently upgraded view.
+  const legacyNamedBaseline = () => {
+    const got = read("views:v1"), entries = [], names = new Set();
+    if (got.status === "ok") for (const entry of got.value) {
+      if (entry?.visualVersion !== undefined && entry.visualVersion !== VISUAL_VERSION) continue;
+      try {
+        const checked = validateNamedEntry(entry);
+        if (!names.has(checked.name)) { entries.push(checked); names.add(checked.name); }
+      } catch { /* unusable legacy entries remain in their original namespace */ }
+    }
+    return entries;
+  };
+  const legacyProtectedNamedRead = () => {
+    const pointer = protectedRead("localStorage", namedPointerKey);
+    if (pointer.status !== "ok") return { ...pointer, entries: [] };
+    if (!isObject(pointer.value) || pointer.value.storageVersion !== 1) return { status: "unknown-version", entries: [], raw: pointer.raw, reason: "unsupported protected named-view pointer" };
+    if (!protectedUuid(pointer.value.id)) return { status: "unreadable", entries: [], raw: pointer.raw, reason: "invalid protected named-view pointer identity" };
+    const got = protectedRead("localStorage", namedRoot + "record:" + pointer.value.id);
+    if (got.status !== "ok") return { ...got, status: got.status === "absent" ? "unreadable" : got.status, entries: [], reason: got.reason || "protected named payload is missing" };
+    if (!isObject(got.value) || got.value.storageVersion !== 1) return { ...got, status: "unknown-version", value: null, entries: [], reason: "unsupported protected named-view version" };
+    try { if (got.value.id !== pointer.value.id) throw new Error("protected named-view record identity mismatch"); return { ...got, entries: validateNamedList(got.value.entries) }; }
+    catch (error) { return { ...got, status: "unreadable", value: null, entries: [], reason: error.message }; }
+  };
+  const stampCompare = (a, b) => a[0] - b[0] || (a[1] === b[1] ? 0 : a[1] < b[1] ? -1 : 1);
+  const validStamp = (stamp) => Array.isArray(stamp) && stamp.length === 2 && Number.isSafeInteger(stamp[0]) && stamp[0] >= 0 && (stamp[0] === 0 ? stamp[1] === "" : protectedUuid(stamp[1]));
+  const namedCells = (entries) => entries.map((value, position) => ({ name: value.name, value, valueStamp: [0, ""], position, orderStamp: [0, ""] }));
+  const validateNamedRecord = (raw, id) => {
+    if (!isObject(raw) || raw.storageVersion !== 2) throw new Error("unsupported merged named-view version");
+    if (!protectedUuid(id) || raw.id !== id || !protectedUuid(raw.writer) || !Number.isSafeInteger(raw.clock) || raw.clock < 1 || !Array.isArray(raw.cells)) throw new Error("invalid merged named-view record");
+    const names = new Set();
+    for (const cell of raw.cells) {
+      if (!isObject(cell) || typeof cell.name !== "string" || !cell.name.trim() || names.has(cell.name) || !validStamp(cell.valueStamp) || !validStamp(cell.orderStamp) || !Number.isSafeInteger(cell.position) || cell.position < 0 || cell.valueStamp[0] > raw.clock || cell.orderStamp[0] > raw.clock) throw new Error("invalid merged named-view cell");
+      if (cell.value !== null && validateNamedEntry(cell.value).name !== cell.name) throw new Error("named-view cell name does not match its payload");
+      names.add(cell.name);
+    }
+    return raw;
+  };
+  const mergeNamedCells = (records) => {
+    const merged = new Map();
+    for (const record of records) for (const cell of record.cells) {
+      const old = merged.get(cell.name);
+      if (!old) merged.set(cell.name, { ...cell });
+      else {
+        if (stampCompare(cell.valueStamp, old.valueStamp) > 0) { old.value = cell.value; old.valueStamp = cell.valueStamp; }
+        if (stampCompare(cell.orderStamp, old.orderStamp) > 0) { old.position = cell.position; old.orderStamp = cell.orderStamp; }
+      }
+    }
+    return [...merged.values()];
+  };
+  const cellsToEntries = (cells) => cells.filter((cell) => cell.value !== null).sort((a, b) => a.position - b.position || stampCompare(a.orderStamp, b.orderStamp) || a.name.localeCompare(b.name)).map((cell) => cell.value);
+  const protectedNamedRead = () => {
+    try {
+      let keys = protectedKeys(namedMergedRoot), records = [];
+      // A compactor may remove a key after enumeration. Re-enumerate once before returning a view.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        records = []; let disappeared = false;
+        for (const key of keys) {
+          const got = protectedRead("localStorage", key);
+          if (got.status === "absent") { disappeared = true; continue; }
+          if (got.status !== "ok") return { ...got, entries: [], cells: [], records: [] };
+          try { records.push(validateNamedRecord(got.value, key.slice((namedMergedRoot + "record:").length))); }
+          catch (error) { return { status: /unsupported/.test(error.message) ? "unknown-version" : "unreadable", entries: [], cells: [], records: [], raw: got.raw, reason: error.message }; }
+        }
+        if (!disappeared) break;
+        if (attempt === 1) return { status: "unreadable", entries: [], cells: [], records: [], raw: null, reason: "named views changed while reading; retry" };
+        keys = protectedKeys(namedMergedRoot);
+      }
+      if (!records.length) {
+        const legacy = legacyProtectedNamedRead();
+        return { ...legacy, cells: namedCells(legacy.status === "ok" ? legacy.entries : legacyNamedBaseline()), records: [], clock: 0 };
+      }
+      const cells = mergeNamedCells(records), entries = cellsToEntries(cells);
+      return { status: "ok", value: null, raw: null, reason: null, entries, cells, records, clock: Math.max(...records.map((record) => record.clock)) };
+    } catch (error) { return { status: "unreadable", entries: [], cells: [], records: [], raw: null, reason: describe(error) }; }
+  };
+  const protectedNamedViews = (options) => {
+    const got = protectedNamedRead(), entries = got.status === "absent" ? cellsToEntries(got.cells) : got.entries;
+    // The UI, status and deletion baseline must describe the same read, even if another tab publishes next.
+    if (got.status === "ok" || got.status === "absent") {
+      namedBaseline = JSON.parse(JSON.stringify(entries)); namedReadFailure = null;
+    } else namedReadFailure = got.reason || "saved Views could not be read";
+    return options?.snapshot ? { ...got, entries } : entries;
+  };
+  const pruneNamedRecords = () => {
+    const got = protectedNamedRead(); if (got.status !== "ok") return;
+    const records = got.records.slice().sort((a, b) => b.clock - a.clock || b.id.localeCompare(a.id)), keep = new Set(records.slice(0, 2).map((r) => r.id));
+    // Immutable IDs are safe to remove only when a retained full snapshot dominates every cell.
+    for (const record of records) {
+      if (keep.has(record.id)) continue;
+      const covered = records.some((other) => {
+        if (!keep.has(other.id) || other.id === record.id) return false;
+        const cells = new Map(other.cells.map((cell) => [cell.name, cell]));
+        return record.cells.every((cell) => {
+          const next = cells.get(cell.name);
+          return next && stampCompare(next.valueStamp, cell.valueStamp) >= 0 && stampCompare(next.orderStamp, cell.orderStamp) >= 0;
+        });
+      });
+      if (!covered) { keep.add(record.id); continue; }
+      try { window.localStorage.removeItem(prefix + namedMergedRoot + "record:" + record.id); } catch { /* retaining an extra registry snapshot is safe */ }
+    }
+    const legacy = legacyProtectedNamedRead();
+    if (legacy.status === "ok") for (const key of protectedKeys(namedRoot)) {
+      const old = protectedRead("localStorage", key);
+      if (old.status !== "ok" || old.value?.storageVersion !== 1 || old.value?.id === legacy.value.id) continue;
+      try { validateNamedList(old.value.entries); window.localStorage.removeItem(prefix + key); } catch { /* unsupported or unreadable originals remain preserved */ }
+    }
+  };
+  const protectedSaveNamedViews = (list) => {
+    try {
+      if (namedReadFailure) throw new Error("Read saved Views again before changing them: " + namedReadFailure);
+      const incoming = validateNamedList(list), current = protectedNamedRead();
+      if (current.status !== "ok" && current.status !== "absent") throw new Error(current.reason);
+      const baseline = namedBaseline || (current.status === "absent" ? cellsToEntries(current.cells) : current.entries),
+        before = new Map(baseline.map((entry) => [entry.name, JSON.stringify(entry)])), next = new Map(incoming.map((entry) => [entry.name, entry])),
+        cells = new Map(current.cells.map((cell) => [cell.name, { ...cell }])), writer = writerId(), clock = current.clock + 1, stamp = [clock, writer];
+      if (!Number.isSafeInteger(clock)) throw new Error("named-view version clock exhausted");
+      for (const name of before.keys()) if (!next.has(name)) {
+        const old = cells.get(name); cells.set(name, { name, value: null, valueStamp: stamp, position: old?.position || 0, orderStamp: old?.orderStamp || stamp });
+      }
+      incoming.forEach((entry, position) => {
+        const old = cells.get(entry.name), changed = !before.has(entry.name) || before.get(entry.name) !== JSON.stringify(entry);
+        // Unchanged stale entries cannot resurrect a concurrent deletion or downgrade an upgrade.
+        if (!old && !changed) return;
+        cells.set(entry.name, { name: entry.name, value: changed ? entry : old.value, valueStamp: changed ? stamp : old.valueStamp, position, orderStamp: stamp });
+      });
+      const id = protectedId(), record = { storageVersion: 2, id, writer, clock, cells: [...cells.values()] };
+      // This one immutable atomic write publishes the whole transaction; there is no raced pointer.
+      verifiedWrite("localStorage", namedMergedRoot + "record:" + id, record);
+      namedBaseline = JSON.parse(JSON.stringify(incoming));
+      pruneNamedRecords(); return { ok: true, id };
+    } catch (error) { return { ok: false, reason: describe(error) }; }
+  };
+  const protectedDrawings = Object.freeze({ load: () => drawingLoad(), save: (collection, revision = 0) => drawingWrite(collection, revision, false), preserve: (collection) => drawingWrite(collection, 0, true), recover: drawingRecover });
+
   window.explorerState = {
+    drawings: protectedDrawings,
+    namedViews: protectedNamedViews,
+    namedViewsStatus: protectedNamedRead,
+    saveNamedViews: protectedSaveNamedViews,
     // Version 4 kept the workspace and the view in one object; version 5 splits them.
     saved: loadSaved(),
     save: (state) => store("view:v5", stamp(state)),
@@ -4780,7 +5245,8 @@
 })();
 </script>
     <script>/* Measurement, scale, readout and persistence definitions shared by the page and the Node tests.
-   One factory, no dependencies: no DOM, no network, no d3, no storage, no clock, no randomness.
+   One factory, no dependencies: no DOM, no network, no d3, no storage or clock.
+   Loading is deterministic; manual drawing creation requests cryptographic UUIDs only when called.
    Plain script in the page (window.explorerEncoding), require() in Node. Assembled from parts; after the
    first assembly this file is the single source of truth and is edited directly. */
 (function (root, factory) {
@@ -9239,7 +9705,7 @@
   // E.role.occlusion(candidates, plot, opts) (PRD-0002 S2, the occlusion budget): persistent reference strokes, their backings and their label plates
   // may cover at most `budget` (20%) of the measured heatmap rectangle `plot` {x, y, w, h}, the overlaps counted once. The cover is held on a bounded
   // occupancy grid of `cell` css px squares (2), built from the marks' screen rectangles, so a frame never scans history or pixels. A candidate is
-  // {id, hot, rank, rects: [[x0, y0, x1, y1], ...]} (the rectangles its marks cover, backing and plate included). The focused ones (`hot`) come first,
+  // {id, hot, rank, rects: [[x0, y0, x1, y1], ...], strokes?, priority?}. Manual strokes charge clipped solid capsules; optional priority precedes hot/rank. The focused ones (`hot`) come first,
   // then by ascending `rank` (lower is kept longer), ties in the order given; a candidate that would take the cover past the budget is OFF unless it is
   // focused: the focused mark is never thinned or widened, and when it alone needs more than the budget the answer says so (`focusOver`).
   // -> {off: Set of ids, shown, eligible, used (grid cells), limit, cells, focusOver}
@@ -9271,10 +9737,54 @@
           }
         }
     };
-    const order = candidates.slice().sort((a, b) => Number(b.hot) - Number(a.hot) || a.rank - b.rank);
+    const claimCell = (c, r) => {
+      if (c < 0 || c >= cols || r < 0 || r >= rows) return;
+      const k = r * cols + c;
+      if (grid[k] === 0) { grid[k] = 2; claimed.push(k); }
+    };
+    // Scan only the capsule's narrow strip in each intersected row; never its diagonal bounding box.
+    const claimStroke = (stroke, remaining) => {
+      if (!stroke || !Number.isFinite(stroke.width) || stroke.width <= 0 || stroke.width > 4.5) throw new RangeError("occlusion: stroke width needs 0–4.5 CSS px");
+      const radius = stroke.width / 2;
+      const segment = API.drawings.clip(stroke.a, stroke.b, { x: plot.x - radius, y: plot.y - radius, w: plot.w + 2 * radius, h: plot.h + 2 * radius });
+      if (!segment) return;
+      const a = segment.a, b = segment.b, dy = b.y - a.y, dx = b.x - a.x, length2 = dx * dx + dy * dy, radius2 = radius * radius;
+      const cornerDistance2 = (x, y) => { const t = length2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / length2)); return (x - a.x - t * dx) ** 2 + (y - a.y - t * dy) ** 2; };
+      const r0 = Math.max(0, Math.floor((Math.min(a.y, b.y) - radius - plot.y) / size));
+      const r1 = Math.min(rows - 1, Math.floor((Math.max(a.y, b.y) + radius - plot.y) / size));
+      for (let r = r0; r <= r1; r++) {
+        const y0 = plot.y + r * size, y1 = Math.min(y0 + size, plot.y + plot.h);
+        let lo = 0, hi = 1;
+        if (dy !== 0) { const ta = (y0 - radius - a.y) / dy, tb = (y1 + radius - a.y) / dy; lo = Math.max(0, Math.min(ta, tb)); hi = Math.min(1, Math.max(ta, tb)); if (lo > hi) continue; }
+        const xa = a.x + lo * dx, xb = a.x + hi * dx;
+        const c0 = Math.max(0, Math.floor((Math.min(xa, xb) - radius - plot.x) / size));
+        const c1 = Math.min(cols - 1, Math.floor((Math.max(xa, xb) + radius - plot.x) / size));
+        for (let c = c0; c <= c1; c++) {
+          if (grid[r * cols + c] !== 0) continue;
+          const x0 = plot.x + c * size, x1 = Math.min(x0 + size, plot.x + plot.w);
+          const ax = Math.max(x0 - a.x, 0, a.x - x1), ay = Math.max(y0 - a.y, 0, a.y - y1);
+          const bx = Math.max(x0 - b.x, 0, b.x - x1), by = Math.max(y0 - b.y, 0, b.y - y1);
+          // Segment/rectangle SAT: rectangle axes plus the normal to the segment.
+          const normal0 = dx * (y0 - a.y) - dy * (x0 - a.x), normal1 = dx * (y1 - a.y) - dy * (x0 - a.x);
+          const normal2 = dx * (y0 - a.y) - dy * (x1 - a.x), normal3 = dx * (y1 - a.y) - dy * (x1 - a.x);
+          const crosses = Math.max(a.x, b.x) >= x0 && Math.min(a.x, b.x) <= x1 && Math.max(a.y, b.y) >= y0 && Math.min(a.y, b.y) <= y1 &&
+            Math.min(normal0, normal1, normal2, normal3) <= 0 && Math.max(normal0, normal1, normal2, normal3) >= 0;
+          if (crosses || ax * ax + ay * ay <= radius2 || bx * bx + by * by <= radius2 ||
+              cornerDistance2(x0, y0) <= radius2 || cornerDistance2(x0, y1) <= radius2 || cornerDistance2(x1, y0) <= radius2 || cornerDistance2(x1, y1) <= radius2) {
+            claimCell(c, r);
+            if (claimed.length > remaining) return; // already refused: no full-footprint work can change that decision
+          }
+        }
+      }
+    };
+    const order = candidates.slice().sort((a, b) => (a.priority ?? -1) - (b.priority ?? -1) || Number(b.hot) - Number(a.hot) || a.rank - b.rank);
     for (const m of order) {
       claimed.length = 0;
-      for (const r of m.rects) claim(r[0], r[1], r[2], r[3]);
+      for (const r of m.rects || []) claim(r[0], r[1], r[2], r[3]);
+      for (const stroke of m.strokes || []) {
+        claimStroke(stroke, m.hot ? Infinity : Math.max(0, out.limit - out.used));
+        if (!m.hot && out.used + claimed.length > out.limit) break;
+      }
       const cost = claimed.length;
       out.eligible++;
       const refuse = !m.hot && out.used + cost > out.limit;
@@ -14834,7 +15344,7 @@
   //   code text      origo-cube:2. and origo-cube:2j. -> v2; origo-cube:%7B and origo-cube:{ and plain JSON
   //                  with a `query` or `view` -> legacy; a plain cube query -> query (not a view: no notice);
   //                  any other tag -> reject
-  //   payload object visualVersion === 2 -> v2; absent and non-empty -> legacy; anything else -> reject
+  //   payload object visualVersion === 2/3 -> v2/v3 (complete codes); absent and non-empty -> legacy; otherwise reject
   //                  (the raw payload is the caller's to preserve); empty or null -> bare
   // `version` is 2 for v2, null for legacy and bare, and the version as SEEN (text or number) for a reject.
   function cdcClassify(x) {
@@ -14845,6 +15355,7 @@
     if (Object.prototype.hasOwnProperty.call(x, "visualVersion")) {
       const version = x.visualVersion;
       if (version === 2) return { kind: "v2", version: 2 };
+      if (version === 3) return { kind: "v3", version: 3 };
       return { kind: "reject", version, reason: "visual version " + (cdcIsFinite(version) || typeof version === "string" ? String(version) : "of another type") + " was made by a newer or unknown version" };
     }
     return Object.keys(x).length === 0 ? { kind: "bare", version: null } : { kind: "legacy", version: null };
@@ -14855,6 +15366,7 @@
     if (t.startsWith(cdcCodePrefix)) {
       const rest = t.slice(cdcCodePrefix.length);
       if (rest.startsWith("2.") || rest.startsWith("2j.")) return { kind: "v2", version: 2 };
+      if (rest.startsWith("3.") || rest.startsWith("3j.")) return { kind: "v3", version: 3 };
       if (/^(?:%7b|\{)/i.test(rest)) return { kind: "legacy", version: null };
       const tag = /^([A-Za-z0-9]+)\./.exec(rest);
       return { kind: "reject", version: tag ? tag[1] : null, reason: tag ? "made by a newer or unknown version (" + tag[1] + ")" : "an unrecognised view code" };
@@ -15506,7 +16018,11 @@
   const cdcCtxKeys = ["consumer", "instrument", "measure", "basis", "unit", "transform", "formula", "quality", "workspace", "n", "m", "period", "rowSize", "base", "bounds"];
   const cdcBaseKeys = ["consumer", "instrument", "measure", "basis", "unit", "transform", "formula", "quality", "workspace", "n", "m"];
   const cdcAllowed = Object.freeze({
-    "": ["visualVersion", "kind", "id", "query", "view", "appearance", "scales", "axes", "models", "observation"],
+    "": ["visualVersion", "kind", "id", "query", "view", "appearance", "scales", "axes", "models", "observation", "drawings"],
+    drawings: ["schemaVersion", "instrument", "visible", "objects"],
+    "drawings.objects[]": ["id", "name", "a", "b", "color", "visible", "locked", "ordinal"],
+    "drawings.objects[].a": ["timeMs", "priceCents"],
+    "drawings.objects[].b": ["timeMs", "priceCents"],
     query: ["t1", "t2", "p1", "p2", "tR", "pR"],
     view: ["mode", "pane", "poc", "area", "untested", "rows", "period", "level", "lines", "tab", "replay", "anchor", "horizon", "evidenceKind", "barrier", "follow", "auto", "window", "viewport", "selection", "scale", "profileCmp", "profileOpen"],
     "view.scale": ["basis", "pathBasis", "transform", "curve", "rowsTransform", "cells", "rows", "local", "window", "lock"],
@@ -15582,8 +16098,8 @@
   // encodePortable(payload, {deflate}) -> Promise<string> (B.15, C.13): the code of a view. `payload` is the
   // JSON of B.15 without its `id` (this fills it: the id96 of the canonical payload, an integrity check
   // the reader recomputes). The text is the canonical JSON (sorted keys, so the same view is the same code),
-  // gzip + base64url behind "origo-cube:2." when `deflate` (u8 -> Promise<u8>, gzip) is given, else
-  // percent-encoded behind "origo-cube:2j.". Every limit is enforced on WRITE: a payload that would not be
+  // gzip + base64url behind "origo-cube:2." or drawing-bearing "3." when `deflate` is given, else
+  // percent-encoded behind "origo-cube:2j."/"3j.". Every limit is enforced on WRITE: a payload that would not be
   // accepted back throws (CodeError naming why; LimitError for a size or count).
   async function cdcEncodePortable(payload, opts) {
     API.result.assertJsonSafe(payload);
@@ -15602,11 +16118,11 @@
     if (opts && typeof opts.deflate === "function") {
       const packed = await opts.deflate(bytes);
       if (packed === null || typeof packed !== "object" || typeof packed.length !== "number") throw cdcError("CodeError", "deflate did not return bytes", { code: "deflate" });
-      const code = cdcCodePrefix + "2." + API.hash.b64urlEncode(packed);
+      const code = cdcCodePrefix + full.visualVersion + "." + API.hash.b64urlEncode(packed);
       if (code.length > cdcCodeMax) throw cdcError("LimitError", "the code is longer than " + cdcCodeMax + " characters", { code: "limit" });
       return code;
     }
-    const code = cdcCodePrefix + "2j." + encodeURIComponent(text);
+    const code = cdcCodePrefix + full.visualVersion + "j." + encodeURIComponent(text);
     if (code.length > cdcTextCodeMax) throw cdcError("LimitError", "the code is longer than " + cdcTextCodeMax + " characters", { code: "limit" });
     return code;
   }
@@ -15615,8 +16131,8 @@
   // first, nothing applied until all pass: (1) text length, (2) classify, (3) base64url, (4) bounded
   // inflate, (5) fatal UTF-8, (6) nesting depth and JSON.parse with no reviver, (7) the structural walk:
   // allowlisted members, depth, string and array bounds, no prototype keys, results copied into fresh
-  // objects. `kind` is "v2", "legacy" or "query" (a bare cube query: not a view, no notice). The payload of a
-  // v2 code is checked further by validatePortable. Any failure REJECTS with a CodeError whose `reason`,
+  // objects. `kind` is "v2", "v3", "legacy" or "query" (a bare cube query: not a view, no notice). The payload of a
+  // complete code is checked further by validatePortable. Any failure REJECTS with a CodeError whose `reason`,
   // `code` and (when a version was named) `version` say why; a rejected code is never partly applied.
   async function cdcDecodePortable(text, opts) {
     const reject = (code, reason, version) => cdcError("CodeError", reason, { code, version: version === undefined ? null : version });
@@ -15625,7 +16141,7 @@
     const cls = cdcClassifyText(t);
     if (cls.kind === "reject") throw reject("version", cls.reason, cls.version);
     let json;
-    if (t.startsWith(cdcCodePrefix + "2.")) {
+    if (t.startsWith(cdcCodePrefix + "2.") || t.startsWith(cdcCodePrefix + "3.")) {
       if (t.length > cdcCodeMax) throw reject("too-large", "the code is longer than " + cdcCodeMax + " characters");
       const packed = API.hash.b64urlDecode(t.slice(cdcCodePrefix.length + 2));
       if (packed === null) throw reject("base64", "the code is not base64url");
@@ -15648,7 +16164,7 @@
       if (!t.startsWith(cdcCodePrefix) && !t.startsWith("{")) throw reject("structure", "this is not a view code");
       if (t.length > cdcTextCodeMax) throw reject("too-large", "the code is longer than " + cdcTextCodeMax + " characters");
       let rest = t.startsWith(cdcCodePrefix) ? t.slice(cdcCodePrefix.length) : t;
-      if (rest.startsWith("2j.")) rest = rest.slice(3);
+      if (rest.startsWith("2j.") || rest.startsWith("3j.")) rest = rest.slice(3);
       try {
         json = rest.startsWith("{") ? rest : decodeURIComponent(rest);
       } catch (error) {
@@ -15664,17 +16180,20 @@
       throw reject("json", "the code is not valid JSON");
     }
     if (!cdcIsObject(parsed)) throw reject("structure", "the code is not a view");
-    const coded = t.startsWith(cdcCodePrefix + "2.") || t.startsWith(cdcCodePrefix + "2j.");
+    const coded = /^origo-cube:[23]j?\./.test(t);
     const seen = cdcClassify(parsed);
     let kind = "query";
-    if (coded) kind = "v2";
+    if (coded) {
+      kind = cls.kind;
+      if (seen.kind !== kind) throw reject("version", "code version and payload visual version disagree", seen.version);
+    }
     else if (Object.prototype.hasOwnProperty.call(parsed, "visualVersion")) kind = seen.kind;
     else if (cdcIsObject(parsed.query) || cdcIsObject(parsed.view)) kind = "legacy";
     if (kind === "reject") throw reject("version", seen.reason, seen.version);
     if (kind === "bare" || Object.keys(parsed).length === 0) throw reject("structure", "the code is empty");
-    const walked = cdcWalk(parsed, kind === "v2" ? cdcAllowed : null, "", 0);
+    const walked = cdcWalk(parsed, kind === "v2" || kind === "v3" ? cdcAllowed : null, "", 0);
     if (walked.reason) throw reject("structure", walked.reason);
-    return { kind, version: kind === "v2" ? 2 : null, payload: walked.value, digest: cdcDigest(t) };
+    return { kind, version: kind === "v2" ? 2 : kind === "v3" ? 3 : null, payload: walked.value, digest: cdcDigest(t) };
   }
 
   const cdcConsumers = Object.freeze(["cells", "rows"]);
@@ -15843,11 +16362,16 @@
     };
     if (!cdcIsObject(obj)) return fail("a view payload is an object");
     const cls = cdcClassify(obj);
-    if (cls.kind !== "v2") return fail(cls.kind === "reject" ? cls.reason : "the payload names no visual version (it is a legacy payload)");
+    if (cls.kind !== "v2" && cls.kind !== "v3") return fail(cls.kind === "reject" ? cls.reason : "the payload names no visual version (it is a legacy payload)");
     const walked = cdcWalk(obj, cdcAllowed, "", 0);
     if (walked.reason) return fail(walked.reason);
     const p = walked.value;
     if (p.kind !== "view") return fail("the payload is not a view");
+    let drawings;
+    if (p.visualVersion === 3) {
+      if (!Object.prototype.hasOwnProperty.call(p, "drawings")) return fail("version 3 needs its complete drawing collection");
+      try { drawings = API.drawings.normalizeCollection(p.drawings); } catch (error) { return fail(error.message); }
+    } else if (Object.prototype.hasOwnProperty.call(p, "drawings")) return fail("drawing snapshots require visual version 3");
     if (typeof p.id !== "string" || !cdcIdPattern.test(p.id)) return fail("the payload id is missing");
     const body = {};
     for (const key of Object.keys(p)) if (key !== "id") body[key] = p[key];
@@ -15960,7 +16484,7 @@
     if (view.replay === true && !checkedView.replay) dropped.push({ key: "replay", reason: "a replay needs an anchor on this page" });
     if (view.anchor !== undefined && view.anchor !== null && checkedView.anchor === null) dropped.push({ key: "anchor", reason: "the anchor is not on this page" });
     const value = {
-      visualVersion: 2,
+      visualVersion: p.visualVersion,
       kind: "view",
       id: p.id,
       query: { t1: q.t1, t2: q.t2, p1: q.p1, p2: q.p2, tR: q.tR, pR: q.pR },
@@ -15971,6 +16495,7 @@
       models,
       observation: obs === undefined ? null : obs,
     };
+    if (p.visualVersion === 3) value.drawings = drawings;
     return { ok: true, reasons, value, dropped };
   }
 
@@ -16317,6 +16842,169 @@
   // E.candles.Cache: create bounded numerical LRU storage, with the same constructor interface.
   function cndCache() { return new CndCache(); }
   API.candles = Object.freeze({ LIMITS: cndLimits, record: cndRecord, project: cndProject, paint: cndPaint, span: cndSpan, Cache: cndCache });
+
+  // Manual annotations: committed domain values, projected geometry and bounded delta history.
+  // Unlike chart/version 2 state, complete drawing snapshots carry visualVersion 3.
+  const drwLimits = Object.freeze({ objects: 200, history: 100, timeMin: Date.UTC(2009, 0, 1), timeMax: Date.UTC(2100, 0, 1), priceMax: 1000000000 });
+  const drwInstrument = "binance:spot:BTCUSDT";
+  const drwOrdinals = new WeakMap();
+  const drwUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const drwOwn = (x, k) => Object.prototype.hasOwnProperty.call(x, k);
+  const drwObject = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
+  function drwFail(message) { throw new RangeError("Drawings: " + message); }
+  function drwKeys(x, allowed, label) {
+    if (!drwObject(x)) drwFail(label + " must be an object");
+    for (const k of Object.keys(x)) if (!allowed.includes(k)) drwFail(label + " has unsupported field " + k);
+  }
+  function drwName(value) {
+    if (typeof value !== "string") drwFail("name must be plain text");
+    const name = value.trim();
+    if (!name || Array.from(name).length > 80 || /[\u0000-\u001f\u007f-\u009f]/u.test(value)) drwFail("name needs 1–80 characters without controls");
+    for (const c of name) { const cp = c.codePointAt(0); if (cp >= 0xd800 && cp <= 0xdfff) drwFail("name contains an unpaired surrogate"); }
+    return name;
+  }
+  function drwAnchor(raw) {
+    drwKeys(raw, ["timeMs", "priceCents"], "anchor");
+    if (!Number.isSafeInteger(raw.timeMs) || raw.timeMs < drwLimits.timeMin || raw.timeMs > drwLimits.timeMax) drwFail("time must be integer UTC milliseconds between 2009 and 2100");
+    if (!Number.isSafeInteger(raw.priceCents) || raw.priceCents < 0 || raw.priceCents > drwLimits.priceMax) drwFail("price must be integer cents between 0 and 1,000,000,000");
+    return { timeMs: raw.timeMs, priceCents: raw.priceCents };
+  }
+  function drwNormalizeObject(raw) {
+    drwKeys(raw, ["id", "name", "a", "b", "color", "visible", "locked", "ordinal"], "line");
+    if (typeof raw.id !== "string" || !drwUuid.test(raw.id)) drwFail("ID must be a lowercase UUIDv4");
+    if (typeof raw.color !== "string" || !/^#[0-9a-f]{6}$/i.test(raw.color)) drwFail("color must be #RRGGBB without alpha");
+    if (typeof raw.visible !== "boolean" || typeof raw.locked !== "boolean") drwFail("visibility and lock must be true or false");
+    if (!Number.isSafeInteger(raw.ordinal) || raw.ordinal < 0) drwFail("creation ordinal must be a nonnegative safe integer");
+    const a = drwAnchor(raw.a), b = drwAnchor(raw.b);
+    if (a.timeMs === b.timeMs && a.priceCents === b.priceCents) drwFail("Choose a different point");
+    return { id: raw.id, name: drwName(raw.name), a, b, color: raw.color.toLowerCase(), visible: raw.visible, locked: raw.locked, ordinal: raw.ordinal };
+  }
+  function drwEmpty() { return { schemaVersion: 1, instrument: drwInstrument, visible: true, objects: [] }; }
+  function drwNormalizeCollection(raw) {
+    drwKeys(raw, ["schemaVersion", "instrument", "visible", "objects"], "collection");
+    if (raw.schemaVersion !== 1) drwFail("unsupported drawing schema " + String(raw.schemaVersion));
+    if (raw.instrument !== drwInstrument) drwFail("collection belongs to a different instrument");
+    if (typeof raw.visible !== "boolean") drwFail("group visibility must be true or false");
+    if (!Array.isArray(raw.objects)) drwFail("objects must be a list");
+    if (raw.objects.length > drwLimits.objects) drwFail("maximum 200 drawings; no objects were removed");
+    const ids = new Set(), ordinals = new Set(), objects = raw.objects.map(drwNormalizeObject);
+    for (const o of objects) {
+      if (ids.has(o.id)) drwFail("repeated ID " + o.id);
+      if (ordinals.has(o.ordinal)) drwFail("repeated creation ordinal " + o.ordinal);
+      ids.add(o.id); ordinals.add(o.ordinal);
+    }
+    objects.sort((a, b) => a.ordinal - b.ordinal);
+    return { schemaVersion: 1, instrument: drwInstrument, visible: raw.visible, objects };
+  }
+  function drwId() {
+    if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+    if (typeof globalThis.crypto?.getRandomValues !== "function") drwFail("secure IDs are unavailable");
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16)); bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+    const h = Array.from(bytes, (x) => x.toString(16).padStart(2, "0")).join("");
+    return h.slice(0, 8) + "-" + h.slice(8, 12) + "-" + h.slice(12, 16) + "-" + h.slice(16, 20) + "-" + h.slice(20);
+  }
+  function drwNewObject(collection, opts) {
+    const c = drwNormalizeCollection(collection);
+    if (c.objects.length >= drwLimits.objects) drwFail("maximum 200 drawings; delete a line before creating another");
+    const ordinal = Math.max(drwOrdinals.get(collection) || 0, c.objects.reduce((n, o) => Math.max(n, o.ordinal + 1), 0));
+    if (!Number.isSafeInteger(ordinal)) drwFail("creation ordinal exhausted");
+    const o = opts || {};
+    drwOrdinals.set(collection, ordinal + 1);
+    return drwNormalizeObject({ id: o.id === undefined ? drwId() : o.id, name: o.name === undefined ? "Trend line " + (ordinal + 1) : o.name, a: o.a, b: o.b, color: o.color, visible: o.visible === undefined ? true : o.visible, locked: o.locked === undefined ? false : o.locked, ordinal });
+  }
+  function drwDuplicate(collection, id) {
+    const c = drwNormalizeCollection(collection), original = c.objects.find((o) => o.id === id);
+    if (!original) drwFail("line no longer exists");
+    const used = new Set(c.objects.map((o) => o.name)); let name;
+    for (let n = 1; ; n++) {
+      const suffix = " copy " + n; name = Array.from(original.name).slice(0, 80 - suffix.length).join("") + suffix;
+      if (!used.has(name)) break;
+    }
+    return drwNewObject(collection, { name, a: original.a, b: original.b, color: original.color, visible: true, locked: false });
+  }
+  function drwPoint(timeMs, priceUSDT) {
+    if (!Number.isFinite(timeMs) || !Number.isFinite(priceUSDT)) drwFail("coordinates must be finite");
+    return drwAnchor({ timeMs: Math.floor(timeMs + 0.5), priceCents: Math.floor(priceUSDT * 100 + 0.5) });
+  }
+  function drwTranslate(object, deltaTimeMs, deltaPriceUSDT) {
+    const o = drwNormalizeObject(object);
+    if (o.locked) drwFail("Unlock this drawing before moving it");
+    if (!Number.isFinite(deltaTimeMs) || !Number.isFinite(deltaPriceUSDT)) drwFail("movement must be finite");
+    const dt = Math.floor(deltaTimeMs + 0.5), dp = Math.floor(deltaPriceUSDT * 100 + 0.5);
+    return drwNormalizeObject({ ...o, a: { timeMs: o.a.timeMs + dt, priceCents: o.a.priceCents + dp }, b: { timeMs: o.b.timeMs + dt, priceCents: o.b.priceCents + dp } });
+  }
+  function drwParseTime(text) {
+    if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(text)) drwFail("time needs YYYY-MM-DDTHH:mm:ss[.SSS]Z");
+    const ms = Date.parse(text), canonical = text.includes(".") ? text : text.replace("Z", ".000Z");
+    if (!Number.isFinite(ms) || new Date(ms).toISOString() !== canonical) drwFail("time is not a valid UTC date");
+    return drwAnchor({ timeMs: ms, priceCents: 0 }).timeMs;
+  }
+  function drwParsePrice(text) {
+    if (typeof text !== "string" || !/^\d+(?:\.\d{1,2})?$/.test(text)) drwFail("price needs an unsigned decimal with at most two digits after the point");
+    const [whole, fractional = ""] = text.split("."), cents = Number(whole) * 100 + Number(fractional.padEnd(2, "0"));
+    return drwAnchor({ timeMs: drwLimits.timeMin, priceCents: cents }).priceCents;
+  }
+  function drwFormatTime(ms) { return new Date(drwAnchor({ timeMs: ms, priceCents: 0 }).timeMs).toISOString(); }
+  function drwFormatPrice(cents) { return (drwAnchor({ timeMs: drwLimits.timeMin, priceCents: cents }).priceCents / 100).toFixed(2); }
+  // Liang–Barsky clipping is bounded independently of the authored endpoints' distance.
+  function drwClip(a, b, rect) {
+    if (![a?.x, a?.y, b?.x, b?.y, rect?.x, rect?.y, rect?.w, rect?.h].every(Number.isFinite) || rect.w < 0 || rect.h < 0) return null;
+    const dx = b.x - a.x, dy = b.y - a.y; let lo = 0, hi = 1, loEdge = -1, hiEdge = -1;
+    const edges = [[-dx, a.x - rect.x], [dx, rect.x + rect.w - a.x], [-dy, a.y - rect.y], [dy, rect.y + rect.h - a.y]];
+    for (let i = 0; i < edges.length; i++) {
+      const [p, q] = edges[i];
+      if (p === 0) { if (q < 0) return null; }
+      else { const t = q / p; if (p < 0 && t > lo) { lo = t; loEdge = i; } else if (p > 0 && t < hi) { hi = t; hiEdge = i; } if (lo > hi) return null; }
+    }
+    const projected = (t, edge) => {
+      const p = { x: a.x + t * dx, y: a.y + t * dy };
+      // Set the actual clipping boundary exactly, avoiding far-origin cancellation on that axis.
+      if (edge === 0) p.x = rect.x; else if (edge === 1) p.x = rect.x + rect.w;
+      else if (edge === 2) p.y = rect.y; else if (edge === 3) p.y = rect.y + rect.h;
+      return p;
+    };
+    return { a: projected(lo, loEdge), b: projected(hi, hiEdge) };
+  }
+  function drwDistance(point, segment) {
+    const a = segment.a, b = segment.b, dx = b.x - a.x, dy = b.y - a.y, length2 = dx * dx + dy * dy;
+    const t = length2 === 0 ? 0 : Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / length2));
+    return Math.hypot(point.x - a.x - t * dx, point.y - a.y - t * dy);
+  }
+  function drwFreeze(c) { for (const o of c.objects) { Object.freeze(o.a); Object.freeze(o.b); Object.freeze(o); } Object.freeze(c.objects); return Object.freeze(c); }
+  function drwEqual(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function drwCreateStore(initial) {
+    let state = drwFreeze(drwNormalizeCollection(initial === undefined ? drwEmpty() : initial)), revision = 0;
+    const past = [], future = [];
+    let nextOrdinal = state.objects.reduce((n, o) => Math.max(n, o.ordinal + 1), 0);
+    drwOrdinals.set(state, nextOrdinal);
+    const delta = (before, after, label) => {
+      const a = new Map(before.objects.map((o) => [o.id, o])), b = new Map(after.objects.map((o) => [o.id, o])), changes = [];
+      for (const id of new Set([...a.keys(), ...b.keys()])) if (!drwEqual(a.get(id), b.get(id))) changes.push({ id, before: a.get(id) || null, after: b.get(id) || null });
+      return { label, visibleBefore: before.visible, visibleAfter: after.visible, changes };
+    };
+    const apply = (d, direction) => {
+      const objects = new Map(state.objects.map((o) => [o.id, o]));
+      for (const change of d.changes) { const o = change[direction]; if (o) objects.set(change.id, o); else objects.delete(change.id); }
+      state = Object.freeze({ ...state, visible: direction === "before" ? d.visibleBefore : d.visibleAfter, objects: Object.freeze([...objects.values()].sort((a, b) => a.ordinal - b.ordinal)) }); revision++;
+      drwOrdinals.set(state, nextOrdinal);
+    };
+    return Object.freeze({
+      get state() { return state; }, get nextOrdinal() { return nextOrdinal; }, get revision() { return revision; }, get canUndo() { return past.length > 0; }, get canRedo() { return future.length > 0; },
+      get undoLabel() { return past.length ? past[past.length - 1].label : ""; }, get redoLabel() { return future.length ? future[future.length - 1].label : ""; },
+      commit(label, next) {
+        if (typeof label !== "string" || !label.trim()) drwFail("transaction needs a label");
+        const value = drwFreeze(drwNormalizeCollection(next));
+        if (drwEqual(state, value)) return { changed: false, truncated: false, state };
+        const d = delta(state, value, label); past.push(d); const truncated = past.length > drwLimits.history;
+        if (truncated) past.shift(); future.length = 0; state = value; revision++;
+        nextOrdinal = Math.max(nextOrdinal, value.objects.reduce((n, o) => Math.max(n, o.ordinal + 1), 0)); drwOrdinals.set(state, nextOrdinal);
+        return { changed: true, truncated, state };
+      },
+      undo() { if (!past.length) return false; const d = past.pop(); apply(d, "before"); future.push(d); return true; },
+      redo() { if (!future.length) return false; const d = future.pop(); apply(d, "after"); past.push(d); return true; },
+    });
+  }
+  API.drawings = Object.freeze({ LIMITS: drwLimits, INSTRUMENT: drwInstrument, empty: drwEmpty, normalizeCollection: drwNormalizeCollection, normalizeObject: drwNormalizeObject, newObject: drwNewObject, duplicate: drwDuplicate, point: drwPoint, translate: drwTranslate, parseTime: drwParseTime, parsePrice: drwParsePrice, formatTime: drwFormatTime, formatPrice: drwFormatPrice, clip: drwClip, distance: drwDistance, createStore: drwCreateStore });
 
   // == §99-footer ==
   // @part 99-footer
@@ -18772,7 +19460,9 @@
         ctx.globalAlpha = 1;
       }
     }
+    drawingPaint();
     drawResolutionLens(sc);
+    drawingFrameCommit();
     inspectPaint();
     ctx.restore();
     const ro = readouts(cut);
@@ -18902,7 +19592,7 @@
           ? ""
           : S.lens || nav.alt || nav.hold || drag?.lens
             ? "zoom-in"
-            : S.select
+            : S.select || trendTool
               ? "crosshair"
               : drag
                 ? "grabbing"
@@ -19238,6 +19928,7 @@
     S.tB = Math.max(S.tA + 1, CUT + (CUT - S.tA) * 0.105);
   }
   function setWindow(key) {
+    drawingCancelOperation(); drawingKeyContext = false;
     const w = windowOf(key);
     S.window = key;
     S.selection = null;
@@ -19514,23 +20205,37 @@
   // written here; how it is shown is one loop over the codec's table (applyVisual), so a setting added to
   // the table is applied, written and read back by the same entry.
   function applyView(v) {
-    scaleRt.carried = null;
-    if (v.window) setWindow(v.window);
-    else {
-      [S.tA, S.tB, S.pA, S.pB] = [v.tA, v.tB, v.pA, v.pB];
-      S.window = "";
+    const previous = { state: structuredClone(S), carried: scaleRt.carried, local: scaleRt.local,
+      appearance: scaleRt.appearance, hover, transition, activeDrawingId, drawingKeyContext,
+      tipHidden: el("tip").hidden };
+    try {
+      drawingCancelOperation(); activeDrawingId = null; drawingKeyContext = false;
+      scaleRt.carried = null;
+      if (v.window) setWindow(v.window);
+      else {
+        [S.tA, S.tB, S.pA, S.pB] = [v.tA, v.tB, v.pA, v.pB];
+        S.window = "";
+      }
+      S.auto = v.auto;
+      if (!v.auto) { S.n = v.n; S.m = v.m; }
+      for (const k of ["selection", "anchor", "replay"]) S[k] = v[k];
+      // Descriptor-store/axis mutations wait until the checked camera and UI apply successfully.
+      const commitScales = applyVisual(v);
+      hover = null;
+      el("tip").hidden = true;
+      confine();
+      if (S.auto) autoLevel();
+      commitScales?.();
+    } catch (error) {
+      Object.assign(S, previous.state);
+      scaleRt.carried = previous.carried; scaleRt.local = previous.local;
+      if (scaleRt.appearance !== previous.appearance) { scaleRt.appearance = previous.appearance; themeChanged(); }
+      hover = previous.hover; transition = previous.transition;
+      activeDrawingId = previous.activeDrawingId; drawingKeyContext = previous.drawingKeyContext;
+      el("tip").hidden = previous.tipHidden;
+      drawingSyncUI(); requestDraw();
+      throw error;
     }
-    S.auto = v.auto;
-    if (!v.auto) {
-      S.n = v.n;
-      S.m = v.m;
-    }
-    for (const k of ["selection", "anchor", "replay"]) S[k] = v[k];
-    applyVisual(v);
-    hover = null;
-    el("tip").hidden = true;
-    confine();
-    if (S.auto) autoLevel();
   }
   // The Query tab: the six parameters of the rectangle, and what the numbers
   // shown are for them.
@@ -19634,14 +20339,14 @@
         status("The pasted text changed while it was being read. Apply it again.");
         return;
       }
-      if (decoded.kind === "v2") {
+      if (["v2", "v3"].includes(decoded.kind)) {
         const checked = E.codec.validatePortable(decoded.payload, viewEnv());
         if (!checked.ok) {
           status(`The view code was not applied: ${checked.reasons.join("; ")}`);
           postNotice({ code: "import-rejected", params: { reason: checked.reasons.join("; ") } });
           return;
         }
-        applyPortable(checked.value, checked.dropped);
+        await applyPortable(checked.value, checked.dropped);
       } else {
         applyLegacyImport(decoded.payload, decoded.kind === "legacy" ? text : null);
       }
@@ -19652,11 +20357,14 @@
   }
   // A version-2 code's validated pieces, in place at once: the view as the codec checked it (its own
   // window or rectangle, level, selection and replay), then the descriptors and the appearance.
-  function applyPortable(value, dropped) {
+  async function applyPortable(value, dropped) {
     try {
-      applyView(portableView(value, value.id));
+      const view = portableView(value, value.id);
+      if (value.drawings) { if (!await drawingReplace(value.drawings, () => applyView(view))) return; }
+      else applyView(view);
     } catch (error) {
-      el("copy-status").textContent = error.message;
+      el("copy-status").textContent = `The view code was not applied: ${error.reason || error.message}`;
+      postNotice({ code: "import-rejected", params: { reason: error.reason || error.message } });
       return;
     }
     recordView("Restored query");
@@ -20955,7 +21663,7 @@
   // and not for a hidden tip (tooltip always ends by showing it).
   function refreshTip() {
     const tip = el("tip");
-    if (hover && !tip.hidden && last?.sc && scaleRt.tipStamp !== last.sc.stamp) tooltip(hover, { redraw: false });
+    if (hover && !tip.hidden && last?.sc && (scaleRt.tipStamp !== last.sc.stamp || drawingTipRevision !== drawingStore.revision)) tooltip(hover, { redraw: false });
     // The readout key is named on the tip only while the tip shows (the pointer leaving, a pan or a tool hides
     // it without going through tooltip()); the attribute stays, empty, so a reader can always find it.
     if (tip.hidden && tip.dataset.readout) tip.dataset.readout = "";
@@ -20969,6 +21677,7 @@
     // again (refreshTip); a stamp stored only at the end would leave a pointer resting on the price axis,
     // where the tip is hidden at once, looking changed at every frame and drawing forever.
     hover = p;
+    drawingTipRevision = drawingStore.revision;
     scaleRt.tipStamp = last?.sc?.stamp ?? "";
     scaleRt.tipReadout = null;
     const tip = el("tip"),
@@ -20983,7 +21692,8 @@
     let readout = null;
     // A line or its tag under the pointer names the line; a clock line or a
     // CME gap, its event.
-    const hit = inspect.forced === false ? null : (inspect.forced ?? (last && lineHits.length && inPlot(p) ? lineAt(p) : null)),
+    const authored = inspect.forced === null && tool() === "pan" ? drawingHits(p)[0] : null;
+    const hit = inspect.forced === false ? null : (inspect.forced ?? (authored ? { id: "drawing|" + authored.id, drawing: authored.id } : null) ?? (last && lineHits.length && inPlot(p) ? lineAt(p) : null)),
       // a CME gap chosen as a reference is read as the gap it is, with the details of its own
       onGap = hit?.gap ? { gap: hit.gap } : null,
       onLine = onGap ? null : hit,
@@ -21189,7 +21899,7 @@
   // lines, the curves, the clock's kinds and the user's Level. Each entry has what the tooltip's builders take as a hit.
   function inspectReferences() {
     // once for a draw and a state of the lines: it walks the same items the plot is drawn from
-    const key = [last?.sc?.stamp ?? "", S.lines.join(","), S.level, S.tA, S.tB, S.pA, S.pB, S.n, S.m, activeCutoff()].join("|");
+    const key = [last?.sc?.stamp ?? "", S.lines.join(","), S.level, drawingStore.revision, S.tA, S.tB, S.pA, S.pB, S.n, S.m, activeCutoff()].join("|");
     if (inspect.listKey === key) return inspect.list;
     inspect.listKey = key;
     inspect.list = inspectReferencesNow();
@@ -21229,6 +21939,9 @@
         }
     }
     for (const kind of S.lines.filter((k) => CLOCK[k])) out.push({ id: "clock|" + kind, key: kind, name: CLOCK[kind].name, hit: null, at: null, kind: "clock" });
+    if (drawingCollection().visible) for (const object of [...drawingCollection().objects].sort((a, b) => a.ordinal - b.ordinal)) {
+      if (object.visible) out.push({ id: "drawing|" + object.id, key: "drawing", name: object.name, kind: "drawing", at: object.a.priceCents / 100 / PR, hit: { id: "drawing|" + object.id, drawing: object.id } });
+    }
     if (S.level !== null) out.push({ id: "level", key: "level", name: "Level", hit: { key: "level", id: "level", colour: colors.ink }, at: S.level, kind: "level" });
     const order = { profile: 1, session: 2, structure: 3, average: 4, vwap: 5, clock: 6 },
       sorted = out
@@ -21432,7 +22145,8 @@
   }
   function inspectEnter() {
     if (inspect.on) return;
-    inspect.prev = S.lens ? "lens" : S.select ? "select" : "pan";
+    inspect.prev = tool();
+    drawingCancelOperation(); activeDrawingId = null; trendTool = false;
     const lensWas = S.lens || nav.alt || nav.hold;
     inspect.on = true;
     S.select = false;
@@ -21475,6 +22189,7 @@
     el("inspect").hidden = true;
     el("tip").hidden = true;
     hover = null;
+    trendTool = inspect.prev === "trend";
     S.lens = inspect.prev === "lens";
     S.select = inspect.prev === "select";
     update();
@@ -21580,7 +22295,7 @@
     if (open) {
       if (inspect.surface === "references" && inspect.ref && inspect.ref !== "level") {
         const e = inspectEntry();
-        if (e) focusBegin({ key: e.key });
+        if (e) focusBegin(e.kind === "drawing" ? { drawing: e.hit.drawing } : { key: e.key });
       }
       renderInspectDetail();
       el("inspect-detail-close").focus();
@@ -21594,6 +22309,11 @@
     const body = el("inspect-detail-body"),
       readout = el("inspect-readout");
     body.replaceChildren(...[...readout.childNodes].map((n) => n.cloneNode(true)));
+    const entry = inspect.surface === "references" ? inspectEntry() : null;
+    if (entry?.kind === "drawing") {
+      const button = document.createElement("button"); button.type = "button"; button.textContent = "Edit drawing";
+      button.addEventListener("click", () => drawingEdit(entry.hit.drawing, "inspect")); body.append(button);
+    }
     el("inspect-detail-title").textContent = el("inspect-position").textContent;
   }
   // The cursor's mark on the plot: the strongest persistent mark of the interaction table, on the item it reads.
@@ -21635,7 +22355,7 @@
   // A draw that changed what the cursor stands on (the view, the level, the data) reads it again, so a pan or a refresh never leaves a stale readout.
   function inspectSync() {
     if (!inspect.on) return;
-    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", S.mode === "candles" ? [candleVersion, motion.failed.size, candleEdge(), PACK.state_token].join(":") : "", inspectReferences().length, nav.shift].join("|");
+    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", S.mode === "candles" ? [candleVersion, motion.failed.size, candleEdge(), PACK.state_token].join(":") : "", inspectReferences().length, drawingStore.revision, nav.shift].join("|");
     if (sig === inspect.sig) return;
     inspect.sig = sig;
     inspectRender(false, false);
@@ -21687,11 +22407,12 @@
       const y = G.Y(S.level);
       if (Math.abs(y - p.y) <= INSPECT_REACH && inPlot({ x: p.x, y })) add("level");
     }
+    for (const object of drawingCollection().objects) if (drawingStatus(object.id) === "Shown" && E.drawings.distance(p, drawingGeometry(object)) <= INSPECT_REACH) add("drawing|" + object.id);
     return [...found.values()];
   }
   function inspectChoose(list, p) {
     // where the finger was: a reference chosen from the list is read at that time and price, not at the previous cursor's
-    inspect.tapped = p ? { t: p.t, p: p.p } : null;
+    inspect.tapped = p ? { t: p.t, p: p.p, lens: drawingLensOwns(p) ? inspect.lens : null } : null;
     const box = el("inspect-chooser");
     box.replaceChildren(
       Object.assign(document.createElement("div"), { className: "ol-inspect-chooser-head", textContent: `${list.length} references here: choose one` }),
@@ -21709,9 +22430,20 @@
     el("inspect-live").textContent = `${list.length} references here: choose one`;
   }
   function inspectTap(p, touch = false) {
-    const hit = last && lineHits.length && inPlot(p) ? lineAt(p) : null,
-      f = lensShown() ? lensFrame() : null;
+    const authored = drawingHits(p, touch ? "touch" : "mouse", true)[0];
+    const hit = authored ? { id: "drawing|" + authored.id } : last && lineHits.length && inPlot(p) ? lineAt(p) : null,
+      f = lensShown() ? lensFrame() : null,
+      inLens = f && p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + f.h;
     el("inspect-chooser").hidden = true;
+    // Authored ink remains readable through Lens. Its market surface still has its own tab.
+    // Reference-only mouse/touch behavior stays on the existing route.
+    if (authored) {
+      const near = inspectNear(p).filter((entry) => !inLens || entry.kind === "drawing");
+      if (near.length > 1) return inspectChoose(near, p);
+      inspect.t = p.t; inspect.p = p.p; inspect.surface = "references";
+      inspect.ref = hit.id; if (!inLens) inspect.lens = null;
+      inspect.boundary = ""; return inspectRender(true);
+    }
     if (touch && !f) {
       const near = inspectNear(p);
       if (near.length > 1) return inspectChoose(near, p);
@@ -21820,14 +22552,15 @@
       const b = e.target.closest("[data-ref]");
       if (!b) return;
       el("inspect-chooser").hidden = true;
-      if (inspect.tapped) {
-        inspect.t = inspect.tapped.t;
-        inspect.p = inspect.tapped.p;
+      const tapped = inspect.tapped;
+      if (tapped) {
+        inspect.t = tapped.t;
+        inspect.p = tapped.p;
         inspect.tapped = null;
       }
       inspect.surface = "references";
       inspect.ref = b.dataset.ref;
-      inspect.lens = null;
+      inspect.lens = b.dataset.ref.startsWith("drawing|") ? tapped?.lens || null : null;
       inspect.boundary = "";
       inspectRender(true);
       el("inspect").focus();
@@ -21898,6 +22631,7 @@
     }
     renderRows();
     renderLines();
+    drawingSyncUI();
     for (const f of ["poc", "area", "untested"]) el(f).checked = S[f];
     el("key-poc").hidden = el("key-bpoc").hidden = !S.poc;
     el("key-area").hidden = !S.area;
@@ -22060,10 +22794,11 @@
           : "free";
   }
   function tool() {
-    return inspect.on ? "inspect" : S.lens ? "lens" : S.select ? "select" : "pan";
+    return inspect.on ? "inspect" : trendTool ? "trend" : S.lens ? "lens" : S.select ? "select" : "pan";
   }
   // How the price range follows a time zoom: one of four, never two at once.
   function setFollow(mode) {
+    drawingCancelOperation(); drawingKeyContext = false;
     const was = followMode();
     if (mode === was) return;
     S.refit = mode === "refit";
@@ -22093,10 +22828,21 @@
   // A tool stays chosen until another is: Select for as many rectangles as
   // wanted, the lens until it is left.
   function setTool(next) {
+    const previous = tool();
+    drawingCancelOperation();
+    drawingKeyContext = false;
+    if (next === "trend") {
+      if (!trendTool) drawingEntryTool = previous;
+      if (inspect.on) { inspect.prev = "pan"; inspectExit(); }
+      trendTool = true; S.select = S.lens = false;
+      hover = null; el("tip").hidden = true; update(); return;
+    }
+    if (["select", "lens", "inspect"].includes(next)) activeDrawingId = null;
     if (next === "inspect") {
       inspectEnter();
       return;
     }
+    trendTool = false;
     // choosing another tool leaves Inspect for that one
     if (inspect.on) {
       inspect.prev = next;
@@ -29623,6 +30369,11 @@
       });
       if (rects.length) candidates.push({ id: "clock|" + kind, hot: refHot(kind, "clock|" + kind), rank: 7, rects });
     }
+    const manual = drawingCandidates();
+    if (manual.length) {
+      for (const candidate of candidates) candidate.priority = candidate.id === "level" ? 0 : candidate.hot ? 2 : 5;
+      candidates.push(...manual);
+    }
     // The planner is the module's (E.role.occlusion): the grid, the order, the focused mark that is never thinned. It is run until the references
     // it keeps and the places their tags are laid out in agree (at most four times), the tags of the fixed ones and the notice that says something
     // was held back being claimed first: every persistent plate is inside the budget it reports on.
@@ -29650,7 +30401,7 @@
       }
       const placed = candidates.map((c) => {
         const at = c.tag ? (pos.has(c.id) ? pos.get(c.id) : tagLayout([...specs, { id: c.id, y: c.tag.y, w: c.tag.w }]).get(c.id)) : null;
-        return { id: c.id, hot: c.hot, rank: c.rank, rects: at ? [...c.rects, plate(at, c.tag)] : c.rects };
+        return { id: c.id, hot: c.hot, rank: c.rank, priority: c.priority, strokes: c.strokes, rects: at ? [...c.rects, plate(at, c.tag)] : c.rects };
       });
       const next = E.role.occlusion([...reserved, ...placed], plot, opts);
       for (const r of reserved) next.off.delete(r.id);
@@ -30079,6 +30830,16 @@
   }
   const SIDE_NAMES = { VAH: "value area high", VAL: "value area low", POC: "POC" };
   function lineTip(tip, h) {
+    if (h.drawing) {
+      const object = drawingById(h.drawing);
+      if (!object) { tip.hidden = true; return; }
+      tipRows(tip, object.name, "Your drawing · manual analysis", [
+        ["A · UTC", E.drawings.formatTime(object.a.timeMs)], ["A · USDT", E.drawings.formatPrice(object.a.priceCents)],
+        ["B · UTC", E.drawings.formatTime(object.b.timeMs)], ["B · USDT", E.drawings.formatPrice(object.b.priceCents)],
+        ["Color", object.color], ["Status", drawingStatus(object.id)], ["Locked", object.locked ? "yes" : "no"],
+      ], "User drawings may include later analysis; these endpoints are authored, not measured.");
+      return;
+    }
     if (h.key === "level") {
       tipRows(tip, "Level line", `${price(S.level * PR)} USDT`, [], nav.touchTip ? "" : "X clears it");
       if (nav.touchTip) tip.append(levelButton(Math.floor(S.level / stepP())));
@@ -30503,6 +31264,7 @@
   // The bar's button on every update; the popover only while it is open,
   // and in full as it opens.
   function renderLines() {
+    drawingMenuSection(el("lines-pop"));
     renderLinesButton();
     if (el("lines-pop").hidden) return;
     const on = new Set(S.lines),
@@ -30665,11 +31427,12 @@
   // wider and are never the ones the 20% budget leaves out. It does not enable or disable anything, does not recolour or fade any other
   // mark, and is kept nowhere: not in the address, not in a saved view, not in storage. "Show all" ends it. A detail that is opened for a
   // reference (the Inspect navigator's) takes the focus for as long as it is open and gives the previous focus back when it closes.
-  const focus = { key: null, family: null, saved: null };
+  const focus = { key: null, family: null, drawing: null, saved: null };
   const focusOn = (key) => (key === "level" ? S.level !== null : S.lines.includes(key));
   const focusFamilyOn = (id) => S.lines.some((k) => familyOf(k) === id);
   const refHot = (key, id) => hover?.line === id || (focus.key !== null && key === focus.key) || (focus.family !== null && familyOf(key) === focus.family);
   function focusName() {
+    if (focus.drawing !== null) return drawingById(focus.drawing)?.name || "Drawing";
     if (focus.key !== null) return focus.key === "level" ? "Level" : TOGGLES[focus.key]?.name || lineName(focus.key);
     return focus.family !== null ? FAMILIES.find((f) => f.id === focus.family).name : "";
   }
@@ -30681,26 +31444,27 @@
   function focusKey(key) {
     if (!focusOn(key)) return;
     focus.key = focus.key === key ? null : key;
-    focus.family = null;
+    focus.family = focus.drawing = null;
     focus.saved = null;
     focusChanged();
   }
   function focusFamily(id) {
     if (!focusFamilyOn(id)) return;
     focus.family = focus.family === id ? null : id;
-    focus.key = null;
+    focus.key = focus.drawing = null;
     focus.saved = null;
     focusChanged();
   }
   // Show all: the focus ends, and everything that is enabled is drawn by the budget's own order again.
   function focusClear() {
-    if (focus.key === null && focus.family === null && focus.saved === null) return;
-    focus.key = focus.family = focus.saved = null;
+    if (focus.key === null && focus.family === null && focus.drawing === null && focus.saved === null) return;
+    focus.key = focus.family = focus.drawing = focus.saved = null;
     focusChanged();
   }
   // A detail takes the focus (a reference key or a family) and, when it closes, the previous focus is restored.
   function focusBegin(spec) {
-    if (focus.saved === null) focus.saved = { key: focus.key, family: focus.family };
+    if (focus.saved === null) focus.saved = { key: focus.key, family: focus.family, drawing: focus.drawing };
+    focus.drawing = spec.drawing ?? null;
     focus.key = spec.key ?? null;
     focus.family = spec.family ?? null;
     focusChanged();
@@ -30709,13 +31473,15 @@
     if (focus.saved === null) return;
     focus.key = focus.saved.key;
     focus.family = focus.saved.family;
+    focus.drawing = focus.saved.drawing;
     focus.saved = null;
     focusChanged();
   }
   // A focus on something that is no longer on ends with it.
   function focusValidate() {
+    if (focus.drawing !== null && (!drawingCollection().visible || !drawingById(focus.drawing)?.visible)) { focus.drawing = null; renderFocus(); }
     if ((focus.key !== null && !focusOn(focus.key)) || (focus.family !== null && !focusFamilyOn(focus.family))) {
-      focus.key = focus.family = focus.saved = null;
+      focus.key = focus.family = focus.drawing = focus.saved = null;
       renderFocus();
     }
   }
@@ -30746,7 +31512,7 @@
     return b;
   }
   function renderFocus() {
-    const on = focus.key !== null || focus.family !== null,
+    const on = focus.key !== null || focus.family !== null || focus.drawing !== null,
       chip = el("focus-chip"),
       text = on ? `Focus: ${focusName()} · Show all` : "";
     if (chip.hidden === on) chip.hidden = !on;
@@ -30930,7 +31696,9 @@
       renderLines();
       // Into the list: the first line on in an open family, or else the first
       // family's head.
-      (root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:checked") ||
+      (root.querySelector(`[data-drawing-row="${activeDrawingId}"] [data-drawing-action="edit"]`) ||
+        (drawingCollection().objects.length && root.querySelector("[data-drawing-row] [data-drawing-action=edit]")) ||
+        root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:checked") ||
         root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:not(:disabled)") ||
         el("family-profile-head"))?.focus();
     });
@@ -33657,10 +34425,8 @@
   // Named views, kept by this browser for every tab. A view saved while it
   // shows the cutoff is live: it opens on the latest data with the same span
   // and fits the price range again, as the price has moved since.
-  // `foreign` holds what this page cannot show but must not lose: an entry a newer build stamped with
-  // another visual version, and any entry that is not a view at all. A list rewrite puts them back as they
-  // were, so a view made by another version survives this page's saves and deletes (and the list is never
-  // shortened by anything but the person deleting a view).
+  // The protected registry is authoritative after its first write. Legacy entries migrate together in
+  // their original order; legacy/foreign storage remains verbatim for preceding builds.
   const views = { list: [], foreign: [], undo: null };
   function loadViews() {
     let list = null;
@@ -33682,9 +34448,13 @@
       x &&
       typeof x.name === "string" &&
       typeof x.hash === "string" &&
-      [x.span, x.lead, x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite) &&
+      [x.span, x.lead, x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite) && x.span > 0 &&
+      (x.live === undefined || typeof x.live === "boolean") && (x.auto === undefined || typeof x.auto === "boolean") &&
       (x.visualVersion === undefined || x.visualVersion === 2);
-    views.list = Array.isArray(list) ? list.filter(usable) : [];
+    const protectedSnapshot = window.explorerState?.namedViews({ snapshot: true });
+    if (protectedSnapshot && !["ok", "absent"].includes(protectedSnapshot.status))
+      postNotice({ code: "import-rejected", key: "protected-views:" + protectedSnapshot.status, text: `Saved complete Views could not be read and remain preserved: ${protectedSnapshot.reason}` });
+    views.list = protectedSnapshot ? protectedSnapshot.entries : (Array.isArray(list) ? list.filter(usable) : []);
     views.foreign = Array.isArray(list) ? list.filter((x) => !usable(x)) : [];
   }
   // Every write is the whole list as it was read (plus the change), so two tabs saving at once both keep
@@ -33692,7 +34462,8 @@
   // here, and the list on the page stays as it is: nothing is dropped to make room.
   function storeViews() {
     try {
-      window.explorerState.saveViews([...views.list, ...views.foreign]);
+      const protectedResult = window.explorerState.saveNamedViews(views.list);
+      if (!protectedResult.ok) throw new Error(protectedResult.reason);
       return true;
     } catch (error) {
       viewsStatus("This browser's storage is unavailable, so views can't be saved.");
@@ -33708,41 +34479,25 @@
         ? `Last ${dur((CUT - S.tA) * BASE)}`
         : listRange(S.tA, Math.min(S.tB, CUT));
   }
-  // Every change starts from the list as stored, so two tabs saving at once
-  // both keep their views. A view is stamped with the visual version it was made under and carries its
-  // address; when that address had to be made shorter (scale ids only, or no scales) the full view code is
-  // kept beside it, unless it is larger than a browser's storage should be asked to hold for one view
-  // (then the view keeps the address and the banner says the code must be copied separately).
+  // Save the complete snapshot and its camera metadata from one instant, before compression awaits.
+  // The protected registry writes one verified pointer, with no shortened-code fallback.
   async function saveView(name) {
     name = name.trim().slice(0, 80);
     if (!name) {
       viewsStatus("Name the view to save it.");
       return;
     }
-    const view = {
-        name,
-        live: !S.window && atCutoff(),
-        span: S.tB - S.tA,
-        lead: S.tB - CUT,
-        auto: S.auto,
-        mode: S.mode,
-        pane: S.pane,
-        rows: S.rows,
-        period: S.period,
-        ...summary(),
-        visualVersion: 2,
-      },
-      level = addr.level;
-    if (level > 0) {
-      let code = null;
-      try {
-        code = await viewCode();
-      } catch {
-        // The code could not be made; the view keeps its address alone.
-      }
-      if (code !== null && code.length <= NAMED_CODE_MAX) view.code = code;
-      else postNotice({ code: "code-not-stored" });
-    }
+    const snapshot = {
+      name, live: !S.window && atCutoff(), span: S.tB - S.tA, lead: S.tB - CUT,
+      auto: S.auto, mode: S.mode, pane: S.pane, rows: S.rows, period: S.period,
+      ...summary(), visualVersion: 3,
+    }, payload = portablePayload();
+    let complete;
+    try {
+      const code = await E.codec.encodePortable(payload, typeof CompressionStream === "function" ? { deflate: deflateGzip } : {});
+      complete = (await E.codec.decodePortable(code, { inflate: inflateBounded })).payload;
+    } catch (error) { viewsStatus(`View not saved: ${error.reason || error.message}`); return; }
+    const view = { ...snapshot, payload: complete };
     loadViews();
     const i = views.list.findIndex((x) => x.name === name),
       replaced = i >= 0 ? views.list[i] : null;
@@ -33761,24 +34516,40 @@
   // rewritten: the stored entry stays as it was until the person saves the view again.
   async function openView(x) {
     let view = null;
-    if (typeof x.code === "string") {
+    if (x.visualVersion === 3) {
+      const checked = E.codec.validatePortable(x.payload, viewEnv());
+      if (!checked.ok) { postNotice({ code: "import-rejected", params: { reason: checked.reasons.join("; ") } }); return; }
+      view = portableView(checked.value, x.name);
+    }
+    if (!view && typeof x.code === "string") {
       try {
         view = await viewOfCode(x.code);
       } catch (error) {
         postNotice({ code: "import-rejected", params: { reason: error.reason ?? error.message } });
       }
     }
+    if (!view && typeof x.code === "string") return;
     view ??= readView(x.hash);
     if (!view) return;
     if (x.visualVersion === undefined) view.text = x.name + "\n" + x.hash;
     if (x.live && !view.window) {
       view.tB = CUT + x.lead;
       view.tA = view.tB - x.span;
+      if (![view.tA, view.tB].every(Number.isFinite) || !checkView(view)) {
+        postNotice({ code: "import-rejected", params: { reason: "Invalid saved live-view camera" } }); return;
+      }
     }
-    transition = reduce
-      ? null
-      : { n: renderN(), m: renderM(), start: performance.now() };
-    applyView(view);
+    try {
+      const apply = () => {
+        const priorTransition = transition;
+        transition = reduce ? null : { n: renderN(), m: renderM(), start: performance.now() };
+        try { applyView(view); } catch (error) { transition = priorTransition; throw error; }
+      };
+      if (view.drawings) { if (!await drawingReplace(view.drawings, apply)) return; }
+      else apply();
+    } catch (error) {
+      postNotice({ code: "import-rejected", params: { reason: error.reason || error.message } }); return;
+    }
     reportView(view);
     if (x.live) {
       fit();
@@ -33808,8 +34579,9 @@
     // A view saved under the same name since then stays.
     if (!views.list.some((x) => x.name === view.name))
       views.list.splice(Math.min(index, views.list.length), 0, view);
-    views.undo = null;
-    if (storeViews()) viewsStatus(`Restored “${view.name}”.`);
+    const previous = views.list.filter((x) => x !== view), undo = views.undo;
+    if (storeViews()) { views.undo = null; viewsStatus(`Restored “${view.name}”.`); }
+    else { views.list = previous; views.undo = undo; viewsStatus("The view could not be restored. Retry Undo.", true); }
     renderViews();
   }
   function viewsStatus(text, undo = false) {
@@ -33846,19 +34618,15 @@
   // ---- Persistence of the visual state (PRD-0002 S1, D9) ----
   // How the view is shown (the scale preferences, the active mappings, the appearance) travels in the
   // address, the stored last view, the tab's history, the named views and the portable view code, always
-  // marked visual version 2. The codec (E.codec) owns every format and every limit; this block is the
+  // marked version 2 for addresses/calibration and version 3 for complete codes. The codec (E.codec) owns every format and every limit; this block is the
   // page's side of it: what the state says, what a payload is allowed to change, what the person is told
   // when a write fails or a payload is refused, and the browser-wide cache of the live calibrations.
   // Nothing here refits, truncates or silently replaces anything: a payload this page cannot use is
   // reported and left where it is.
   //
-  // The most a named view keeps of its full view code (characters). A longer code is not stored with the
-  // view (the address is; the banner says the code must be copied separately), because one view should
-  // not be what fills a browser's storage.
-  const NAMED_CODE_MAX = 64 * 1024,
-    // A calibration commit or a policy action writes the address and the cache once it has settled, not
-    // once per change: Auto may commit twice a second and a write rewrites history and storage.
-    PERSIST_MS = 250,
+  // A calibration commit or a policy action writes the address and the cache once it has settled, not
+  // once per change: Auto may commit twice a second and a write rewrites history and storage.
+  const PERSIST_MS = 250,
     // The names of the address ladder, index = level (E.text.address.level has their words).
     LADDER = ["exact", "ids", "settings", "refused"],
     // The one-letter policy codes of the address grammar, by the store's policy words.
@@ -34165,8 +34933,8 @@
       themeChanged();
     } else postNotice({ code: "appearance-mismatch", params: { ap, current: running } });
   }
-  // The mapping records of a view in place: the preferences and the descriptors are replaced TOGETHER by
-  // what the view carries, so a link without a lock does not keep this tab's lock. A record that is only an
+  // Prepare a view's mapping records; publish store/axis changes after its camera applies successfully.
+  // Preferences and descriptors come from the view, so a link without a lock does not keep this tab's lock. A record that is only an
   // id is found in the live cache or left out; what cannot be placed is listed and the rest is applied.
   // Nothing is refitted: a context with no record fits afresh once the view settles.
   function adoptScales(v) {
@@ -34209,24 +34977,27 @@
     // What is protected from eviction while these are committed: the context in view and every held one.
     const cells = cellsContext(),
       keep = () => [...(cells ? [E.context.keyString(cells)] : []), ...Object.values(out.scale.held).map((r) => r.key)];
-    for (const { workspace, record } of out.commits) {
-      // The mapping the view carries is the active one, not a newer fit this tab made for the same context.
-      store.remove(workspace, record.key);
-      store.commit(workspace, record, keep);
-    }
-    for (const axis of scaleRt.axes.list(ws))
-      if (axis.policy === "frozen") scaleRt.axes.unfreeze(axis.id, { workspace: ws });
-    for (const axis of out.frozen) {
-      try {
-        scaleRt.axes.freeze(axis.id, { workspace: ws, domain: axis.domain, through: axis.through });
-      } catch (error) {
-        dropped.push({ chan: "a." + axis.id, reason: error.message });
+    const commit = () => {
+      for (const { workspace, record } of out.commits) {
+        // The mapping the view carries is the active one, not a newer fit this tab made for the same context.
+        store.remove(workspace, record.key);
+        store.commit(workspace, record, keep);
       }
-    }
+      for (const axis of scaleRt.axes.list(ws))
+        if (axis.policy === "frozen") scaleRt.axes.unfreeze(axis.id, { workspace: ws });
+      for (const axis of out.frozen) {
+        try {
+          scaleRt.axes.freeze(axis.id, { workspace: ws, domain: axis.domain, through: axis.through });
+        } catch (error) {
+          dropped.push({ chan: "a." + axis.id, reason: error.message });
+        }
+      }
+      dropped.push(...out.dropped);
+      if (dropped.length)
+        postNotice({ code: "scale-dropped", details: dropped.map((d) => `${d.chan}: ${d.reason}`) });
+    };
     scaleRt.local = out.lens;
-    dropped.push(...out.dropped);
-    if (dropped.length)
-      postNotice({ code: "scale-dropped", details: dropped.map((d) => `${d.chan}: ${d.reason}`) });
+    return commit;
   }
   // A view's visual fields in place, by the codec's table: the settings one by one, the scale preferences
   // and descriptors as a whole when the view carries descriptors (`records`, even an empty list), else the
@@ -34242,7 +35013,8 @@
           S.diagonal = v.follow === "diagonal";
         } else if (!path.startsWith("scale.")) S[path] = v[path];
       }
-    if (Array.isArray(v.records)) adoptScales(v);
+    let commitScales = null;
+    if (Array.isArray(v.records)) commitScales = adoptScales(v);
     else {
       const next = E.policy.sanitize(v.scale),
         scale = { ...S.scale };
@@ -34250,6 +35022,7 @@
       S.scale = scale;
     }
     if (v.appearance) applyAppearance(v.appearance);
+    return commitScales;
   }
 
   // ---- storage: the last persist, the cache ----
@@ -34352,8 +35125,9 @@
       cutMs = E.time.baseToMs(activeCutoff(), T0, BASE),
       visual = visualOf();
     return {
-      visualVersion: 2,
+      visualVersion: 3,
       kind: "view",
+      drawings: structuredClone(drawingCollection()),
       query: { t1: b[0], t2: b[1], p1: b[2], p2: b[3], tR: Math.round(S.n), pR: Math.round(S.m) },
       view: {
         // every field of the codec's table; `scale` is the ten raw preferences and nothing of the runtime state
@@ -34381,8 +35155,8 @@
       },
     };
   }
-  // The view code of the view as shown now: gzip and base64url behind origo-cube:2. (uncompressed behind
-  // origo-cube:2j. where the browser cannot compress). It throws, naming the reason, when the view cannot
+  // The view code of the view as shown now: gzip and base64url behind origo-cube:3. (uncompressed behind
+  // origo-cube:3j. where the browser cannot compress). It throws, naming the reason, when the view cannot
   // be written within the limits: nothing is shortened to make it fit.
   async function viewCode() {
     return E.codec.encodePortable(portablePayload(), typeof CompressionStream === "function" ? { deflate: deflateGzip } : {});
@@ -34391,7 +35165,7 @@
   // kept its code opens from it). It throws the codec's error, with a `reason`, when the code is refused.
   async function viewOfCode(code) {
     const decoded = await E.codec.decodePortable(code, { inflate: inflateBounded });
-    if (decoded.kind !== "v2") throw Object.assign(new Error("not a version-2 view code"), { reason: "not a version-2 view code" });
+    if (!["v2", "v3"].includes(decoded.kind)) throw Object.assign(new Error("not a supported complete view code"), { reason: "not a supported complete view code" });
     const checked = E.codec.validatePortable(decoded.payload, viewEnv());
     if (!checked.ok) throw Object.assign(new Error(checked.reasons.join("; ")), { reason: checked.reasons.join("; ") });
     return portableView(checked.value, code);
@@ -34399,7 +35173,8 @@
   function portableView(value, text) {
     return {
       ...value.view,
-      kind: "v2",
+      kind: value.visualVersion === 3 ? "v3" : "v2",
+      ...(value.drawings ? { drawings: value.drawings } : {}),
       records: value.scales,
       axes: value.axes.filter((a) => a.policy === "frozen"),
       appearance: value.appearance,
@@ -34468,7 +35243,9 @@
     const model = modelStatusLine("diagonal", S.n);
     nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)${model ? ` · ${model}` : ""}`;
     if (!nav.planeHover) setPlaneStatus(nav.planeStatus);
-    const gesture = S.lens
+    const gesture = trendTool
+      ? "Place A and B, or drag · G: previous tool · Esc: cancel · Keep drawing repeats"
+      : S.lens
       ? "Move to inspect · Enter: pin the lens view · Shift+L: depth · V: pan"
       : S.select
         ? "Drag a rectangle to measure it · click to clear it · Esc: back to pan"
@@ -34499,6 +35276,8 @@
   // zoom gesture ends (see endZoom). With Shift it zooms the price range (and
   // time too when coupled); from the price axis, the price range alone.
   function zoomNavigation(k, p, priceOnly = false, priceAlone = false) {
+    if (drawingDrag) drawingCancelOperation();
+    drawingKeyContext = false;
     const tspan = S.tB - S.tA,
       pspan = S.pB - S.pA;
     if (!priceAlone && (!priceOnly || S.coupled)) {
@@ -34988,6 +35767,7 @@
     return { p, w, h, x, y, ta, tb, tbRaw, pa, pb, depth, src, n, m };
   }
   function pinLens() {
+    drawingCancelOperation(); drawingKeyContext = false;
     const f = lensFrame();
     if (!f || !f.src) return false;
     // Pin promotes the lens's region and level to the chart, so the Cells and Rows contexts may change: say
@@ -35114,6 +35894,7 @@
         sub = "Finer coverage ends inside lens";
       }
     }
+    drawingPaint({ x, y, w, h });
     ctx.restore();
     // The lens is a region replacement, named as one: a solid two-tone frame (1.5 ink in a 3.5 casing) and, under it, its
     // caption. It lies inside the heatmap and never over the external Rows strip.
@@ -35240,11 +36021,12 @@
       canvas.setPointerCapture(e.pointerId);
       nav.pointers.set(e.pointerId, p);
       nav.last = p;
-      nav.alt = e.altKey;
+      nav.alt = !drawingDrag && e.altKey;
       el("tip").hidden = true;
       nav.touchTip = false;
       noteGesture();
       if (nav.pointers.size === 2) {
+        drawingCancelOperation(); drawingCancelledPointers.clear();
         clearTimeout(nav.holdTimer);
         nav.hold = false;
         const [a, b] = [...nav.pointers.values()],
@@ -35261,7 +36043,11 @@
         drag = null;
         return;
       }
+      if (drawingPointerDown(e, p)) { setCursor(p); return; }
+      const manualHits = tool() === "pan" && !e.altKey ? drawingHits(p, e.pointerType) : [];
       drag = {
+        drawingHits: manualHits,
+        drawingBlankActive: tool() === "pan" && !manualHits.length && Boolean(activeDrawingId),
         start: p,
         view: [S.tA, S.tB, S.pA, S.pB],
         moved: false,
@@ -35271,7 +36057,7 @@
         axis: axis ? { price: clamp(p.p, S.pA, S.pB), y: p.y } : null,
       };
       setCursor(p);
-      if (e.pointerType === "touch" && !axis)
+      if (e.pointerType === "touch" && !axis && !manualHits.length)
         nav.holdTimer = setTimeout(() => {
           if (drag && !drag.moved) {
             nav.hold = true;
@@ -35286,7 +36072,7 @@
       const p = at(e);
       nav.last = p;
       if (e.pointerType !== "touch") nav.touchTip = false;
-      nav.alt = e.altKey;
+      nav.alt = !drawingDrag && e.altKey;
       setCursor(p);
       if (nav.pointers.has(e.pointerId)) nav.pointers.set(e.pointerId, p);
       if (nav.pinch && nav.pointers.size >= 2) {
@@ -35310,6 +36096,7 @@
         noteGesture();
         return;
       }
+      if (drawingPointerMove(e, p)) { noteGesture(); return; }
       if (drag?.axis) {
         // Only up and down scale: a drag sideways changes nothing.
         if (Math.abs(p.y - drag.start.y) > 4) drag.moved = true;
@@ -35374,6 +36161,11 @@
       noteGesture();
     });
     const finishPointer = (e) => {
+      if (drawingPointerUp(e, at(e))) {
+        nav.alt = Boolean(e.altKey);
+        if (nav.alt) { requestDraw(); scheduleCube(); }
+        noteGesture(); return;
+      }
       clearTimeout(nav.holdTimer);
       nav.pointers.delete(e.pointerId);
       if (nav.pinch) {
@@ -35405,6 +36197,16 @@
         // column clicked, for the continuations.
         cleared = click && S.select && S.selection !== null;
       // A tap with Inspect is a reading and nothing else: no anchor, no selection, no evidence tab, no replay edge, no history entry
+      if (click && drag.drawingHits?.length) {
+        drawingAnchorTime = p.t;
+        if (drag.drawingHits.length > 1) drawingChooser(drag.drawingHits, p.t, canvas);
+        else drawingActivate(drag.drawingHits[0].id, p.t);
+        drag = null; nav.hold = false; setCursor(p); update(); return;
+      }
+      if (click && drag.drawingBlankActive) {
+        drawingActivate(null); drag = null; nav.hold = false; setCursor(p); update(); return;
+      }
+      drawingKeyContext = false;
       if (click && inspect.on) inspectTap(p, e.pointerType === "touch");
       else if (click && S.select) S.selection = null;
       else if (click && inPlot(p) && p.t < activeCutoff()) {
@@ -35458,7 +36260,9 @@
       },
       true,
     );
+    canvas.addEventListener("lostpointercapture", (e) => { if (drawingDrag?.pointerId === e.pointerId) drawingCancelOperation(); });
     canvas.addEventListener("pointercancel", (e) => {
+      drawingCancelOperation();
       // A cancelled pinch or price scale has already moved the view: it ends as
       // a lifted one.
       if (nav.pinch || drag?.axis) return finish(e);
@@ -35528,6 +36332,11 @@
     );
     canvas.addEventListener("dblclick", (e) => {
       if (!ready) return;
+      if (trendTool || performance.now() - drawingLastCreate < 350) { e.preventDefault(); return; }
+      if (tool() === "pan") {
+        const hits = drawingHits(at(e), e.pointerType);
+        if (hits.length) { drawingEdit(hits[0].id, "chart"); e.preventDefault(); return; }
+      }
       const p = at(e);
       if (!inPlot(p)) return;
       if (e.shiftKey) priceByHand();
@@ -35554,6 +36363,8 @@
           Boolean(bracket) ||
           e.key.startsWith("Arrow") ||
           ["+", "=", "-", "_", ",", "."].includes(e.key);
+      if (ready && drawingKey(e, target)) { e.preventDefault(); nav.pressed.add(id); return; }
+      if (drawingDialogOpen()) return;
       // A held key repeats only steps: the arrows, zoom, levels and the anchor.
       // Any other key the chart took acts once a press, whatever is pressed or
       // focused while it is held: a held toggle doesn't flicker, a held Space
@@ -35575,6 +36386,7 @@
       )
         return;
       if (e.key === "Alt") {
+        if (drawingDrag) { nav.alt = false; e.preventDefault(); return; }
         nav.alt = true;
         el("tip").hidden = true;
         setCursor();
@@ -35695,7 +36507,7 @@
       else if (
         k === " " &&
         S.replay &&
-        !target?.closest("button, a, summary, [role=tab], [role=separator]")
+        !target?.closest("button, input, label, a, summary, [role=tab], [role=separator]")
       )
         setPlaying(!player.timer);
       else if (k === "c") {
@@ -35711,6 +36523,8 @@
       else if (k === "h") el("hist").click();
       else if (k === "w") openMenu("window");
       else return;
+      drawingKeyContext = false;
+      if (drawingDrag) drawingCancelOperation();
       e.preventDefault();
       nav.pressed.add(id);
     });
@@ -35732,6 +36546,7 @@
       }
     });
     window.addEventListener("blur", () => {
+      drawingCancelOperation();
       // Losing focus lets go of every key and pointer, and ends a zoom gesture
       // or a price scale under the name of the input it cut short.
       const label = nav.pinch ? "Pinch" : nav.zoomKeys.size ? "Zoom" : "",
@@ -35756,6 +36571,7 @@
 
   // Commands shared by the controls and their keys.
   function chooseWindow(w) {
+    drawingCancelOperation(); drawingKeyContext = false;
     if (pop.open?.panel === el("window-menu")) closePop(true);
     setWindow(w);
     recordView("Window");
@@ -35763,6 +36579,7 @@
     save();
   }
   function setMode(mode) {
+    drawingCancelOperation(); drawingKeyContext = false;
     if (!modes().includes(mode)) return;
     if (mode === "candles" && S.mode !== "candles") candlePrevious = S.mode;
     if (mode === "candles" || S.mode === "candles") transition = null;
@@ -35852,6 +36669,7 @@
   // Escape closes what is open first, then clears the selection, then goes
   // back to Pan from Select or the lens.
   function escapeKey() {
+    if (trendTool) { drawingCancelOperation(); setTool(drawingEntryTool); return; }
     if (closePop(true)) return;
     if (root.dataset.sheet === "open") {
       setSheet(false);
@@ -36217,6 +37035,713 @@
     scheduleLive(Number(PACK.next) || 20);
   }
 
+  // Manual analysis is a tab-owned collection, independent of market queries and view history.
+  let drawingStore = E.drawings.createStore(E.drawings.empty());
+  let activeDrawingId = null, trendTool = false, drawingKeep = false, drawingEntryTool = "pan",
+    drawingAnchorTime = null, drawingDraft = null, drawingDrag = null, drawingEditorPreview = null,
+    drawingKeyContext = false, drawingLastCreate = 0, drawingLastColor = null, drawingTipRevision = -1,
+    drawingUnsaved = false, drawingStorageReason = "", drawingRecoveries = [],
+    drawingStorageNoticeId = null, drawingStorageNoticeRun = 0;
+  const drawingCancelledPointers = new Set();
+  const drawingCollection = () => drawingStore.state;
+  const drawingById = (id) => drawingCollection().objects.find((o) => o.id === id);
+  const drawingHistory = () => drawingStore;
+  const drawingStorageStatus = () => ({ unsaved: drawingUnsaved, reason: drawingStorageReason, recoveries: drawingRecoveries });
+  const drawingPlot = () => ({ x: G.x, y: G.y, w: G.w, h: G.h });
+  const drawingPixel = (p) => ({ x: G.X((p.timeMs / 1000 - T0) / BASE), y: G.Y(p.priceCents / 100 / PR) });
+  const drawingPoint = (p) => E.drawings.point((T0 + p.t * BASE) * 1000, p.p * PR);
+  function drawingNotice(text) {
+    linesStatus(text); el("copy-status").textContent = text;
+    if (!el("drawing-toolbar").hidden) el("drawing-toolbar-status").textContent = text;
+    if (/Unsaved|need recovery|View not opened/.test(text)) {
+      const key = drawingStorageNoticeId ? `drawing-storage:${drawingStorageNoticeRun}` : `drawing-storage:${++drawingStorageNoticeRun}`;
+      drawingStorageNoticeId = postNotice({ code: "storage-failed", key, text: text + " Open Lines for Export, Retry save or Recover drawings." }).id;
+    }
+  }
+  function drawingPersist() {
+    const wasUnsaved = drawingUnsaved;
+    const result = window.explorerState?.drawings?.save(drawingCollection(), drawingStore.revision);
+    drawingUnsaved = !result?.ok;
+    drawingStorageReason = result?.reason || (result?.ok ? "" : "Browser storage is unavailable");
+    if (drawingUnsaved) drawingNotice(`Unsaved drawings: ${drawingStorageReason}. Export a complete view code or retry.`);
+    else if (wasUnsaved) {
+      if (drawingStorageNoticeId) noticeHide(drawingStorageNoticeId);
+      drawingStorageNoticeId = null; drawingNotice("Drawings saved.");
+    }
+    drawingSyncUI();
+    if (result?.ok) {
+      const latest = window.explorerState.drawings.load();
+      drawingRecoveries = (latest.recoveries || []).map(({ collection, ...record }) => ({ ...record, count: collection.objects.length, label: `${record.pinned ? "Preserved" : "Saved"} revision ${record.revision} · ${collection.objects.length} drawings` }));
+    }
+    return Boolean(result?.ok);
+  }
+  function drawingLoad() {
+    const result = window.explorerState?.drawings?.load();
+    drawingRecoveries = (result?.recoveries || []).map(({ collection, ...record }) => ({ ...record, count: collection.objects.length, label: `${record.pinned ? "Preserved" : "Saved"} revision ${record.revision} · ${collection.objects.length} drawings` }));
+    if (result?.status === "ok") drawingStore = E.drawings.createStore(result.collection);
+    else if (result && result.status !== "absent") {
+      drawingUnsaved = true;
+      drawingStorageReason = result.reason;
+      drawingNotice(`Saved drawings need recovery: ${result.reason}. The saved records remain available.`);
+    }
+  }
+  function drawingCommit(label, next) {
+    const result = drawingStore.commit(label, next);
+    if (!result.changed) return false;
+    if (!drawingById(activeDrawingId) || !next.visible || !drawingById(activeDrawingId)?.visible) activeDrawingId = null;
+    drawingKeyContext = true;
+    drawingEditorPreview = null;
+    if (result.truncated) drawingNotice("The oldest drawing undo was discarded; 100 transactions remain.");
+    drawingPersist();
+    update();
+    return true;
+  }
+  function drawingMutate(label, change) {
+    const next = structuredClone(drawingCollection());
+    change(next);
+    return drawingCommit(label, next);
+  }
+  function drawingActivate(id, hitTime = null) {
+    drawingAnchorTime = Number.isFinite(hitTime) ? hitTime : null;
+    if (id && tool() !== "pan") setTool("pan");
+    activeDrawingId = drawingById(id) ? id : null;
+    drawingKeyContext = Boolean(activeDrawingId);
+    drawingSyncUI();
+    requestDraw();
+  }
+  function drawingPreviewObject(object) { drawingEditorPreview = object; requestDraw(); }
+  function drawingApplyEdit(id, patch) {
+    const original = drawingById(id);
+    if (!original) throw new Error("This drawing no longer exists.");
+    const next = E.drawings.normalizeObject({ ...original, ...patch });
+    if (original.locked && (JSON.stringify(original.a) !== JSON.stringify(next.a) || JSON.stringify(original.b) !== JSON.stringify(next.b)))
+      throw new Error("Unlock this drawing before changing its endpoints.");
+    if (JSON.stringify(original.a) !== JSON.stringify(next.a) || JSON.stringify(original.b) !== JSON.stringify(next.b)) drawingAnchorTime = null;
+    drawingLastColor = next.color;
+    drawingMutate("Edit drawing", (c) => { c.objects[c.objects.findIndex((o) => o.id === id)] = next; });
+    drawingEditorPreview = null;
+    return true;
+  }
+  function drawingCancelOperation(all = true) {
+    if (drawingDrag) drawingCancelledPointers.add(drawingDrag.pointerId);
+    drawingDrag = null;
+    if (all) drawingDraft = null;
+    drawingEditorPreview = null;
+    clearTimeout(nav.holdTimer);
+    nav.hold = false;
+    requestDraw();
+    drawingSyncUI();
+  }
+  function drawingColor() {
+    if (drawingLastColor) return drawingLastColor;
+    const probe = document.createElement("span"); probe.style.color = "var(--ol-accent)"; root.append(probe);
+    const css = getComputedStyle(probe).color; probe.remove();
+    const match = css.match(/^#([0-9a-f]{6})$/i);
+    if (match) return "#" + match[1].toUpperCase();
+    const rgb = css.match(/\d+(?:\.\d+)?/g);
+    return rgb?.length >= 3 ? "#" + rgb.slice(0, 3).map((n) => Math.round(Number(n)).toString(16).padStart(2, "0")).join("").toUpperCase() : "#356EC8";
+  }
+  function drawingNewDefaults() {
+    const a = E.drawings.point((T0 + ((S.tA + S.tB) / 2 - (S.tB - S.tA) / 10) * BASE) * 1000, ((S.pA + S.pB) / 2) * PR),
+      b = E.drawings.point((T0 + ((S.tA + S.tB) / 2 + (S.tB - S.tA) / 10) * BASE) * 1000, ((S.pA + S.pB) / 2) * PR);
+    return E.drawings.newObject(drawingCollection(), { a, b, color: drawingColor() });
+  }
+  function drawingApplyNew(patch) {
+    const object = E.drawings.newObject(drawingCollection(), { ...patch, color: patch.color });
+    drawingMutate("Create drawing", (c) => { c.visible = true; c.objects.push(object); });
+    trendTool = false; if (inspect.on) { inspect.prev = "pan"; inspectExit(); }
+    S.lens = S.select = false; drawingLastColor = object.color; drawingEditorPreview = null;
+    drawingActivate(object.id); update(); return true;
+  }
+  function drawingCreate(a, b) {
+    try {
+      const object = E.drawings.newObject(drawingCollection(), { a, b, color: drawingColor() });
+      drawingMutate("Create drawing", (c) => { c.visible = true; c.objects.push(object); });
+      activeDrawingId = object.id; drawingAnchorTime = null;
+      drawingLastColor = object.color;
+      drawingDraft = null;
+      drawingLastCreate = performance.now();
+      if (!drawingKeep) { trendTool = false; S.lens = S.select = false; }
+      drawingSyncUI(); update();
+      return object;
+    } catch (error) { drawingNotice(error.message); return null; }
+  }
+  function drawingCommand(action, id, value) {
+    const object = drawingById(id);
+    if (action === "new") { closePop(); setSheet(false); setTool("trend"); canvas.focus(); return; }
+    if (action === "keep") { drawingKeep = Boolean(value ?? id); drawingSyncUI(); requestDraw(); return; }
+    if (action === "cancel") { drawingCancelOperation(); return; }
+    if (action === "anchor") {
+      const t = Number.isFinite(value) ? value : drawingAnchorTime;
+      if (Number.isFinite(t) && t < activeCutoff()) { S.anchor = (Math.floor(t / stepT()) + 1) * stepT(); S.tab = "evidence"; update(); recordView("Anchor"); save(); }
+      return;
+    }
+    if (action === "focus" && (!object || !drawingCollection().visible || !object.visible)) return;
+    if (action === "focus") { focus.drawing = focus.drawing === id ? null : id; focus.key = focus.family = focus.saved = null; focusChanged(); return; }
+    if (action === "export") { copyText(viewCode, "Complete view code with drawings"); return; }
+    if (action === "retry") { drawingPersist(); return; }
+    if (action === "recover") {
+      const recovered = window.explorerState?.drawings?.recover(id);
+      if (recovered?.status === "ok") drawingReplace(recovered.collection).then((ok) => { if (ok) { update(); drawingNotice("Recovered drawings."); } });
+      else drawingNotice(recovered?.reason || "This recovery is unavailable.");
+      return;
+    }
+    if (action === "undo" || action === "redo") {
+      let editor = null;
+      if (drawingEditorOpen()) {
+        const pending = drawingEditorPending(); editor = drawingEditorState; drawingCloseEditor(true);
+        if (pending) return;
+      }
+      if (drawingDrag || drawingDraft || drawingEditorPreview) { drawingCancelOperation(); return; }
+      if (drawingStore[action]()) {
+        activeDrawingId = null; drawingKeyContext = true; drawingPersist(); update();
+        if (editor) drawingRestoreFocus(editor.origin, editor.id, editor.origin.index);
+      }
+      return;
+    }
+    if (action === "group-visible") {
+      drawingMutate("Show/hide drawings", (c) => { c.visible = Boolean(value ?? id); });
+      if (!drawingCollection().visible) { activeDrawingId = null; drawingKeyContext = false; }
+    } else if (action === "delete-all") { drawingMutate("Delete all drawings", (c) => { c.objects = []; }); }
+    else if (object && action === "duplicate") {
+      try {
+        const made = E.drawings.duplicate(drawingCollection(), id);
+        drawingMutate("Duplicate drawing", (c) => { c.visible = true; c.objects.push(made); });
+        drawingActivate(made.id);
+      } catch (error) { drawingNotice(error.message); }
+    } else if (object && action === "delete") drawingMutate("Delete drawing", (c) => { c.objects = c.objects.filter((o) => o.id !== id); });
+    else if (object && (action === "visible" || action === "lock")) {
+      drawingMutate(action === "lock" ? "Lock/unlock drawing" : "Show/hide drawing", (c) => { c.objects.find((o) => o.id === id)[action === "lock" ? "locked" : "visible"] = Boolean(value); });
+      if (action === "visible" && !value) drawingKeyContext = Boolean(activeDrawingId);
+    }
+    drawingSyncUI(); requestDraw();
+  }
+  function drawingGeometry(object, rect = drawingPlot()) {
+    if (!G.w || !G.h) return null;
+    const a = drawingPixel(object.a), b = drawingPixel(object.b), clipped = E.drawings.clip(a, b, rect);
+    if (!clipped) return null;
+    const inside = (p) => p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h,
+      anchors = [a, b].filter(inside);
+    if (!anchors.length) {
+      const length = Math.hypot(clipped.b.x - clipped.a.x, clipped.b.y - clipped.a.y), inset = Math.min(8, length / 2);
+      if (length) anchors.push({ x: clipped.a.x + (clipped.b.x - clipped.a.x) * inset / length, y: clipped.a.y + (clipped.b.y - clipped.a.y) * inset / length });
+    }
+    return { ...clipped, anchors, endpoints: { a, b } };
+  }
+  function drawingStatus(id) {
+    const o = drawingById(id);
+    if (!o || !drawingCollection().visible || !o.visible) return "Hidden";
+    if (!drawingGeometry(o)) return "Off screen";
+    return occlusion.off.has("drawing|" + id) ? "Held back" : "Shown";
+  }
+  function drawingCandidates() {
+    if (!drawingCollection().visible) return [];
+    const out = [];
+    for (const object of drawingCollection().objects) {
+      if (!object.visible) continue;
+      const g = drawingGeometry(object);
+      if (!g) continue;
+      out.push({ id: "drawing|" + object.id, hot: focus.drawing === object.id,
+        priority: focus.drawing === object.id ? 1 : activeDrawingId === object.id ? 3 : 4,
+        rank: object.ordinal, rects: g.anchors.map((p) => {
+          const half = object.id === activeDrawingId && !object.locked && tool() === "pan" ? 5.75 : 4.5;
+          return [p.x - half, p.y - half, p.x + half, p.y + half];
+        }),
+        strokes: [{ a: g.a, b: g.b, width: 3.5 }] });
+    }
+    return out;
+  }
+  function drawingHex(p, color) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const x = p.x + 3 * Math.cos(i * Math.PI / 3), y = p.y + 3 * Math.sin(i * Math.PI / 3);
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.closePath(); ctx.lineWidth = 3; ctx.strokeStyle = drawingCasing(color); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = color; ctx.stroke();
+  }
+  function drawingCasing(color) {
+    const rgb = color.slice(1).match(/../g).map((s) => parseInt(s, 16) / 255),
+      luminance = rgb.map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((s, v, i) => s + v * [.2126, .7152, .0722][i], 0);
+    return luminance > .179 ? "#000000" : "#FFFFFF";
+  }
+  function drawingPaintObject(object, preview = false, rect = drawingPlot()) {
+    const g = drawingGeometry(object, rect);
+    if (!g) return;
+    ctx.save(); ctx.beginPath(); ctx.rect(rect.x, rect.y, rect.w, rect.h); ctx.clip();
+    ctx.globalAlpha = preview ? .8 : 1; ctx.setLineDash([]); ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(g.a.x, g.a.y); ctx.lineTo(g.b.x, g.b.y);
+    ctx.lineWidth = 3.5; ctx.strokeStyle = drawingCasing(object.color); ctx.stroke();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = object.color; ctx.stroke();
+    if (!preview && object.id === activeDrawingId && !object.locked && !trendTool && !inspect.on && !S.select && !S.lens) {
+      for (const p of Object.values(g.endpoints)) {
+        if (p.x < rect.x || p.x > rect.x + rect.w || p.y < rect.y || p.y > rect.y + rect.h) continue;
+        ctx.fillStyle = colors.surface; ctx.strokeStyle = colors.ink; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+      }
+    }
+    for (const p of g.anchors) drawingHex(p, object.color);
+    ctx.restore();
+  }
+  function drawingPaint(rect = drawingPlot()) {
+    if (drawingCollection().visible) for (const object of drawingCollection().objects) {
+      if (!object.visible || occlusion.off.has("drawing|" + object.id)) continue;
+      drawingPaintObject(drawingEditorPreview?.id === object.id ? drawingEditorPreview : drawingDrag?.preview?.id === object.id ? drawingDrag.preview : object, Boolean(drawingEditorPreview?.id === object.id || drawingDrag?.preview?.id === object.id), rect);
+    }
+    if (drawingEditorPreview && !drawingById(drawingEditorPreview.id)) drawingPaintObject(drawingEditorPreview, true, rect);
+    if (drawingDraft?.b) drawingPaintObject({ a: drawingDraft.a, b: drawingDraft.b, color: drawingColor() }, true, rect);
+  }
+  function drawingFrameCommit() {
+    canvas.dataset.drawingCount = String(drawingCollection().objects.length);
+    canvas.dataset.drawingRevision = String(drawingStore.revision);
+    canvas.dataset.drawingActive = activeDrawingId || "";
+    const shown = drawingCollection().objects.filter((o) => drawingStatus(o.id) === "Shown"),
+      cutoff = (T0 + activeCutoff() * BASE) * 1000;
+    canvas.dataset.drawingReplay = S.replay && shown.length ? "User drawings may include later analysis" + (shown.some((o) => { const g = drawingGeometry(o); return Math.max(G.X.invert(g.a.x), G.X.invert(g.b.x)) * BASE * 1000 + T0 * 1000 > cutoff + .5; }) ? " · User drawings extend beyond replay" : "") : "";
+    drawingSyncUI();
+  }
+  function drawingLensOwns(p) {
+    if (!lensShown()) return false;
+    const f = lensFrame();
+    return f && p.x >= f.x && p.x <= f.x + f.w && p.y >= f.y && p.y <= f.y + f.h;
+  }
+  function drawingHits(p, pointerType = "mouse", readOnly = false) {
+    if (!inPlot(p) || !readOnly && drawingLensOwns(p) || !drawingCollection().visible) return [];
+    const radius = pointerType === "touch" ? 22 : 4;
+    return drawingCollection().objects.filter((o) => drawingStatus(o.id) === "Shown").map((o) => {
+      const g = drawingGeometry(o), distance = E.drawings.distance(p, g);
+      return { id: o.id, object: o, distance };
+    }).filter((hit) => hit.distance <= radius).sort((a, b) => Number(b.id === activeDrawingId) - Number(a.id === activeDrawingId) || a.distance - b.distance || a.object.ordinal - b.object.ordinal);
+  }
+  function drawingHandle(p, pointerType) {
+    const o = drawingById(activeDrawingId);
+    if (!o || o.locked || drawingStatus(o.id) !== "Shown" || drawingLensOwns(p)) return null;
+    const g = drawingGeometry(o), radius = pointerType === "touch" ? 22 : 10,
+      da = !inPlot(g.endpoints.a) ? Infinity : Math.hypot(p.x - g.endpoints.a.x, p.y - g.endpoints.a.y), db = !inPlot(g.endpoints.b) ? Infinity : Math.hypot(p.x - g.endpoints.b.x, p.y - g.endpoints.b.y);
+    return Math.min(da, db) <= radius ? da <= db ? "a" : "b" : E.drawings.distance(p, g) <= (pointerType === "touch" ? 22 : 4) ? "body" : null;
+  }
+  function drawingPointerDown(e, p) {
+    drawingCancelledPointers.delete(e.pointerId);
+    const surface = [window.innerWidth, window.innerHeight, canvas.clientWidth, canvas.clientHeight, S.tA, S.tB, S.pA, S.pB].join(",");
+    if (!inPlot(p) || drawingLensOwns(p)) return false;
+    if (trendTool) {
+      try {
+        const point = drawingPoint(p);
+        drawingDrag = { pointerId: e.pointerId, surface, start: p, kind: "create", moved: false, second: Boolean(drawingDraft), a: drawingDraft?.a || point, b: point };
+        drawingDraft = { a: drawingDrag.a, b: point };
+        drawingKeyContext = true; drag = null; hover = null; clearTimeout(nav.holdTimer); requestDraw();
+      } catch (error) { drawingNotice(error.message); }
+      return true;
+    }
+    if (tool() !== "pan" || e.altKey) return false;
+    const handle = drawingHandle(p, e.pointerType), hits = drawingHits(p, e.pointerType);
+    if (handle) {
+      drawingDrag = { pointerId: e.pointerId, surface, start: p, kind: handle, original: drawingById(activeDrawingId), moved: false, hits };
+      drag = null; clearTimeout(nav.holdTimer); hover = null; return true;
+    }
+    return false;
+  }
+  function drawingPointerMove(e, p) {
+    if (!drawingDrag) {
+      if (trendTool && drawingDraft && inPlot(p) && !drawingLensOwns(p)) {
+        try { drawingDraft.b = drawingPoint(p); requestDraw(); } catch { /* Out-of-domain previews stay at their last valid position. */ }
+      }
+      if (trendTool) { el("tip").hidden = true; hover = null; return true; }
+      return false;
+    }
+    if (e.pointerId !== drawingDrag.pointerId) return true;
+    const d = drawingDrag;
+    d.moved ||= Math.abs(p.x - d.start.x) + Math.abs(p.y - d.start.y) > 4;
+    if (!d.moved) return true;
+    try {
+      if (d.kind === "create") { d.b = drawingPoint(p); drawingDraft.b = d.b; }
+      else {
+        d.preview = d.kind === "body" ? E.drawings.translate(d.original, (p.t - d.start.t) * BASE * 1000, (p.p - d.start.p) * PR) : E.drawings.normalizeObject({ ...d.original, [d.kind]: drawingPoint(p) });
+      }
+      d.invalid = false;
+    } catch { d.invalid = true; d.preview = null; }
+    requestDraw(); return true;
+  }
+  function drawingPointerUp(e, p) {
+    if (drawingCancelledPointers.delete(e.pointerId)) { nav.pointers.delete(e.pointerId); return true; }
+    const d = drawingDrag;
+    if (!d || e.pointerId !== d.pointerId) return false;
+    drawingDrag = null; nav.pointers.delete(e.pointerId); nav.hold = false;
+    if (d.surface !== [window.innerWidth, window.innerHeight, canvas.clientWidth, canvas.clientHeight, S.tA, S.tB, S.pA, S.pB].join(",") || !inPlot(p) || drawingLensOwns(p) || d.invalid) { drawingDraft = null; drawingNotice("Drawing gesture cancelled."); requestDraw(); return true; }
+    if (d.kind === "create") {
+      if (d.moved || d.second) { const b = drawingPoint(p); if (!drawingCreate(d.a, b)) drawingDraft = { a: d.a, b }; }
+      else drawingDraft = { a: d.a, b: d.a };
+    } else if (d.moved && d.preview) drawingApplyEdit(d.original.id, d.preview);
+    else {
+      drawingAnchorTime = p.t;
+      if (d.hits.length > 1) drawingChooser(d.hits, p.t, canvas); else drawingActivate(d.original.id, p.t);
+    }
+    update(); return true;
+  }
+  function drawingKey(e, target) {
+    if (e.defaultPrevented || e.isComposing || target?.closest('input:not([type="checkbox"]):not([type="radio"]),select,textarea,[contenteditable]:not([contenteditable="false"])')) return false;
+    if (drawingDialogOpen()) return false;
+    const held = e.repeat && nav.pressed.has(e.code || e.key),
+      chart = !target || target === canvas || target === root || target === document.body,
+      owns = drawingUIOwns(target) || chart && ["pan", "trend"].includes(tool()) && Boolean(activeDrawingId || drawingDraft || drawingDrag || drawingKeyContext);
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && owns) {
+      const k = e.key.toLowerCase();
+      if (k === "z" || k === "y") { if (!held) drawingCommand(k === "y" || e.shiftKey ? "redo" : "undo"); return true; }
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (e.key.toLowerCase() === "g" && !root.querySelector("dialog[open]")) { if (!held) setTool(trendTool ? drawingEntryTool : "trend"); return true; }
+    if (!chart) return false;
+    if (e.key === "Escape" && (drawingDrag || drawingDraft)) { if (!held) drawingCancelOperation(); return true; }
+    if (e.key === "Escape" && activeDrawingId) { if (!held) drawingActivate(null); return true; }
+    if (["Delete", "Backspace"].includes(e.key) && activeDrawingId && tool() === "pan") {
+      if (!held && !drawingById(activeDrawingId)?.locked) drawingCommand("delete", activeDrawingId); return true;
+    }
+    if (e.key === "Enter" && activeDrawingId && tool() === "pan") { if (!held) drawingEdit(activeDrawingId, "chart"); return true; }
+    return false;
+  }
+  async function drawingReplace(incoming, apply = null) {
+    const collection = E.drawings.normalizeCollection(incoming), previous = drawingCollection();
+    if (JSON.stringify(collection) === JSON.stringify(previous)) { apply?.(); return true; }
+    drawingCancelOperation();
+    let answer = "replace";
+    if (previous.objects.length) {
+      answer = await new Promise((resolve) => {
+        const dialog = document.createElement("dialog"); dialog.id = "ol-drawing-replace"; dialog.className = "ol-drawing-dialog"; dialog.dataset.drawingUi = "";
+        const title = document.createElement("h2"); title.textContent = "Open drawings from this view?";
+        const text = document.createElement("p"); text.textContent = `This view contains ${collection.objects.length} drawings. You have ${previous.objects.length} drawings in this tab.`;
+        dialog.append(title, text);
+        const finish = (choice) => { dialog.close(); dialog.remove(); resolve(choice); };
+        for (const [choice, label] of [["replace", `Replace with ${collection.objects.length} drawings`], ["keep", `Keep my ${previous.objects.length} drawings`], ["cancel", "Cancel"]]) {
+          const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.dataset.drawingReplace = choice; button.addEventListener("click", () => finish(choice)); dialog.append(button);
+        }
+        dialog.addEventListener("cancel", (e) => { e.preventDefault(); finish("cancel"); });
+        dialog.addEventListener("keydown", (e) => e.stopPropagation());
+        root.append(dialog); dialog.showModal();
+      });
+    }
+    if (answer === "cancel") return false;
+    if (answer === "keep") { apply?.(); return true; }
+    if (previous.objects.length) {
+      const preserved = window.explorerState?.drawings?.preserve(previous);
+      if (preserved?.ok) drawingRecoveries = [...drawingRecoveries, { id: preserved.id, pinned: true, count: previous.objects.length, label: `Preserved prior workspace · ${previous.objects.length} drawings` }];
+      if (!preserved?.ok) { drawingUnsaved = true; drawingStorageReason = preserved?.reason || "The prior drawings could not be preserved"; drawingNotice(`View not opened: ${drawingStorageReason}. Export your drawings or retry.`); drawingSyncUI(); return false; }
+    }
+    apply?.();
+    drawingCommit("Replace drawings", collection); activeDrawingId = null; return true;
+  }
+
+  // Insert inside the explorer IIFE; call drawingInitUI() once from bindUI.
+  // Inventory always reads committed objects. Editor preview has its own revision.
+  let drawingEditorState = null, drawingChoiceOrigin = null, drawingDeleteOrigin = null;
+  let drawingInventoryKey = "";
+  let drawingUIInitialized = false, drawingRowsKey = "", drawingRecoveryKey = "", drawingActionsKey = "", drawingToolbarKey = "";
+  const drawingFieldIds = ["name", "color", "a-time", "a-price", "b-time", "b-price"];
+  function drawingWrite(node, value) {
+    const text = String(value ?? ""); if (node.textContent !== text) node.textContent = text;
+  }
+  function drawingAttr(node, name, value) {
+    const text = String(value); if (node.getAttribute(name) !== text) node.setAttribute(name, text);
+  }
+  function drawingUIOwns(target = document.activeElement) { return Boolean(target?.closest?.("[data-drawing-ui]")); }
+  function drawingDialogOpen() { return Boolean(root.querySelector("dialog[data-drawing-ui][open]")); }
+  function drawingEditorOpen() { return Boolean(drawingEditorState && el("drawing-editor").open); }
+  function drawingEditorPending() {
+    return Boolean(drawingEditorState && (drawingEditorState.isNew || drawingFieldIds.some((key, i) => el(`drawing-${key}`).value !== drawingEditorState.fields[i])));
+  }
+  function drawingSyncEditorUndo() {
+    const pending = drawingEditorPending(), button = el("drawing-editor-undo");
+    button.disabled = !pending && !drawingStore.canUndo;
+    drawingWrite(button, pending ? "Cancel draft" : "Undo drawing");
+    button.title = pending ? "Discard unapplied drawing edits" : drawingStore.undoLabel ? `Undo: ${drawingStore.undoLabel}` : "No drawing changes to undo";
+  }
+  function drawingChooserOpen() { return el("drawing-chooser").open; }
+  function drawingUICmd(action, id, value) {
+    try {
+      const result = drawingCommand(action, id, value);
+      if (result?.catch) result.catch((error) => drawingNotice(error.message || String(error)));
+      drawingSyncUI(); return result;
+    } catch (error) { drawingNotice(error.message || String(error)); return false; }
+  }
+  function drawingUIButton(text, action, id, value, menu = false) {
+    const button = document.createElement("button");
+    button.type = "button"; button.className = (menu ? "ol-item" : "ol-action ol-s") + " cursor-interaction";
+    button.textContent = text; button.dataset.drawingAction = action;
+    if (id) button.dataset.drawingId = id;
+    if (menu) button.setAttribute("role", "menuitem");
+    button.addEventListener("click", () => {
+      const at = drawingCollection().objects.findIndex((o) => o.id === id);
+      if (action === "new-exact") { drawingNewExact(button); return; }
+      if (action === "edit") { drawingEdit(id, button); return; }
+      if (action === "move") { closePop(); setSheet(false); drawingActivate(id); canvas.focus({ preventScroll: true }); return; }
+      if (action === "delete-all") { drawingConfirmDelete(button); return; }
+      if (menu) closePop();
+      drawingUICmd(action, id, typeof value === "function" ? value() : value);
+      if (action === "duplicate" && el("drawing-section")) {
+        el("drawing-section").querySelector(`[data-drawing-row="${activeDrawingId}"] [data-drawing-action="move"]`)?.focus({ preventScroll: true });
+      } else if (action === "delete" && !button.isConnected && el("drawing-section")) {
+        const rows = [...el("drawing-section").querySelectorAll("[data-drawing-row]")];
+        (rows[Math.min(at, rows.length - 1)]?.querySelector('[data-drawing-action="edit"]') || el("drawing-new"))?.focus({ preventScroll: true });
+      } else if (menu) canvas.focus({ preventScroll: true });
+    }); return button;
+  }
+  function drawingRestoreFocus(origin, id, index = 0) {
+    if (origin?.list) {
+      if (PHONE.matches) setSheet(true);
+      if (el("lines-pop").hidden) openLines();
+      drawingMenuSection(el("lines-pop")); drawingSyncUI();
+      const rows = [...el("drawing-section").querySelectorAll("[data-drawing-row]")],
+        row = rows.find((r) => r.dataset.drawingRow === id) || rows[Math.max(0, Math.min(index, rows.length - 1))];
+      (row?.querySelector('[data-drawing-action="edit"]') || el("drawing-new"))?.focus({ preventScroll: true });
+    } else canvas.focus({ preventScroll: true });
+  }
+  function drawingOrigin(origin, id) {
+    const node = origin instanceof Element ? origin : document.activeElement,
+      list = origin === "lines" || Boolean(node?.closest?.(".ol-drawing-section"));
+    return { list, index: list ? drawingCollection().objects.findIndex((o) => o.id === id) : 0 };
+  }
+  function drawingFieldError(key, message) {
+    drawingAttr(el(`drawing-${key}`), "aria-invalid", Boolean(message)); drawingWrite(el(`drawing-${key}-error`), message);
+  }
+  function drawingReadEdit(showErrors = true) {
+    if (!drawingEditorState) return null;
+    const original = drawingEditorState.isNew ? drawingEditorState.object : drawingById(drawingEditorState.id); if (!original) return null;
+    const patch = { name: el("drawing-name").value.trim(), color: el("drawing-color").value.toLowerCase(), a: {}, b: {} }, errors = {};
+    if (!patch.name || [...patch.name].length > 80 || /[\u0000-\u001f\u007f-\u009f]/u.test(patch.name)) errors.name = "Use 1–80 characters without control characters.";
+    if (!/^#[0-9a-f]{6}$/.test(patch.color)) errors.color = "Enter six hexadecimal digits, for example #3366cc.";
+    for (const point of ["a", "b"]) for (const [field, member, parse] of [["time", "timeMs", E.drawings.parseTime], ["price", "priceCents", E.drawings.parsePrice]]) {
+      try { patch[point][member] = parse(el(`drawing-${point}-${field}`).value); }
+      catch (error) { errors[`${point}-${field}`] = error.message || String(error); }
+    }
+    let object = null;
+    if (!Object.keys(errors).length) {
+      try { object = E.drawings.normalizeObject({ ...original, ...patch }); }
+      catch (error) { errors["b-price"] = error.message || String(error); }
+    }
+    if (showErrors) for (const key of drawingFieldIds) drawingFieldError(key, errors[key] || "");
+    return Object.keys(errors).length ? null : { object, patch };
+  }
+  function drawingEditPreview() {
+    const result = drawingReadEdit(); drawingPreviewObject(result?.object || null);
+    if (result && el("drawing-color-picker").value !== result.patch.color) el("drawing-color-picker").value = result.patch.color;
+    drawingWrite(el("drawing-editor-error"), ""); drawingSyncEditorUndo();
+  }
+  function drawingNewExact(origin = "lines") {
+    try { drawingEdit(null, origin, drawingNewDefaults()); }
+    catch (error) { drawingNotice(error.message || String(error)); }
+  }
+  function drawingEdit(id, origin = "chart", draft = null) {
+    const object = draft || drawingById(id); if (!object) return;
+    if (drawingEditorOpen()) drawingCloseEditor(true);
+    const from = drawingOrigin(origin, id);
+    drawingCancelOperation(); closePop(); setSheet(false);
+    drawingEditorState = { id: object.id, origin: from, isNew: Boolean(draft), object: draft };
+    el("drawing-editor").dataset.drawingId = object.id;
+    drawingWrite(el("drawing-editor-title"), draft ? "New trend line" : "Edit trend line");
+    el("drawing-name").value = object.name; el("drawing-color").value = el("drawing-color-picker").value = object.color;
+    for (const point of ["a", "b"]) {
+      el(`drawing-${point}-time`).value = E.drawings.formatTime(object[point].timeMs);
+      el(`drawing-${point}-price`).value = E.drawings.formatPrice(object[point].priceCents);
+      el(`drawing-${point}-time`).disabled = el(`drawing-${point}-price`).disabled = object.locked;
+    }
+    for (const key of drawingFieldIds) drawingFieldError(key, "");
+    drawingWrite(el("drawing-editor-error"), "");
+    drawingWrite(el("drawing-editor-note"), object.locked ? "Drawing locked. Name and color remain editable; unlock in Lines to move its points." : "Free coordinates · UTC time and USDT price. Apply saves all fields together.");
+    drawingEditorState.fields = drawingFieldIds.map((key) => el(`drawing-${key}`).value);
+    drawingSyncEditorUndo();
+    el("drawing-editor").showModal();
+    if (draft) drawingPreviewObject(draft);
+    el("drawing-name").focus({ preventScroll: true }); el("drawing-name").select();
+  }
+  function drawingCloseEditor(cancel = true) {
+    if (!drawingEditorState) return false;
+    const previous = drawingEditorState; drawingEditorState = null; drawingPreviewObject(null);
+    if (el("drawing-editor").open) el("drawing-editor").close(cancel ? "cancel" : "apply");
+    delete el("drawing-editor").dataset.drawingId;
+    drawingRestoreFocus(previous.origin, previous.isNew && !cancel ? activeDrawingId : previous.id, previous.origin.index);
+    if (previous.isNew && cancel && previous.origin.list) el("drawing-new-exact")?.focus({ preventScroll: true });
+    return true;
+  }
+  function drawingCloseChooser() {
+    if (!el("drawing-chooser").open) return false;
+    el("drawing-chooser").close(); const origin = drawingChoiceOrigin; drawingChoiceOrigin = null;
+    if (origin?.isConnected && origin.focus) origin.focus({ preventScroll: true }); else canvas.focus({ preventScroll: true });
+    return true;
+  }
+  function drawingChooser(candidates, time, origin = canvas) {
+    drawingCloseChooser(); closePop(); const choices = el("drawing-choices"); choices.replaceChildren();
+    drawingChoiceOrigin = origin instanceof Element ? origin : canvas;
+    for (const candidate of candidates) {
+      const id = typeof candidate === "string" ? candidate : candidate.id || candidate.object?.id || candidate.drawing?.id, object = drawingById(id);
+      if (!object) continue;
+      const button = document.createElement("button"), swatch = document.createElement("i"), name = document.createElement("span");
+      button.type = "button"; button.className = "ol-action cursor-interaction"; button.dataset.drawingChoice = id;
+      swatch.className = "ol-drawing-swatch"; swatch.style.setProperty("--drawing-rgb", object.color); swatch.setAttribute("aria-hidden", "true");
+      name.textContent = object.name + (object.locked ? " · Locked" : ""); button.append(swatch, name);
+      button.addEventListener("click", () => { drawingCloseChooser(); drawingActivate(id, time); canvas.focus({ preventScroll: true }); }); choices.append(button);
+    }
+    const anchor = drawingUIButton("Anchor evidence here", "anchor", null, time); anchor.addEventListener("click", drawingCloseChooser); choices.append(anchor);
+    el("drawing-chooser").showModal(); choices.querySelector("button")?.focus({ preventScroll: true });
+  }
+  function drawingConfirmDelete(origin) {
+    const objects = drawingCollection().objects; if (!objects.length) return;
+    closePop(); drawingDeleteOrigin = origin; el("drawing-confirm").dataset.ids = objects.map((o) => o.id).join(",");
+    drawingWrite(el("drawing-confirm-title"), `Delete ${objects.length} drawings, including ${objects.filter((o) => o.locked).length} locked?`);
+    if (!el("drawing-confirm").open) el("drawing-confirm").showModal(); el("drawing-confirm-cancel").focus({ preventScroll: true });
+  }
+  function drawingCloseConfirm() {
+    if (!el("drawing-confirm").open) return false;
+    el("drawing-confirm").close(); const origin = drawingDeleteOrigin; drawingDeleteOrigin = null;
+    if (origin?.isConnected) origin.focus({ preventScroll: true }); else canvas.focus({ preventScroll: true }); return true;
+  }
+  function drawingMenuSection(parent) {
+    let section = el("drawing-section");
+    if (!section) {
+      section = document.createElement("section"); section.id = "ol-drawing-section"; section.className = "ol-drawing-section"; section.dataset.drawingUi = ""; section.setAttribute("aria-labelledby", "ol-drawing-section-title");
+      section.innerHTML = '<div class="ol-drawing-section-head"><h3 id="ol-drawing-section-title">Your drawings</h3></div><div class="ol-drawing-section-tools"></div><p id="ol-drawing-summary" class="ol-drawing-summary" role="status"></p><p id="ol-drawing-menu-replay" class="ol-drawing-summary"></p><div id="ol-drawing-list" class="ol-drawing-list"></div><p id="ol-drawing-storage-status" class="ol-drawing-summary" role="status"></p><div id="ol-drawing-storage-actions" class="ol-drawing-section-tools"></div><details id="ol-drawing-recover"><summary>Recover drawings</summary><p class="ol-drawing-summary">Rolling history: up to 24 recent saves and 8 prior replacements. Older recoveries expire; this tab’s drawings stay intact. Save a View or export a complete code to keep a snapshot.</p><div id="ol-drawing-recover-list" class="ol-drawing-choices"></div></details>';
+      const head = section.querySelector(".ol-drawing-section-head"), tools = section.querySelector(".ol-drawing-section-tools"), create = drawingUIButton("New", "new");
+      create.id = "ol-drawing-new"; create.setAttribute("aria-label", "New trend line"); create.addEventListener("click", () => { closePop(); setSheet(false); canvas.focus({ preventScroll: true }); }); head.append(create);
+      const exact = drawingUIButton("Coordinates", "new-exact"); exact.id = "ol-drawing-new-exact";
+      exact.setAttribute("aria-label", "New trend line with exact coordinates"); head.append(exact);
+      const visibility = document.createElement("label"), box = document.createElement("input"); visibility.className = "ol-drawing-check"; box.type = "checkbox"; box.id = "ol-drawing-group-visible";
+      box.addEventListener("change", () => drawingUICmd("group-visible", null, box.checked)); visibility.append(box, document.createTextNode("Show drawings"));
+      const undo = drawingUIButton("Undo", "undo"), redo = drawingUIButton("Redo", "redo"), remove = drawingUIButton("Delete all", "delete-all");
+      undo.id = "ol-drawing-undo"; redo.id = "ol-drawing-redo"; remove.id = "ol-drawing-delete-all"; tools.append(visibility, undo, redo, remove);
+      const exportButton = drawingUIButton("Export complete view code", "export"), retry = drawingUIButton("Retry save", "retry"); exportButton.id = "ol-drawing-export"; retry.id = "ol-drawing-retry";
+      section.querySelector("#ol-drawing-storage-actions").append(exportButton, retry); parent.insertBefore(section, parent.querySelector(".ol-family"));
+    }
+    drawingSyncInventory(); return section;
+  }
+  function drawingRow(object) {
+    const row = document.createElement("div"), head = document.createElement("div"), swatch = document.createElement("i"), name = document.createElement("span"), status = document.createElement("span"), actions = document.createElement("div"), details = document.createElement("details"), summary = document.createElement("summary"), more = document.createElement("div");
+    row.className = "ol-drawing-row"; row.dataset.drawingRow = object.id; row.dataset.id = object.id;
+    head.className = "ol-drawing-row-head"; swatch.className = "ol-drawing-swatch"; swatch.setAttribute("aria-hidden", "true"); name.className = "ol-drawing-row-name"; status.className = "ol-drawing-status"; head.append(swatch, name, status);
+    actions.className = "ol-drawing-row-actions"; actions.append(drawingUIButton("Move", "move", object.id), drawingUIButton("Edit", "edit", object.id), drawingUIButton("Hide", "visible", object.id, () => !drawingById(object.id)?.visible));
+    details.className = "ol-drawing-row-more"; summary.textContent = "More actions"; more.className = "ol-drawing-row-more-actions";
+    more.append(drawingUIButton("Lock", "lock", object.id, () => !drawingById(object.id)?.locked), drawingUIButton("Focus", "focus", object.id), drawingUIButton("Duplicate", "duplicate", object.id), drawingUIButton("Delete", "delete", object.id));
+    details.append(summary, more); actions.append(details); row.append(head, actions); return row;
+  }
+  function drawingSyncInventory() {
+    const section = el("drawing-section"); if (!section) return;
+    const inventoryKey = [drawingStore.revision, activeDrawingId, focus.drawing, drawingUnsaved, drawingStorageReason, drawingRecoveries.length, drawingRecoveries[0]?.id, el("lines-pop").hidden ? "closed" : [S.tA, S.tB, S.pA, S.pB, [...occlusion.off].join(",")].join("|")].join("|");
+    if (inventoryKey === drawingInventoryKey) return;
+    drawingInventoryKey = inventoryKey;
+    const collection = drawingCollection(), objects = collection.objects, history = drawingHistory(), list = el("drawing-list"), key = objects.map((o) => o.id).join(",");
+    if (key !== drawingRowsKey) {
+      const existing = new Map([...list.querySelectorAll("[data-drawing-row]")].map((r) => [r.dataset.drawingRow, r]));
+      for (const [id, row] of existing) if (!objects.some((o) => o.id === id)) row.remove();
+      for (const object of objects) list.append(existing.get(object.id) || drawingRow(object)); drawingRowsKey = key;
+    }
+    for (const row of list.querySelectorAll("[data-drawing-row]")) {
+      const object = drawingById(row.dataset.drawingRow), state = drawingStatus(object.id);
+      for (const [attr, value] of Object.entries({ name: object.name, color: object.color, visible: String(object.visible), locked: String(object.locked), active: String(object.id === activeDrawingId), state, timeA: object.a.timeMs, timeB: object.b.timeMs, priceA: object.a.priceCents, priceB: object.b.priceCents, aTimeMs: object.a.timeMs, aPriceCents: object.a.priceCents, bTimeMs: object.b.timeMs, bPriceCents: object.b.priceCents })) if (row.dataset[attr] !== String(value)) row.dataset[attr] = String(value);
+      drawingWrite(row.querySelector(".ol-drawing-row-name"), object.name); drawingWrite(row.querySelector(".ol-drawing-status"), [object.locked ? "Locked" : "", state === "Shown" ? "" : state].filter(Boolean).join(" · "));
+      const swatch = row.querySelector(".ol-drawing-swatch"); if (swatch.style.getPropertyValue("--drawing-rgb") !== object.color) swatch.style.setProperty("--drawing-rgb", object.color);
+      for (const [action, text, pressed] of [["visible", object.visible ? "Hide" : "Show", object.visible], ["lock", object.locked ? "Unlock" : "Lock", object.locked]]) {
+        const button = row.querySelector(`[data-drawing-action="${action}"]`); drawingWrite(button, text); drawingAttr(button, "aria-label", `${text} ${object.name}`); drawingAttr(button, "aria-pressed", pressed);
+      }
+      for (const action of ["move", "edit", "duplicate", "delete", "focus"]) drawingAttr(row.querySelector(`[data-drawing-action="${action}"]`), "aria-label", `${action[0].toUpperCase() + action.slice(1)} ${object.name}`);
+      row.querySelector('[data-drawing-action="move"]').disabled = object.locked;
+      row.querySelector('[data-drawing-action="focus"]').disabled = !collection.visible || !object.visible;
+      drawingAttr(row.querySelector('[data-drawing-action="focus"]'), "aria-pressed", focus.drawing === object.id);
+    }
+    drawingWrite(el("drawing-menu-replay"), canvas.dataset.drawingReplay || "");
+    el("drawing-menu-replay").hidden = !canvas.dataset.drawingReplay;
+    const enabled = objects.filter((o) => collection.visible && o.visible).length, shown = objects.filter((o) => drawingStatus(o.id) === "Shown").length;
+    drawingWrite(el("drawing-summary"), objects.length ? `${shown} shown / ${enabled} enabled / ${objects.length} total` : "No drawings yet. Draw two points or drag on the price chart.");
+    el("drawing-group-visible").checked = collection.visible; el("drawing-new").disabled = el("drawing-new-exact").disabled = objects.length >= 200; el("drawing-delete-all").disabled = !objects.length;
+    for (const action of ["undo", "redo"]) {
+      const button = el(`drawing-${action}`), available = history[action === "undo" ? "canUndo" : "canRedo"], label = history[`${action}Label`];
+      button.disabled = !available; button.title = label ? `${action === "undo" ? "Undo" : "Redo"}: ${label}` : ""; drawingAttr(button, "aria-label", button.title || (action === "undo" ? "Undo drawing" : "Redo drawing"));
+    }
+    const storage = drawingStorageStatus(); drawingWrite(el("drawing-storage-status"), storage.unsaved ? `Unsaved drawings${storage.reason ? ": " + storage.reason : ""}` : ""); el("drawing-retry").hidden = !storage.unsaved;
+    const recoveries = storage.recoveries || [], recoveryKey = JSON.stringify(recoveries);
+    if (recoveryKey !== drawingRecoveryKey) {
+      const entries = recoveries.map((record) => {
+        const stamp = record.createdAt || record.time || record.at, parsed = stamp ? new Date(stamp) : null,
+          label = record.label || record.name || (parsed && Number.isFinite(parsed.getTime()) ? parsed.toISOString() : "Saved drawing workspace");
+        return drawingUIButton(label, "recover", record.id);
+      }); el("drawing-recover-list").replaceChildren(...entries); drawingRecoveryKey = recoveryKey;
+    }
+    el("drawing-recover").hidden = !recoveries.length;
+  }
+  function drawingSyncUI() {
+    if (!drawingUIInitialized) return;
+    canvas.dataset.drawingCount = String(drawingCollection().objects.length); canvas.dataset.drawingRevision = String(drawingStore.revision); canvas.dataset.drawingActive = activeDrawingId || "";
+    const object = activeDrawingId ? drawingById(activeDrawingId) : null, toolbar = el("drawing-toolbar"),
+      state = object ? drawingStatus(object.id) : "", replay = canvas.dataset.drawingReplay || "",
+      draft = drawingDraft ? [drawingDraft.a.timeMs, drawingDraft.a.priceCents, drawingDraft.b?.timeMs, drawingDraft.b?.priceCents] : null,
+      key = JSON.stringify([Boolean(trendTool), drawingKeep, object?.id, object?.name, object?.color, object?.locked, state, replay, draft]);
+    if (key !== drawingToolbarKey) {
+      toolbar.hidden = !trendTool && !object; toolbar.dataset.activeId = object?.id || "";
+      drawingWrite(el("drawing-toolbar-name"), trendTool ? "Trend line · Free" : object?.name || ""); el("drawing-toolbar-name").title = object?.name || "";
+      const placement = draft ? ["a", "b"].filter((point) => drawingDraft[point]).map((point) => `${point.toUpperCase()} · ${E.drawings.formatTime(drawingDraft[point].timeMs)} · ${E.drawings.formatPrice(drawingDraft[point].priceCents)} USDT`).join("\n") : "Click two points or drag";
+      drawingWrite(el("drawing-toolbar-status"), object && !trendTool ? [object.locked ? "Locked" : "", state === "Shown" ? "" : state].filter(Boolean).join(" · ") : placement);
+      el("drawing-toolbar-swatch").hidden = !object; if (object) el("drawing-toolbar-swatch").style.setProperty("--drawing-rgb", object.color);
+      el("drawing-keep-label").hidden = !trendTool; el("drawing-keep").checked = drawingKeep; el("drawing-edit").hidden = !object;
+      const note = el("drawing-replay-status"); note.replaceChildren(...replay.split(" · ").filter(Boolean).flatMap((text, i) => { const span = document.createElement("span"); span.textContent = text; return i ? [" · ", span] : [span]; })); note.hidden = !replay;
+      drawingToolbarKey = key;
+    }
+    if (drawingEditorState && !drawingEditorState.isNew && !drawingById(drawingEditorState.id)) drawingCloseEditor(true);
+    if (toolbar.hidden && pop.open?.panel === el("drawing-actions")) closePop();
+    drawingSyncInventory(); if (!el("drawing-actions").hidden) drawingBuildActions(); drawingPlaceActions();
+  }
+  function drawingBuildActions() {
+    const panel = el("drawing-actions"), object = activeDrawingId ? drawingById(activeDrawingId) : null, history = drawingHistory(),
+      key = [object?.id, object?.visible, object?.locked, history.canUndo, history.canRedo, drawingAnchorTime === null].join("|");
+    if (drawingActionsKey === key && panel.childElementCount) return; drawingActionsKey = key;
+    const focused = panel.contains(document.activeElement) ? document.activeElement.dataset.drawingAction : null, buttons = [];
+    if (object) {
+      buttons.push(drawingUIButton("Move / select", "move", object.id, null, true), drawingUIButton("Edit exact coordinates", "edit", object.id, null, true), drawingUIButton(object.visible ? "Hide drawing" : "Show drawing", "visible", object.id, !object.visible, true), drawingUIButton(object.locked ? "Unlock drawing" : "Lock drawing", "lock", object.id, !object.locked, true), drawingUIButton("Focus drawing", "focus", object.id, null, true), drawingUIButton("Duplicate drawing", "duplicate", object.id, null, true), drawingUIButton("Delete drawing", "delete", object.id, null, true)); buttons[0].disabled = object.locked;
+      const anchor = drawingUIButton("Anchor evidence here", "anchor", object.id, undefined, true); anchor.disabled = drawingAnchorTime === null; buttons.push(anchor);
+    }
+    const undo = drawingUIButton("Undo drawing", "undo", null, null, true), redo = drawingUIButton("Redo drawing", "redo", null, null, true); undo.disabled = !history.canUndo; redo.disabled = !history.canRedo; buttons.push(undo, redo);
+    panel.replaceChildren(...buttons); if (focused) panel.querySelector(`[data-drawing-action="${focused}"]`)?.focus({ preventScroll: true });
+  }
+  function drawingPlaceActions() {
+    const panel = el("drawing-actions"), group = el("drawing-more").parentElement; let sheet = el("drawing-sheet-group");
+    if (!sheet) { sheet = document.createElement("div"); sheet.id = "ol-drawing-sheet-group"; sheet.className = "ol-group ol-drawing-sheet-group"; el("controls").append(sheet); }
+    const parent = PHONE.matches ? sheet : group; if (panel.parentElement !== parent) parent.append(panel); sheet.hidden = !PHONE.matches || panel.hidden;
+  }
+  function drawingInitUI() {
+    if (drawingUIInitialized) return; drawingUIInitialized = true;
+    el("drawing-keep").addEventListener("change", () => drawingUICmd("keep", null, el("drawing-keep").checked)); el("drawing-edit").addEventListener("click", () => drawingEdit(activeDrawingId, "chart"));
+    el("drawing-more").addEventListener("click", () => {
+      const panel = el("drawing-actions"), button = el("drawing-more");
+      if (pop.open?.panel === panel) { closePop(); drawingPlaceActions(); return; }
+      closePop(); drawingBuildActions(); panel.hidden = false; button.setAttribute("aria-expanded", "true"); pop.open = { button, panel }; drawingPlaceActions(); if (PHONE.matches) setSheet(true); focusMenuItem(panel, 0);
+    });
+    el("drawing-actions").addEventListener("keydown", (event) => {
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault(); event.stopPropagation(); const items = menuItems(el("drawing-actions")), i = items.indexOf(document.activeElement); focusMenuItem(el("drawing-actions"), event.key === "Home" ? 0 : event.key === "End" ? -1 : i + (event.key === "ArrowDown" ? 1 : -1));
+      } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closePop(true); drawingPlaceActions(); }
+    });
+    PHONE.addEventListener("change", () => { closePop(); drawingPlaceActions(); }); drawingPlaceActions();
+    for (const key of drawingFieldIds) el(`drawing-${key}`).addEventListener("input", drawingEditPreview);
+    el("drawing-color-picker").addEventListener("input", () => { el("drawing-color").value = el("drawing-color-picker").value; drawingEditPreview(); });
+    el("drawing-form").addEventListener("submit", (event) => {
+      event.preventDefault(); const result = drawingReadEdit(); if (!result) { el("drawing-form").querySelector('[aria-invalid="true"]')?.focus({ preventScroll: true }); return; }
+      try {
+        const applied = drawingEditorState.isNew ? drawingApplyNew(result.patch) : drawingApplyEdit(drawingEditorState.id, result.patch);
+        if (applied) drawingCloseEditor(false);
+      } catch (error) { drawingWrite(el("drawing-editor-error"), error.message || String(error)); }
+    });
+    for (const id of ["drawing-cancel", "drawing-editor-close"]) el(id).addEventListener("click", () => drawingCloseEditor(true));
+    el("drawing-editor-undo").addEventListener("click", () => drawingUICmd("undo")); el("drawing-chooser-close").addEventListener("click", drawingCloseChooser); el("drawing-confirm-cancel").addEventListener("click", drawingCloseConfirm);
+    el("drawing-confirm-delete").addEventListener("click", () => { if (el("drawing-confirm").dataset.ids !== drawingCollection().objects.map((o) => o.id).join(",")) { drawingConfirmDelete(drawingDeleteOrigin); return; } drawingCloseConfirm(); drawingUICmd("delete-all"); });
+    for (const [id, close] of [["drawing-editor", drawingCloseEditor], ["drawing-chooser", drawingCloseChooser], ["drawing-confirm", drawingCloseConfirm]]) {
+      const dialog = el(id); dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(true); }); dialog.addEventListener("keydown", (event) => { event.stopPropagation();
+      if (id === "drawing-editor" && (event.ctrlKey || event.metaKey) && ["z", "y"].includes(event.key.toLowerCase()) && !event.target.closest('input,select,textarea,[contenteditable]')) { event.preventDefault(); if (!event.repeat && !event.isComposing) drawingUICmd(event.key.toLowerCase() === "y" || event.shiftKey ? "redo" : "undo"); return; }
+      if (event.key === "Escape") { event.preventDefault(); close(true); } }); dialog.addEventListener("click", (event) => { if (event.target === dialog) close(true); });
+    }
+    el("drawing-choices").addEventListener("keydown", (event) => {
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return; event.preventDefault(); const items = [...el("drawing-choices").querySelectorAll("button")], i = items.indexOf(document.activeElement), next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (i + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length; items[next]?.focus({ preventScroll: true });
+    }); drawingSyncUI();
+  }
+
+  drawingInitUI();
+  document.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target !== canvas && !event.target.closest("[data-drawing-ui]") && event.target.closest("button,input,select,a,[role=tab]")) drawingKeyContext = false;
+  }, true);
   bindRoot();
   bindEvidence();
   bindNavigation();
@@ -36227,6 +37752,7 @@
     el("fresh").hidden = !PACK.live;
     for (const kbd of qsa("[data-key]")) kbd.textContent = KEYS[kbd.dataset.key];
     getColors();
+    drawingLoad();
     sources.recent = await unpack(PACK.blocks.recent, "recent");
     // Decoded blocks keep their metadata only: a tab open all day holds no payloads.
     delete PACK.blocks.recent.gzip_base64;
@@ -36253,6 +37779,7 @@
     title();
     new ResizeObserver(() => {
       if (ready) {
+        if (drawingDrag) drawingCancelOperation();
         geometry();
         if (S.auto) autoLevel();
         update();

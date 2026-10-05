@@ -306,7 +306,7 @@ test("classification: vis absent + place = legacy, vis=2 = v2, vis=3 / vis= / vi
   assert.equal(C.parseAddress("#w=24h&vis=%E0%A4%A", ENV).kind, "reject", "a malformed version marker is not a silent default");
 });
 
-test("classify of stored payloads: visualVersion 2 = v2, absent and non-empty = legacy, greater than 2 or not an integer = reject, empty = bare", () => {
+test("classify of stored payloads: visualVersion 2 = v2, absent and non-empty = legacy, unknown versions or non-integers = reject, empty = bare", () => {
   assert.deepEqual(plain(C.classify({ version: 5, visualVersion: 2, prefs: {} })), { kind: "v2", version: 2 });
   assert.equal(C.classify({ version: 5, prefs: {}, view: "#w=24h" }).kind, "legacy");
   assert.equal(C.classify([{ name: "x" }]).kind, "legacy");
@@ -314,7 +314,8 @@ test("classify of stored payloads: visualVersion 2 = v2, absent and non-empty = 
   assert.equal(C.classify({}).kind, "bare");
   assert.equal(C.classify(null).kind, "bare");
   assert.equal(C.classify(undefined).kind, "bare");
-  for (const v of [3, 2.1, "2", 1, 0, null, -2, 99]) {
+  assert.deepEqual(plain(C.classify({ visualVersion: 3 })), { kind: "v3", version: 3 });
+  for (const v of [4, 2.1, "2", 1, 0, null, -2, 99]) {
     const c = C.classify({ visualVersion: v });
     assert.equal(c.kind, "reject", JSON.stringify(v));
     assert.equal(c.version, v);
@@ -325,15 +326,15 @@ test("classify of stored payloads: visualVersion 2 = v2, absent and non-empty = 
   assert.equal(C.classify("origo-cube:2j.%7B%7D").kind, "v2");
   assert.equal(C.classify("origo-cube:%7B%22query%22").kind, "legacy");
   assert.equal(C.classify("origo-cube:{}").kind, "legacy");
-  const newer = C.classify("origo-cube:3.abc");
+  const newer = C.classify("origo-cube:4.abc");
   assert.equal(newer.kind, "reject");
-  assert.equal(newer.version, "3");
+  assert.equal(newer.version, "4");
   assert.match(newer.reason, /newer or unknown version/);
   assert.equal(C.classify("origo-cube:zzz").kind, "reject");
   assert.equal(C.classify('{"t1":1,"t2":2,"p1":1,"p2":2,"tR":1,"pR":0}').kind, "query", "a bare cube query is not a view payload");
   assert.equal(C.classify('{"query":{},"view":{}}').kind, "legacy");
   assert.equal(C.classify('{"visualVersion":2}').kind, "v2");
-  assert.equal(C.classify('{"visualVersion":3}').kind, "reject");
+  assert.equal(C.classify('{"visualVersion":3}').kind, "v3");
   assert.equal(C.classify("{not json").kind, "reject");
 });
 

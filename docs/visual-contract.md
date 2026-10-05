@@ -712,7 +712,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | U93 | `tests/unit/drawing-storage.test.js` | Protected authored records, failed writes, replacement preservation and concurrent named Views | #66 |
 | U94 | `tests/unit/drawing-benchmark.test.js` | Diagnostic matrix counts, price modes, actions and budgets; no performance-pass claim | #66 |
 | U95 | `tests/unit/cell-comparison.test.js` | Independent median/rank/difference/basis vectors, POC boundaries, typed support/replay and copy suppression | #71 |
-| U96 | `tests/unit/comparison-storage.test.js` | Dedicated tab record, validation, actual UTF-8 cap, faults, retained rejection, duplicate-tab and layout restoration | #71 |
+| U96 | `tests/unit/comparison-storage.test.js` | Dedicated tab record, validation, whole-record UTF-8 cap including empty metadata, faults, retained rejection, duplicate-tab and layout restoration | #71 |
 | U97 | `tests/unit/comparison-benchmark.test.js` | v4 preserves pinned navigation inputs, independent near-cap fixture bytes, DOM event/frame timing and declared action budgets | #71 |
 | U64 | `tests/unit/view-summary.test.js` | the summary's contract with its sources: every field the PRD names is produced from a record the popovers read, the strings are `E.text`'s, and nothing leaves the page unless copied | #48 |
 | B01 | `tests/browser/boot.spec.js` | boot in recorded and live mode, the 29 module keys, production globals | H7b |
@@ -781,7 +781,7 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B61 | `tests/browser/drawings-colors.spec.js` | Finite exact-RGB/casing/hexagon raster samples in both themes at DPR1/2; no universal contrast or recognition claim | #66 |
 | B62 | `tests/browser/drawings-budget.spec.js` | Max-count painted IDs match Shown/Held back inventory and Focus recovers a held drawing | #66 |
 | B63 | `tests/browser/cell-comparison.spec.js` | Cell gesture/menu/access capture, readable bounded dashboard, shared math, keys, expanded restoration, replay and tab recovery | #71 |
-| B64 | `tests/browser/comparison-session.spec.js` | 1/2/3/6/32/128 captures, bounded Cards/Matrix, reference/basis/POC math, reload/tab isolation, faults, replay and expansion | #71 |
+| B64 | `tests/browser/comparison-session.spec.js` | 1/2/3/6/32/128 captures, bounded Cards/Matrix, reference/basis/POC math, reload/tab isolation, out-of-range dates, faults, replay and expansion | #71 |
 | B65 | `tests/browser/comparison-capture.spec.js` | Canonical live/recorded sums, explicit Update, stale live/motion menus, finer Lens, replay portions/copy, loaded POC freezing, Ctrl-click and pending rectangle facts | #71 |
 
 ## 10. Migration status per slice

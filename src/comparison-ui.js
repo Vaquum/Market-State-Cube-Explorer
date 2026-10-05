@@ -34,7 +34,8 @@
   function timeRange(capture, compact = false) {
     const { t0, t1 } = capture.nominal || {};
     if (!finite(t0) || !finite(t1)) return "Time unavailable";
-    const start = new Date(t0).toISOString(), end = new Date(t1).toISOString();
+    const start = utc(t0, true), end = utc(t1, true);
+    if (start === "Unknown" || end === "Unknown") return "Time unavailable";
     if (compact && start.slice(0, 10) === end.slice(0, 10))
       return `${start.slice(5, 10)} ${start.slice(11, 19)}–${end.slice(11, 19)} UTC`;
     return `${utc(t0)}–${utc(t1)}`;

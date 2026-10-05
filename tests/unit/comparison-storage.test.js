@@ -127,6 +127,28 @@ test("UTF-8 cap accepts exactly 4 MiB and refuses the next byte before changing 
   assert.equal(a.comparison.serialize(value).status, "oversized"); assert.equal(a.comparison.write("BTC/USDT", value).status, "oversized");
   assert.equal(a.session.getItem(KEY), before); assert.equal(a.session.writes.length, writes);
 });
+test("an empty collection enforces the whole-record UTF-8 cap on POC metadata", () => {
+  for (const text of ["x", "€😀"]) {
+    const a = load(), value = record(0);
+    value.poc = { id: "90d", label: "90 days", period: "90d", price: 70062.5, rowSize: 125, approximate: true, supportEnd: 1900000, knownThrough: 1900000, from: 100000, through: 1900000, source: "pack-1" };
+    const remaining = CAP - Buffer.byteLength(JSON.stringify(value)), unitBytes = Buffer.byteLength(text);
+    value.poc.label += text.repeat(Math.floor(remaining / unitBytes)) + "x".repeat(remaining % unitBytes);
+    assert.equal(Buffer.byteLength(JSON.stringify(value)), CAP, "the independent byte count reaches the exact boundary");
+    const measured = a.comparison.measure(value), serialized = a.comparison.serialize(value);
+    assert.equal(measured.ok, true); assert.equal(measured.bytes, CAP); assert.equal(measured.raw, undefined);
+    assert.equal(serialized.ok, true); assert.equal(serialized.bytes, CAP); assert.equal(Buffer.byteLength(serialized.raw), CAP);
+    assert.equal(a.comparison.write("BTC/USDT", value).ok, true);
+    const before = a.session.getItem(KEY), writes = a.session.writes.length;
+    assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), value, "an empty collection at the boundary reloads");
+    value.poc.label += "x";
+    assert.equal(a.comparison.validate(value).ok, true, "valid metadata remains governed by the whole-record byte cap");
+    assert.equal(a.comparison.measure(value).status, "oversized");
+    assert.equal(a.comparison.serialize(value).status, "oversized");
+    assert.equal(a.comparison.write("BTC/USDT", value).status, "oversized");
+    assert.equal(a.session.getItem(KEY), before); assert.equal(a.session.writes.length, writes);
+    if (text !== "x") assert.ok(JSON.stringify(value).length < CAP, "multibyte metadata exceeds the cap before its string length does");
+  }
+});
 test("multi-byte and surrogate text use actual UTF-8 size, not string length", () => {
   const a = load(), value = record(); value.captures[0].source = "€😀\ud800";
   const serialized = a.comparison.serialize(value);

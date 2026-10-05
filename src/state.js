@@ -603,6 +603,7 @@
       // joining the whole record belongs to the coalesced save after the visible update.
       const envelope = JSON.stringify({ ...record, captures: [] }), marker = '"captures":[]', at = envelope.indexOf(marker);
       let bytes = comparisonBytes(envelope);
+      if (bytes > comparisonMaxBytes) return comparisonFailure("oversized", "comparison exceeds the 4 MiB tab limit");
       const chunks = [];
       for (const capture of record.captures) {
         let cached = comparisonCaptures.get(capture);

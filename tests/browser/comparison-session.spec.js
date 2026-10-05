@@ -72,6 +72,35 @@ for (const count of [1, 2, 3, 6, 32, 128]) {
   });
 }
 
+for (const [endpoint, start, end] of [
+  ["start", 8.64e15 + 60000, 8.64e15 + 120000],
+  ["end", 8.64e15 - 60000, 8.64e15 + 60000],
+]) {
+  test(`a restored finite out-of-Date-range ${endpoint} keeps Focus, Cards and Matrix usable`, async ({ page, fakeFor }) => {
+    const value = collection(2), capture = value.captures[0];
+    capture.nominal = { ...capture.nominal, t0: start, t1: end };
+    capture.observed = { ...capture.observed, t0: start, t1: end, seconds: (end - start) / 1000 };
+    capture.measuredThrough = end;
+    capture.when = { ...capture.when, knownAtMs: end, eventStartMs: start, eventEndMs: end };
+    for (const record of [...Object.values(capture.metrics), ...capture.detail]) {
+      record.supportEnd = end; record.knownThrough = end;
+    }
+    const fake = await fakeFor("mini"); await open(page, fake, value);
+    expect(await page.evaluate((record) => window.explorerState.comparison.validate(record).ok, value)).toBe(true);
+    await expect(panel(page).locator(".ol-comparison-focus h2")).toHaveText("Time unavailable");
+    const invalid = panel(page).locator('.ol-comparison-entries [data-capture-id="cell-0"]');
+    await expect(invalid.locator(".ol-comparison-card-focus")).toContainText("Time unavailable");
+    await expect(focusMetric(page, "volume")).toHaveAttribute("data-canonical", "1");
+    await action(page, "view").filter({ hasText: "Matrix" }).click();
+    await expect(panel(page).locator(".ol-comparison-matrix tbody tr")).toHaveCount(2);
+    await expect(invalid.locator(".ol-comparison-matrix-focus")).toContainText("Time unavailable");
+    await panel(page).locator('.ol-comparison-entries [data-capture-id="cell-1"] [data-comparison-action="focus"]').click();
+    await expect(focusMetric(page, "volume")).toHaveAttribute("data-canonical", "2");
+    await expect(panel(page).locator(".ol-comparison-focus h2")).not.toHaveText("Time unavailable");
+    await persisted(page, (v) => v?.captures.length === 2 && v.focus === "cell-1" && v.view === "matrix");
+  });
+}
+
 test("off-page cohorts survive Matrix, sorting, pinned reference and focus removal", async ({ page, fakeFor }) => {
   const fake = await fakeFor("mini"); await open(page, fake, collection(32));
   await action(page, "view").filter({ hasText: "Matrix" }).click();

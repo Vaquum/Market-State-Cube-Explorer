@@ -4945,7 +4945,7 @@
   // A document forks its writer even when duplicate-tab sessionStorage inherited its pointer.
   const drawingRoot = "drawings:v1:", drawingSessionKey = drawingRoot + "session", drawingIndexKey = drawingRoot + "index";
   const namedRoot = "drawing-views:v1:", namedPointerKey = namedRoot + "pointer", namedMergedRoot = "drawing-views:v2:";
-  let drawingWriter = null, drawingSequence = 0, namedBaseline = null;
+  let drawingWriter = null, drawingSequence = 0, namedBaseline = null, namedReadFailure = null;
   const protectedUuid = (value) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
   const protectedId = () => {
     const crypto = window.crypto || globalThis.crypto;
@@ -5164,8 +5164,10 @@
   const protectedNamedViews = (options) => {
     const got = protectedNamedRead(), entries = got.status === "absent" ? cellsToEntries(got.cells) : got.entries;
     // The UI, status and deletion baseline must describe the same read, even if another tab publishes next.
-    if (got.status === "ok" || got.status === "absent") namedBaseline = JSON.parse(JSON.stringify(entries));
-    return options?.snapshot ? { ...got, entries } : got.entries;
+    if (got.status === "ok" || got.status === "absent") {
+      namedBaseline = JSON.parse(JSON.stringify(entries)); namedReadFailure = null;
+    } else namedReadFailure = got.reason || "saved Views could not be read";
+    return options?.snapshot ? { ...got, entries } : entries;
   };
   const pruneNamedRecords = () => {
     const got = protectedNamedRead(); if (got.status !== "ok") return;
@@ -5193,6 +5195,7 @@
   };
   const protectedSaveNamedViews = (list) => {
     try {
+      if (namedReadFailure) throw new Error("Read saved Views again before changing them: " + namedReadFailure);
       const incoming = validateNamedList(list), current = protectedNamedRead();
       if (current.status !== "ok" && current.status !== "absent") throw new Error(current.reason);
       const baseline = namedBaseline || (current.status === "absent" ? cellsToEntries(current.cells) : current.entries),

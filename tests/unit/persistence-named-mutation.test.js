@@ -82,3 +82,55 @@ test("deleting from one protected snapshot preserves a name another tab acknowle
   assert.equal(reader.saveNamedViews(snapshot.entries).ok, true);
   assert.deepEqual(authoritative(localStorage).map((view) => view.name).sort(), ["B", "Other tab"]);
 });
+
+
+test("adding to the default named list preserves every existing legacy View on first publication", () => {
+  const localStorage = new MemoryStorage(), state = adapter(localStorage);
+  const original = JSON.stringify([legacy("A"), legacy("B")]);
+  localStorage.setItem(PREFIX + "views:v1", original);
+  const list = state.namedViews();
+  list.push(legacy("Added"));
+  assert.equal(state.saveNamedViews(list).ok, true);
+  assert.deepEqual(authoritative(localStorage), [legacy("A"), legacy("B"), legacy("Added")]);
+  assert.equal(localStorage.getItem(PREFIX + "views:v1"), original);
+});
+
+test("deleting from the default legacy list retains another tab's newly acknowledged View", () => {
+  const localStorage = new MemoryStorage(), reader = adapter(localStorage), other = adapter(localStorage);
+  const original = JSON.stringify([legacy("A"), legacy("B")]);
+  localStorage.setItem(PREFIX + "views:v1", original);
+  const list = reader.namedViews();
+  assert.deepEqual(JSON.parse(JSON.stringify(list)), [legacy("A"), legacy("B")]);
+  const concurrent = other.namedViews();
+  assert.equal(other.saveNamedViews([...concurrent, legacy("Other tab")]).ok, true);
+  list.splice(0, 1);
+  assert.equal(reader.saveNamedViews(list).ok, true);
+  assert.deepEqual(authoritative(localStorage).map((view) => view.name).sort(), ["B", "Other tab"]);
+  assert.equal(localStorage.getItem(PREFIX + "views:v1"), original);
+});
+
+
+for (const form of ["array", "snapshot"]) test(`a failed ${form} named read cannot delete prior Views after storage recovers`, () => {
+  const { localStorage } = seeded(), reader = adapter(localStorage);
+  const read = () => form === "array" ? reader.namedViews() : reader.namedViews({ snapshot: true }).entries;
+  assert.equal(read().length, 2);
+  const get = localStorage.getItem;
+  localStorage.getItem = function (key) {
+    if (key.startsWith(PREFIX + "drawing-views:v2:record:")) throw Object.assign(new Error("temporary access denial"), { name: "SecurityError" });
+    return get.call(this, key);
+  };
+  const failedList = read();
+  assert.equal(failedList.length, 0);
+  localStorage.getItem = get;
+  assert.equal(reader.namedViewsStatus().status, "ok", "diagnostic success must not adopt a replacement deletion baseline");
+  const before = [...localStorage.map.entries()];
+  failedList.push(legacy("Added"));
+  const rejected = reader.saveNamedViews(failedList);
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.reason, /read.*again/i);
+  assert.deepEqual([...localStorage.map.entries()], before, "failed-read additions cannot mutate durable Views after access recovers");
+  assert.deepEqual(authoritative(localStorage), [legacy("A"), legacy("B")]);
+  const retry = read(); retry.push(legacy("Added"));
+  assert.equal(reader.saveNamedViews(retry).ok, true);
+  assert.deepEqual(authoritative(localStorage), [legacy("A"), legacy("B"), legacy("Added")]);
+});

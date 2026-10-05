@@ -30,16 +30,20 @@ clears its drawing-specific failure notice, later failures remain visible, and r
 removal restores valid focus. Unreadable session originals copy verbatim before a new
 save may replace them; failed copying retains the original. Named-View UI reads now
 use one snapshot for status, entries and deletion baseline, preserving a concurrent
-first publication through the next acknowledged save.
+first publication through the next acknowledged save. Default array reads now return
+the same legacy entries used by the deletion baseline. Failed mutation reads block
+saving until a successful reread; diagnostic reads leave that guard unchanged.
 
-All **1,917 local unit tests** pass (six existing skips), including 27 storage cases for real
+All **1,921 local unit tests** pass (six existing skips), including 31 storage cases for real
 publication interleaving, hundreds of document saves/imports, inherited snapshot expiry,
 secure UUID fallback, compaction, corruption, cached immutable values and retry races.
 Eleven new browser regressions cover Undo/cancel/focus, both rejected-application routes,
 quota retry and two-tab state. Three core regressions reproduce the defects on
 pre-review `7409f30`; the first-publication race reproduces on `d9ad67f`. All eleven
-review regressions pass on the corrected working page. Final convergence uses the
-committed generated page.
+review regressions pass on the corrected working page. Four additional unit
+regressions reproduce legacy-add loss and recovered-read loss before their fixes.
+The old Undo finding is independently rechecked: all six relevant committed-page
+browser tests pass. Final convergence uses the committed generated page.
 The final branch's complete browser and build/golden receipts are linked in
 [PR #69 checks](https://github.com/Vaquum/Market-State-Cube-Explorer/pull/69/checks).
 Recovery and named-publication details, including small deletion markers retained for

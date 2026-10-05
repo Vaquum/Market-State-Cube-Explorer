@@ -50,10 +50,10 @@ test("confirmation cancels without changes, clears hidden and locked drawings an
   await D.action(page, id, "visible");
   const original = await D.row(page, id);
   await D.closeManager(page);
-  await page.locator("#ol-tab-cells").click();
-  const add = page.locator("#ol-table-body").getByRole("button", { name: "Add to comparison" }).first();
-  await expect(add).toBeEnabled();
-  await add.click();
+  // The cell menu stays mounted while measurements refresh table rows.
+  const cell = D.point(await D.plot(page), .3, .4);
+  await page.mouse.click(cell.x, cell.y, { button: "right" });
+  await page.getByRole("menuitem", { name: "Add to comparison", exact: true }).click();
   await expect.poll(async () => (await comparison(page))?.captures.length).toBe(1);
   await page.locator("#ol-hist").click();
   await page.locator("#ol-view-name").fill("Before reset");
@@ -117,3 +117,22 @@ for (const width of [375, 600]) {
     await defaults(page);
   });
 }
+
+test.describe("touch chart header", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 900, height: 820 } });
+
+  test("the icon has a 44px target and shares the scale legend row", async ({ page, fakeFor, probe }) => {
+    const fake = await fakeFor("standard");
+    await page.goto(fake.url + "/#w=30d&vis=2&lines=cme");
+    await probe.waitForReady();
+    const button = page.getByRole("button", { name: "Reset canvas", exact: true });
+    await expect(button).toHaveText("");
+    const box = await button.boundingBox();
+    expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+    await expect.poll(async () => {
+      const reset = await button.boundingBox(), legend = await page.locator("#ol-legend").boundingBox();
+      return Math.abs(reset.y - legend.y);
+    }).toBeLessThan(1);
+    await page.screenshot({ path: "reports/canvas-reset-touch.png" });
+  });
+});

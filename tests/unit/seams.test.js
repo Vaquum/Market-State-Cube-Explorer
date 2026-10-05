@@ -43,7 +43,7 @@ const SPEC = {
     cellMeasurement: F(1), columnValue: F(3, 4), dwellCheck: F(2), dwellResidual: F(2), cellState: F(7),
   },
   ratio: { cascade: F(1), efficiency: F(1), coordinate: F(3), TICKS: "array", ratioTicks: F(1), classify: F(1) },
-  relvol: { compute: F(1) },
+  relvol: { compute: F(1), profile: F(1) },
   scale: {
     fitValue: F(1, 2), fitRank: F(1), fixed: F(1, 2), manual: F(1), zeroOnly: F(1), canonical: F(1), id: F(1), validate: F(1, 2), plan: F(1),
     apply: F(3), CLIP: "object", index: F(1), sameWithin: F(2), compat: F(2),

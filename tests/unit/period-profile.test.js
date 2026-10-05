@@ -51,3 +51,11 @@ test("period read failures, pending reads, replay and stale state are preserved"
   assert.equal(result.stale, true);
   assert.equal(result.at(2).value, 0);
 });
+
+test("visible-range identity follows its time bounds and has a valid Rows context", () => {
+  assert.equal(E.context.periodIdentity("visible", [100, 200]), "visible:100:200");
+  assert.notEqual(E.context.periodIdentity("visible", [100, 200]), E.context.periodIdentity("visible", [90, 200]));
+  const ctx = E.context.rowsKey({ measure: "volume", transform: "value", curve: "log", period: "visible:100:200", rowSize: 0, quality: "exact", workspace: "live", instrument: "BTC/USDT" });
+  assert.equal(ctx.period, "visible:100:200");
+  for (const span of [null, [2, 1], [-1, 2], [1.5, 2]]) assert.throws(() => E.context.periodIdentity("visible", span));
+});

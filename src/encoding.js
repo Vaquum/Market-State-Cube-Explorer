@@ -1132,6 +1132,7 @@
     "rows.time.seconds@1": msrFormula("time.seconds", "seconds", false, "period-amount-per-row", 1),
     // The one formula that is at version 2: the spec names v2, v1 is the retired baseline behaviour (DD-06).
     "rows.relvol@2": msrFormula(null, "log2-ratio", true, "log2-ratio", 2),
+    "rows.relvol@3": msrFormula(null, "log2-ratio", true, "log2-ratio", 3),
     "columns.volume@1": msrFormula(null, "usdt", false, "amount", 1),
     "columns.delta@1": msrFormula(null, "usdt", true, "amount", 1),
     "columns.takertrades@1": msrFormula(null, "trades", true, "amount", 1),
@@ -1176,7 +1177,7 @@
       kind: "fixed",
       signed: true,
       rank: false,
-      formula: "rows.relvol@2",
+      formula: "rows.relvol@3",
       fixed: Object.freeze({ kind: "log2-ratio", lo: -2, hi: 2, mid: 0 }),
     }),
   });
@@ -3295,7 +3296,7 @@
     volume: Object.freeze({ formula: "rows.volume.amount@1", family: "amount.usdt", unit: "usdt", signed: false, basis: "period-amount-per-row" }),
     delta: Object.freeze({ formula: "rows.delta.amount@1", family: "delta.usdt", unit: "usdt", signed: true, basis: "period-amount-per-row" }),
     time: Object.freeze({ formula: "rows.time.seconds@1", family: "time.seconds", unit: "seconds", signed: false, basis: "period-amount-per-row" }),
-    relvol: Object.freeze({ formula: "rows.relvol@2", family: "fixed.log2-ratio", unit: "log2-ratio", signed: true, basis: "log2-ratio" }),
+    relvol: Object.freeze({ formula: "rows.relvol@3", family: "fixed.log2-ratio", unit: "log2-ratio", signed: true, basis: "log2-ratio" }),
   });
   const ctxRowFixed = Object.freeze(["relvol"]);
   const ctxRowRank = Object.freeze(["volume", "time"]);
@@ -3330,7 +3331,7 @@
 
   const ctxWorkspaces = Object.freeze(["live", "replay"]);
   // The grammar of a Rows period identity (periodIdentity below writes exactly these) and of a quality.
-  const ctxPeriodPattern = /^(roll:[1-9][0-9]*|cal:(wk|mo|yr):[0-9]{4}-[0-9]{2}-[0-9]{2}|day:[0-9]{4}-[0-9]{2}-[0-9]{2}|all:[0-9]{4}-[0-9]{2}-[0-9]{2})$/;
+  const ctxPeriodPattern = /^(roll:[1-9][0-9]*|cal:(wk|mo|yr):[0-9]{4}-[0-9]{2}-[0-9]{2}|day:[0-9]{4}-[0-9]{2}-[0-9]{2}|all:[0-9]{4}-[0-9]{2}-[0-9]{2}|visible:[0-9]+:[0-9]+)$/;
   const ctxRowQualityPattern = /^(exact|approx-start|approx-rows:[1-9][0-9]*)$/;
   // The rolling periods of the page's LINES, in days: the fallback when the environment gives no `days`.
   const ctxRollingDays = Object.freeze({ "1d": 1, "7d": 7, "30d": 30, "90d": 90, "1y": 365, "3y": 1095 });
@@ -3514,6 +3515,11 @@
     const T0 = e.T0 === undefined ? LATTICE.T0 : e.T0;
     const BASE = e.BASE === undefined ? LATTICE.BASE : e.BASE;
     if (typeof key !== "string") throw new TypeError("periodIdentity needs a period key");
+    if (key === "visible") {
+      if (!Array.isArray(span) || span.length !== 2 || !span.every((x) => Number.isSafeInteger(x) && x >= 0) || span[1] <= span[0])
+        throw new RangeError("periodIdentity: visible range needs increasing nonnegative integer bounds");
+      return "visible:" + span[0] + ":" + span[1];
+    }
     if (key === "all") return "all:" + API.time.utcDay(T0 * 1000);
     if (key === "wk" || key === "mo" || key === "yr") {
       if (!Array.isArray(span) || typeof span[0] !== "number" || !Number.isFinite(span[0])) throw new TypeError("periodIdentity: a calendar period needs its span");
@@ -9598,7 +9604,7 @@
   const cdcModes = Object.freeze(["volume", "flow", "delta", "cascade", "trades", "flowtrades", "size", "path", "dwell", "geometry", "candles"]);
   const cdcPanes = Object.freeze(["cells", "volume", "delta", "trades", "size", "efficiency", "choppiness", "perpath", "rsi1d", "rsi4h", "macd1d"]);
   const cdcRowChoices = Object.freeze(["off", "volume", "delta", "relvol", "time"]);
-  const cdcPeriodKeys = Object.freeze(["1d", "7d", "30d", "90d", "1y", "3y", "wk", "mo", "yr", "all"]);
+  const cdcPeriodKeys = Object.freeze(["visible", "1d", "7d", "30d", "90d", "1y", "3y", "wk", "mo", "yr", "all"]);
   const cdcFollows = Object.freeze(["free", "refit", "coupled", "diagonal"]);
   // The navigation keys: a visual setting may never use one (place() is a regexp over them).
   const cdcNavKeys = Object.freeze(["w", "t", "p", "r", "sel", "at", "replay"]);

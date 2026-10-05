@@ -6096,7 +6096,7 @@
   // they sit after Cells in the chart header, the Rows legend after them.
   const PHONE = matchMedia("(max-width: 760px)");
   function placeMenus() {
-    const groups = ["pane", "rows", "period"].map((id) => el(id).parentElement),
+    const groups = [el("pane").parentElement, el("background-controls")],
       sheet = el("controls");
     if (PHONE.matches === (groups[0].parentElement === sheet)) return;
     closePop();
@@ -9854,6 +9854,7 @@
   // calendar periods are named by what they are now: the month, the year; a
   // day's by the day it runs since.
   function lineName(key) {
+    if (key === "visible") return "Visible range";
     if (key === "all") return "All history";
     if (isVwapDay(key)) return `VWAP from ${day(vwapDayStart(key))}`;
     return isDay(key) ? `Since ${day(dayStart(key))}` : TOGGLES[key]?.name || lineInfo(key).name;
@@ -9887,6 +9888,10 @@
     const end = cutEdge(),
       now = date(Math.max(0, activeCutoff() - 1e-6)),
       base = (d) => Math.max(0, Math.round((+d / 1000 - T0) / BASE));
+    if (key === "visible") {
+      const a = Math.max(0, Math.floor(S.tA)), b = Math.min(end, Math.ceil(S.tB));
+      return a < b ? [a, b] : null;
+    }
     let a;
     if (isDay(key)) a = Math.round(dayStart(key));
     else if (key === "wk") a = base(d3.utcMonday.floor(now));
@@ -12054,13 +12059,14 @@
       ["Time", ["time"]],
     ],
     // The periods: the POC lines' and all history, or since a chosen day.
-    PERIODS = [...LINE_KEYS, "all"],
+    PERIODS = ["visible", ...LINE_KEYS, "all"],
     // Time at price needs the live cube's dwell.
     rowsChoices = () => (PACK.live ? ROWS : ROWS.filter((k) => k !== "time")),
     validPeriod = (key) => PERIODS.includes(key) || (isDay(key) && dayStart(key) < CUT),
     periodName = (key) => lineName(key),
     // The period in a sentence: "over the last 90 days", "over this month", "since 3 Mar 2024".
     periodPhrase = (key) => {
+      if (key === "visible") return "over the visible time range";
       if (key === "all") return "over all history";
       if (isDay(key)) return `since ${day(dayStart(key))}`;
       const info = lineInfo(key);

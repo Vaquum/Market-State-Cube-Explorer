@@ -17907,6 +17907,17 @@
   const canonOf = (pack) =>
     pack.canonical_through ? (Date.parse(pack.canonical_through) / 1000 - T0) / BASE : null;
   let CANON = canonOf(PACK);
+  // Notices can apply panel layout while saved calibration is read during startup.
+  const C = window.explorerComparison;
+  const comparisonEmpty = () => ({comparisonVersion:1,instrument:INSTRUMENT,captures:[],focus:null,reference:null,
+    basis:"auto",sort:{key:"time",direction:"asc"},view:"grid",page:0,poc:null,expanded:false,restoreLayout:null});
+  let comparisonModel = comparisonEmpty(), comparisonUI = null, comparisonAnalysis = null,
+    comparisonStatsKey = "", comparisonRenderKey = "", comparisonRevision = 0, comparisonTimer = null,
+    comparisonUnsaved = false, comparisonRejected = false, comparisonMessage = "", comparisonMenu = null,
+    comparisonPocCache = {key:null,items:[]};
+  const comparisonCounters = {stats:0,writes:0,bytes:0,renders:0};
+  const comparisonMs = (base) => Number.isFinite(base) ? (T0 + base * BASE) * 1000 : null;
+  const comparisonEdge = () => S.replay ? comparisonMs(activeCutoff()) : null;
   // Diagonal through the resolution lattice: least-squares fit of
   // log2(median column price range / 125) against n over the full history,
   // n = 6..13, measured on the 2026-09-24 extraction (exponent 0.49). The two
@@ -38641,16 +38652,6 @@
   }
 
   // PRD-0006: owned snapshots; the chart never remaps this tab's collection.
-  const C = window.explorerComparison;
-  const comparisonEmpty = () => ({comparisonVersion:1,instrument:INSTRUMENT,captures:[],focus:null,reference:null,
-    basis:"auto",sort:{key:"time",direction:"asc"},view:"grid",page:0,poc:null,expanded:false,restoreLayout:null});
-  let comparisonModel = comparisonEmpty(), comparisonUI = null, comparisonAnalysis = null,
-    comparisonStatsKey = "", comparisonRenderKey = "", comparisonRevision = 0, comparisonTimer = null,
-    comparisonUnsaved = false, comparisonRejected = false, comparisonMessage = "", comparisonMenu = null,
-    comparisonPocCache = {key:null,items:[]};
-  const comparisonCounters = {stats:0,writes:0,bytes:0,renders:0};
-  const comparisonMs = (base) => Number.isFinite(base) ? (T0 + base * BASE) * 1000 : null;
-  const comparisonEdge = () => S.replay ? comparisonMs(activeCutoff()) : null;
   function comparisonFreeze(value) {
     if (value && typeof value === "object" && !Object.isFrozen(value)) { Object.values(value).forEach(comparisonFreeze); Object.freeze(value); }
     return value;

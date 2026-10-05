@@ -122,6 +122,39 @@ test("off-page cohorts survive Matrix, sorting, pinned reference and focus remov
   await expect(page.locator("#ol-tab-compare")).toHaveText("Compare · 31");
 });
 
+for (const [name, count, initialPage] of [["empty", 0, 0], ["first-page", 32, 0], ["final-page", 32, 1]]) {
+  test(`Lines-off startup preserves restored ${name} comparison control availability`, async ({ page, fakeFor }) => {
+    const value = collection(count); value.page = initialPage; value.focus = count ? `cell-${initialPage ? 31 : 0}` : null; value.expanded = true;
+    value.restoreLayout = { sideOpen: true, sideWidth: 318, drawerHeight: 420, drawerOpen: true, drawer: "compare" };
+    const fake = await fakeFor("mini"); await seed(page, value); await page.goto(fake.url + "/" + HASH + "&lines=");
+    // Restoration opens Compare itself; clicking its tab would repair the overwritten button state.
+    await expect(panel(page)).toBeVisible(); await expect(page.locator("#ol-tab-compare")).toBeEnabled();
+    await fake.idle({ quietMs: 300, timeoutMs: 20000 });
+    const previous = action(page, "page").filter({ hasText: "Previous" }), next = action(page, "page").filter({ hasText: "Next" });
+    async function assertAvailability() {
+      await expect(page.locator("#ol-tab-compare")).toHaveAttribute("aria-selected", "true");
+      await expect(entries(page)).toHaveCount(Math.min(24, count - initialPage * 24));
+      await expect(previous).toHaveJSProperty("disabled", initialPage === 0);
+      await expect(next).toHaveJSProperty("disabled", count === 0 || initialPage === 1);
+      await expect(action(page, "clear")).toHaveJSProperty("disabled", count === 0);
+      await expect(control(page, "basis")).toBeEnabled(); await expect(control(page, "sort")).toBeEnabled();
+    }
+    await assertAvailability();
+    for (const button of [previous, next, action(page, "clear")]) {
+      if (await button.isDisabled()) await button.evaluate((element) => element.click());
+    }
+    expect(await stored(page)).toEqual(value); await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(panel(page).locator("[data-comparison-status]")).not.toContainText("invalid comparison page");
+    if (count) {
+      await (initialPage ? previous : next).click(); await expect(entries(page)).toHaveCount(initialPage ? 24 : 8);
+      await (initialPage ? next : previous).click(); await assertAvailability();
+      await persisted(page, (record) => record?.page === initialPage && record.expanded);
+    }
+    await page.reload(); await expect(panel(page)).toBeVisible(); await expect(page.locator("#ol-tab-compare")).toBeEnabled();
+    await fake.idle({ quietMs: 300, timeoutMs: 20000 }); await assertAvailability();
+  });
+}
+
 test("signed delta sort uses algebraic order and equal POC distances retain collection order", async ({ page, fakeFor }) => {
   const value = collection(3); value.poc = { id: "frozen-poc", label: "Frozen 90 days", period: "90d", price: 70062.5, rowSize: 125, approximate: true,
     supportEnd: START, knownThrough: START, from: START - 86400000, through: START, source: "hand fixture" };

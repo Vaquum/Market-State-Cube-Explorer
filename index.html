@@ -38978,9 +38978,10 @@
       applyView(linked);
       reportView(linked);
     } else reportRefused(address);
+    qsa("button,input,select").forEach((control) => (control.disabled = false));
+    // The restored comparison owns control availability after the global startup lock is released.
     comparisonLoad();
     transition = null;
-    qsa("button,input,select").forEach((control) => (control.disabled = false));
     startHistory(linked ? "Link" : restored ? "Restored" : "Opened");
     update();
     scaleArm();

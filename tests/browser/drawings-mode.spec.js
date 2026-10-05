@@ -216,3 +216,31 @@ test("inactive lines sharing an endpoint require a choice before any resize and 
   await heldEdit(page, first.id, shared, next, { a: D.expected(.3125, .6875), b: original.b });
   expect(await D.row(page, second.id)).toEqual(sibling); await expect(chooser).toBeHidden();
 });
+
+test("secondary click on inactive overlapping lines requires explicit choice and Edit or Delete targets only that sibling", async ({ page, fakeFor }) => {
+  const fake = await fakeFor("mini"); await D.open(page, fake); const first = await D.drawing(page);
+  await D.action(page, first.id, "duplicate"); const second = await D.active(page); expect(second).not.toBe(first.id); await D.closeManager(page);
+  await page.locator("#ol-canvas").focus(); await page.keyboard.press("Escape");
+  const center = await strokePoint(page, first.id), before = await D.rows(page), original = await D.row(page, first.id), beforeRevision = await revision(page);
+  const chooser = page.locator("#ol-drawing-chooser"), menu = page.locator("#ol-drawing-context");
+  const chooseSecond = async () => {
+    await page.mouse.click(center.x, center.y, { button: "right" }); await expect(chooser).toBeVisible(); await expect(menu).toHaveCount(0);
+    expect(await D.active(page)).toBe(""); expect(await D.rows(page)).toEqual(before); expect(await revision(page)).toBe(beforeRevision);
+    for (const id of [first.id, second]) await expect(chooser.locator(`[data-drawing-choice="${id}"]`)).toBeVisible();
+    await chooser.locator(`[data-drawing-choice="${second}"]`).click(); await expect(chooser).toBeHidden(); await expect(menu).toBeVisible();
+    expect(await D.active(page)).toBe(second); expect(await D.rows(page)).toEqual(before); expect(await revision(page)).toBe(beforeRevision);
+    await expect(menu.getByRole("menuitem", { name: "Edit line", exact: true })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Delete line", exact: true })).toBeVisible();
+  };
+  await chooseSecond(); await page.keyboard.press("Escape"); await expect(menu).toHaveCount(0);
+  expect(await D.rows(page)).toEqual(before); expect(await revision(page)).toBe(beforeRevision);
+  // An already active overlapping sibling supplies deliberate context-menu intent.
+  await page.mouse.click(center.x, center.y, { button: "right" }); await expect(menu).toBeVisible(); await expect(chooser).toBeHidden();
+  await menu.getByRole("menuitem", { name: "Edit line", exact: true }).click();
+  await expect(page.locator("#ol-drawing-editor")).toHaveAttribute("data-drawing-id", second);
+  await page.locator("#ol-drawing-cancel").click(); expect(await D.rows(page)).toEqual(before); expect(await revision(page)).toBe(beforeRevision);
+  await page.locator("#ol-canvas").focus(); await page.keyboard.press("Escape");
+  await chooseSecond(); await menu.getByRole("menuitem", { name: "Delete line", exact: true }).click();
+  await expect.poll(() => D.count(page)).toBe(1); expect(await D.row(page, second)).toBeUndefined(); expect(await D.row(page, first.id)).toEqual(original);
+  expect(await revision(page)).toBe(beforeRevision + 1); await expect(menu).toHaveCount(0); await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
+});

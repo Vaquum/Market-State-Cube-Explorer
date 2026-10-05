@@ -38620,7 +38620,7 @@
     if (origin?.isConnected && origin.focus) origin.focus({ preventScroll: true }); else canvas.focus({ preventScroll: true });
     return true;
   }
-  function drawingChooser(candidates, time, origin = canvas) {
+  function drawingChooser(candidates, time, origin = canvas, onChoose = null) {
     drawingCloseChooser(); closePop(); const choices = el("drawing-choices"); choices.replaceChildren();
     drawingWrite(el("drawing-chooser-title"), "Choose drawing");
     drawingChoiceOrigin = origin instanceof Element ? origin : canvas;
@@ -38631,7 +38631,7 @@
       button.type = "button"; button.className = "ol-action cursor-interaction"; button.dataset.drawingChoice = id;
       swatch.className = "ol-drawing-swatch"; swatch.style.setProperty("--drawing-rgb", object.color); swatch.setAttribute("aria-hidden", "true");
       name.textContent = object.name + (object.locked ? " · Locked" : ""); button.append(swatch, name);
-      button.addEventListener("click", () => { drawingCloseChooser(); drawingActivate(id, time); canvas.focus({ preventScroll: true }); }); choices.append(button);
+      button.addEventListener("click", () => { drawingCloseChooser(); if (onChoose) onChoose(id); else { drawingActivate(id, time); canvas.focus({ preventScroll: true }); } }); choices.append(button);
     }
     if (Number.isFinite(time)) {
       const anchor = drawingUIButton("Anchor evidence here", "anchor", null, time); anchor.addEventListener("click", drawingCloseChooser); choices.append(anchor);
@@ -38769,13 +38769,20 @@
     if (!trendTool) return false;
     // A secondary button cannot take an established drag from its primary owner.
     if (drawingDrag) { event.preventDefault(); return true; }
-    const hit = drawingHits(at(event), event.pointerType)[0];
-    if (!hit) { drawingCloseContext(); return false; }
+    const hits = drawingHits(at(event), event.pointerType), hit = hits.find((candidate) => candidate.id === activeDrawingId) || (hits.length === 1 ? hits[0] : null);
+    if (!hits.length) { drawingCloseContext(); return false; }
     event.preventDefault(); drawingCloseContext(); comparisonCloseMenu(); drawingCancelOperation(); closePop();
-    drawingActivate(hit.id); el("tip").hidden = true;
+    const position = { x: event.clientX, y: event.clientY };
+    if (hit) drawingShowContext(hit.id, position);
+    else drawingChooser(hits, null, canvas, (id) => drawingShowContext(id, position));
+    return true;
+  }
+  function drawingShowContext(id, position) {
+    const object = drawingById(id); if (!trendTool || !object) return;
+    drawingActivate(id); el("tip").hidden = true;
     const node = document.createElement("div"); node.id = "ol-drawing-context"; node.className = "ol-pop ol-cell-menu";
-    node.dataset.drawingUi = ""; node.setAttribute("role", "menu"); node.setAttribute("aria-label", `Actions for ${hit.object.name}`);
-    drawingContext = { node, id: hit.id };
+    node.dataset.drawingUi = ""; node.setAttribute("role", "menu"); node.setAttribute("aria-label", `Actions for ${object.name}`);
+    drawingContext = { node, id };
     for (const [action, label] of [["edit", "Edit line"], ["delete", "Delete line"]]) {
       const button = document.createElement("button"); button.type = "button"; button.className = "ol-item cursor-interaction";
       button.setAttribute("role", "menuitem"); button.dataset.drawingAction = action; button.textContent = label;
@@ -38785,9 +38792,8 @@
         if (action === "edit") drawingEdit(id, "chart"); else drawingUICmd("delete", id);
       }); node.append(button);
     }
-    root.append(node); node.style.left = clamp(event.clientX, 8, Math.max(8, innerWidth - node.offsetWidth - 8)) + "px";
-    node.style.top = clamp(event.clientY, 8, Math.max(8, innerHeight - node.offsetHeight - 8)) + "px"; node.firstElementChild.focus({ preventScroll: true });
-    return true;
+    root.append(node); node.style.left = clamp(position.x, 8, Math.max(8, innerWidth - node.offsetWidth - 8)) + "px";
+    node.style.top = clamp(position.y, 8, Math.max(8, innerHeight - node.offsetHeight - 8)) + "px"; node.firstElementChild.focus({ preventScroll: true });
   }
   function drawingContextOwnsKey(event) {
     if (!drawingContext) return false;

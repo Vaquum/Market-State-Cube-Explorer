@@ -329,3 +329,31 @@ test("discarding rejected storage preserves valid running captures and latest fo
   await action(page, "discard").click(); await page.getByRole("dialog").getByRole("button", { name: "Confirm", exact: true }).click();
   await persisted(page, (v) => v?.captures.length === 3 && v.focus === "cell-2"); await expect(entries(page)).toHaveCount(3);
 });
+
+test("Escape after an Expand quota failure saves the restored layout and clears the stale warning", async ({ page, fakeFor, probe }) => {
+  const fake = await fakeFor("mini"); await open(page, fake, collection(3));
+  await probe.waitForReady({ timeout: 20000 }); await probe.waitForQuiet({ quietMs: 300 });
+  const before = await stored(page), side = await page.locator("#ol-main").getAttribute("data-side");
+  const drawerHeight = await page.locator("#ol-drawer").evaluate((node) => node.style.getPropertyValue("--drawer-h"));
+  await page.evaluate((key) => {
+    const set = Storage.prototype.setItem; window.comparisonQuotaFault = true; window.comparisonRecoveredSave = null;
+    Storage.prototype.setItem = function (name, value) {
+      if (name === key && window.comparisonQuotaFault) throw new DOMException("comparison quota fault", "QuotaExceededError");
+      const result = set.call(this, name, value);
+      if (name === key) window.comparisonRecoveredSave = JSON.parse(value);
+      return result;
+    };
+  }, KEY);
+  await action(page, "expand").click(); await expect(page.locator("#ol-canvas")).toBeHidden();
+  const status = panel(page).locator("[data-comparison-status]");
+  await expect(status).toContainText("Unsaved comparison"); await expect(action(page, "retry")).toBeVisible();
+  expect(await stored(page)).toEqual(before);
+  await page.evaluate(() => { window.comparisonQuotaFault = false; });
+  await action(page, "expand").focus(); await page.keyboard.press("Escape");
+  await expect(page.locator("#ol-canvas")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.comparisonRecoveredSave?.expanded === false && window.comparisonRecoveredSave?.restoreLayout === null)).toBe(true);
+  expect(await stored(page)).toEqual(before);
+  await expect(page.locator("#ol-main")).toHaveAttribute("data-side", side);
+  expect(await page.locator("#ol-drawer").evaluate((node) => node.style.getPropertyValue("--drawer-h"))).toBe(drawerHeight);
+  await expect(status).toHaveText(""); await expect(action(page, "retry")).toBeHidden();
+});

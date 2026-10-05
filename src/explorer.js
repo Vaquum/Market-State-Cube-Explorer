@@ -20921,6 +20921,7 @@
       comparisonCounters.writes++;comparisonCounters.bytes+=result.bytes??0;
       comparisonUnsaved=!result.ok;comparisonRejected=result.status==="retained";
       if(!result.ok)comparisonMessage=`Unsaved comparison · ${result.reason}`;
+      else if(comparisonMessage.startsWith("Unsaved comparison"))comparisonMessage="";
       comparisonRefresh();
     },0);
   }

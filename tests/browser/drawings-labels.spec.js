@@ -250,10 +250,24 @@ test("the preceding reader rejects a labeled complete code whole rather than dro
   const oldHTML = fs.readFileSync(path.join(preceding.dir, "index.html"), "utf8");
   await page.route("**/labels-old.html*", (route) => route.fulfill({ status: 200, contentType: "text/html", body: oldHTML }));
   await D.open(page, fake); const { id } = await D.drawing(page); await setLabel(page, id, TAG + "safe_old_reader");
-  const code = await copied(page); await page.goto(fake.url + "/labels-old.html" + D.HASH); await D.ready(page);
+  const code = await copied(page); expect(D.decodeCode(code).drawings.objects[0]).toMatchObject({ id, label: TAG + "safe_old_reader" });
+  await page.goto(fake.url + "/labels-old.html" + D.HASH); await D.ready(page);
   const before = await D.rows(page), beforeHash = new URL(page.url()).hash;
-  await D.persistence.importCode(page, code); await expect(page.locator("#ol-copy-status")).toContainText(/not applied|unsupported|unknown/i);
+  const beforeSession = await page.evaluate((prefix) => sessionStorage.getItem(prefix + "drawings:v1:session"), PREFIX);
+  // This reader's import UI uses generic words for every structural rejection.
+  // Verify the precise public-codec reason before asserting its historical message.
+  const rejected = await page.evaluate(async (text) => {
+    try {
+      await window.explorerEncoding.codec.decodePortable(text, { inflate: async (bytes) =>
+        new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer()) });
+      return null;
+    } catch (error) { return { code: error.code, reason: error.reason }; }
+  }, code);
+  expect(rejected).toEqual({ code: "structure", reason: 'the member "label" is not part of a view code (at drawings.objects[])' });
+  await D.persistence.importCode(page, code);
+  await expect(page.locator("#ol-copy-status")).toHaveText("That isn't a cube query or a view code. Paste the JSON from Copy query, or a view code (it starts with origo-cube:).");
   expect(await D.rows(page)).toEqual(before); expect(new URL(page.url()).hash).toBe(beforeHash);
+  expect(await page.evaluate((prefix) => sessionStorage.getItem(prefix + "drawings:v1:session"), PREFIX)).toBe(beforeSession);
   await D.open(page, fake); expect((await object(page, id)).label).toBe(TAG + "safe_old_reader");
 });
 

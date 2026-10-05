@@ -4297,7 +4297,7 @@
   // through the same frame), and a relative volume that is not a number says
   // which case it is: outside the comparison range, no current volume, no
   // reference volume, or neither traded.
-  function rowSection(r, money, share, exact, withRow = true) {
+  function rowSection(r, money, share, exact, withRow = true, atPrice = hover?.p ?? r * 2 ** renderM()) {
     const out = [],
       q = last.query,
       where = S.selection ? "selection" : "view";
@@ -4320,7 +4320,7 @@
     if (!u.bands) return [...out, [label, underlayWhy(u.res)]];
     if (from) out.push(["Period's rows", from]);
     const frame = last.sc?.rows ?? null,
-      baseRow = hover?.p ?? r * 2 ** renderM(),
+      baseRow = atPrice,
       band = u.bands.map.get(Math.floor(baseRow / 2 ** u.bands.m)),
       readout = frame && band && u.kind !== "relvol" ? frame.readout(band) : null,
       // The observed amount of the band: the readout's, or (the scale display is off) the band's own.
@@ -5347,7 +5347,7 @@
     }
     if (["cells", "lens"].includes(inspect.surface) && S.mode !== "candles") {
       comparisonCellButtons(body, () => {
-        const w=inspectWhere(); return w.inside ? {c:w.c,r:w.r,n:Math.round(Math.log2(w.sp.ts)),m:Math.round(Math.log2(w.sp.ps)),surface:inspect.surface} : null;
+        const w=inspectWhere(); return w.inside ? {c:w.c,r:w.r,n:Math.round(Math.log2(w.sp.ts)),m:Math.round(Math.log2(w.sp.ps)),surface:inspect.surface,periodPrice:inspect.p} : null;
       });
     }
     el("inspect-detail-title").textContent = el("inspect-position").textContent;
@@ -20884,7 +20884,7 @@
     const lp = last.comparisonLens;
     const lens = lensShown() && lp && p.x >= lp.box.x && p.x < lp.box.x+lp.box.w && p.y>=lp.box.y && p.y<lp.box.y+lp.box.h;
     const n=lens?lp.n:last.n,m=lens?lp.m:last.m;
-    return {c:Math.floor(p.t / 2**n),r:Math.floor(p.p / 2**m),n,m,surface:lens?"lens":"cells"};
+    return {c:Math.floor(p.t / 2**n),r:Math.floor(p.p / 2**m),n,m,surface:lens?"lens":"cells",periodPrice:p.p};
   }
   function comparisonCapture(target) {
     if (!target || !last || S.mode === "candles") return null;
@@ -20935,23 +20935,25 @@
       addDetail("Dwell seconds",mz.w,"seconds",comparisonMs(motionEnd));
     }
     if(!lens) {
+      const periodPrice=Number.isFinite(target.periodPrice)&&target.periodPrice>=low&&target.periodPrice<high?target.periodPrice:low;
       const contextEnd=comparisonMs(last.meas.end??last.meas.b[1]), row=last.query.rows.find(x=>x.r===r);
       if(["exact","cube","recorded"].includes(last.meas.state) && row) {
         addDetail("Row volume · captured view",row.v,"usdt",contextEnd);
         if(last.query.v>0)addDetail("Row share · captured view",row.v/last.query.v,"share",contextEnd);
       }
       if(["exact","cube","recorded"].includes(last.meas.state))addDetail("Captured view bounds",JSON.stringify(last.meas.b.slice(0,2).map(comparisonMs))+" UTC; "+last.meas.b.slice(2).map(x=>x*PR).join("–")+" USDT","",contextEnd);
-      const under=last.under, band=under?.bands?.map.get(Math.floor(r/2**(under.bands.m-m))), periodEnd=comparisonMs(under?.through);
+      const under=last.under, bandIndex=under?.bands?Math.floor(periodPrice/2**under.bands.m):null,
+        band=under?.bands?.map.get(bandIndex), periodEnd=comparisonMs(under?.through);
       if(under?.res.state==="ready"&&band) {
         addDetail("Period · captured context",under.period+" · "+JSON.stringify(under.res.span?.map(comparisonMs))+" UTC","",periodEnd);
-        addDetail("Period row band",[Math.floor(r/2**(under.bands.m-m))*2**under.bands.m*PR,(Math.floor(r/2**(under.bands.m-m))+1)*2**under.bands.m*PR].join("–"),"usdt",periodEnd);
+        addDetail("Period row band",[bandIndex*2**under.bands.m*PR,(bandIndex+1)*2**under.bands.m*PR].join("–"),"usdt",periodEnd);
         if(under.kind==="volume")addDetail("Period row volume",band.v,"usdt",periodEnd);
         if(under.kind==="delta")addDetail("Period net taker volume",2*band.bv-band.v,"usdt",periodEnd);
       }
       const volumePeriodEnd=under?.vol.state==="ready"?comparisonMs(under.vol.end??under.vol.span?.[1]):null,
         relativeSupport=under?.kind==="relvol"?volumePeriodEnd:
           Number.isFinite(contextEnd)&&Number.isFinite(volumePeriodEnd)&&["exact","cube","recorded"].includes(last.meas.state)?Math.max(contextEnd,volumePeriodEnd):null;
-      for(const row of rowSection(r,(x)=>String(x),(x)=>String(x),true,false)) {
+      for(const row of rowSection(r,(x)=>String(x),(x)=>String(x),true,false,periodPrice)) {
         if(Number.isFinite(row[3]))addDetail(row[0]+" · captured context",row[3],"",relativeSupport);
       }
       if(under?.kind==="relvol"&&under.volBands) {

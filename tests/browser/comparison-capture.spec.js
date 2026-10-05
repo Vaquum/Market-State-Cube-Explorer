@@ -181,6 +181,26 @@ test("a covered known-zero cell is numeric while its empty ratios retain typed r
   expect(capture.metrics.path.tag).toBe("pending"); await expect(page.locator(`${WORK} .ol-comparison-focus [data-metric="volume"]`)).toHaveAttribute("data-canonical", "0");
 });
 
+test("a background capture retains its clicked period price band across coarser cells and menu pointer movement", async ({ page, fakeFor, probe }) => {
+  const fake = await fakeFor("micro:mixed"), hash = VIEW + "&rows=relvol&period=all";
+  await ready(page, fake, probe, hash);
+  await addMenu(page, await point(page, 28125, 25187.5));
+  const native = (await saved(page)).captures[0],
+    band = (capture) => capture.detail.find((detail) => detail.label === "Period row band"),
+    relative = (capture) => capture.detail.find((detail) => detail.label.startsWith("Relative volume · ") && detail.label.endsWith(" · captured context"));
+  expect(band(native).value).toBe("25125–25250");
+  expect(relative(native).tag).toBe("finite");
+  await page.evaluate((next) => { location.hash = next; }, hash.replace("r=0,0", "r=0,2"));
+  await atRest(page, fake, probe);
+  await addMenu(page, await point(page, 28125, 25187.5), 2);
+  const coarse = (await saved(page)).captures[1];
+  expect(coarse.level.m).toBe(2);
+  expect(band(coarse)).toEqual(band(native));
+  expect(relative(coarse)).toEqual(relative(native));
+  await clipboard(page);
+  expect(await copyFocused(page)).toContain("Period row band: 25125–25250 usdt");
+});
+
 test("a pending rectangle keeps loaded cell facts, independently summed from its trade stream", async ({ page, fakeFor, probe }) => {
   const fake = await fakeFor("standard"); await ready(page, fake, probe, "#w=30d&vis=2&marks=none&lines=");
   const gate = fake.on({ route: "/cube/query" }).gate();

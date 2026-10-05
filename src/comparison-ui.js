@@ -196,7 +196,9 @@
       setOptions("poc", pocs, hiddenPoc ? "unavailable-in-replay" : model.poc?.id);
       q(".ol-comparison-basis-note").textContent = `${model.basis === "auto" || !model.basis ? "Auto → " : ""}${usedBasis === "intensity" ? "Intensity" : "Amount"}${analysis?.geometryDiffers ? " · Geometry differs" : ""}`;
       q(".ol-comparison-poc-note").textContent = hiddenPoc ? "Unavailable in replay" : !loadedPocs.length && !model.poc ? "Enable a POC in Lines first" : model.poc?.label || "";
-      q('[data-comparison-status]').textContent = options.status || (options.unsaved ? "Unsaved comparison" : "");
+      const status = options.status || "";
+      q('[data-comparison-status]').textContent = options.unsaved && !status.startsWith("Unsaved comparison")
+        ? `Unsaved comparison${status ? " · " + status : ""}` : status;
       q('[data-comparison-action="retry"]').hidden = !options.unsaved || !!options.storageRejected;
       q('[data-comparison-action="discard"]').hidden = !options.storageRejected;
       for (const button of root.querySelectorAll('[data-comparison-action="view"]')) button.setAttribute("aria-pressed", String(button.dataset.value === (model.view || "grid")));

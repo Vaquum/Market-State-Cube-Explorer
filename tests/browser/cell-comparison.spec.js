@@ -124,3 +124,29 @@ for(const tool of ["pan","trend"])
     await page.mouse.move(b.x+60,b.y+30);await probe.waitForQuiet({quietMs:300});
     expect(await page.evaluate(()=>location.hash)).toBe(after);
   });
+
+for(const boundary of ["canvas","viewport"])
+  for(const tool of ["pan","trend"])
+    test(`Control-start release outside ${boundary} does not consume the next ${tool} drag`,async({page,fakeFor,probe})=>{
+      const fake=await fakeFor("standard");await open(page,fake,probe);await page.locator(`[data-tool="${tool}"]`).click();
+      const a=await point(page),box=await page.locator("#ol-canvas").boundingBox(),before=await page.evaluate(()=>location.hash);
+      await page.evaluate(()=>{window.__outsideMenuRelease=false;document.addEventListener("pointerup",event=>{window.__outsideMenuRelease=event.isTrusted&&event.target!==document.getElementById("ol-canvas");},{once:true});});
+      await page.mouse.move(a.x,a.y);await page.keyboard.down("Control");await page.mouse.down();
+      await expect(page.locator("#ol-cell-menu")).toBeVisible();
+      const outside=boundary==="canvas"?{x:box.x+box.width-30,y:box.y-12}:{x:-20,y:-20};
+      await page.mouse.move(outside.x,outside.y,{steps:4});await page.mouse.up();await page.keyboard.up("Control");
+      if(boundary==="canvas")expect(await page.evaluate(()=>window.__outsideMenuRelease)).toBe(true);
+      await page.keyboard.press("Escape");await expect(page.locator("#ol-cell-menu")).toHaveCount(0);
+      expect(await page.evaluate(()=>location.hash)).toBe(before);
+      const start=await point(page),end={x:start.x+90,y:start.y-45};
+      await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(end.x,end.y,{steps:6});await page.mouse.up();
+      await probe.waitForQuiet({quietMs:300});
+      if(tool==="trend") {
+        await expect(page.locator("#ol-canvas")).toHaveAttribute("data-drawing-count","1");
+        await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed","true");
+      } else expect(await page.evaluate(()=>location.hash)).not.toBe(before);
+      const after=await page.evaluate(()=>location.hash);
+      await page.mouse.move(end.x+60,end.y+30);await probe.waitForQuiet({quietMs:300});
+      expect(await page.evaluate(()=>location.hash)).toBe(after);
+      expect((await stored(page))?.captures.length??0).toBe(0);
+    });

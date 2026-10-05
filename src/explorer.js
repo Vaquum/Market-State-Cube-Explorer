@@ -21048,9 +21048,10 @@
     comparisonUI=window.explorerComparisonUI.create({root:el("comparisonWorkspace"),dispatch:comparisonDispatch});
     canvas.addEventListener("contextmenu",event=>comparisonOpenMenu(event,comparisonTarget(at(event))));
     const menuPresses=new Set(),pressKey=event=>`${event.pointerId}:${event.button}`;
-    canvas.addEventListener("pointerdown",event=>{if(event.button===2||event.ctrlKey&&event.button===0){menuPresses.add(pressKey(event));event.stopImmediatePropagation();if(event.ctrlKey)comparisonOpenMenu(event,comparisonTarget(at(event)));}},true);
-    canvas.addEventListener("pointerup",event=>{if(menuPresses.delete(pressKey(event)))event.stopImmediatePropagation();},true);
-    canvas.addEventListener("pointercancel",event=>{for(const key of menuPresses)if(key.startsWith(event.pointerId+":"))menuPresses.delete(key);},true);
+    // A new press supersedes ownership whose release escaped the document/window.
+    canvas.addEventListener("pointerdown",event=>{menuPresses.delete(pressKey(event));if(event.button===2||event.ctrlKey&&event.button===0){menuPresses.add(pressKey(event));event.stopImmediatePropagation();if(event.ctrlKey)comparisonOpenMenu(event,comparisonTarget(at(event)));}},true);
+    document.addEventListener("pointerup",event=>{if(menuPresses.delete(pressKey(event))&&event.target===canvas)event.stopImmediatePropagation();},true);
+    document.addEventListener("pointercancel",event=>{for(const key of menuPresses)if(key.startsWith(event.pointerId+":"))menuPresses.delete(key);},true);
     document.addEventListener("pointerdown",event=>{if(comparisonMenu&&!comparisonMenu.node.contains(event.target))comparisonCloseMenu(true);},true);
     comparisonRefresh(true);
   }

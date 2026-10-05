@@ -780,8 +780,8 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B60 | `tests/browser/drawings-persistence.spec.js` | Complete v3 codes, replacement choice, legacy imports, protected storage and concurrent saved Views | #66 |
 | B61 | `tests/browser/drawings-colors.spec.js` | Finite exact-RGB/casing/hexagon raster samples in both themes at DPR1/2; no universal contrast or recognition claim | #66 |
 | B62 | `tests/browser/drawings-budget.spec.js` | Max-count painted IDs match Shown/Held back inventory and Focus recovers a held drawing | #66 |
-| B63 | `tests/browser/cell-comparison.spec.js` | Cell gesture/menu/access capture, primary-release ownership, uncaptured replay Copy fallback, readable bounded dashboard, shared math, keys and expansion | #71 |
-| B64 | `tests/browser/comparison-session.spec.js` | 1/2/3/6/32/128 captures, bounded Cards/Matrix, reference/basis/POC math, reload/tab isolation, out-of-range dates, frozen POC DOM suppression, faults, replay and expansion | #71 |
+| B63 | `tests/browser/cell-comparison.spec.js` | Cell gesture/menu/access capture, primary-release ownership and outside-canvas cleanup, uncaptured replay Copy fallback, readable bounded dashboard, shared math, keys and expansion | #71 |
+| B64 | `tests/browser/comparison-session.spec.js` | 1/2/3/6/32/128 captures, bounded Cards/Matrix, reference/basis/POC math, reload/tab isolation, out-of-range dates, frozen POC DOM suppression, durable unsaved status after Copy, faults, replay and expansion | #71 |
 | B65 | `tests/browser/comparison-capture.spec.js` | Canonical live/recorded sums, explicit Update, stale live/motion menus, finer Lens, replay portions/copy, loaded POC freezing, Ctrl-click, transactional near-cap reveal and pending rectangle facts | #71 |
 
 ## 10. Migration status per slice

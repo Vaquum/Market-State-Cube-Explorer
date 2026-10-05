@@ -222,6 +222,30 @@ test("quota failure keeps running focus and Retry saves its latest state", async
   await persisted(page, (v) => v?.focus === "cell-1"); await expect(action(page, "retry")).toBeHidden();
 });
 
+test("successful Copy keeps a quota-failed new capture visibly unsaved until Retry persists it", async ({ page, fakeFor, probe }) => {
+  const fake = await fakeFor("mini"); await open(page, fake, collection(1), HASH + "&marks=none&lines=");
+  await probe.waitForReady({ timeout: 20000 }); await probe.waitForQuiet({ quietMs: 300 });
+  const before = await stored(page);
+  await page.evaluate((key) => {
+    const set = Storage.prototype.setItem; window.comparisonQuotaFault = true;
+    Storage.prototype.setItem = function (name, value) { if (name === key && window.comparisonQuotaFault) throw new DOMException("comparison quota fault", "QuotaExceededError"); return set.call(this, name, value); };
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { window.comparisonCopiedText = text; } } });
+  }, KEY);
+  await page.locator("#ol-tab-cells").click();
+  await page.locator("#ol-table-body tr").first().getByRole("button", { name: "Add to comparison" }).click();
+  await expect(page.locator("#ol-tab-compare")).toHaveText("Compare · 2");
+  const status = panel(page).locator("[data-comparison-status]");
+  await expect(status).toContainText("Unsaved comparison"); await expect(entries(page)).toHaveCount(2);
+  expect(await stored(page)).toEqual(before);
+  await action(page, "copy").click();
+  await expect.poll(() => page.evaluate(() => window.comparisonCopiedText)).toContain("Volume:");
+  await expect(status).toHaveText("Unsaved comparison · Cell copied"); await expect(action(page, "retry")).toBeVisible();
+  expect(await stored(page)).toEqual(before); await expect(entries(page)).toHaveCount(2);
+  await page.evaluate(() => { window.comparisonQuotaFault = false; }); await action(page, "retry").click();
+  await persisted(page, (value) => value?.captures.length === 2 && value.focus !== "cell-0");
+  await expect(action(page, "retry")).toBeHidden(); await expect(status).not.toContainText("Unsaved comparison");
+});
+
 for (const rejected of ["{invalid JSON", JSON.stringify({ ...collection(1), comparisonVersion: 2 })]) {
   test(`rejected ${rejected.startsWith("{") && rejected.includes("comparisonVersion") ? "newer" : "corrupt"} text survives until confirmed Discard`, async ({ page, fakeFor }) => {
     const fake = await fakeFor("mini"); await open(page, fake, rejected);

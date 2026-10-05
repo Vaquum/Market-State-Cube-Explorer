@@ -20960,7 +20960,7 @@
     return JSON.stringify([record,comparisonSourceRevision,last?.sourceVersion,live.generation,PACK.state_token,CUT,sourcesKey(),last?.cut,S.mode]);
   }
   function comparisonPocs() {
-    const cacheKey=[comparisonSourceRevision,live.generation,PACK.state_token,CUT,activeCutoff(),lineResults.size,S.lines.join(",")].join("|");
+    const cacheKey=[comparisonSourceRevision,live.generation,PACK.state_token,CUT,activeCutoff(),sourcesKey(),lineResults.size,S.lines.join(",")].join("|");
     if(comparisonPocCache.key===cacheKey)return comparisonPocCache.items;
     const out=[];
     for(const key of periodLines()) {
@@ -21175,6 +21175,9 @@
       applyView(linked);
       reportView(linked);
     } else reportRefused(address);
+    // Prime enabled Lines from loaded cells even when a restored Compare hides the chart.
+    // Pending results do not schedule reads; the picker only consumes ready Lines below.
+    for (const key of periodLines()) lineResult(key);
     qsa("button,input,select").forEach((control) => (control.disabled = false));
     // The restored comparison owns control availability after the global startup lock is released.
     comparisonLoad();
@@ -21214,6 +21217,7 @@
         lineResults.clear();
         lineLatest.clear();
         rebuildReference();
+        for (const key of periodLines()) lineResult(key);
         chooseSource();
         limits();
         evidenceCache.clear();

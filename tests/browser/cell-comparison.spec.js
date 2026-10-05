@@ -150,3 +150,23 @@ for(const boundary of ["canvas","viewport"])
       expect(await page.evaluate(()=>location.hash)).toBe(after);
       expect((await stored(page))?.captures.length??0).toBe(0);
     });
+
+for(const tool of ["pan","trend"])
+  test(`primary ${tool} drag completes when the secondary button is released last`,async({page,fakeFor,probe})=>{
+    const fake=await fakeFor("standard");await open(page,fake,probe);await page.locator(`[data-tool="${tool}"]`).click();
+    const a=await point(page),b={x:a.x+90,y:a.y-45},before=await page.evaluate(()=>location.hash);
+    await page.evaluate(()=>{window.__chordReleases=[];document.addEventListener("pointerup",event=>{if(event.target===document.getElementById("ol-canvas"))window.__chordReleases.push({button:event.button,buttons:event.buttons,trusted:event.isTrusted});},true);});
+    await page.mouse.move(a.x,a.y);await page.mouse.down({button:"left"});await page.mouse.move(b.x,b.y,{steps:6});
+    await page.mouse.down({button:"right"});await page.mouse.up({button:"left"});await page.mouse.up({button:"right"});
+    expect(await page.evaluate(()=>window.__chordReleases)).toEqual([{button:2,buttons:0,trusted:true}]);
+    if(await page.locator("#ol-cell-menu").count())await page.keyboard.press("Escape");
+    await probe.waitForQuiet({quietMs:300});
+    if(tool==="trend") {
+      await expect(page.locator("#ol-canvas")).toHaveAttribute("data-drawing-count","1");
+      await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed","true");
+    } else expect(await page.evaluate(()=>location.hash)).not.toBe(before);
+    const after=await page.evaluate(()=>location.hash);
+    await page.mouse.move(b.x+60,b.y+30);await probe.waitForQuiet({quietMs:300});
+    expect(await page.evaluate(()=>location.hash)).toBe(after);
+    expect((await stored(page))?.captures.length??0).toBe(0);
+  });

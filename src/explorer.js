@@ -19194,7 +19194,8 @@
       noteGesture();
     });
     const finishPointer = (e) => {
-      if (e.button !== 0) return;
+      // The last released button can be secondary even though primary started this gesture.
+      if (e.button !== 0 && !nav.pointers.has(e.pointerId)) return;
       if (drawingPointerUp(e, at(e))) {
         nav.alt = Boolean(e.altKey);
         if (nav.alt) { requestDraw(); scheduleCube(); }

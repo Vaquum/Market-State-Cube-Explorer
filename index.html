@@ -21627,7 +21627,8 @@
   let cellRows = new Map(),
     cellRowsLevel = null,
     hoverRow = null,
-    cellsTimer = 0;
+    cellsTimer = 0,
+    cellsFocusRestoring = false;
   // The words of a cell's finality, from the one predicate (E.measure.cellState) the readout and the
   // inspector's counts use, so the table, the tooltip and the counts cannot say different things.
   function cellState(c, b, ts = stepT(), ps = stepP()) {
@@ -21800,15 +21801,22 @@
     }
     // A rebuild (a refresh, a sort, a page) must not take the keyboard away from the row that has it: the row with the same cell is given it back, or else the
     // first row, and it is the table's tab stop
-    const held = document.activeElement && el("table-body").contains(document.activeElement) ? document.activeElement.dataset.cellKey : null;
-    el("table-body").replaceChildren(frag);
-    if (held !== null) {
-      const same = [...el("table-body").children].find((r) => r.dataset.cellKey === held) ?? el("table-body").firstElementChild;
-      if (same) {
-        for (const r of el("table-body").children) r.tabIndex = r === same ? 0 : -1;
-        same.focus({ preventScroll: true });
+    const active = document.activeElement, held = el("table-body").contains(active) ? active.closest("tr")?.dataset.cellKey : null,
+      heldAction = active?.dataset.cellComparisonAction;
+    cellsFocusRestoring = true;
+    try {
+      el("table-body").replaceChildren(frag);
+      if (held != null) {
+        const exact = [...el("table-body").children].find((r) => r.dataset.cellKey === held), same = exact ?? el("table-body").firstElementChild;
+        if (same) {
+          for (const r of el("table-body").children) r.tabIndex = r === same ? 0 : -1;
+          (exact && heldAction ? exact.querySelector(`[data-cell-comparison-action="${heldAction}"]`) ?? same : same).focus({ preventScroll: true });
+          const [n,m]=same.dataset.level.split(":").map(Number);
+          tableHover={c:Number(same.dataset.c),r:Number(same.dataset.r),n,m};
+          if(!exact)requestDraw();
+        }
       }
-    }
+    } finally { cellsFocusRestoring = false; }
     hoverRow = null;
     // The rows are new: a row the pointer is on keeps its marker on the legend.
     if (tableHover) rowMarker();
@@ -23645,6 +23653,7 @@
       rows[to].focus();
     });
     el("table-body").addEventListener("focusin", (e) => {
+      if(cellsFocusRestoring)return;
       const tr = e.target.closest("tr");
       if (!tr) return;
       const [n, m] = tr.dataset.level.split(":").map(Number);
@@ -23653,6 +23662,7 @@
       requestDraw();
     });
     el("table-body").addEventListener("focusout", () => {
+      if(cellsFocusRestoring)return;
       tableHover = null;
       rowMarker();
       requestDraw();
@@ -38715,8 +38725,14 @@
         if(under.kind==="volume")addDetail("Period row volume",band.v,"usdt",periodEnd);
         if(under.kind==="delta")addDetail("Period net taker volume",2*band.bv-band.v,"usdt",periodEnd);
       }
+      const volumePeriodEnd=under?.vol.state==="ready"?comparisonMs(under.vol.end??under.vol.span?.[1]):null,
+        relativeSupport=Number.isFinite(contextEnd)&&Number.isFinite(volumePeriodEnd)&&["exact","cube","recorded"].includes(last.meas.state)?Math.max(contextEnd,volumePeriodEnd):null;
       for(const row of rowSection(r,(x)=>String(x),(x)=>String(x),true,false)) {
-        if(Number.isFinite(row[3]))addDetail(row[0]+" · captured context",row[3],"",comparisonMs(last.under?.res?.end??last.under?.through));
+        if(Number.isFinite(row[3]))addDetail(row[0]+" · captured context",row[3],"",relativeSupport);
+      }
+      if(under?.volBands) {
+        addDetail("Relative volume rectangle through",Number.isFinite(contextEnd)?new Date(contextEnd).toISOString():"Unknown","",relativeSupport);
+        addDetail("Relative volume reference through",Number.isFinite(volumePeriodEnd)?new Date(volumePeriodEnd).toISOString():"Unknown","",relativeSupport);
       }
     }
     const complete=(c+1)*ts<=last.dataCut, timePortion=t0>c*ts||t1<(c+1)*ts,
@@ -38850,9 +38866,11 @@
   }
   function comparisonCellButtons(parent,resolve) {
     for(const [type,label]of [["copy","Copy cell"],["add","Add to comparison"],["update","Update capture"]]) {
-      const button=document.createElement("button");button.type="button";button.className="ol-action ol-s ol-cell-compare-action";button.textContent=label;
+      const button=document.createElement("button");button.type="button";button.className="ol-action ol-s ol-cell-compare-action";button.dataset.cellComparisonAction=type;button.textContent=label;
       if(type==="update"){const c=comparisonCapture(resolve());if(!c||!comparisonModel.captures.some(x=>x.id===c.id))continue;}
-      button.addEventListener("click",e=>{e.stopPropagation();const capture=comparisonCapture(resolve());if(!capture){comparisonMessage="Cell changed; open its menu again";comparisonRefresh();return;}if(type==="copy")comparisonCopy(capture);else comparisonAdd(capture,type==="update");});parent.append(button);
+      // Native button activation owns these keys; the table's row navigator does not.
+      button.addEventListener("keydown",e=>{if(e.key!=="Escape")e.stopPropagation();});
+      button.addEventListener("click",e=>{e.stopPropagation();const capture=comparisonCapture(resolve());if(!capture){comparisonMessage="Cell changed; open its menu again";el("inspect-live").textContent=comparisonMessage;comparisonRefresh();return;}if(type==="copy")comparisonCopy(capture);else comparisonAdd(capture,type==="update");});parent.append(button);
     }
   }
   function comparisonCloseMenu(focus=false) {

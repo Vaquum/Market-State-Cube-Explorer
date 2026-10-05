@@ -52,10 +52,18 @@ test("duplicate opens the first owned snapshot",async({page,fakeFor,probe})=>{
 });
 
 test("Cells Copy/Add preserve canonical numbers and row Enter still opens Inspect",async({page,fakeFor,probe})=>{
-  const fake=await fakeFor("standard");await open(page,fake,probe);await page.locator("#ol-tab-cells").click();
+  const fake=await fakeFor("standard");await open(page,fake,probe);await page.locator("#ol-tab-cells").click();await fake.idle({quietMs:300,timeoutMs:30000});await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   const row=page.locator("#ol-table-body tr").first();await expect(row).toBeVisible();
   const facts=await row.evaluate(n=>({c:+n.dataset.c,r:+n.dataset.r,volume:+n.querySelector('[data-field="volume"]').dataset.canonical,trades:+n.querySelector('[data-field="trades"]').dataset.canonical}));
-  await row.getByRole("button",{name:"Add to comparison"}).click();await expect.poll(async()=> (await stored(page))?.captures.length).toBe(1);
+  const hash=await page.evaluate(()=>location.hash);
+  await page.evaluate(()=>Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async(text)=>{window.__cellCopy=text;}}}));
+  await row.getByRole("button",{name:"Copy cell"}).focus();await page.keyboard.press("Enter");
+  await expect.poll(()=>page.evaluate(()=>window.__cellCopy)).toContain("Volume: "+facts.volume+" usdt");
+  expect((await stored(page))?.captures.length??0).toBe(0);
+  await row.getByRole("button",{name:"Add to comparison"}).focus();
+  for(const key of ["1","ArrowLeft"])await page.keyboard.press(key);
+  expect(await page.evaluate(()=>location.hash)).toBe(hash);
+  await page.keyboard.press("Space");await expect.poll(async()=> (await stored(page))?.captures.length).toBe(1);
   const c=(await stored(page)).captures[0];expect(c.c).toBe(facts.c);expect(c.r).toBe(facts.r);
   expect(c.metrics["volume.amount"].value).toBe(facts.volume);expect(c.metrics["trades.amount"].value).toBe(facts.trades);
   await page.locator("#ol-tab-cells").click();await row.focus();await page.keyboard.press("Enter");await expect(page.locator("#ol-inspect-detail")).toBeVisible();

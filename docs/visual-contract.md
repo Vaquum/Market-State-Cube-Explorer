@@ -71,6 +71,7 @@ Contrast is WCAG contrast of the hex against `--ol-surface` (`#fff` / `#161f19`)
 | T-35 | Design token `--ol-line-compare` (new in S3) | src/explorer.css custom-property block next to the line family tokens; JS `colors.family.compare` through `getColors`; the cone, its anchor line and the evidence tracks | Does not exist at baseline (the violet `--ol-evidence` carried the continuation) | `REF:Historical comparison neutral`: the muted ink, so the comparison is never a third hue beside the price levels' violet; its two sets are told apart by shape and label | - | #48 | U58, B41 | done |
 | T-36 | Per-object authored RGB `--drawing-rgb` | src/explorer.css `.ol-drawing-swatch`; src/explorer.js `drawingRow`, `drawingSyncInventory`, `drawingSyncUI` | Exact normalized six-digit RGB, independent of theme; a filled hexagon swatch with structural border | `annotation.trend.rgb`: object identity; visible name and exact RGB accompany the swatch; no quantitative or market meaning | - | #66 | U92, B61 | keep |
 | T-37 | Readable comparison properties `--fs-comparison-primary`, `--fs-comparison-value`, `--fs-comparison-label`, `--fs-comparison-card`, `--fs-comparison-support`, `--comparison-card-min`, `--comparison-track-height` | src/explorer.css comparison block; src/comparison-ui.js Focus/Cards/Matrix | 28/20/14 px focus, 18/12 px cards; 200 px card minimum, 6 px track | CHR; registered type/layout sizes; collection growth pages without shrinking text | - | #71 | B63 | keep |
+| T-38 | Viewport position property `--drawing-menu-top` | src/explorer.js `drawingPlaceActions`; src/explorer.css `.ol-drawing-actions` | Nonnegative viewport top in CSS px, measured while the desktop More menu is open; 120 px fallback. Menu height is the smaller of 70dvh and the remaining viewport height below that top, less 16 px; excess actions scroll inside the menu | CHR; layout only, keeps drawing actions reachable without shrinking text | - | #66 | U36, B61 | keep |
 
 ### 3.2 Canvas consumers (C-)
 
@@ -138,7 +139,7 @@ The `draw()` order at the baseline is: 973 background, 981 coverage, 982 grid, 9
 | C-25 | Transient lens | `drawResolutionLens` 11247-11386, `lensMotion` 11412, `lensCascade` 11389, `lensCaption` 11449 | opaque `surface`; cells via `cellColour(z, q, deltaMax)` with lens-local rank scale and lens-local `deltaMax`; movement lens-local; POC line `poc` 1.5; frame and caption frame `accent` 1.5; caption legend strings hard-coded 11297-11310 | `RP`; lens colour = shared active Cells mapping unless explicit Local contrast with its own descriptor and legend; frame two-tone (S2) [slices: S1 (mapping, legend, Local contrast), S2 (frame/plate), S3 (finer-record readout)] | LENS | #46, #47, #48 | U24, U26, U27, U20, U21, U23, B12, B46 | done |
 | C-26 | Canvas text and plates (all) | `text` 757, `chartLabel` 768 (users: 1040, 1050, 1051, 2138-2147, 2213, 7740, 7780, 9557, 9558), `chip` 791, `drawLineTags` 7947, `paneLegend` 8855, `lensCaption` 11449, profile letters 4465, axes 870 | default `colors.muted` 11 px; labels in family or evidence colour directly on data | `CHR` with opaque plates where needed [slices: S3 (audit); S1 only for legend/axis text it generates] | - | #46, #48 | U19, U20, B43 | done |
 | C-27 | Legend / axis text written by draw | `draw` 1116-1121 (`legendText` 4137, `LEGEND_TITLES` 4155, `legendRamp` 4171, `underlayLegend` 4636, `motionLegend` 10471) | see D-01, D-02 | generated from role/mapping records | - | #46 | U20, B23 | done |
-| C-28 | Manual trend-line core, casing, authored glyph and edit handles | src/explorer.js `drawingPaintObject`, `drawingHex`, `drawingCasing`, `drawingPaint`, `drawingGeometry`, `drawingCandidates` | 1.5 CSS px solid exact-RGB core on a 3.5 px black/white casing; hollow six-vertex glyph at visible anchors, or an inset clipped boundary when both anchors are off screen; active Pan handles use `colors.surface` and `colors.ink` | `annotation.trend.rgb` + `IX`: same continuous chart projection across Cells, Candles and Lens; viewport-clipped capsules and glyphs share the persistent planner; Hidden, Off screen and Held back remain distinct | CHART, LENS | #66 | U92, B58, B61, B62 | keep |
+| C-28 | Manual trend-line core, casing, authored glyph and edit handles | src/explorer.js `drawingPaintObject`, `drawingHex`, `drawingCasing`, `drawingPaint`, `drawingGeometry`, `drawingCandidates` | 1.5 CSS px solid exact-RGB core on a 3.5 px black/white casing; hollow six-vertex glyph at visible anchors, or an inset clipped boundary when both anchors are off screen; active Trend handles on the main chart use `colors.surface` and `colors.ink` | `annotation.trend.rgb` + `IX`: same continuous chart projection across Cells, Candles and Lens; viewport-clipped capsules and glyphs share the persistent planner; Hidden, Off screen and Held back remain distinct | CHART, LENS | #66 | U92, B58, B61, B62 | keep |
 
 Notes: C-06 to C-08 share the `design.gap` and minimum-size code that S2 owns. C-01 to C-04 and C-08a all end in one `fillRect` (4344-4351 and 10419), so one mapping seam covers them. C-11b and C-11d are DATA-NAME features drawn with retired ROLE tokens: the lint keys on the token (`colors.buy`), never on the variable `bv` or `bpoc`.
 
@@ -790,13 +791,13 @@ Rendered from the Status column at S2's convergence: `done` is the work of S1 an
 
 | Prefix | Rows | keep | todo-S1 | todo-S2 | todo-S3 | done |
 |---|---|---|---|---|---|---|
-| T | 37 | 19 | 0 | 0 | 0 | 18 |
+| T | 38 | 20 | 0 | 0 | 0 | 18 |
 | C | 49 | 3 | 0 | 0 | 0 | 46 |
 | D | 22 | 8 | 0 | 0 | 0 | 14 |
 | F | 17 | 0 | 0 | 0 | 0 | 17 |
 | R | 15 | 0 | 0 | 0 | 0 | 15 |
 | N | 44 | 0 | 0 | 0 | 0 | 44 |
-| all | 184 | 30 | 0 | 0 | 0 | 154 |
+| all | 185 | 31 | 0 | 0 | 0 | 154 |
 
 ## 11. Contributor checklist
 

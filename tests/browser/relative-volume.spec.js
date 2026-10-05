@@ -111,6 +111,7 @@ test("Visible range is first and follows time navigation, persists on reload and
   await expect(page.locator("#ol-period-text")).toHaveText("Visible range");
   await page.locator("#ol-period").click();
   await expect(page.locator("#ol-period-list input").first()).toHaveAttribute("data-period", "visible");
+  await expect(page.locator('#ol-period-list [data-period="visible"]')).toHaveCount(1);
   await page.keyboard.press("Escape");
   const before = Number((await reading(page, 200, view)).value);
   await go(page, S.address({ cols, rows: view, rowsKind: "relvol", selection: { cols: [cols[1] - 300, cols[1] - 100], rows: [199, 202] }, extra: "&r=8,3" }));

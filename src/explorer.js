@@ -9688,6 +9688,7 @@
   // solid across its period and dashed on to the right edge, where a tag names
   // it.
   const LINES = [
+      { key: "visible", name: "Visible range", tag: "Visible" },
       { key: "1d", name: "1 day", tag: "1D", days: 1 },
       { key: "wk", name: "This week", tag: "Week" },
       { key: "7d", name: "7 days", tag: "7D", days: 7 },
@@ -9823,6 +9824,7 @@
         desc: "The same on daily bars; squeezes are intervals in the event strip, bandwidth at its lowest of the last 182 days",
         live: true,
       },
+      vvwap: { family: "vwap", name: "Visible range VWAP", desc: "USDT ÷ BTC over the visible time range, across all prices; updates after time pan or zoom", live: true },
       svwap: { family: "vwap", name: "Session VWAP", desc: "USDT ÷ BTC from each 00:00 UTC", live: true },
       avwaph: { family: "vwap", name: "From the last daily swing high", desc: "USDT ÷ BTC from it on", live: true },
       avwapl: { family: "vwap", name: "From the last daily swing low", desc: "USDT ÷ BTC from it on", live: true },
@@ -9882,7 +9884,16 @@
   }
   // A line's period in base columns, ending at the edge that closes the data;
   // null when it has no time before that edge.
+  // Visible references use time only: price cropping, resolution and selection
+  // cannot redefine their measurement. Match the cube's nearest-base-edge snap.
+  function visibleLineSpan() {
+    const edge = cutEdge(),
+      a = clamp(Math.floor(S.tA + 0.5), 0, edge),
+      b = S.tB >= activeCutoff() ? edge : clamp(Math.floor(S.tB + 0.5), 0, edge);
+    return a < b ? [a, b] : null;
+  }
   function lineSpan(key) {
+    if (key === "visible") return visibleLineSpan();
     const end = cutEdge(),
       now = date(Math.max(0, activeCutoff() - 1e-6)),
       base = (d) => Math.max(0, Math.round((+d / 1000 - T0) / BASE));
@@ -9983,6 +9994,7 @@
     if (!result)
       return { key, span, state: cube.failed.has(read.id) ? "failed" : "pending", read, error: cube.failed.get(read.id) };
     lineResults.set(id, result);
+    while (lineResults.size > 200) lineResults.delete(lineResults.keys().next().value);
     if (result.state === "ready") lineLatest.set(key, result);
     return result;
   }
@@ -9992,7 +10004,7 @@
   // read for it until new data arrives.
   function lineShown(key) {
     const r = lineResult(key);
-    if (r.state !== "pending") return r;
+    if (r.state !== "pending" || key === "visible") return r;
     const was = lineLatest.get(key);
     return was && r.span && was.span[1] <= cutEdge() ? { ...was, stale: true } : r;
   }
@@ -11105,6 +11117,51 @@
   const VWAP_LEVELS = [2, 4, 6, 8, 9],
     isVwapDay = (key) => typeof key === "string" && key.startsWith("vwap:") && isDay(key.slice(5)),
     vwapDayStart = (key) => dayStart(key.slice(5));
+  // A range VWAP is one horizontal summary, not a curve anchored to a session.
+  // Read precisely clipped bars in the existing secondary slot; summing their
+  // USDT and BTC is independent of the time level and of the visible prices.
+  const visibleVwaps = new Map();
+  function visibleVwapSpec() {
+    const span = visibleLineSpan();
+    if (!PACK.live || !span) return null;
+    const [a] = span, b = Math.min(span[1], Math.floor(CUT));
+    if (b <= a) return null;
+    let n = 0;
+    while (n < 20 && Math.ceil(b / 2 ** n) - Math.floor(a / 2 ** n) > TILE_COLUMNS) n++;
+    return { key: ["visible-vwap", live.generation, CANON, a, b].join("|"), a, b, n };
+  }
+  function visibleVwapResult() {
+    const spec = visibleVwapSpec();
+    if (!spec) return { state: "none" };
+    return visibleVwaps.get(spec.key) || { state: motion.failed.has(spec.key) ? "failed" : "pending", error: motion.failed.get(spec.key) };
+  }
+  function visibleVwapWant() {
+    if (!S.lines.includes("vvwap")) return null;
+    const spec = visibleVwapSpec();
+    if (!spec || visibleVwaps.has(spec.key)) return null;
+    const { key, a, b, n } = spec, token = PACK.state_token;
+    return {
+      key,
+      path: `/cube/bars?n=${n}&b0=${a}&b1=${b}`,
+      decode: async (body) => {
+        if (body.n !== n || body.b0 !== a || body.b1 !== b || body.state_token !== token || body.bars.n !== n || body.bars.count > TILE_COLUMNS || !Number.isFinite(body.end) || body.end < 0 || body.end > b)
+          throw Error("Visible range VWAP answer does not match its requested span/pack");
+        const bars = await unpackBars(body.bars), step = 2 ** n;
+        let previous = -1;
+        for (const x of bars) {
+          if (x.c <= previous || x.c < Math.floor(a / step) || x.c * step >= body.end || !Number.isFinite(x.v) || x.v < 0 || !Number.isFinite(x.btc) || x.btc < 0)
+            throw Error("Visible range VWAP answer contains an invalid bar");
+          previous = x.c;
+        }
+        return { bars, end: body.end };
+      },
+      apply: ({ bars, end }) => {
+        const volume = exactSum(bars.map((x) => x.v)), btc = exactSum(bars.map((x) => x.btc));
+        visibleVwaps.set(key, { state: "ready", span: [a, b], end, volume, btc, price: btc > 0 ? volume / btc : null });
+        while (visibleVwaps.size > 48) visibleVwaps.delete(visibleVwaps.keys().next().value);
+      },
+    };
+  }
   function vwapLevel() {
     const perPx = ((S.tB - S.tA) * BASE) / Math.max(1, G.w);
     return VWAP_LEVELS.find((n) => BASE * 2 ** n >= 2 * perPx) ?? 9;
@@ -12055,7 +12112,7 @@
       ["Time", ["time"]],
     ],
     // The periods: the POC lines' and all history, or since a chosen day.
-    PERIODS = [...LINE_KEYS, "all"],
+    PERIODS = [...LINE_KEYS.filter((key) => key !== "visible"), "all"],
     // Time at price needs the live cube's dwell.
     rowsChoices = () => (PACK.live ? ROWS : ROWS.filter((k) => k !== "time")),
     validPeriod = (key) => PERIODS.includes(key) || (isDay(key) && dayStart(key) < CUT),
@@ -12593,6 +12650,12 @@
             va,
             tag: tag(`${lineTag(key)} ${side}`, edge, !r.exact),
           });
+    }
+    if (on.has("vvwap")) {
+      const r = visibleVwapResult();
+      if (r.state === "ready" && r.price !== null)
+        items.push({ key: "vvwap", id: "vvwap", kind: "range-vwap", family: "vwap", name: "Visible range VWAP", at: r.price / PR,
+          from: r.span[0], to: r.end, on: true, r, tag: tag("Visible VWAP", r.price / PR) });
     }
     // The rest changes only with the data and the days in view.
     if (!S.lines.some((k) => DATED_LINES.has(k) || isVwapDay(k))) return items;
@@ -13890,6 +13953,15 @@
     }
     const l = h.item,
       usdtAt = (x) => `${price(x * PR)} USDT`;
+    if (l.kind === "range-vwap") {
+      const r = l.r;
+      tipRows(tip, `Visible range VWAP · ${price(r.price)} USDT`, "Visible time range · all prices", [
+        ["Period", range(r.span[0], r.end) + " UTC"],
+        ["Traded", `${compact(r.volume)} USDT · ${compact(r.btc)} BTC`],
+        ["Measured through", when(r.end) + " UTC"],
+      ], "Σ USDT ÷ Σ BTC; updates after time pan or zoom. The forming base interval is excluded.");
+      return;
+    }
     if (averageTip(tip, h, l) || structureTip(tip, h, l)) return;
     if (l.kind === "poc" || l.kind === "va") {
       const r = l.r,
@@ -14187,6 +14259,13 @@
   function toggleValue(key) {
     if (!lineAvailable(key)) return { text: "Live cube only" };
     if (!S.lines.includes(key) || CLOCK[key]) return { text: "" };
+    if (key === "vvwap") {
+      const r = visibleVwapResult();
+      return { text: r.state === "ready" ? r.price === null ? r.end <= r.span[0] ? "not measured" : "no trades" : price(r.price)
+        : r.state === "failed" ? "unavailable" : r.state === "none" ? "no completed interval" : "…",
+        title: r.state === "ready" ? `Visible time range across all prices; measured through ${when(r.end)} UTC`
+          : r.state === "failed" ? `The cube didn't answer: ${r.error}` : "" };
+    }
     if (AVERAGE_SPECS[key]) return averageValue(key);
     const why = (s) =>
       s.state === "failed"
@@ -14273,6 +14352,7 @@
     name.className = "ol-line-name";
     name.textContent = toggle ? toggle.name : lineName(key);
     if (toggle) row.title = toggle.desc;
+    else if (key === "visible") row.title = "POC over the visible time range, across all prices; updates after time pan or zoom";
     value.className = "ol-line-value ol-num";
     value.dataset.lineValue = key;
     const look = swatch(key, FAMILIES.find((f) => f.id === familyOf(key)).colour),
@@ -14586,6 +14666,7 @@
       return key === "gdcross" ? "none" : "warmup";
     }
     if (isPeriod(key)) return bad(lineShown(key).state) ? "missing" : "none";
+    if (key === "vvwap") return bad(visibleVwapResult().state) ? "missing" : "none";
     if (key === "cme") return bad(barSeries(6).state) ? "missing" : "none";
     if (FOUR_HOUR_LINES.includes(key)) return bad(barSeries(8).state) ? "missing" : "none";
     if (key === "svwap" || key === "avwaph" || key === "avwapl" || isVwapDay(key)) {
@@ -14709,6 +14790,12 @@
     }
     if (id === "average") return keys.length ? averageStatus() : "";
     if (id === "vwap" && keys.length) {
+      if (keys.includes("vvwap")) {
+        const visible = visibleVwapResult();
+        if (visible.state === "failed") return `Visible range VWAP couldn't be read: ${visible.error}`;
+        if (visible.state === "pending") return "Reading the visible time range for VWAP…";
+        if (visible.state === "ready" && visible.end < visible.span[1]) return `Visible range VWAP measured through ${when(visible.end)} UTC.`;
+      }
       const need = vwapBarNeed(),
         r = need ? barsBetween(...need) : null;
       if (r?.state === "failed") return `The view's bars couldn't be read: ${r.error}`;
@@ -16800,7 +16887,7 @@
   // to be read.
   function motionWant() {
     const viewing = movementOn();
-    if (!(viewing || (PACK.live && S.rows === "time") || barLevels().length || viewBarNeeds().length || candleNeeds().length) || cube.stale) return null;
+    if (!(viewing || (PACK.live && (S.rows === "time" || S.lines.includes("vvwap"))) || barLevels().length || viewBarNeeds().length || candleNeeds().length) || cube.stale) return null;
     if (["measure", "tile", "lens"].includes(cube.busy?.kind)) return null;
     for (const want of [measureWant(), tileWant(), lensWant()])
       if (want && !cube.failed.has(want.key)) return null;
@@ -16812,6 +16899,7 @@
         lens ? motionSourceWant(lens) : null,
         candleWant(),
         underlayDwellWant(),
+        visibleVwapWant(),
         barsWant(),
       ].find((want) => want && !motion.failed.has(want.key)) || null
     );
@@ -19957,6 +20045,7 @@
       lineResults.clear();
       lineLatest.clear();
       lineParts.clear();
+      visibleVwaps.clear();
       dwellResults.clear();
       dwellLatest.clear();
       barChunks.clear();

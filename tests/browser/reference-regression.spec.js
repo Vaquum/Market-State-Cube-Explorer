@@ -2,7 +2,7 @@
 // B45 reference-regression.spec.js (PRD-0002 S3, #48 section 1): the reference language changes how a line is drawn and named, and nothing it measures.
 //
 // The original build (8c82ca1) and this one open the same address on the same fake cube with every line choice the original has on, and
-//   1. offer the same lines: the same keys, each in the same family (the menu's rows), none added, none removed;
+//   1. retain the original lines and families, with the two explicitly added visible-range choices;
 //   2. give each line the same value in its row: every price, period and count the original shows, the new build shows (the only difference allowed is the
 //      finality words S2 added to a swing's row, which are removed before the comparison and named when they appear);
 //   3. keep the same bar timeframes and anchors (the rows name them), the same POC rows, value areas, opens, highs, lows and closes, averages, bands, VWAPs and
@@ -52,7 +52,9 @@ test.describe("B45 the lines are the same lines with the same values", () => {
     const read = Object.values(before).filter((r) => /\d/.test(r.value)).length;
     console.log(`B45: ${Object.keys(before).length} rows, ${read} with a number in the original`);
     expect(read, "most rows carry a number, so the comparison is of numbers and not of blanks").toBeGreaterThan(25);
-    expect(Object.keys(after).sort(), "the same keys, none added and none taken away").toEqual(Object.keys(before).sort());
+    expect(Object.keys(after).sort(), "original keys plus the visible-range POC and VWAP").toEqual([...Object.keys(before), "visible", "vvwap"].sort());
+    expect(after.visible).toEqual({ family: "profile", value: "" });
+    expect(after.vvwap).toEqual({ family: "vwap", value: "" });
     const different = [];
     for (const key of Object.keys(before)) {
       if (before[key].family !== after[key].family) different.push(`${key}: family ${before[key].family} became ${after[key].family}`);

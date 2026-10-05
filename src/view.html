@@ -301,6 +301,8 @@
               <p class="ol-lines-note" id="ol-lines-note">
                 Each POC line is the 125 USDT price row where its period traded
                 the most USDT, drawn across the period and on to the right.
+                Visible range follows the time in view across all prices,
+                including when a selection is active.
               </p>
               <div class="ol-list-head" id="ol-lines-periods-head">POC per period</div>
               <div
@@ -470,6 +472,10 @@
               hidden
             >
               <div class="ol-lines-list" data-toggles="vwap"></div>
+              <p class="ol-lines-note">
+                Visible range VWAP is one level over the time in view, across
+                all prices. It updates after time pan or zoom.
+              </p>
               <div class="ol-list-head" id="ol-lines-vdays-head">From a day</div>
               <div
                 class="ol-lines-list"

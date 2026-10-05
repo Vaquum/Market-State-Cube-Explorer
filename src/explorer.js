@@ -11133,13 +11133,23 @@
   function visibleVwapResult() {
     const spec = visibleVwapSpec();
     if (!spec) return { state: "none" };
-    return visibleVwaps.get(spec.key) || { state: motion.failed.has(spec.key) ? "failed" : "pending", error: motion.failed.get(spec.key) };
+    const failure = [...motion.failed].find(([key]) => key.startsWith(spec.key + "|"));
+    return failure ? { state: "failed", error: failure[1] } : visibleVwaps.get(spec.key) || { state: "pending" };
   }
   function visibleVwapWant() {
     if (!S.lines.includes("vvwap")) return null;
     const spec = visibleVwapSpec();
-    if (!spec || visibleVwaps.has(spec.key)) return null;
-    const { key, a, b, n } = spec, token = PACK.state_token;
+    if (!spec) return null;
+    const held = visibleVwaps.get(spec.key);
+    if (held?.state === "ready") return null;
+    const a = held ? held.end : spec.a, token = PACK.state_token;
+    let n = spec.n;
+    while (n > 0 && a % 2 ** n !== 0) n--;
+    // The API requires b0 on a bar edge. Sum a leading span at its own
+    // aligned level, then the coarse remainder; never round b0 outward.
+    const size = TILE_COLUMNS * 2 ** n,
+      b = n === spec.n ? spec.b : Math.min(spec.b, Math.ceil(a / 2 ** spec.n) * 2 ** spec.n, (Math.floor(a / size) + 1) * size),
+      key = [spec.key, a, b, n].join("|");
     return {
       key,
       path: `/cube/bars?n=${n}&b0=${a}&b1=${b}`,
@@ -11156,8 +11166,12 @@
         return { bars, end: body.end };
       },
       apply: ({ bars, end }) => {
-        const volume = exactSum(bars.map((x) => x.v)), btc = exactSum(bars.map((x) => x.btc));
-        visibleVwaps.set(key, { state: "ready", span: [a, b], end, volume, btc, price: btc > 0 ? volume / btc : null });
+        const volumes = (held?.volumes || []).concat(bars.map((x) => x.v)),
+          quantities = (held?.quantities || []).concat(bars.map((x) => x.btc)),
+          volume = exactSum(volumes), btc = exactSum(quantities),
+          complete = b === spec.b || end < b;
+        visibleVwaps.set(spec.key, { state: complete ? "ready" : "pending", span: [spec.a, spec.b], end, volume, btc,
+          price: complete && btc > 0 ? volume / btc : null, ...(complete ? {} : { volumes, quantities }) });
         while (visibleVwaps.size > 48) visibleVwaps.delete(visibleVwaps.keys().next().value);
       },
     };

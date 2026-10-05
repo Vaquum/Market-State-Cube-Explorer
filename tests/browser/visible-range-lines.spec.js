@@ -60,7 +60,7 @@ test("visible-range options toggle, draw their levels and persist through reload
   await page.locator('[data-line="vvwap"]').check();
   await correct(page);
   await closeMenu(page);
-  await expect.poll(async () => paneCanvas.textsOf(await pane.frame())).toEqual(expect.arrayContaining(["Visible", "Visible VAH", "Visible VAL", "Visible VWAP"]));
+  await expect.poll(async () => paneCanvas.textsOf(await pane.last())).toEqual(expect.arrayContaining(["Visible", "Visible VAH", "Visible VAL", "Visible VWAP"]));
   const p = new URLSearchParams(new URL(page.url()).hash.slice(1));
   expect(p.get("lines").split(",")).toEqual(["visible", "va", "vvwap"]);
   await page.reload(); await D.ready(page); await correct(page);
@@ -102,7 +102,7 @@ test("both ranges stop at the replay edge, excluding later trades", async ({ pag
   await fake.idle();
   const reads = fake.log().filter((r) => r.path === "/cube/bars");
   expect(reads.length).toBeGreaterThan(0);
-  expect(reads.every((r) => Number(r.query.b1[0]) <= start + 80)).toBe(true);
+  expect(reads.every((r) => Number(r.query.b1) <= start + 80)).toBe(true);
 });
 
 test("VWAP clips both coarse boundary bars instead of importing outside trades", async ({ page, fakeFor }) => {
@@ -113,9 +113,10 @@ test("VWAP clips both coarse boundary bars instead of importing outside trades",
   await page.goto(fake.url + "/" + hash(13, 8201, "&lines=visible,vvwap"));
   await D.ready(page); await correct(page, trades);
   expect(await numeric(page, "vvwap")).toBe(26000);
-  await fake.idle(); const read = fake.log().find((r) => r.path === "/cube/bars");
-  expect(Number(read.query.n[0])).toBeGreaterThan(0);
-  expect(read.query.b0[0]).toBe(String(start + 13)); expect(read.query.b1[0]).toBe(String(start + 8201));
+  await fake.idle(); const reads = fake.log().filter((r) => r.path === "/cube/bars"), read = reads.find((r) => Number(r.query.n) > 0);
+  expect(read).toBeDefined();
+  expect(reads[0].query.b0).toBe(String(start + 13));
+  expect(reads[0].query.b1).toBe(read.query.b0); expect(read.query.b1).toBe(String(start + 8201));
 });
 
 test("pending historical POC and VWAP never display the previous range's values", async ({ page, fakeFor }) => {
@@ -124,7 +125,8 @@ test("pending historical POC and VWAP never display the previous range's values"
   await D.ready(page); await correct(page); await fake.idle();
   const pocGate = fake.on({ route: "/cube/query", when: (q) => !("r0" in q) }).gate();
   const vwapGate = fake.on({ route: "/cube/bars" }).gate();
-  await pan(page, -.75); await pocGate.arrived(); await menu(page);
+  // Cut through the loaded 16-base-column cells, forcing an exact POC read.
+  await pan(page, -.70); await pocGate.arrived(); await menu(page);
   await expect(value(page, "visible")).toHaveText("…");
   await expect(value(page, "vvwap")).toHaveText("…");
   pocGate.open(); await vwapGate.arrived(); vwapGate.open(); await correct(page);

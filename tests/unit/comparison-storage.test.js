@@ -228,3 +228,58 @@ test("exposure interval validation permits only representational epoch subtracti
   assert.equal(a.comparison.validate(value).ok, true);
   capture.observed.seconds += .01; assert.equal(a.comparison.validate(value).ok, false, "a meaningful exposure change is not roundoff");
 });
+
+
+test("a failed initial read protects a recovered valid record until adoption or explicit discard", () => {
+  const a = load(), original = record(3), raw = JSON.stringify(original), working = record(2);
+  a.session.map.set(KEY, raw); a.session.readError = failure("SecurityError");
+  const unread = a.comparison.read("BTC/USDT"); assert.equal(unread.status, "unreadable"); assert.equal(unread.raw, null);
+  a.session.readError = null;
+  for (const retry of [record(0), working, { ...working, focus: "cell-1" }]) {
+    const result = a.comparison.write("BTC/USDT", retry);
+    assert.equal(result.status, "retained"); assert.equal(result.raw, raw); assert.match(result.reason, /reload/i);
+    assert.equal(a.session.getItem(KEY), raw); assert.equal(a.session.writes.length, 0);
+  }
+  assert.deepEqual(plain(load(a.local, a.session).comparison.read("BTC/USDT").value), original, "a normal reload restores the original captures");
+  a.session.removeError = failure("SecurityError"); assert.equal(a.comparison.discard("BTC/USDT").ok, false);
+  assert.equal(a.comparison.write("BTC/USDT", working).status, "retained", "failed discard cannot authorize replacement");
+  a.session.removeError = null; assert.equal(a.comparison.discard("BTC/USDT").ok, true);
+  working.focus = "cell-1"; assert.equal(a.comparison.write("BTC/USDT", working).ok, true);
+  assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), working, "explicit discard saves latest working state");
+});
+test("explicit successful read adopts recovered captures while absent or previously read slots keep latest Retry", () => {
+  const a = load(), original = record(3); a.session.map.set(KEY, JSON.stringify(original)); a.session.readError = failure("SecurityError");
+  a.comparison.read("BTC/USDT"); a.session.readError = null; assert.equal(a.comparison.write("BTC/USDT", record(0)).status, "retained");
+  assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), original);
+  assert.equal(a.comparison.write("BTC/USDT", { ...original, focus: "cell-2" }).ok, true);
+  for (const known of [null, record(1)]) {
+    const b = load(); if (known) b.session.map.set(KEY, JSON.stringify(known));
+    assert.equal(b.comparison.read("BTC/USDT").ok, true); b.session.readError = failure("SecurityError");
+    b.comparison.read("BTC/USDT"); assert.equal(b.comparison.write("BTC/USDT", record(2)).status, "unsaved"); b.session.readError = null;
+    const latest = record(2); latest.focus = "cell-1"; assert.equal(b.comparison.write("BTC/USDT", latest).ok, true);
+    assert.deepEqual(plain(b.comparison.read("BTC/USDT").value), latest);
+  }
+  const absent = load(); absent.session.readError = failure("SecurityError"); absent.comparison.read("BTC/USDT"); absent.session.readError = null;
+  assert.equal(absent.comparison.write("BTC/USDT", record(2)).ok, true, "recovered absence has no unread captures to replace");
+});
+test("initial read failure does not weaken corrupt or newer raw retention", () => {
+  for (const raw of ["{broken", JSON.stringify({ ...record(), comparisonVersion: 2 })]) {
+    const a = load(); a.session.map.set(KEY, raw); a.session.readError = failure("SecurityError"); a.comparison.read("BTC/USDT"); a.session.readError = null;
+    assert.equal(a.comparison.write("BTC/USDT", record()).status, "retained"); assert.equal(a.session.getItem(KEY), raw);
+    a.session.removeItem(KEY); assert.equal(a.comparison.write("BTC/USDT", record()).status, "retained");
+    assert.equal(a.comparison.discard("BTC/USDT").ok, true); assert.equal(a.comparison.write("BTC/USDT", record(2)).ok, true);
+  }
+});
+
+
+test("recovered absence stays known when an owned write succeeds but its verification read fails", () => {
+  const a = load(); a.session.readError = failure("SecurityError"); a.comparison.read("BTC/USDT"); a.session.readError = null;
+  const set = a.session.setItem.bind(a.session);
+  a.session.setItem = (key, raw) => { set(key, raw); a.session.readError = failure("SecurityError"); };
+  assert.equal(a.comparison.write("BTC/USDT", record(2)).status, "unsaved");
+  a.session.readError = null; assert.equal(JSON.parse(a.session.getItem(KEY)).captures.length, 2, "the first write reached the empty slot");
+  a.session.setItem = set;
+  const latest = record(3); latest.focus = "cell-2";
+  assert.equal(a.comparison.write("BTC/USDT", latest).ok, true, "Retry can advance the owned record rather than retain it as unread");
+  assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), latest);
+});

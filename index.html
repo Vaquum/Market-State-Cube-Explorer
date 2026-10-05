@@ -5427,7 +5427,7 @@
   // Comparison captures are owned by this tab. Their schema is independent of visual versions,
   // named views and chart history; rejected text stays in its original slot until explicit discard.
   const comparisonRoot = "comparison:v1:", comparisonMaxBytes = 4 * 1024 * 1024;
-  const comparisonRejected = new Map(), comparisonVerifiedRaw = new Map(), comparisonCaptures = new WeakMap(), comparisonSerialized = new WeakSet();
+  const comparisonRejected = new Map(), comparisonVerifiedRaw = new Map(), comparisonUnread = new Set(), comparisonCaptures = new WeakMap(), comparisonSerialized = new WeakSet();
   const comparisonTags = new Set(["finite", "negative-infinite", "no-reference", "empty-both", "empty-population", "undefined", "no-coarser-parent", "waiting-for-complete-parent", "outside-support", "hidden", "pending", "failed", "unsupported", "invalid-input"]);
   const comparisonSorts = new Set(["time", "added", "volume", "trades", "delta", "intensity", "size", "flow", "poc"]);
   const comparisonFields = ["comparisonVersion", "instrument", "captures", "focus", "reference", "basis", "sort", "view", "page", "poc", "expanded", "restoreLayout"];
@@ -5557,11 +5557,21 @@
   const comparisonRead = (instrument) => {
     if (instrument !== "BTC/USDT") return { ...comparisonFailure("unreadable", "unsupported comparison instrument"), value: null, raw: null };
     const got = fetchText("sessionStorage", comparisonRoot + instrument);
-    if (!got.ok) return { ...comparisonFailure("unreadable", "storage is unavailable (" + describe(got.error) + ")"), value: null, raw: null };
-    if (got.text === null) return { ok: true, status: "absent", value: null, raw: null, reason: null };
+    if (!got.ok) {
+      if (!comparisonVerifiedRaw.has(instrument)) comparisonUnread.add(instrument);
+      return { ...comparisonFailure("unreadable", "storage is unavailable (" + describe(got.error) + ")"), value: null, raw: null };
+    }
+    if (got.text === null) {
+      comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, null);
+      if (comparisonRejected.get(instrument)?.status === "not-loaded") comparisonRejected.delete(instrument);
+      return { ok: true, status: "absent", value: null, raw: null, reason: null };
+    }
     const parsed = comparisonParse(got.text, instrument);
     if (!parsed.ok) comparisonRejected.set(instrument, parsed);
-    else comparisonVerifiedRaw.set(instrument, parsed.raw);
+    else {
+      comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, parsed.raw);
+      if (comparisonRejected.get(instrument)?.status === "not-loaded") comparisonRejected.delete(instrument);
+    }
     return parsed;
   };
   const comparisonPrepare = (record) => {
@@ -5611,19 +5621,26 @@
     if (serialized.instrument !== undefined && serialized.instrument !== instrument) return comparisonFailure("unreadable", "comparison instrument does not match its slot");
     const got = fetchText("sessionStorage", comparisonRoot + instrument);
     if (!got.ok) return comparisonFailure("unsaved", "comparison storage is unavailable (" + describe(got.error) + ")");
+    // Confirmed absence establishes ownership even if the following write cannot be verified.
+    if (got.text === null) { comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, null); }
     // The exact raw text most recently read or written is already validated. A changed slot still
     // revalidates before overwrite; repeated presentation saves never parse the whole collection.
     if (got.text !== null && comparisonVerifiedRaw.get(instrument) !== got.text) {
-      const current = comparisonRead(instrument);
-      if (!current.ok && current.raw === null) return comparisonFailure("unsaved", current.reason);
+      const current = comparisonParse(got.text, instrument);
+      if (!current.ok) comparisonRejected.set(instrument, current);
+      // A validation read during Retry does not adopt captures the running model never loaded.
+      else if (comparisonUnread.has(instrument)) comparisonRejected.set(instrument, { ...current, status: "not-loaded" });
+      else comparisonVerifiedRaw.set(instrument, current.raw);
     }
     const rejected = comparisonRejected.get(instrument);
-    if (rejected) return { ...comparisonFailure("retained", "saved comparison was rejected; discard that stored record before replacing it"), raw: rejected.raw, rejectedStatus: rejected.status };
+    if (rejected) return { ...comparisonFailure("retained", rejected.status === "not-loaded"
+      ? "saved comparison was not loaded; reload to restore it or discard that stored record before replacing it"
+      : "saved comparison was rejected; discard that stored record before replacing it"), raw: rejected.raw, rejectedStatus: rejected.status };
     try {
       const area = window.sessionStorage, key = prefix + comparisonRoot + instrument;
       area.setItem(key, serialized.raw);
       if (area.getItem(key) !== serialized.raw) return comparisonFailure("unsaved", "comparison storage write could not be verified");
-      comparisonVerifiedRaw.set(instrument, serialized.raw);
+      comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, serialized.raw);
       return { ok: true, status: "ok", bytes: serialized.bytes, reason: null };
     } catch (error) { return comparisonFailure("unsaved", "comparison storage failed (" + describe(error) + ")"); }
   };
@@ -5633,7 +5650,7 @@
       const area = window.sessionStorage, key = prefix + comparisonRoot + instrument;
       area.removeItem(key);
       if (area.getItem(key) !== null) return comparisonFailure("unsaved", "stored comparison could not be discarded");
-      comparisonRejected.delete(instrument); comparisonVerifiedRaw.delete(instrument);
+      comparisonRejected.delete(instrument); comparisonUnread.delete(instrument); comparisonVerifiedRaw.delete(instrument);
       return { ok: true, status: "ok", reason: null };
     } catch (error) { return comparisonFailure("unsaved", "stored comparison could not be discarded (" + describe(error) + ")"); }
   };
@@ -38820,7 +38837,7 @@
       next={...next,page:Math.max(0,Math.floor(i/24))};
     }
     const prepared=window.explorerState.comparison.measure(next);
-    if(!prepared.ok) {comparisonMessage=prepared.reason;comparisonRefresh();return false;}
+    if(!prepared.ok) {comparisonMessage=prepared.reason;comparisonRefresh(true);return false;}
     comparisonModel=next;if(content)comparisonRevision++;
     comparisonUI.clearCopyFallback();comparisonRefresh(true,preparedAnalysis);comparisonPersist();return true;
   }
@@ -38863,7 +38880,7 @@
     if(action.type==="copy")return comparisonCopy(comparisonModel.captures.find(c=>c.id===action.id));
     if(action.type==="expand")return comparisonExpand(!comparisonModel.expanded);
     if(action.type==="clear")return comparisonConfirm(`Clear all ${comparisonModel.captures.length} comparison cells?`,()=>comparisonCommit({...comparisonModel,captures:[],focus:null,reference:null,page:0},true));
-    if(action.type==="discard")return comparisonConfirm("Discard the unusable saved comparison record? Current working cells will be kept.",()=>{const r=window.explorerState.comparison.discard(INSTRUMENT);comparisonRejected=!r.ok;comparisonMessage=r.ok?"Stored record discarded":r.reason;comparisonPersist();});
+    if(action.type==="discard")return comparisonConfirm("Discard the saved comparison record? Current working cells will be kept.",()=>{const r=window.explorerState.comparison.discard(INSTRUMENT);comparisonRejected=!r.ok;comparisonMessage=r.ok?"Stored record discarded":r.reason;comparisonPersist();});
     if(action.type==="retry"){comparisonPersist();return;}
     if(action.type==="focus") {next.focus=action.id;const i=comparisonAnalysis.ordered.findIndex(c=>c.id===action.id);next.page=Math.max(0,Math.floor(i/24));}
     else if(action.type==="remove") {

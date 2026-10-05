@@ -20935,7 +20935,7 @@
       next={...next,page:Math.max(0,Math.floor(i/24))};
     }
     const prepared=window.explorerState.comparison.measure(next);
-    if(!prepared.ok) {comparisonMessage=prepared.reason;comparisonRefresh();return false;}
+    if(!prepared.ok) {comparisonMessage=prepared.reason;comparisonRefresh(true);return false;}
     comparisonModel=next;if(content)comparisonRevision++;
     comparisonUI.clearCopyFallback();comparisonRefresh(true,preparedAnalysis);comparisonPersist();return true;
   }
@@ -20978,7 +20978,7 @@
     if(action.type==="copy")return comparisonCopy(comparisonModel.captures.find(c=>c.id===action.id));
     if(action.type==="expand")return comparisonExpand(!comparisonModel.expanded);
     if(action.type==="clear")return comparisonConfirm(`Clear all ${comparisonModel.captures.length} comparison cells?`,()=>comparisonCommit({...comparisonModel,captures:[],focus:null,reference:null,page:0},true));
-    if(action.type==="discard")return comparisonConfirm("Discard the unusable saved comparison record? Current working cells will be kept.",()=>{const r=window.explorerState.comparison.discard(INSTRUMENT);comparisonRejected=!r.ok;comparisonMessage=r.ok?"Stored record discarded":r.reason;comparisonPersist();});
+    if(action.type==="discard")return comparisonConfirm("Discard the saved comparison record? Current working cells will be kept.",()=>{const r=window.explorerState.comparison.discard(INSTRUMENT);comparisonRejected=!r.ok;comparisonMessage=r.ok?"Stored record discarded":r.reason;comparisonPersist();});
     if(action.type==="retry"){comparisonPersist();return;}
     if(action.type==="focus") {next.focus=action.id;const i=comparisonAnalysis.ordered.findIndex(c=>c.id===action.id);next.page=Math.max(0,Math.floor(i/24));}
     else if(action.type==="remove") {

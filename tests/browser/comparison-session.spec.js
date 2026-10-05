@@ -390,3 +390,54 @@ test("Escape after an Expand quota failure saves the restored layout and clears 
   expect(await page.locator("#ol-drawer").evaluate((node) => node.style.getPropertyValue("--drawer-h"))).toBe(drawerHeight);
   await expect(status).toHaveText(""); await expect(action(page, "retry")).toBeHidden();
 });
+
+
+for (const recovery of ["reload", "discard"]) {
+  test(`a failed startup read retains recovered saved captures until ${recovery}`, async ({ page, fakeFor, probe }) => {
+    const original = collection(3); original.focus = "cell-2"; original.reference = "cell-1"; original.view = "matrix";
+    const raw = JSON.stringify(original), fake = await fakeFor("mini");
+    await page.addInitScript(({ key, raw }) => {
+      const get = Storage.prototype.getItem;
+      const seeded = get.call(sessionStorage, "comparison-read-failure-seeded");
+      if (!seeded) { sessionStorage.setItem(key, raw); sessionStorage.setItem("comparison-read-failure-seeded", "1"); }
+      window.comparisonInitialReadBlocked = !seeded;
+      Storage.prototype.getItem = function (name) {
+        if (name === key && window.comparisonInitialReadBlocked) throw new DOMException("initial comparison read blocked", "SecurityError");
+        return get.call(this, name);
+      };
+    }, { key: KEY, raw });
+    await open(page, fake, undefined, HASH + "&marks=none&lines=");
+    await probe.waitForReady({ timeout: 20000 }); await probe.waitForQuiet({ quietMs: 300 });
+    await expect(panel(page).locator(".ol-comparison-empty")).toBeVisible();
+    await expect(panel(page).locator("[data-comparison-status]")).toContainText("Unsaved comparison");
+    for (let retry = 0; retry < 2; retry++) {
+      await action(page, "retry").click(); await expect(action(page, "retry")).toBeVisible();
+    }
+    await page.evaluate(() => { window.comparisonInitialReadBlocked = false; });
+    await action(page, "retry").click();
+    await expect(action(page, "discard")).toBeVisible(); await expect(action(page, "retry")).toBeHidden();
+    await expect(panel(page).locator("[data-comparison-status]")).toContainText("reload to restore");
+    expect(await page.evaluate((key) => sessionStorage.getItem(key), KEY)).toBe(raw);
+    if (recovery === "reload") {
+      await page.reload(); await page.locator("#ol-tab-compare").click();
+      await expect(entries(page)).toHaveCount(3); await expect(focusMetric(page, "volume")).toHaveAttribute("data-canonical", "3");
+      await expect(action(page, "discard")).toBeHidden(); await expect(action(page, "retry")).toBeHidden();
+      expect(await stored(page)).toEqual(original);
+    } else {
+      await page.locator("#ol-tab-cells").click();
+      const row = page.locator("#ol-table-body tr").first();
+      const volume = Number(await row.locator('[data-field="volume"]').getAttribute("data-canonical"));
+      await row.getByRole("button", { name: "Add to comparison" }).click();
+      await expect(page.locator("#ol-tab-compare")).toHaveText("Compare · 1");
+      await expect(focusMetric(page, "volume")).toHaveAttribute("data-canonical", String(volume));
+      await expect(action(page, "discard")).toBeVisible();
+      expect(await page.evaluate((key) => sessionStorage.getItem(key), KEY)).toBe(raw);
+      await action(page, "discard").click(); await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+      expect(await page.evaluate((key) => sessionStorage.getItem(key), KEY)).toBe(raw);
+      await action(page, "discard").click(); await page.getByRole("dialog").getByRole("button", { name: "Confirm", exact: true }).click();
+      await persisted(page, (value) => value?.captures.length === 1 && value.focus === value.captures[0].id && value.captures[0].metrics["volume.amount"].value === volume);
+      expect((await stored(page)).captures[0].id).not.toMatch(/^cell-/);
+      await expect(action(page, "discard")).toBeHidden(); await expect(action(page, "retry")).toBeHidden();
+    }
+  });
+}

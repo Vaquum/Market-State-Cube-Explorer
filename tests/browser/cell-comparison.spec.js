@@ -70,6 +70,19 @@ test("Cells Copy/Add preserve canonical numbers and row Enter still opens Inspec
   await expect(page.locator("#ol-inspect-detail-body").getByRole("button",{name:"Add to comparison"})).toBeVisible();
 });
 
+test("Cells Add keeps native Space activation across a table refresh",async({page,fakeFor,probe})=>{
+  const fake=await fakeFor("standard");await open(page,fake,probe);
+  await page.locator("#ol-tab-cells").click();await fake.idle({quietMs:300,timeoutMs:30000});
+  const button=page.locator("#ol-table-body tr").first().getByRole("button",{name:"Add to comparison"});
+  await button.focus();await page.keyboard.down("Space");
+  await page.evaluate(()=>{window.__heldCellButton=document.activeElement;});
+  await page.setViewportSize({width:1499,height:950});
+  await page.waitForTimeout(200); // Deliberately span the 80 ms table rebuild while Space is held.
+  expect(await page.evaluate(()=>window.__heldCellButton.isConnected),"the native activation target stays attached until keyup").toBe(true);
+  await page.keyboard.up("Space");
+  await expect.poll(async()=> (await stored(page))?.captures.length).toBe(1);
+});
+
 test("chart navigation does no comparison statistics or writes; Compare owns digit/Space/arrows",async({page,fakeFor,probe})=>{
   const fake=await fakeFor("standard");await open(page,fake,probe);await add(page,await point(page));
   const work=page.locator("#ol-comparisonWorkspace");

@@ -3782,6 +3782,11 @@
     cellsTimer = setTimeout(() => buildCells(query, b, mv), 80);
   }
   function buildCells(query, b, mv) {
+    // Keep a pressed native button attached until its release can activate it.
+    if (el("table-body").contains(document.activeElement) && document.activeElement.matches("button:active")) {
+      renderCells(query, b, mv);
+      return;
+    }
     el("table").hidden = S.mode === "candles";
     el("candle-table").hidden = S.mode !== "candles";
     if (S.mode === "candles") return buildCandleTable();

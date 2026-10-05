@@ -37025,6 +37025,7 @@
         drag = null;
         return;
       }
+      if (axis && drawingDraft) drawingCancelOperation();
       if (drawingPointerDown(e, p)) { setCursor(p); return; }
       drag = {
         start: p,
@@ -37647,13 +37648,13 @@
   // back to Pan from Select or the lens.
   function escapeKey() {
     if (comparisonCloseMenu(true)) return;
-    if (trendTool) { drawingCancelOperation(); setTool(drawingEntryTool); return; }
     if (closePop(true)) return;
     if (root.dataset.sheet === "open") {
       setSheet(false);
       el("sheet-toggle").focus();
       return;
     }
+    if (trendTool) { drawingCancelOperation(); setTool(drawingEntryTool); return; }
     // Escape's order with Inspect: the detail first, then Inspect itself, and only a later Escape clears the selection or goes back to Pan
     if (inspect.detail) {
       inspectDetail(false);
@@ -38081,6 +38082,7 @@
     return drawingCommit(label, next);
   }
   function drawingActivate(id, hitTime = null) {
+    drawingCancelOperation();
     drawingAnchorTime = Number.isFinite(hitTime) ? hitTime : null;
     if (id && !trendTool) setTool("trend");
     activeDrawingId = drawingById(id) ? id : null;
@@ -38375,7 +38377,8 @@
     const surface = [window.innerWidth, window.innerHeight, canvas.clientWidth, canvas.clientHeight, S.tA, S.tB, S.pA, S.pB].join(",");
     if (!inPlot(p) || drawingLensOwns(p) || e.altKey) return false;
     if (trendTool) {
-      const hits = drawingDraft ? [] : drawingHits(p, e.pointerType), hit = hits.find((h) => ["a", "b"].includes(h.handle)) || hits.find((h) => h.id === activeDrawingId) || (hits.length === 1 ? hits[0] : null);
+      const hits = drawingDraft ? [] : drawingHits(p, e.pointerType), endpoints = hits.filter((h) => ["a", "b"].includes(h.handle)),
+        hit = endpoints.length ? endpoints.find((h) => h.id === activeDrawingId) || (endpoints.length === 1 ? endpoints[0] : null) : hits.find((h) => h.id === activeDrawingId) || (hits.length === 1 ? hits[0] : null);
       if (hits.length) {
         if (hit) drawingActivate(hit.id, p.t);
         drawingDrag = { pointerId: e.pointerId, surface, start: p, kind: hit ? hit.handle || "locked" : "choose", original: hit?.object, moved: false, hits };
@@ -38529,6 +38532,7 @@
       if (action === "recover") { drawingCloseChooser(); drawingUICmd(action, id); return; }
       if (menu) closePop();
       drawingUICmd(action, id, typeof value === "function" ? value() : value);
+      if (action === "retry") drawingBuildActions();
       if (action === "duplicate") el("drawing-edit").focus({ preventScroll: true });
       else if (action === "delete") el("drawing-more").focus({ preventScroll: true });
       else if (menu) canvas.focus({ preventScroll: true });
@@ -38750,6 +38754,11 @@
     const parent = PHONE.matches ? sheet : group; if (panel.parentElement !== parent) parent.append(panel); sheet.hidden = !PHONE.matches || panel.hidden;
     if (!panel.hidden && !PHONE.matches) panel.style.setProperty("--drawing-menu-top", Math.max(0, panel.getBoundingClientRect().top) + "px");
   }
+  const drawingMenuItems = panel => menuItems(panel).filter(button => !button.disabled && !button.hidden);
+  function drawingFocusMenuItem(panel, index) {
+    const items = drawingMenuItems(panel);
+    if (items.length) items[(index % items.length + items.length) % items.length].focus({ preventScroll: true });
+  }
   function drawingCloseContext(focus = false) {
     if (!drawingContext) return false;
     drawingContext.node.remove(); drawingContext = null;
@@ -38784,24 +38793,25 @@
     if (!drawingContext) return false;
     if (event.key === "Escape") { event.preventDefault(); drawingCloseContext(true); }
     else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-      event.preventDefault(); const items = menuItems(drawingContext.node), index = items.indexOf(document.activeElement);
-      focusMenuItem(drawingContext.node, event.key === "Home" ? 0 : event.key === "End" ? -1 : index + (event.key === "ArrowDown" ? 1 : -1));
+      event.preventDefault(); const items = drawingMenuItems(drawingContext.node), index = items.indexOf(document.activeElement);
+      drawingFocusMenuItem(drawingContext.node, event.key === "Home" ? 0 : event.key === "End" ? -1 : index + (event.key === "ArrowDown" ? 1 : -1));
     } else if (event.key === "Tab") drawingCloseContext();
     return true;
   }
   function drawingInitUI() {
     if (drawingUIInitialized) return; drawingUIInitialized = true;
     document.addEventListener("pointerdown", (event) => { if (drawingContext && !drawingContext.node.contains(event.target)) drawingCloseContext(); }, true);
-    for (const event of ["resize", "blur", "scroll"]) window.addEventListener(event, () => drawingCloseContext(), true);
+    for (const event of ["resize", "scroll"]) window.addEventListener(event, () => drawingCloseContext(), true);
+    window.addEventListener("blur", () => drawingCloseContext());
     el("drawing-edit").addEventListener("click", () => drawingEdit(activeDrawingId, el("drawing-edit")));
     el("drawing-more").addEventListener("click", () => {
       const panel = el("drawing-actions"), button = el("drawing-more");
       if (pop.open?.panel === panel) { closePop(); drawingPlaceActions(); return; }
-      closePop(); drawingBuildActions(); panel.hidden = false; button.setAttribute("aria-expanded", "true"); pop.open = { button, panel }; drawingPlaceActions(); if (PHONE.matches) setSheet(true); focusMenuItem(panel, 0);
+      closePop(); drawingBuildActions(); panel.hidden = false; button.setAttribute("aria-expanded", "true"); pop.open = { button, panel }; drawingPlaceActions(); if (PHONE.matches) setSheet(true); drawingFocusMenuItem(panel, 0);
     });
     el("drawing-actions").addEventListener("keydown", (event) => {
       if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-        event.preventDefault(); event.stopPropagation(); const items = menuItems(el("drawing-actions")), i = items.indexOf(document.activeElement); focusMenuItem(el("drawing-actions"), event.key === "Home" ? 0 : event.key === "End" ? -1 : i + (event.key === "ArrowDown" ? 1 : -1));
+        event.preventDefault(); event.stopPropagation(); const items = drawingMenuItems(el("drawing-actions")), i = items.indexOf(document.activeElement); drawingFocusMenuItem(el("drawing-actions"), event.key === "Home" ? 0 : event.key === "End" ? -1 : i + (event.key === "ArrowDown" ? 1 : -1));
       } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closePop(true); drawingPlaceActions(); }
     });
     PHONE.addEventListener("change", () => { closePop(); drawingPlaceActions(); }); drawingPlaceActions();

@@ -307,7 +307,7 @@ test("labels share their line budget and focus restores both ink and text withou
     await D.persistence.importCode(page, D.plainCode(value));
     if (await page.locator("#ol-drawing-replace").isVisible()) await page.locator('[data-drawing-replace="replace"]').click();
     await expect(page.locator("#ol-copy-status")).toHaveText("View restored"); await expect.poll(() => D.count(page)).toBe(200);
-    await page.locator("#ol-drawer-toggle").click(); await D.manager(page); await D.plot(page);
+    await page.locator("#ol-drawer-toggle").click(); await D.lines(page); await D.plot(page);
   }
   await restore(); const unlabeled = (await D.rows(page)).filter((row) => row.state === "Shown").length;
   objects.forEach((object, i) => { object.label = TAG + "budget" + i.toString().padStart(3, "0") + " Breakout retest support zone"; });
@@ -320,7 +320,7 @@ test("labels share their line budget and focus restores both ink and text withou
   const labels = await texts(page);
   for (const row of shown) expect(labels.some((text) => text.text.startsWith(TAG + "budget" + objects.find((object) => object.id === row.id).ordinal.toString().padStart(3, "0")))).toBe(true);
   for (const row of held) expect(labels.some((text) => text.fill === row.color)).toBe(false);
-  await D.action(page, held[0].id, "focus"); await D.closeManager(page);
+  await D.action(page, held[0].id, "focus"); await D.closeManager(page); await D.lines(page); await D.plot(page);
   await expect.poll(async () => (await D.row(page, held[0].id)).state).toBe("Shown");
   await expect.poll(async () => (await texts(page)).some((text) => text.fill === held[0].color)).toBe(true);
   const counts = JSON.stringify({ unlabeled, labeled: shown.length, held: held.length });

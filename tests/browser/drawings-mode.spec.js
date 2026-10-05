@@ -28,12 +28,15 @@ async function heldEdit(page, id, from, to, expected) {
 
 test("inactive body and either endpoint select and edit during the same held pointer gesture, including a visible card", async ({ page, fakeFor }) => {
   const fake = await fakeFor("mini"); await D.open(page, fake);
-  const first = await D.drawing(page, [.2, .7], [.7, .7]), neighbor = await D.drawing(page, [.15, .25], [.6, .25]);
+  const first = await D.drawing(page, [.25, .75], [.75, .75]), neighbor = await D.drawing(page, [.125, .25], [.625, .25]);
   expect(await D.active(page)).toBe(neighbor.id);
-  let p = await D.plot(page), from = D.point(p, .45, .7);
+  let p = await D.plot(page), from = D.point(p, .5, .75); const original = await D.row(page, first.id);
   await page.mouse.move(from.x, from.y); await expect(page.locator("#ol-tip")).toBeVisible();
-  await heldEdit(page, first.id, from, D.point(p, .5125, .6375), { a: D.expected(.2625, .6375), b: D.expected(.7625, .6375) });
-  for (const [endpoint, fraction] of [["a", [.3, .55]], ["b", [.8, .5]]]) {
+  await heldEdit(page, first.id, from, D.point(p, .5625, .6875), { a: D.expected(.3125, .6875), b: D.expected(.8125, .6875) });
+  const translated = await D.row(page, first.id);
+  expect(translated.b.timeMs - translated.a.timeMs).toBe(original.b.timeMs - original.a.timeMs);
+  expect(translated.b.priceCents - translated.a.priceCents).toBe(original.b.priceCents - original.a.priceCents);
+  for (const [endpoint, fraction] of [["a", [.375, .5625]], ["b", [.875, .5]]]) {
     const other = await strokePoint(page, neighbor.id); await page.mouse.click(other.x, other.y);
     await expect.poll(() => D.active(page)).toBe(neighbor.id);
     const before = await D.row(page, first.id), untouched = endpoint === "a" ? "b" : "a";
@@ -72,7 +75,8 @@ test("Pan treats authored ink as read-only across clicks, double click, secondar
 });
 
 test("Trend secondary click offers Delete line without deleting; explicit locked deletion is undoable and blank space has no drawing menu", async ({ page, fakeFor }) => {
-  const fake = await fakeFor("mini"); await D.open(page, fake); const made = await D.drawing(page);
+  const fake = await fakeFor("mini"); await D.open(page, fake);
+  const made = await D.drawing(page);
   await D.action(page, made.id, "lock"); await D.closeManager(page);
   const before = await D.row(page, made.id), beforeRevision = await revision(page), center = await strokePoint(page, made.id);
   await D.drag(page, center, { x: center.x + 25, y: center.y - 15 });
@@ -80,7 +84,8 @@ test("Trend secondary click offers Delete line without deleting; explicit locked
   await page.locator("#ol-canvas").focus(); await page.keyboard.press("Delete");
   expect(await D.row(page, made.id)).toEqual(before); expect(await revision(page)).toBe(beforeRevision);
   await page.mouse.click(center.x, center.y, { button: "right" });
-  const menu = page.locator("#ol-drawing-context"); await expect(menu).toBeVisible(); await expect(menu).toHaveAttribute("role", "menu");
+  const menu = page.locator("#ol-drawing-context"); await expect(menu).toBeVisible();
+  await expect(menu).toHaveAttribute("role", "menu");
   const remove = menu.getByRole("menuitem", { name: "Delete line", exact: true }); await expect(remove).toBeVisible();
   expect(await D.row(page, made.id)).toEqual(before); expect(await revision(page)).toBe(beforeRevision);
   await menu.getByRole("menuitem", { name: "Edit line", exact: true }).click();
@@ -134,4 +139,80 @@ test("an inactive endpoint takes pickup priority over an active line body at the
   expect(await D.active(page)).toBe(body.id); const untouched = await D.row(page, body.id), before = await D.row(page, endpoint.id), p = await D.plot(page);
   await heldEdit(page, endpoint.id, D.point(p, .5, .5), D.point(p, .5, .4), { a: D.expected(.5, .4), b: before.b });
   expect(await D.row(page, body.id)).toEqual(untouched); await expect(page.locator("#ol-drawing-chooser")).toBeHidden();
+});
+
+test("More keyboard navigation starts on an available action and skips disabled or hidden items with no drawings and a locked line", async ({ page, fakeFor }) => {
+  const fake = await fakeFor("mini"); await D.open(page, fake); await D.trend(page);
+  const menu = page.locator("#ol-drawing-actions"), item = (action) => menu.locator(`[data-drawing-action="${action}"]`);
+  const availableFocus = async () => {
+    const focused = menu.locator(":focus"); await expect(focused).toHaveCount(1); await expect(focused).toBeVisible(); await expect(focused).toBeEnabled();
+    return focused.getAttribute("data-drawing-action");
+  };
+  await page.locator("#ol-drawing-more").focus(); await page.keyboard.press("Enter");
+  await expect(menu).toBeVisible(); await expect(item("new-exact")).toBeFocused();
+  await expect(item("choose")).toBeDisabled(); await expect(item("retry")).toBeHidden(); await expect(item("recover-list")).toBeHidden();
+  for (const [key, action] of [["End", "export"], ["ArrowDown", "new-exact"], ["ArrowUp", "export"], ["Home", "new-exact"]]) {
+    await page.keyboard.press(key); expect(await availableFocus()).toBe(action);
+  }
+  await page.keyboard.press("Escape"); await expect(page.locator("#ol-drawing-more")).toBeFocused();
+  const made = await D.drawing(page); await D.action(page, made.id, "lock"); await D.closeManager(page);
+  const before = await D.row(page, made.id), beforeRevision = await revision(page);
+  await page.locator("#ol-drawing-more").focus(); await page.keyboard.press("Enter");
+  await expect(item("choose")).toBeFocused(); await expect(item("move")).toBeDisabled();
+  await page.keyboard.press("ArrowDown"); await expect(item("new-exact")).toBeFocused();
+  await page.keyboard.press("ArrowDown"); await expect(item("edit")).toBeFocused();
+  const available = await menu.locator("button[data-drawing-action]").evaluateAll((nodes) => nodes.filter((n) => !n.disabled && n.getClientRects().length && getComputedStyle(n).visibility !== "hidden").map((n) => n.dataset.drawingAction));
+  for (const key of ["ArrowDown", "ArrowUp"]) {
+    await page.keyboard.press("Home"); const visited = new Set([await availableFocus()]);
+    for (let n = 0; n < available.length; n++) { await page.keyboard.press(key); visited.add(await availableFocus()); }
+    expect([...visited].sort(), "every available action is reachable without landing on unavailable actions").toEqual([...available].sort());
+  }
+  await page.keyboard.press("End"); expect(await availableFocus()).toBe(available.at(-1));
+  await page.keyboard.press("Home"); await expect(item("choose")).toBeFocused();
+  expect(await D.row(page, made.id)).toEqual(before); expect(await revision(page)).toBe(beforeRevision);
+});
+
+test("choosing an existing line discards a pending first point before its next held body edit", async ({ page, fakeFor }) => {
+  const fake = await fakeFor("mini"); await D.open(page, fake); const made = await D.drawing(page), original = await D.row(page, made.id);
+  let p = await D.plot(page); const firstPoint = D.point(p, .12, .15); await page.mouse.click(firstPoint.x, firstPoint.y);
+  await expect(page.locator("#ol-drawing-toolbar-status")).toContainText("A ·"); expect(await D.count(page)).toBe(1); expect(await D.row(page, made.id)).toEqual(original);
+  await D.command(page, "choose"); await expect(page.locator("#ol-drawing-chooser")).toBeVisible();
+  await page.locator(`#ol-drawing-chooser [data-drawing-choice="${made.id}"]`).click(); await expect.poll(() => D.active(page)).toBe(made.id);
+  await expect(page.locator("#ol-drawing-toolbar-status")).not.toContainText("A ·");
+  p = await D.plot(page); await heldEdit(page, made.id, D.point(p, .5, .5), D.point(p, .5625, .4375), { a: D.expected(.3125, .6875), b: D.expected(.8125, .1875) });
+  expect(await D.count(page)).toBe(1); await expect(page.locator("#ol-drawing-chooser")).toBeHidden();
+});
+
+test("price-axis drag cancels a pending first point and changes scale without creating a line or leaving a stale draft", async ({ page, fakeFor }) => {
+  const fake = await fakeFor("mini"); await D.open(page, fake); await D.trend(page);
+  const p = await D.plot(page), firstPoint = D.point(p, .25, .75); await page.mouse.click(firstPoint.x, firstPoint.y);
+  await expect(page.locator("#ol-drawing-toolbar-status")).toContainText("A ·");
+  const camera = (key) => new URLSearchParams(new URL(page.url()).hash.slice(1)).get(key), priorTime = camera("t"), priorPrice = camera("p"), beforeRevision = await revision(page);
+  const axis = { x: p.x - Math.min(20, p.localX / 2), y: p.y + p.height / 2 };
+  await page.mouse.move(axis.x, axis.y); await page.mouse.down(); await page.mouse.move(axis.x, axis.y + 60, { steps: 6 }); await page.mouse.up();
+  await expect.poll(() => camera("p")).not.toBe(priorPrice); expect(camera("t")).toBe(priorTime);
+  expect(await D.count(page)).toBe(0); expect(await revision(page)).toBe(beforeRevision); await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#ol-drawing-toolbar-status")).not.toContainText("A ·");
+  const next = D.point(await D.plot(page), .65, .35); await page.mouse.click(next.x, next.y);
+  expect(await D.count(page), "the next click is a fresh first point, never a stale second point").toBe(0); expect(await revision(page)).toBe(beforeRevision);
+  await expect(page.locator("#ol-drawing-toolbar-status")).toContainText("A ·");
+  await page.keyboard.press("Escape"); await expect(page.locator("#ol-drawing-toolbar-status")).not.toContainText("A ·");
+  await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true"); expect(await D.count(page)).toBe(0);
+});
+
+test("inactive lines sharing an endpoint require a choice before any resize and the chosen line alone owns the next held edit", async ({ page, fakeFor }) => {
+  const fake = await fakeFor("mini"); await D.open(page, fake);
+  const first = await D.drawing(page), second = await D.drawing(page, [.125, .25], [.25, .75]);
+  await page.locator("#ol-canvas").focus(); await page.keyboard.press("Escape");
+  expect(await D.active(page)).toBe(""); await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
+  const p = await D.plot(page), shared = D.point(p, .25, .75), next = D.point(p, .3125, .6875), before = await D.rows(page), beforeRevision = await revision(page);
+  await page.mouse.move(shared.x, shared.y); await page.mouse.down(); await page.mouse.move(next.x, next.y, { steps: 6 });
+  expect(await D.rows(page)).toEqual(before); expect(await revision(page)).toBe(beforeRevision); expect(await D.active(page)).toBe("");
+  await page.mouse.up(); const chooser = page.locator("#ol-drawing-chooser"); await expect(chooser).toBeVisible();
+  for (const id of [first.id, second.id]) await expect(chooser.locator(`[data-drawing-choice="${id}"]`)).toBeVisible();
+  expect(await D.rows(page)).toEqual(before); expect(await revision(page)).toBe(beforeRevision); expect(await D.count(page)).toBe(2);
+  await chooser.locator(`[data-drawing-choice="${first.id}"]`).click();
+  const sibling = await D.row(page, second.id), original = await D.row(page, first.id);
+  await heldEdit(page, first.id, shared, next, { a: D.expected(.3125, .6875), b: original.b });
+  expect(await D.row(page, second.id)).toEqual(sibling); await expect(chooser).toBeHidden();
 });

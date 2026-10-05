@@ -71,6 +71,7 @@ Contrast is WCAG contrast of the hex against `--ol-surface` (`#fff` / `#161f19`)
 | T-35 | Design token `--ol-line-compare` (new in S3) | src/explorer.css custom-property block next to the line family tokens; JS `colors.family.compare` through `getColors`; the cone, its anchor line and the evidence tracks | Does not exist at baseline (the violet `--ol-evidence` carried the continuation) | `REF:Historical comparison neutral`: the muted ink, so the comparison is never a third hue beside the price levels' violet; its two sets are told apart by shape and label | - | #48 | U58, B41 | done |
 | T-36 | Per-object authored RGB `--drawing-rgb` | src/explorer.css `.ol-drawing-swatch`; src/explorer.js `drawingRow`, `drawingSyncInventory`, `drawingSyncUI` | Exact normalized six-digit RGB, independent of theme; a filled hexagon swatch with structural border | `annotation.trend.rgb`: object identity; visible name and exact RGB accompany the swatch; no quantitative or market meaning | - | #66 | U92, B61 | keep |
 | T-37 | Readable comparison properties `--fs-comparison-primary`, `--fs-comparison-value`, `--fs-comparison-label`, `--fs-comparison-card`, `--fs-comparison-support`, `--comparison-card-min`, `--comparison-track-height` | src/explorer.css comparison block; src/comparison-ui.js Focus/Cards/Matrix | 28/20/14 px focus, 18/12 px cards; 200 px card minimum, 6 px track | CHR; registered type/layout sizes; collection growth pages without shrinking text | - | #71 | B63 | keep |
+| T-38 | Viewport position property `--drawing-menu-top` | src/explorer.js `drawingPlaceActions`; src/explorer.css `.ol-drawing-actions` | Nonnegative viewport top in CSS px, measured while the desktop More menu is open; 120 px fallback. Menu height is the smaller of 70dvh and the remaining viewport height below that top, less 16 px; excess actions scroll inside the menu | CHR; layout only, keeps drawing actions reachable without shrinking text | - | #66 | U36, B61 | keep |
 
 ### 3.2 Canvas consumers (C-)
 
@@ -790,13 +791,13 @@ Rendered from the Status column at S2's convergence: `done` is the work of S1 an
 
 | Prefix | Rows | keep | todo-S1 | todo-S2 | todo-S3 | done |
 |---|---|---|---|---|---|---|
-| T | 37 | 19 | 0 | 0 | 0 | 18 |
+| T | 38 | 20 | 0 | 0 | 0 | 18 |
 | C | 49 | 3 | 0 | 0 | 0 | 46 |
 | D | 22 | 8 | 0 | 0 | 0 | 14 |
 | F | 17 | 0 | 0 | 0 | 0 | 17 |
 | R | 15 | 0 | 0 | 0 | 0 | 15 |
 | N | 44 | 0 | 0 | 0 | 0 | 44 |
-| all | 184 | 30 | 0 | 0 | 0 | 154 |
+| all | 185 | 31 | 0 | 0 | 0 | 154 |
 
 ## 11. Contributor checklist
 

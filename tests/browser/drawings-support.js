@@ -42,7 +42,10 @@ async function rows(page) {
 }
 async function row(page, id) { return (await rows(page)).find((r) => r.id === id); }
 async function closeManager(page) {
-  if (await page.locator("#ol-lines-pop").isVisible() || await page.locator("#ol-drawing-actions").isVisible()) await page.keyboard.press("Escape");
+  if (await page.locator("#ol-lines-pop").isVisible() || await page.locator("#ol-drawing-actions").isVisible()) {
+    const mode = await page.locator("#ol-trend").getAttribute("aria-pressed");
+    await page.keyboard.press("Escape"); await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", mode);
+  }
 }
 async function trend(page) {
   if (await page.locator("#ol-trend").getAttribute("aria-pressed") !== "true") {
@@ -62,7 +65,7 @@ async function lines(page) {
 }
 async function manager(page) {
   await trend(page);
-  if (await page.locator("#ol-lines-pop").isVisible()) await page.keyboard.press("Escape");
+  if (await page.locator("#ol-lines-pop").isVisible()) await closeManager(page);
   if (await page.locator("#ol-drawing-actions").isHidden()) await page.locator("#ol-drawing-more").click();
   await expect(page.locator("#ol-drawing-actions")).toBeVisible();
 }

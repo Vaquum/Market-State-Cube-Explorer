@@ -281,3 +281,43 @@ test("Relative volume with a stale period and newer rectangle hides both display
   expect(copied).not.toContain(`Relative volume · captured context: ${relative.value}`);
   expect((await saved(page)).captures).toEqual([capture]);
 });
+
+
+test("Add refuses a near-cap collection when revealing its new cell requires page 10", async ({ page, fakeFor, probe }) => {
+  const fake = await fakeFor("micro:mixed"), cap = 4 * 1024 * 1024;
+  await ready(page, fake, probe); await addTable(page, 0, 200, 1);
+  const sample = (await saved(page)).captures[0];
+  // Independent prior facts put the new real capture at collection index 240, hence zero-based page 10.
+  const captures = Array.from({ length: 240 }, (_, index) => {
+    const t0 = EPOCH + index * 56250, t1 = t0 + 56250, low = (1000 + index) * 125, high = low + 125;
+    return { id: "prior-" + index, instrument: "BTC/USDT", level: { n: 0, m: 0 }, origin: wire.T0, c: index, r: 1000 + index,
+      nominal: { t0, t1, low, high }, observed: { t0, t1, low, high, seconds: 56.25, width: 125 },
+      capturedAt: EPOCH, measuredThrough: t1, source: "independent prior capture", completeness: "Complete",
+      metrics: { "volume.amount": { tag: "finite", value: index + 1, formula: "cells.volume.amount@1", unit: "usdt", supportEnd: t1, knownThrough: t1 } }, detail: [] };
+  });
+  captures[0].metrics["volume.amount"].audit = "";
+  const before = { comparisonVersion: 1, instrument: "BTC/USDT", captures, focus: "prior-0", reference: null, basis: "amount",
+    sort: { key: "added", direction: "asc" }, view: "grid", page: 0, poc: null, expanded: false, restoreLayout: null };
+  const oldPreflight = { ...before, captures: [...captures, sample], focus: sample.id };
+  captures[0].metrics["volume.amount"].audit = "x".repeat(cap - Buffer.byteLength(JSON.stringify(oldPreflight)));
+  expect(Buffer.byteLength(JSON.stringify(oldPreflight))).toBe(cap);
+  expect(Buffer.byteLength(JSON.stringify({ ...oldPreflight, page: 10 }))).toBe(cap + 1);
+  const raw = JSON.stringify(before);
+  await page.evaluate(({ key, raw }) => sessionStorage.setItem(key, raw), { key: KEY, raw });
+  await page.reload(); await ready(page, fake, probe); await page.locator("#ol-tab-compare").click();
+  await expect(page.locator("#ol-tab-compare")).toHaveText("Compare · 240");
+  await expect(page.locator(`${WORK} [data-comparison-position]`)).toContainText("Page 1 of 10");
+  const revision = await page.locator(WORK).getAttribute("data-revision"), writes = await page.locator(WORK).getAttribute("data-writes");
+  await page.locator("#ol-tab-cells").click();
+  await tableRow(page, 0, 200).getByRole("button", { name: "Add to comparison" }).click();
+  await page.locator("#ol-tab-compare").click();
+  await expect(page.locator(`${WORK} [data-comparison-status]`)).toContainText("4 MiB");
+  await expect(page.locator("#ol-tab-compare")).toHaveText("Compare · 240");
+  await expect(page.locator(`${WORK} .ol-comparison-focus [data-metric="volume"]`)).toHaveAttribute("data-canonical", "1");
+  await expect(page.locator(`${WORK} [data-comparison-position]`)).toContainText("Page 1 of 10");
+  await expect(page.locator(WORK)).toHaveAttribute("data-revision", revision);
+  await probe.waitForQuiet({ quietMs: 300, timeout: 30000 });
+  await expect(page.locator(WORK)).toHaveAttribute("data-writes", writes);
+  expect(await page.evaluate((key) => sessionStorage.getItem(key), KEY)).toBe(raw);
+  expect(await saved(page)).toEqual(before);
+});

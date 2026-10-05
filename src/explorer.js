@@ -36,7 +36,7 @@
   const comparisonEmpty = () => ({comparisonVersion:1,instrument:INSTRUMENT,captures:[],focus:null,reference:null,
     basis:"auto",sort:{key:"time",direction:"asc"},view:"grid",page:0,poc:null,expanded:false,restoreLayout:null});
   let comparisonModel = comparisonEmpty(), comparisonUI = null, comparisonAnalysis = null,
-    comparisonStatsKey = "", comparisonRenderKey = "", comparisonRevision = 0, comparisonTimer = null,
+    comparisonStatsKey = "", comparisonRenderKey = "", comparisonLastEdge = undefined, comparisonRevision = 0, comparisonTimer = null,
     comparisonUnsaved = false, comparisonRejected = false, comparisonMessage = "", comparisonMenu = null,
     comparisonPocCache = {key:null,items:[]};
   const comparisonCounters = {stats:0,writes:0,bytes:0,renders:0};
@@ -19194,7 +19194,7 @@
       noteGesture();
     });
     const finishPointer = (e) => {
-      if (e.button !== 0 || e.ctrlKey) return;
+      if (e.button !== 0) return;
       if (drawingPointerUp(e, at(e))) {
         nav.alt = Boolean(e.altKey);
         if (nav.alt) { requestDraw(); scheduleCube(); }
@@ -20895,13 +20895,16 @@
     const data=el("comparisonWorkspace").dataset;
     for(const [key,value]of Object.entries({...comparisonCounters,revision:comparisonRevision}))if(data[key]!==String(value))data[key]=String(value);
   }
-  function comparisonRefresh(force=false) {
+  function comparisonRefresh(force=false,preparedAnalysis=null) {
     if(!comparisonUI)return;
     comparisonCounterPublish();
-    const edge=comparisonEdge(),eligibility=edge===null?"live":comparisonModel.captures.map(c=>[...Object.values(c.metrics),...c.detail].map(m=>Number.isFinite(m.supportEnd)&&Number.isFinite(m.knownThrough)&&Math.max(m.supportEnd,m.knownThrough)<=edge?1:0).join("")).join("|")+"|"+(comparisonModel.poc&&Math.max(comparisonModel.poc.supportEnd??Infinity,comparisonModel.poc.knownThrough??Infinity)<=edge),
+    const edge=comparisonEdge();
+    // An uncaptured Copy is outside metric cohorts; clear its text even when cached statistics and DOM stay unchanged.
+    if(edge!==comparisonLastEdge) {comparisonUI.clearCopyFallback();comparisonLastEdge=edge;}
+    const eligibility=edge===null?"live":comparisonModel.captures.map(c=>[...Object.values(c.metrics),...c.detail].map(m=>Number.isFinite(m.supportEnd)&&Number.isFinite(m.knownThrough)&&Math.max(m.supportEnd,m.knownThrough)<=edge?1:0).join("")).join("|")+"|"+(comparisonModel.poc&&Math.max(comparisonModel.poc.supportEnd??Infinity,comparisonModel.poc.knownThrough??Infinity)<=edge),
       statsKey=[comparisonRevision,comparisonModel.basis,comparisonModel.reference,JSON.stringify(comparisonModel.poc),eligibility].join("|");
-    if(statsKey!==comparisonStatsKey) {comparisonUI.clearCopyFallback();comparisonStatsKey=statsKey;comparisonCounters.stats++;comparisonAnalysis=C.analyze(comparisonModel.captures,{...comparisonModel,edge});}
-    const pocs=comparisonPocs(),renderKey=JSON.stringify([statsKey,comparisonModel.focus,comparisonModel.sort,comparisonModel.page,comparisonModel.view,comparisonModel.expanded,comparisonMessage,comparisonUnsaved,comparisonRejected,pocs]);
+    if(statsKey!==comparisonStatsKey) {comparisonUI.clearCopyFallback();comparisonStatsKey=statsKey;comparisonCounters.stats++;comparisonAnalysis=preparedAnalysis??C.analyze(comparisonModel.captures,{...comparisonModel,edge});}
+    const pocs=comparisonPocs(),pocEligibility=edge===null?"live":pocs.map(p=>Number.isFinite(p.supportEnd)&&Number.isFinite(p.knownThrough)&&Math.max(p.supportEnd,p.knownThrough)<=edge),renderKey=JSON.stringify([statsKey,comparisonModel.focus,comparisonModel.sort,comparisonModel.page,comparisonModel.view,comparisonModel.expanded,comparisonMessage,comparisonUnsaved,comparisonRejected,pocs,pocEligibility]);
     if(!force&&renderKey===comparisonRenderKey)return;
     // Sorting is pure presentation: it reuses metric cohorts and never refits their statistics.
     comparisonAnalysis={...comparisonAnalysis,ordered:C.sort?C.sort(comparisonModel.captures,comparisonModel.sort,comparisonAnalysis.metrics):C.analyze(comparisonModel.captures,{...comparisonModel,edge}).ordered};
@@ -20921,15 +20924,18 @@
       comparisonRefresh();
     },0);
   }
-  function comparisonCommit(next,content=false) {
+  function comparisonCommit(next,content=false,reveal=false) {
+    let preparedAnalysis=null;
+    if(reveal) {
+      // Reveal belongs to the candidate record; reuse its analysis after the size preflight.
+      preparedAnalysis=content?C.analyze(next.captures,{...next,edge:comparisonEdge()}):comparisonAnalysis;
+      const ordered=preparedAnalysis?.ordered??next.captures,i=ordered.findIndex(c=>c.id===next.focus);
+      next={...next,page:Math.max(0,Math.floor(i/24))};
+    }
     const prepared=window.explorerState.comparison.measure(next);
     if(!prepared.ok) {comparisonMessage=prepared.reason;comparisonRefresh();return false;}
     comparisonModel=next;if(content)comparisonRevision++;
-    comparisonUI.clearCopyFallback();comparisonRefresh(true);comparisonPersist();return true;
-  }
-  function comparisonReveal(id) {
-    const ordered=comparisonAnalysis?.ordered??comparisonModel.captures,i=ordered.findIndex(c=>c.id===id);
-    comparisonModel={...comparisonModel,page:Math.max(0,Math.floor(i/24))};
+    comparisonUI.clearCopyFallback();comparisonRefresh(true,preparedAnalysis);comparisonPersist();return true;
   }
   function comparisonAdd(capture,replace=false) {
     const i=comparisonModel.captures.findIndex(c=>c.id===capture.id);
@@ -20937,8 +20943,8 @@
     else comparisonMessage=replace?"Capture updated":"Cell added";
     const captures=comparisonModel.captures.slice();
     if(i<0)captures.push(capture);else if(replace)captures[i]=capture;
-    if(!comparisonCommit({...comparisonModel,captures,focus:capture.id},i<0||replace))return;
-    comparisonReveal(capture.id);S.drawer="compare";S.drawerOpen=true;
+    if(!comparisonCommit({...comparisonModel,captures,focus:capture.id},i<0||replace,true))return;
+    S.drawer="compare";S.drawerOpen=true;
     if (!comparisonModel.expanded) S.drawerHeight=Math.max(S.drawerHeight,Math.min(420,drawerMax()));
     applyPanels();comparisonRefresh(true);comparisonPersist();update();
     comparisonUI.focusControl("expand");
@@ -20979,7 +20985,7 @@
       next.page=Math.min(next.page,Math.max(0,Math.ceil(next.captures.length/24)-1));
       if(next.focus===action.id)next.focus=(order[i+1]??order[i-1])?.id??null;
       if(next.reference===action.id){next.reference=null;comparisonMessage="Reference removed · using set median";}
-      if(comparisonCommit(next,true)){comparisonReveal(next.focus);comparisonRefresh(true);comparisonPersist();}return;
+      comparisonCommit(next,true,true);return;
     }else if(action.type==="basis")next.basis=action.value;
     else if(action.type==="reference")next.reference=action.id||null;
     else if(action.type==="view")next.view=action.value;
@@ -21041,8 +21047,10 @@
   function comparisonInit() {
     comparisonUI=window.explorerComparisonUI.create({root:el("comparisonWorkspace"),dispatch:comparisonDispatch});
     canvas.addEventListener("contextmenu",event=>comparisonOpenMenu(event,comparisonTarget(at(event))));
-    canvas.addEventListener("pointerdown",event=>{if(event.button===2||event.ctrlKey&&event.button===0){event.stopImmediatePropagation();if(event.ctrlKey)comparisonOpenMenu(event,comparisonTarget(at(event)));}},true);
-    canvas.addEventListener("pointerup",event=>{if(event.button===2||event.ctrlKey&&event.button===0)event.stopImmediatePropagation();},true);
+    const menuPresses=new Set(),pressKey=event=>`${event.pointerId}:${event.button}`;
+    canvas.addEventListener("pointerdown",event=>{if(event.button===2||event.ctrlKey&&event.button===0){menuPresses.add(pressKey(event));event.stopImmediatePropagation();if(event.ctrlKey)comparisonOpenMenu(event,comparisonTarget(at(event)));}},true);
+    canvas.addEventListener("pointerup",event=>{if(menuPresses.delete(pressKey(event)))event.stopImmediatePropagation();},true);
+    canvas.addEventListener("pointercancel",event=>{for(const key of menuPresses)if(key.startsWith(event.pointerId+":"))menuPresses.delete(key);},true);
     document.addEventListener("pointerdown",event=>{if(comparisonMenu&&!comparisonMenu.node.contains(event.target))comparisonCloseMenu(true);},true);
     comparisonRefresh(true);
   }

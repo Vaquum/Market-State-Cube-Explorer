@@ -162,6 +162,40 @@ test("reload preserves collection, basis, sort, Matrix, focus and a frozen POC",
   await expect(control(page, "poc")).toHaveValue("frozen-poc"); await expect(focusMetric(page, "poc")).toHaveAttribute("data-canonical", "687.5");
 });
 
+test("a frozen POC with a price-bearing id stays absent from replay DOM until both support edges and restores exactly", async ({ page, fakeFor }) => {
+  const value = collection(1), supportEnd = START + 15 * 60000, knownThrough = START + 30 * 60000;
+  value.poc = { id: JSON.stringify(["90d", START - 86400000, supportEnd, 70062.5, "frozen-future-poc"]),
+    label: "Frozen 90 days · 70,062.5 USDT", period: "90d", price: 70062.5, rowSize: 125, approximate: true,
+    supportEnd, knownThrough, from: START - 86400000, through: supportEnd, source: "hand fixture" };
+  const fake = await fakeFor("mini"); await open(page, fake, value);
+  expect(await page.evaluate((record) => window.explorerState.comparison.validate(record).ok, value)).toBe(true);
+  const before = await stored(page), select = control(page, "poc"), note = panel(page).locator(".ol-comparison-poc-note");
+  await expect(select).toHaveValue(value.poc.id); await expect(note).toHaveText(value.poc.label);
+  await expect(focusMetric(page, "poc")).toHaveAttribute("data-canonical", "62.5");
+  for (const at of ["2026-09-23T12:00:00Z", "2026-09-23T12:15:00Z"]) {
+    await page.evaluate((hash) => { location.hash = hash; }, HASH + "&replay=1&at=" + at);
+    await expect(page.locator("#ol-replay")).toHaveAttribute("aria-pressed", "true");
+    await expect(select.locator("option:checked")).toHaveText("Unavailable in replay");
+    await expect(select.locator("option:checked")).toHaveJSProperty("disabled", true);
+    await expect(note).toHaveText("Unavailable in replay");
+    await expect(focusMetric(page, "poc")).toHaveAttribute("data-state", "hidden");
+    expect(await focusMetric(page, "poc").getAttribute("data-canonical")).toBeNull();
+    const dom = await panel(page).evaluate((root) => ({ html: root.outerHTML, text: root.innerText,
+      options: Array.from(root.querySelector('[data-comparison-control="poc"]').options, (option) => ({ value: option.value, label: option.label })) }));
+    for (const text of ["70062.5", "70,062.5", "frozen-future-poc", value.poc.label]) {
+      expect(dom.html).not.toContain(text); expect(dom.text).not.toContain(text); expect(JSON.stringify(dom.options)).not.toContain(text);
+    }
+    expect(await stored(page)).toEqual(before);
+  }
+  await page.evaluate((hash) => { location.hash = hash; }, HASH + "&replay=1&at=2026-09-23T12:30:00Z");
+  await expect(select).toHaveValue(value.poc.id); await expect(note).toHaveText(value.poc.label);
+  await expect(select.locator("option:checked")).toHaveJSProperty("disabled", false);
+  await expect(focusMetric(page, "poc")).toHaveAttribute("data-canonical", "62.5");
+  await page.locator("#ol-replay").click(); await expect(page.locator("#ol-replay")).toHaveAttribute("aria-pressed", "false");
+  await expect(select).toHaveValue(value.poc.id); await expect(note).toHaveText(value.poc.label);
+  expect(await stored(page)).toEqual(before);
+});
+
 test("two tabs initially share a copied session then diverge; a fresh tab starts empty", async ({ page, context, fakeFor }) => {
   const fake = await fakeFor("mini"); await open(page, fake, collection(3));
   const duplicatePromise = context.waitForEvent("page"); await page.evaluate((url) => window.open(url, "_blank"), fake.url + "/" + HASH);

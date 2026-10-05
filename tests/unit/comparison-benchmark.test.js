@@ -1,6 +1,8 @@
 "use strict";
 // Independent committed counts/budgets, exact UTF-8 length and a manually driven DOM frame clock.
-const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
+const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path"), vm = require("node:vm"), crypto = require("node:crypto");
+const { execFileSync } = require("node:child_process");
+const { materialise } = require("../support/builds.js");
 const root = path.resolve(__dirname, "../.."), load = (name) => import(path.join(root, "tools/benchmark", name));
 const config = (version) => JSON.parse(fs.readFileSync(path.join(root, `tools/benchmark/navigation.v${version}.json`), "utf8"));
 test("v4 preserves all pinned v3 navigation inputs and adds declared DOM comparison diagnostics", async () => {
@@ -14,6 +16,34 @@ test("v4 preserves all pinned v3 navigation inputs and adds declared DOM compari
   assert.ok(validateConfig(invalid).some((reason) => reason.includes("24-entry")));
   invalid.comparison.nearLimitBytes = 4194304;
   assert.ok(validateConfig(invalid).some((reason) => reason.includes("4 MiB")));
+});
+test("CLI smoke keeps legacy baseline defaults but comparison configs select HEAD", async () => {
+  const { parseArgs, candidateReference } = await import(path.join(root, "tools/benchmark_navigation.mjs"));
+  const baseline = "59d42696d3708f93bf46e6c1691a64eabb2d5fd5";
+  for (const version of [1, 2, 3, 4]) {
+    const args = parseArgs(["--config", `tools/benchmark/navigation.v${version}.json`, "--smoke"]);
+    assert.equal(candidateReference(args, config(version), baseline), version === 4 ? "HEAD" : baseline);
+    assert.equal(candidateReference({ ...args, smoke: false }, config(version), baseline), "HEAD");
+    for (const candidate of [baseline, "HEAD", "working"]) assert.equal(candidateReference({ ...args, candidate }, config(version), baseline), candidate);
+  }
+});
+test("default v4 smoke resolves to the exact committed HEAD page with the Compare surface", async () => {
+  const { parseArgs, candidateReference, requireComparisonSurface } = await import(path.join(root, "tools/benchmark_navigation.mjs"));
+  const args = parseArgs(["--config", "tools/benchmark/navigation.v4.json", "--smoke"]);
+  const ref = candidateReference(args, config(4), "59d42696d3708f93bf46e6c1691a64eabb2d5fd5");
+  const git = (...argv) => execFileSync("git", ["-C", root, ...argv], { maxBuffer: 64 * 1024 * 1024 });
+  const sha = git("rev-parse", "--verify", `${ref}^{commit}`).toString("utf8").trim();
+  assert.equal(sha, git("rev-parse", "HEAD").toString("utf8").trim());
+  const build = materialise(sha, "unit-comparison-smoke-head");
+  assert.equal(build.indexSha256, crypto.createHash("sha256").update(git("show", `${sha}:index.html`)).digest("hex"));
+  assert.doesNotThrow(() => requireComparisonSurface(build));
+});
+test("an explicit pre-Compare candidate rejects the DOM phase before browser setup", async () => {
+  const { parseArgs, candidateReference } = await import(path.join(root, "tools/benchmark_navigation.mjs"));
+  const old = "59d42696d3708f93bf46e6c1691a64eabb2d5fd5", configPath = path.join(root, "tools/benchmark/navigation.v4.json");
+  const args = parseArgs(["--config", "tools/benchmark/navigation.v4.json", "--comparison-only", "--candidate", old]);
+  assert.equal(candidateReference(args, config(4), old), old);
+  for (const phase of ["--comparison-only", "--smoke"]) assert.throws(() => execFileSync(process.execPath, [path.join(root, "tools/benchmark_navigation.mjs"), "--config", configPath, phase, "--candidate", old], { encoding: "utf8", timeout: 5000, stdio: "pipe" }), (error) => error.status === 1 && /Comparison diagnostics unsupported for candidate 59d4269.*required Compare surface missing.*no DOM samples were measured/.test(error.stderr));
 });
 test("benchmark captures are independent typed facts with exact near-cap bytes in off-page detail", async () => {
   const { comparisonFixture } = await load("comparison.mjs");

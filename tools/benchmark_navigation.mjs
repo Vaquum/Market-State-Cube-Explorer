@@ -47,7 +47,7 @@ const log = (text) => process.stderr.write(`${text}\n`);
 
 // ---- arguments ----
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = { config: "tools/benchmark/navigation.v1.json", out: "reports/benchmark", smoke: false, allowDirty: false, forceInconclusive: false };
   const takesValue = new Set(["--config", "--out", "--baseline", "--preceding", "--candidate", "--browser-mode", "--label", "--designated", "--cpu-throttle"]);
   for (let i = 0; i < argv.length; i++) {
@@ -68,6 +68,19 @@ function parseArgs(argv) {
     if (!(args.cpuThrottle >= 1)) throw new Error("--cpu-throttle must be a rate of at least 1");
   }
   return args;
+}
+
+// Legacy smoke runs benchmark the baseline against itself. A config with DOM comparison
+// diagnostics needs a candidate that has Compare, so its default is the committed HEAD.
+export function candidateReference(args, config, baseline) {
+  return args.candidate ?? (args.smoke && !config.comparison ? baseline : "HEAD");
+}
+
+export function requireComparisonSurface(build) {
+  const html = fs.readFileSync(path.join(build.dir, "index.html"), "utf8");
+  const required = ["ol-tab-compare", "ol-panel-compare", "ol-comparisonWorkspace"];
+  const missing = required.filter((id) => !new RegExp(`\\s+id\\s*=\\s*["']${id}["']`).test(html));
+  if (missing.length) throw new Error(`Comparison diagnostics unsupported for candidate ${build.sha}: required Compare surface missing (${missing.join(", ")}). Select a commit with Compare; no DOM samples were measured.`);
 }
 
 const git = (...args) => execFileSync("git", ["-C", REPO_ROOT, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -283,6 +296,7 @@ async function runComparisonDiagnostics({ config, configPath, configBytes, args,
   if (!working && candidateRef === "HEAD" && !args.allowDirty && git("status", "--porcelain", "--untracked-files=no")) throw new Error("Commit the candidate or explicitly name --candidate working --allow-dirty");
   const sha = resolveCommit(working ? "HEAD" : candidateRef);
   const build = working ? snapshotWorkingPage(sha, "comparison-candidate") : materialise(sha, "comparison-candidate");
+  requireComparisonSurface(build);
   const fake = await startFake({ mode: "live", profile: config.data.profile, seed: config.data.seed, cutoff: config.data.cutoff, pageRoot: build.dir });
   const browser = await chromium.launch(launchOptions(mode)), samples = [], errors = [];
   try {
@@ -376,7 +390,7 @@ async function main() {
   // Committed builds are materialised exactly; an explicit working candidate is snapshotted once.
   const baseline = resolveCommit(args.baseline ?? ORIGINAL_SHA);
   const preceding = resolveCommit(args.preceding ?? baseline);
-  const candidateRef = args.candidate ?? (smoke ? baseline : "HEAD");
+  const candidateRef = candidateReference(args, config, baseline);
   const working = candidateRef === "working";
   if (working && !args.allowDirty) throw new Error("--candidate working requires --allow-dirty");
   const candidate = resolveCommit(working ? "HEAD" : candidateRef);
@@ -392,6 +406,7 @@ async function main() {
     builds.get(key).roles.push(role);
   }
   const buildOf = (role) => builds.get(roleKeys[role]);
+  if (config.comparison) requireComparisonSurface(buildOf("candidate"));
 
   const needLive = [...plan.core, ...plan.heavy].some((c) => c.mode === "fake-live");
   for (const build of builds.values()) {
@@ -563,7 +578,7 @@ async function main() {
   if (config.comparison) await runComparisonDiagnostics({ config, configPath, configBytes, args: { ...args, candidate: working ? "working" : candidate }, mode });
 }
 
-main().then(
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().then(
   () => process.exit(0),
   (error) => {
     process.stderr.write(`benchmark failed: ${error.stack ?? error}\n`);

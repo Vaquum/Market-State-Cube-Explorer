@@ -91,3 +91,36 @@ test("reference/axis/candle surfaces retain non-cell context behavior",async({pa
   await page.mouse.click((await point(page)).x,(await point(page)).y,{button:"right"});await expect(page.locator("#ol-cell-menu")).toHaveCount(0);
   await page.locator("#ol-tab-compare").click();await expect(page.locator("#ol-comparisonWorkspace")).toContainText("No captured cells");
 });
+
+
+test("uncaptured Copy fallback clears on a rewind within replay without statistics or storage work",async({page,fakeFor,probe})=>{
+  const fake=await fakeFor("standard"),hash="#t=2026-09-23T12:00Z~2026-09-24T12:00Z&p=24600~25400&r=4,0&vis=2&marks=none&lines=&poc=0&replay=1&at=2026-09-24T06:00Z";
+  await page.goto(fake.url+"/"+hash);await atRest(page,fake,probe);await probe.waitForQuiet({quietMs:300});
+  await page.evaluate(()=>Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async()=>{throw Error("denied");}}}));
+  await menu(page,await point(page));await page.getByRole("menuitem",{name:"Copy cell"}).click();
+  const work=page.locator("#ol-comparisonWorkspace"),box=work.locator(".ol-comparison-copy"),text=box.locator("textarea");
+  await expect(box).toBeVisible();await expect(text).toHaveValue(/Volume: [0-9]/);
+  expect((await stored(page))?.captures.length??0).toBe(0);
+  const before=await work.evaluate(n=>({stats:n.dataset.stats,writes:n.dataset.writes}));
+  await page.evaluate(next=>{location.hash=next;},hash.replace("at=2026-09-24T06:00Z","at=2026-09-23T12:00Z"));
+  await expect(page.locator("#ol-replay-at")).toHaveText("23 Sep 12:00");
+  await expect(box).toBeHidden();await expect(text).toHaveValue("");
+  expect(await work.evaluate(n=>({stats:n.dataset.stats,writes:n.dataset.writes}))).toEqual(before);
+});
+
+for(const tool of ["pan","trend"])
+  test(`Control pressed after ${tool} drag start still completes its primary release`,async({page,fakeFor,probe})=>{
+    const fake=await fakeFor("standard");await open(page,fake,probe);await page.locator(`[data-tool="${tool}"]`).click();
+    const a=await point(page),b={x:a.x+90,y:a.y-45};
+    await page.mouse.move(a.x,a.y);await page.mouse.down();await page.mouse.move(b.x,b.y,{steps:6});
+    await page.keyboard.down("Control");await page.mouse.up();await page.keyboard.up("Control");
+    await expect(page.locator("#ol-cell-menu")).toHaveCount(0);
+    await probe.waitForQuiet({quietMs:300});
+    if(tool==="trend") {
+      await expect(page.locator("#ol-canvas")).toHaveAttribute("data-drawing-count","1");
+      await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed","true");
+    }
+    const after=await page.evaluate(()=>location.hash);
+    await page.mouse.move(b.x+60,b.y+30);await probe.waitForQuiet({quietMs:300});
+    expect(await page.evaluate(()=>location.hash)).toBe(after);
+  });

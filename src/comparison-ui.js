@@ -21,6 +21,7 @@
   ];
   const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
   const finite = (value) => typeof value === "number" && Number.isFinite(value);
+  const replayVisible = (record, edge) => edge == null || (finite(edge) && finite(record?.supportEnd) && finite(record?.knownThrough) && record.supportEnd <= edge && record.knownThrough <= edge);
   const number = (value, maximumFractionDigits = 2) => finite(value)
     ? value.toLocaleString("en-US", { maximumFractionDigits })
     : "—";
@@ -57,7 +58,7 @@
     return difference + (finite(entry.percent) ? ` (${signed(entry.percent)}%)` : "");
   }
   function safeDetail(detail, edge) {
-    if (edge !== null && edge !== undefined && !(finite(detail.supportEnd) && finite(detail.knownThrough) && detail.supportEnd <= edge && detail.knownThrough <= edge))
+    if (!replayVisible(detail, edge))
       return { label: detail.label, value: "Unavailable in replay" };
     if (detail.tag && detail.tag !== "finite") return { label: detail.label, value: detail.reason || detail.tag };
     if (detail.value == null) return { label: detail.label, value: detail.reason || "Not measured" };
@@ -89,7 +90,7 @@
       <section class="ol-comparison-copy" role="dialog" aria-labelledby="ol-comparison-copy-title" hidden><div><strong id="ol-comparison-copy-title">Copy cell text</strong><button type="button" class="ol-action cursor-interaction" data-comparison-action="close-copy" data-focus-key="close-copy">Close</button></div><p>Clipboard access failed. Select and copy this text.</p><textarea readonly aria-label="Copyable captured cell text" data-focus-key="copy-text"></textarea></section>`;
     const q = (selector) => root.querySelector(selector);
     const setOptions = (control, entries, value) => {
-      const select = q(`[data-comparison-control="${control}"]`), markup = entries.map((entry) => `<option value="${escape(entry.value)}">${escape(entry.label)}</option>`).join("");
+      const select = q(`[data-comparison-control="${control}"]`), markup = entries.map((entry) => `<option value="${escape(entry.value)}"${entry.disabled ? ' disabled=""' : ""}>${escape(entry.label)}</option>`).join("");
       if (select.innerHTML !== markup) select.innerHTML = markup;
       select.value = value ?? "";
     };
@@ -186,11 +187,15 @@
       const direction = model.sort?.direction || (model.sort?.key === "time" || model.sort?.key === "added" || model.sort?.key === "poc" ? "asc" : "desc");
       q('[data-comparison-action="direction"]').textContent = direction === "asc" ? "Ascending ↑" : "Descending ↓";
       q('[data-comparison-action="direction"]').setAttribute("aria-label", `Sort ${direction === "asc" ? "ascending; switch to descending" : "descending; switch to ascending"}`);
-      const pocs = [{ value: "", label: "Choose a POC" }, ...(options.pocOptions || []).map((poc) => ({ value: poc.id, label: poc.label }))];
-      if (model.poc && !pocs.some((poc) => poc.value === model.poc.id)) pocs.push({ value: model.poc.id, label: model.poc.label || "Captured POC reference" });
-      setOptions("poc", pocs, model.poc?.id);
+      const hiddenPoc = model.poc && !replayVisible(model.poc, options.edge),
+        loadedPocs = (options.pocOptions || []).filter((poc) => replayVisible(poc, options.edge) && (!hiddenPoc || poc.id !== model.poc.id));
+      const pocs = [{ value: "", label: "Choose a POC" }, ...loadedPocs.map((poc) => ({ value: poc.id, label: poc.label }))];
+      // The snapshot stays owned by the model; its id can embed a price, so even option values must be gated.
+      if (hiddenPoc) pocs.push({ value: "unavailable-in-replay", label: "Unavailable in replay", disabled: true });
+      else if (model.poc && !pocs.some((poc) => poc.value === model.poc.id)) pocs.push({ value: model.poc.id, label: model.poc.label || "Captured POC reference" });
+      setOptions("poc", pocs, hiddenPoc ? "unavailable-in-replay" : model.poc?.id);
       q(".ol-comparison-basis-note").textContent = `${model.basis === "auto" || !model.basis ? "Auto → " : ""}${usedBasis === "intensity" ? "Intensity" : "Amount"}${analysis?.geometryDiffers ? " · Geometry differs" : ""}`;
-      q(".ol-comparison-poc-note").textContent = !options.pocOptions?.length && !model.poc ? "Enable a POC in Lines first" : model.poc?.label || "";
+      q(".ol-comparison-poc-note").textContent = hiddenPoc ? "Unavailable in replay" : !loadedPocs.length && !model.poc ? "Enable a POC in Lines first" : model.poc?.label || "";
       q('[data-comparison-status]').textContent = options.status || (options.unsaved ? "Unsaved comparison" : "");
       q('[data-comparison-action="retry"]').hidden = !options.unsaved || !!options.storageRejected;
       q('[data-comparison-action="discard"]').hidden = !options.storageRejected;

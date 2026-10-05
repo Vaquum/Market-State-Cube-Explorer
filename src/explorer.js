@@ -2204,6 +2204,8 @@
   }
 
   function draw() {
+    // Candidates, main paint and Lens share one label measurement per frame.
+    drawingLabelLayouts = new WeakMap();
     if (!ready) return;
     geometry();
     for (const k in markCount) markCount[k] = 0;
@@ -20216,12 +20218,75 @@
     if (!drawingGeometry(o)) return "Off screen";
     return occlusion.off.has("drawing|" + id) ? "Held back" : "Shown";
   }
+  let drawingLabelLayouts = new WeakMap();
+  const drawingLabelSegmenter = typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+  // One placement in the main plot, reused through Lens clipping. Ink bounds (including
+  // the thin contrast casing) must fit above the segment without shrinking the font.
+  function drawingLabelLayout(object, g) {
+    if (drawingLabelLayouts.has(object)) return drawingLabelLayouts.get(object);
+    drawingLabelLayouts.set(object, null);
+    if (!object.label) return null;
+    if (g === undefined) g = drawingGeometry(object);
+    if (!g) return null;
+    const rect = drawingPlot(), dx = g.b.x - g.a.x, dy = g.b.y - g.a.y, length = Math.hypot(dx, dy);
+    if (length <= 16) return null;
+    const direction = dx < 0 || (dx === 0 && dy > 0) ? -1 : 1,
+      ux = direction * dx / length, uy = direction * dy / length,
+      mid = { x: (g.a.x + g.b.x) / 2, y: (g.a.y + g.b.y) / 2 },
+      parts = drawingLabelSegmenter ? [...drawingLabelSegmenter.segment(object.label)].map((p) => p.segment) : Array.from(object.label);
+    // No shortening can rescue ink whose above-line bottom edge misses the plot.
+    if (rect.w <= 2 || rect.h <= 2 || !E.drawings.clip(
+      { x: g.a.x + uy * 5.5, y: g.a.y - ux * 5.5 },
+      { x: g.b.x + uy * 5.5, y: g.b.y - ux * 5.5 },
+      { x: rect.x + 1, y: rect.y + 1, w: rect.w - 2, h: rect.h - 2 },
+    )) return null;
+    ctx.save(); ctx.font = `${TYPE.s}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    let layout = null, display = object.label;
+    while (parts.length) {
+      const metric = ctx.measureText(display), ascent = metric.actualBoundingBoxAscent, descent = metric.actualBoundingBoxDescent,
+        left = -metric.actualBoundingBoxLeft - .5, right = metric.actualBoundingBoxRight + .5,
+        top = -6 - ascent - descent - .5, bottom = -6 + .5;
+      let lo = -length / 2 + 8 - left, hi = length / 2 - 8 - right;
+      // Intersect all four corner constraints with the allowed along-line slide.
+      for (const x of [left, right]) for (const y of [top, bottom]) {
+        for (const [base, offset, step, min, max] of [
+          [mid.x, ux * x - uy * y, ux, rect.x + 1, rect.x + rect.w - 1],
+          [mid.y, uy * x + ux * y, uy, rect.y + 1, rect.y + rect.h - 1],
+        ]) {
+          if (Math.abs(step) < 1e-9) { if (base + offset < min || base + offset > max) hi = -Infinity; }
+          else { const a = (min - base - offset) / step, b = (max - base - offset) / step; lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b)); }
+        }
+      }
+      if (lo <= hi && metric.width <= length - 16) {
+        const slide = clamp(0, lo, hi), origin = { x: mid.x + ux * slide + uy * (6 + descent), y: mid.y + uy * slide - ux * (6 + descent) },
+          project = (x, y) => ({ x: origin.x + ux * x - uy * y, y: origin.y + uy * x + ux * y }),
+          height = ascent + descent + 1, count = Math.ceil(height / 3.5), width = height / count, strokes = [];
+        // Parallel solid strips conservatively cover the rotated ink rectangle on
+        // the existing budget grid; never charge its diagonal bounding box.
+        for (let i = 0; i < count; i++) {
+          const y = -ascent - .5 + (i + .5) * width;
+          strokes.push({ a: project(left, y), b: project(right, y), width });
+        }
+        layout = { text: display, angle: Math.atan2(uy, ux), origin, strokes }; break;
+      }
+      parts.pop(); display = parts.join("") + "…";
+    }
+    ctx.restore(); drawingLabelLayouts.set(object, layout); return layout;
+  }
+  function drawingPaintLabel(object, label) {
+    if (!label) return;
+    ctx.save(); ctx.translate(label.origin.x, label.origin.y); ctx.rotate(label.angle);
+    ctx.font = `${TYPE.s}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.lineWidth = 1; ctx.lineJoin = "round"; ctx.strokeStyle = drawingCasing(object.color); ctx.fillStyle = object.color;
+    ctx.strokeText(label.text, 0, 0); ctx.fillText(label.text, 0, 0); ctx.restore();
+  }
   function drawingCandidates() {
     if (!drawingCollection().visible) return [];
     const out = [];
     for (const object of drawingCollection().objects) {
       if (!object.visible) continue;
-      const g = drawingGeometry(object);
+      const painted = drawingEditorPreview?.id === object.id ? drawingEditorPreview : drawingDrag?.preview?.id === object.id ? drawingDrag.preview : object,
+        g = drawingGeometry(painted), label = drawingLabelLayout(painted, g);
       if (!g) continue;
       out.push({ id: "drawing|" + object.id, hot: focus.drawing === object.id,
         priority: focus.drawing === object.id ? 1 : activeDrawingId === object.id ? 3 : 4,
@@ -20229,7 +20294,7 @@
           const half = object.id === activeDrawingId && !object.locked && tool() === "pan" ? 5.75 : 4.5;
           return [p.x - half, p.y - half, p.x + half, p.y + half];
         }),
-        strokes: [{ a: g.a, b: g.b, width: 3.5 }] });
+        strokes: [{ a: g.a, b: g.b, width: 3.5 }, ...(label?.strokes || [])] });
     }
     return out;
   }
@@ -20248,22 +20313,24 @@
     return luminance > .179 ? "#000000" : "#FFFFFF";
   }
   function drawingPaintObject(object, preview = false, rect = drawingPlot()) {
-    const g = drawingGeometry(object, rect);
-    if (!g) return;
+    const g = drawingGeometry(object, rect), label = drawingLabelLayout(object);
+    if (!g && !label) return;
     ctx.save(); ctx.beginPath(); ctx.rect(rect.x, rect.y, rect.w, rect.h); ctx.clip();
     ctx.globalAlpha = preview ? .8 : 1; ctx.setLineDash([]); ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(g.a.x, g.a.y); ctx.lineTo(g.b.x, g.b.y);
-    ctx.lineWidth = 3.5; ctx.strokeStyle = drawingCasing(object.color); ctx.stroke();
-    ctx.lineWidth = 1.5; ctx.strokeStyle = object.color; ctx.stroke();
-    if (!preview && object.id === activeDrawingId && !object.locked && !trendTool && !inspect.on && !S.select && !S.lens) {
-      for (const p of Object.values(g.endpoints)) {
-        if (p.x < rect.x || p.x > rect.x + rect.w || p.y < rect.y || p.y > rect.y + rect.h) continue;
-        ctx.fillStyle = colors.surface; ctx.strokeStyle = colors.ink; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    if (g) {
+      ctx.beginPath(); ctx.moveTo(g.a.x, g.a.y); ctx.lineTo(g.b.x, g.b.y);
+      ctx.lineWidth = 3.5; ctx.strokeStyle = drawingCasing(object.color); ctx.stroke();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = object.color; ctx.stroke();
+      if (!preview && object.id === activeDrawingId && !object.locked && !trendTool && !inspect.on && !S.select && !S.lens) {
+        for (const p of Object.values(g.endpoints)) {
+          if (p.x < rect.x || p.x > rect.x + rect.w || p.y < rect.y || p.y > rect.y + rect.h) continue;
+          ctx.fillStyle = colors.surface; ctx.strokeStyle = colors.ink; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+        }
       }
+      for (const p of g.anchors) drawingHex(p, object.color);
     }
-    for (const p of g.anchors) drawingHex(p, object.color);
-    ctx.restore();
+    drawingPaintLabel(object, label); ctx.restore();
   }
   function drawingPaint(rect = drawingPlot()) {
     if (drawingCollection().visible) for (const object of drawingCollection().objects) {
@@ -20417,7 +20484,7 @@
   let drawingEditorState = null, drawingChoiceOrigin = null, drawingDeleteOrigin = null;
   let drawingInventoryKey = "";
   let drawingUIInitialized = false, drawingRowsKey = "", drawingRecoveryKey = "", drawingActionsKey = "", drawingToolbarKey = "";
-  const drawingFieldIds = ["name", "color", "a-time", "a-price", "b-time", "b-price"];
+  const drawingFieldIds = ["name", "label", "color", "a-time", "a-price", "b-time", "b-price"];
   function drawingWrite(node, value) {
     const text = String(value ?? ""); if (node.textContent !== text) node.textContent = text;
   }
@@ -20487,8 +20554,10 @@
   function drawingReadEdit(showErrors = true) {
     if (!drawingEditorState) return null;
     const original = drawingEditorState.isNew ? drawingEditorState.object : drawingById(drawingEditorState.id); if (!original) return null;
-    const patch = { name: el("drawing-name").value.trim(), color: el("drawing-color").value.toLowerCase(), a: {}, b: {} }, errors = {};
+    const rawLabel = el("drawing-label").value;
+    const patch = { name: el("drawing-name").value.trim(), label: rawLabel.trim(), color: el("drawing-color").value.toLowerCase(), a: {}, b: {} }, errors = {};
     if (!patch.name || [...patch.name].length > 80 || /[\u0000-\u001f\u007f-\u009f]/u.test(patch.name)) errors.name = "Use 1–80 characters without control characters.";
+    if ([...patch.label].length > 80 || /[\u0000-\u001f\u007f-\u009f]/u.test(rawLabel) || [...rawLabel].some((c) => c.length === 1 && c.charCodeAt(0) >= 0xd800 && c.charCodeAt(0) <= 0xdfff)) errors.label = "Use up to 80 characters without control characters.";
     if (!/^#[0-9a-f]{6}$/.test(patch.color)) errors.color = "Enter six hexadecimal digits, for example #3366cc.";
     for (const point of ["a", "b"]) for (const [field, member, parse] of [["time", "timeMs", E.drawings.parseTime], ["price", "priceCents", E.drawings.parsePrice]]) {
       try { patch[point][member] = parse(el(`drawing-${point}-${field}`).value); }
@@ -20519,7 +20588,7 @@
     drawingEditorState = { id: object.id, origin: from, isNew: Boolean(draft), object: draft };
     el("drawing-editor").dataset.drawingId = object.id;
     drawingWrite(el("drawing-editor-title"), draft ? "New trend line" : "Edit trend line");
-    el("drawing-name").value = object.name; el("drawing-color").value = el("drawing-color-picker").value = object.color;
+    el("drawing-name").value = object.name; el("drawing-label").value = object.label || ""; el("drawing-color").value = el("drawing-color-picker").value = object.color;
     for (const point of ["a", "b"]) {
       el(`drawing-${point}-time`).value = E.drawings.formatTime(object[point].timeMs);
       el(`drawing-${point}-price`).value = E.drawings.formatPrice(object[point].priceCents);
@@ -20527,7 +20596,7 @@
     }
     for (const key of drawingFieldIds) drawingFieldError(key, "");
     drawingWrite(el("drawing-editor-error"), "");
-    drawingWrite(el("drawing-editor-note"), object.locked ? "Drawing locked. Name and color remain editable; unlock in Lines to move its points." : "Free coordinates · UTC time and USDT price. Apply saves all fields together.");
+    drawingWrite(el("drawing-editor-note"), object.locked ? "Drawing locked. Name, label and color remain editable; unlock in Lines to move its points." : "Free coordinates · UTC time and USDT price. Apply saves all fields together.");
     drawingEditorState.fields = drawingFieldIds.map((key) => el(`drawing-${key}`).value);
     drawingSyncEditorUndo();
     el("drawing-editor").showModal();
@@ -20615,7 +20684,7 @@
     }
     for (const row of list.querySelectorAll("[data-drawing-row]")) {
       const object = drawingById(row.dataset.drawingRow), state = drawingStatus(object.id);
-      for (const [attr, value] of Object.entries({ name: object.name, color: object.color, visible: String(object.visible), locked: String(object.locked), active: String(object.id === activeDrawingId), state, timeA: object.a.timeMs, timeB: object.b.timeMs, priceA: object.a.priceCents, priceB: object.b.priceCents, aTimeMs: object.a.timeMs, aPriceCents: object.a.priceCents, bTimeMs: object.b.timeMs, bPriceCents: object.b.priceCents })) if (row.dataset[attr] !== String(value)) row.dataset[attr] = String(value);
+      for (const [attr, value] of Object.entries({ name: object.name, label: object.label || "", color: object.color, visible: String(object.visible), locked: String(object.locked), active: String(object.id === activeDrawingId), state, timeA: object.a.timeMs, timeB: object.b.timeMs, priceA: object.a.priceCents, priceB: object.b.priceCents, aTimeMs: object.a.timeMs, aPriceCents: object.a.priceCents, bTimeMs: object.b.timeMs, bPriceCents: object.b.priceCents })) if (row.dataset[attr] !== String(value)) row.dataset[attr] = String(value);
       drawingWrite(row.querySelector(".ol-drawing-row-name"), object.name); drawingWrite(row.querySelector(".ol-drawing-status"), [object.locked ? "Locked" : "", state === "Shown" ? "" : state].filter(Boolean).join(" · "));
       const swatch = row.querySelector(".ol-drawing-swatch"); if (swatch.style.getPropertyValue("--drawing-rgb") !== object.color) swatch.style.setProperty("--drawing-rgb", object.color);
       for (const [action, text, pressed] of [["visible", object.visible ? "Hide" : "Show", object.visible], ["lock", object.locked ? "Unlock" : "Lock", object.locked]]) {

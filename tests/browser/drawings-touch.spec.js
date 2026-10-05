@@ -24,7 +24,7 @@ test("touch drawing target holds never become Lens; blank Pan hold retains Lens 
   await page.locator("#ol-drawing-cancel").click(); expect(await D.count(page)).toBe(1);
 });
 
-test("two-finger pinch interrupts a first draft and release creates no object; a later touch drag still commits once", async ({ page, fakeFor }) => {
+test("two-finger pinch interrupts a first draft and release creates no object; a later touch drag still commits once", async ({ page, fakeFor, probe }) => {
   const fake = await fakeFor("mini"); await D.open(page, fake); const client = await page.context().newCDPSession(page);
   await page.locator("#ol-canvas").focus(); await page.keyboard.press("g");
   const p = await D.plot(page), a = D.point(p, .3, .6), b = D.point(p, .7, .4);
@@ -34,6 +34,8 @@ test("two-finger pinch interrupts a first draft and release creates no object; a
   await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: a.x - 50, y: a.y + 25, id: 1 }, { x: b.x + 50, y: b.y - 25, id: 2 }] });
   await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   expect(await D.count(page)).toBe(0);
+  // Finish the queued pinch refit before measuring the next independent drag.
+  await probe.waitForReady();
   await page.keyboard.press("Escape"); await page.keyboard.press("Escape"); await page.locator("#ol-canvas").focus(); await page.keyboard.press("g");
   await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
   const now = await D.plot(page), start = D.point(now, .3, .6), end = D.point(now, .6, .3);

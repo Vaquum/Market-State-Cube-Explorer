@@ -2200,9 +2200,22 @@
     });
   }
 
-  API.relvol = Object.freeze({
-    compute: rvlCompute,
-  });
+  // A period's own profile: each traded row against the mean of ALL traded
+  // rows in that period. Neither the viewport nor its resolution is an input.
+  function rvlProfile(input) {
+    const rows = input.rows || [], m = input.m || 0,
+      traded = rows.filter((x) => x.v > 0), size = 2 ** m,
+      W = traded.length ? [traded[0].r * size, (traded.at(-1).r + 1) * size] : [0, size],
+      meanVolume = traded.length ? traded.reduce((sum, x) => sum + x.v, 0) / traded.length : 0,
+      result = rvlCompute({
+        W, bm: m, read: input.read,
+        current: { rows: traded, m },
+        period: { rows: traded.map((x) => ({ r: x.r, v: 1 })), own: m, exact: m === 0 },
+      });
+    return Object.freeze({ ...result, meanVolume, tradedRows: traded.length });
+  }
+
+  API.relvol = Object.freeze({ compute: rvlCompute, profile: rvlProfile });
 
   // == §08-scale ==
   // @part 08-scale

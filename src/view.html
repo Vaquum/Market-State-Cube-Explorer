@@ -820,6 +820,8 @@
               hidden
             ></div>
           </div>
+          <div class="ol-background-controls" role="group" aria-label="Canvas background" id="ol-background-controls">
+          <span class="ol-background-label">Background</span>
           <div class="ol-group ol-mode-group">
             <button
               type="button"
@@ -859,7 +861,7 @@
               aria-expanded="false"
               aria-controls="ol-period-pop"
               aria-label="Rows' period: 90 days"
-              data-hint="The period the rows are summed over, up to the latest data or the replay's edge"
+              data-hint="The period for the canvas background, independent of canvas zoom; up to the latest data or the replay's edge"
             >
               <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
                 <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
@@ -903,6 +905,7 @@
               </form>
               <div class="ol-lines-status" id="ol-period-status" role="status"></div>
             </div>
+          </div>
           </div>
           <button
             type="button"

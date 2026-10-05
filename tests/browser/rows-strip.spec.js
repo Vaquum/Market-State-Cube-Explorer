@@ -389,24 +389,24 @@ test.describe("B28 Relative volume draws only inside its comparison support", ()
   const stream = S.identical();
   const VIEW_COLS = [S.END_COL - 300, S.END_COL + 300];
   const SELECTION_COLS = [S.END_COL - 200, S.END_COL - 100];
-  const W = [201, 204];
+  const W = [200, 206];
 
   async function open(page, fakeFor, probe, pane) {
     const fake = await fakeFor({ name: stream.name, trades: stream.trades, cutoffIso: stream.cutoffIso });
-    await page.goto(`${fake.url}/${S.address({ cols: VIEW_COLS, rows: [196, 210], rowsKind: "relvol", selection: { cols: SELECTION_COLS, rows: W }, extra: "&vis=2" })}`);
+    await page.goto(`${fake.url}/${S.address({ cols: VIEW_COLS, rows: [196, 210], rowsKind: "relvol", selection: { cols: SELECTION_COLS, rows: [201, 204] }, extra: "&vis=2" })}`);
     await S.atRest(page, fake, probe);
     return { fake, frame: await pane.last(), layout: await layoutOf(page), colours: await palette(page) };
   }
 
-  test("the strip has a block for each row of W, in the midpoint colour, and none outside it", async ({ page, probe, fakeFor, pane }) => {
+  test("the strip has all period rows, including those outside the selection", async ({ page, probe, fakeFor, pane }) => {
     const { frame, layout, colours } = await open(page, fakeFor, probe, pane);
     const y = priceAxis(frame);
     const blocks = blocksOf(frame, layout[4], layout[3]).filter((b) => b.fill !== colours.surface);
     expect(blocks.length, "one block per row of W").toBe(W[1] - W[0]);
-    for (const b of blocks) expect(b.fill, "every row of W reads 0: the midpoint").toBe(colours.midpoint);
+    expect(new Set(blocks.map((b) => b.fill)).size).toBeGreaterThan(1);
     for (let r = W[0]; r < W[1]; r++) expect(blocks.some((b) => Math.abs(b.y - y((r + 1) * 125)) < 1.01), `row ${r} of W`).toBe(true);
     // no block for the rows the period traded and W left out
-    for (const r of [200, 204, 205]) expect(blocks.some((b) => Math.abs(b.y - y((r + 1) * 125)) < 1.01), `row ${r} is outside W`).toBe(false);
+    for (const r of [199, 206, 207]) expect(blocks.some((b) => Math.abs(b.y - y((r + 1) * 125)) < 1.01), `row ${r} is outside W`).toBe(false);
   });
 
   test("the strip's readout says outside comparison support outside W, and names the support inside it", async ({ page, probe, fakeFor, pane }) => {
@@ -418,10 +418,10 @@ test.describe("B28 Relative volume draws only inside its comparison support", ()
       await expect(page.locator("#ol-tip")).toBeVisible();
       return page.locator("#ol-tip").innerText();
     };
-    expect(await tipAt(200), "a row the period traded and W left out").toContain("Outside comparison support");
+    expect(await tipAt(199), "a row the period traded and W left out").toContain("Outside comparison support");
     const inside = await tipAt(202);
     expect(inside, "the measure and the period").toMatch(/Relative volume · /);
-    expect(inside, "the support W, in USDT").toMatch(/Comparison support W\s*\d[\d,]*–\d[\d,]* USDT/);
+    expect(inside, "the support W, in USDT").toMatch(/Period price range\s*\d[\d,]*–\d[\d,]* USDT/);
     expect(inside.replace(/\s+/g, " ")).toContain(`${(W[0] * 125).toLocaleString("en-US")}–${(W[1] * 125).toLocaleString("en-US")} USDT`);
   });
 });

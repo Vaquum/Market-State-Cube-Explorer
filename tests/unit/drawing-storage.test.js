@@ -314,4 +314,17 @@ test("ordinary saves preserve unreadable complete sessions verbatim before overw
     assert.equal(a.state.drawings.load().collection.objects[0].id, id(2));
     assert.equal(a.local.getItem(backups[0][0]), backups[0][1], "successful new work retains unreadable original bytes");
   }
+  const unicode = load(), originals = ["broken\uD800", "broken\uD801", "broken\uFFFD"];
+  for (const raw of originals) { unicode.session.setItem(P + "drawings:v1:session", raw); assert.equal(unicode.state.drawings.save(collection(2), 2).ok, true); }
+  const copies = [...unicode.local.map.entries()].filter(([key]) => key.includes("drawings:v1:unreadable-session:"));
+  assert.equal(copies.length, 3, "lone UTF16 units never alias replacement-character backups");
+  assert.deepEqual(copies.map(([, raw]) => JSON.parse(raw).raw), originals);
+  const conflicting = load(), raw = "{unreadable", digest = crypto.createHash("sha256").update(JSON.stringify(raw)).digest("hex"), key = P + "drawings:v1:unreadable-session:" + digest;
+  conflicting.session.setItem(P + "drawings:v1:session", raw);
+  for (const preserved of ["{corrupt backup", JSON.stringify({ storageVersion: 99, raw }), JSON.stringify({ storageVersion: 1, raw: "other original" })]) {
+    conflicting.local.setItem(key, preserved);
+    assert.equal(conflicting.state.drawings.save(collection(2), 2).ok, false);
+    assert.equal(conflicting.local.getItem(key), preserved); assert.equal(conflicting.session.getItem(P + "drawings:v1:session"), raw);
+    assert.equal(records(conflicting.local).length, 0);
+  }
 });

@@ -68,7 +68,8 @@ latest2, plus the8 newest prior-replacement recoveries. Pinned means reserved fr
 ordinary pruning, not permanent archive. Older recoveries expire on successful writes;
 use complete codes for permanent copies. Unknown/corrupt recovery originals are preserved. Before a new ordinary save replaces an
 unreadable session, a verified byte-for-byte `drawings:v1:unreadable-session:<SHA256>`
-copy preserves it; the digest deduplicates retries. Backup failure leaves the original
+copy preserves it; the digest hashes the JSON string so lone UTF16 units stay distinct,
+deduplicates retries, and never overwrites conflicting or unreadable prior copies. Backup failure leaves the original
 session authoritative and the new running work Unsaved.
 The recovery validator caches at most64 immutable records and checks raw bytes before
 reuse, so rewritten/corrupt data always revalidates. Failed writes retain the previous

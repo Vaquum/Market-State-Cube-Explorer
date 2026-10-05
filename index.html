@@ -5031,8 +5031,11 @@
         if (!["ok", "absent"].includes(previous.status)) {
           if (previous.raw === null) throw new Error(previous.reason);
           // Deduplicate a verified byte-for-byte copy before replacing an unreadable tab snapshot.
-          const digest = window.explorerEncoding.hash.hex(window.explorerEncoding.hash.sha256(window.explorerEncoding.hash.utf8(previous.raw)));
-          verifiedWrite("localStorage", drawingRoot + "unreadable-session:" + digest, { storageVersion: 1, raw: previous.raw });
+          const digest = window.explorerEncoding.hash.hex(window.explorerEncoding.hash.sha256(window.explorerEncoding.hash.utf8(JSON.stringify(previous.raw)))),
+            key = drawingRoot + "unreadable-session:" + digest, backup = protectedRead("localStorage", key);
+          if (backup.status === "absent") verifiedWrite("localStorage", key, { storageVersion: 1, raw: previous.raw });
+          else if (backup.status !== "ok" || backup.value?.storageVersion !== 1 || backup.value.raw !== previous.raw)
+            throw new Error("unreadable drawing session backup conflicts; the original session remains preserved");
         }
       }
       const before = drawingRecoveries(), writer = writerId(), id = protectedId(), sequence = ++drawingSequence,

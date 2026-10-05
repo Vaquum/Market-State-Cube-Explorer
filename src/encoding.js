@@ -10774,7 +10774,7 @@
   const cdcAllowed = Object.freeze({
     "": ["visualVersion", "kind", "id", "query", "view", "appearance", "scales", "axes", "models", "observation", "drawings"],
     drawings: ["schemaVersion", "instrument", "visible", "objects"],
-    "drawings.objects[]": ["id", "name", "a", "b", "color", "visible", "locked", "ordinal"],
+    "drawings.objects[]": ["id", "name", "a", "b", "color", "visible", "locked", "ordinal", "label"],
     "drawings.objects[].a": ["timeMs", "priceCents"],
     "drawings.objects[].b": ["timeMs", "priceCents"],
     query: ["t1", "t2", "p1", "p2", "tR", "pR"],
@@ -11610,13 +11610,14 @@
     if (!drwObject(x)) drwFail(label + " must be an object");
     for (const k of Object.keys(x)) if (!allowed.includes(k)) drwFail(label + " has unsupported field " + k);
   }
-  function drwName(value) {
-    if (typeof value !== "string") drwFail("name must be plain text");
-    const name = value.trim();
-    if (!name || Array.from(name).length > 80 || /[\u0000-\u001f\u007f-\u009f]/u.test(value)) drwFail("name needs 1–80 characters without controls");
-    for (const c of name) { const cp = c.codePointAt(0); if (cp >= 0xd800 && cp <= 0xdfff) drwFail("name contains an unpaired surrogate"); }
-    return name;
+  function drwText(value, field, minimum) {
+    if (typeof value !== "string") drwFail(field + " must be plain text");
+    const text = value.trim(), length = Array.from(text).length;
+    if (length < minimum || length > 80 || /[\u0000-\u001f\u007f-\u009f]/u.test(value)) drwFail(field + " needs " + minimum + "–80 characters without controls");
+    for (const c of text) { const cp = c.codePointAt(0); if (cp >= 0xd800 && cp <= 0xdfff) drwFail(field + " contains an unpaired surrogate"); }
+    return text;
   }
+  function drwName(value) { return drwText(value, "name", 1); }
   function drwAnchor(raw) {
     drwKeys(raw, ["timeMs", "priceCents"], "anchor");
     if (!Number.isSafeInteger(raw.timeMs) || raw.timeMs < drwLimits.timeMin || raw.timeMs > drwLimits.timeMax) drwFail("time must be integer UTC milliseconds between 2009 and 2100");
@@ -11624,14 +11625,17 @@
     return { timeMs: raw.timeMs, priceCents: raw.priceCents };
   }
   function drwNormalizeObject(raw) {
-    drwKeys(raw, ["id", "name", "a", "b", "color", "visible", "locked", "ordinal"], "line");
+    drwKeys(raw, ["id", "name", "a", "b", "color", "visible", "locked", "ordinal", "label"], "line");
     if (typeof raw.id !== "string" || !drwUuid.test(raw.id)) drwFail("ID must be a lowercase UUIDv4");
     if (typeof raw.color !== "string" || !/^#[0-9a-f]{6}$/i.test(raw.color)) drwFail("color must be #RRGGBB without alpha");
     if (typeof raw.visible !== "boolean" || typeof raw.locked !== "boolean") drwFail("visibility and lock must be true or false");
     if (!Number.isSafeInteger(raw.ordinal) || raw.ordinal < 0) drwFail("creation ordinal must be a nonnegative safe integer");
     const a = drwAnchor(raw.a), b = drwAnchor(raw.b);
     if (a.timeMs === b.timeMs && a.priceCents === b.priceCents) drwFail("Choose a different point");
-    return { id: raw.id, name: drwName(raw.name), a, b, color: raw.color.toLowerCase(), visible: raw.visible, locked: raw.locked, ordinal: raw.ordinal };
+    const object = { id: raw.id, name: drwName(raw.name), a, b, color: raw.color.toLowerCase(), visible: raw.visible, locked: raw.locked, ordinal: raw.ordinal };
+    // Inventory name is required; the independent chart label is optional and follows line RGB.
+    if (drwOwn(raw, "label")) { const label = drwText(raw.label, "label", 0); if (label) object.label = label; }
+    return object;
   }
   function drwEmpty() { return { schemaVersion: 1, instrument: drwInstrument, visible: true, objects: [] }; }
   function drwNormalizeCollection(raw) {
@@ -11664,7 +11668,9 @@
     if (!Number.isSafeInteger(ordinal)) drwFail("creation ordinal exhausted");
     const o = opts || {};
     drwOrdinals.set(collection, ordinal + 1);
-    return drwNormalizeObject({ id: o.id === undefined ? drwId() : o.id, name: o.name === undefined ? "Trend line " + (ordinal + 1) : o.name, a: o.a, b: o.b, color: o.color, visible: o.visible === undefined ? true : o.visible, locked: o.locked === undefined ? false : o.locked, ordinal });
+    const object = { id: o.id === undefined ? drwId() : o.id, name: o.name === undefined ? "Trend line " + (ordinal + 1) : o.name, a: o.a, b: o.b, color: o.color, visible: o.visible === undefined ? true : o.visible, locked: o.locked === undefined ? false : o.locked, ordinal };
+    if (o.label !== undefined) object.label = o.label;
+    return drwNormalizeObject(object);
   }
   function drwDuplicate(collection, id) {
     const c = drwNormalizeCollection(collection), original = c.objects.find((o) => o.id === id);
@@ -11674,7 +11680,7 @@
       const suffix = " copy " + n; name = Array.from(original.name).slice(0, 80 - suffix.length).join("") + suffix;
       if (!used.has(name)) break;
     }
-    return drwNewObject(collection, { name, a: original.a, b: original.b, color: original.color, visible: true, locked: false });
+    return drwNewObject(collection, { name, a: original.a, b: original.b, color: original.color, label: original.label, visible: true, locked: false });
   }
   function drwPoint(timeMs, priceUSDT) {
     if (!Number.isFinite(timeMs) || !Number.isFinite(priceUSDT)) drwFail("coordinates must be finite");

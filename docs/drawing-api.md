@@ -2,9 +2,12 @@
 
 `src/encoding.js` exports the frozen `E.drawings` namespace. Its schema1 collection is
 `{schemaVersion:1,instrument:"binance:spot:BTCUSDT",visible,objects}`. Each object has
-`{id,name,a:{timeMs,priceCents},b:{timeMs,priceCents},color,visible,locked,ordinal}`.
-IDs are lowercase cryptographic UUIDv4; RGB is normalized to lowercase. Anchors use
-integer UTC milliseconds (2009–2100 inclusive) and integer cents (0–1,000,000,000).
+`{id,name,a:{timeMs,priceCents},b:{timeMs,priceCents},color,visible,locked,ordinal,label?}`.
+IDs are lowercase cryptographic UUIDv4; RGB is normalized to lowercase. Optional
+labels are plain text: surrounding whitespace is trimmed, at most80 Unicode code
+points are accepted, and controls/unpaired surrogates reject. Empty/missing labels
+are omitted from normalized objects. Labels inherit line RGB; inventory names remain
+independent. Anchors use integer UTC milliseconds (2009–2100 inclusive) and integer cents (0–1,000,000,000).
 Whole-collection validation rejects foreign instruments, unknown fields/schemas,
 coincident anchors, duplicate IDs/ordinals and more than200 objects without mutation.
 
@@ -12,8 +15,8 @@ coincident anchors, duplicate IDs/ordinals and more than200 objects without muta
 | --- | --- |
 | `empty()` | A new visible empty collection. |
 | `normalizeCollection(raw)`, `normalizeObject(raw)` | Fresh validated values; invalid input throws a descriptive `RangeError`. Objects sort by ordinal. |
-| `newObject(collection,{a,b,color,id?,name?,visible?,locked?})` | One new object, not an appended collection. Secure ID/default name and next ordinal;200-object limit. |
-| `duplicate(collection,id)` | One new visible, unlocked object with copied endpoints/RGB and a bounded unique copy name. |
+| `newObject(collection,{a,b,color,id?,name?,label?,visible?,locked?})` | One new object, not an appended collection. Secure ID/default name and next ordinal;200-object limit. |
+| `duplicate(collection,id)` | One new visible, unlocked object with copied endpoints/RGB/label and a bounded unique copy name. |
 | `point(timeMs,priceUSDT)` | Quantize once to nearest millisecond/cent, ties upward; reject outside the domain. |
 | `translate(object,deltaTimeMs,deltaPriceUSDT)` | Quantize one delta and preserve the anchor vector; reject locked or out-of-domain movement. |
 | `parseTime(text)`, `parsePrice(text)` | Integer milliseconds/cents; exact UTC `YYYY-MM-DDTHH:mm:ss[.SSS]Z` and unsigned decimal with at most2 fractional digits. Invalid dates and extra precision reject. |
@@ -35,6 +38,11 @@ shared2px grid. It scans narrow row strips, not diagonal bounding rectangles; re
 can stop as soon as additional cells exceed the remaining budget. Priority precedes
 inherited `hot`/`rank`; omitted priority is−1 for reserved ink. `hot` remains the
 budget exemption flag. All-rectangle/zero-drawing behavior is unchanged.
+
+Optional labels are an additive schema1/code3 field. Unlabeled object/code bytes stay
+unchanged. Pre-label readers reject labeled collections/codes as unsupported; they
+never silently drop text. Session, recovery and named-View snapshots preserve labels
+through the existing whole-collection validation.
 
 Complete codes with drawings use top-level `drawings` and `visualVersion:3`, sealed
 by the existing content ID, behind `origo-cube:3.` or `3j.`. Explicit empty collections

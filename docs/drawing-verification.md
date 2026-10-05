@@ -50,6 +50,33 @@ Recovery and named-publication details, including small deletion markers retaine
 paused publishers, are in [the API contract](drawing-api.md). The diagnostic below
 remains the measured earlier candidate; human operator sessions remain outstanding.
 
+## Optional trend-line labels
+
+![Labels in the light theme](images/trend-line-labels-light.png)
+
+![Labels in the dark theme](images/trend-line-labels-dark.png)
+
+<img src="images/trend-line-labels-phone.png" width="280" alt="Trend-line label on the phone layout" />
+
+Edit → Label is empty by default and independent of the inventory name. Nonempty
+plain text inherits the line RGB and existing11px chart font. It reads upright,
+parallel to the line, with its ink bottom6CSSpx above the visible segment and a thin
+neutral contrast outline. There is no plate, pill or separate hit target.
+
+Placement centers on the main plot's clipped segment, sliding only along that line
+when needed to keep complete ink inside the plot. Long labels ellipsize at grapheme
+boundaries; the full text stays in Edit and snapshots. A segment too short or too
+close to the upper edge omits its unfit label. Lens uses the same placement through
+regional clipping. The line and its rotated text share one overlay-budget candidate;
+narrow parallel strips charge the text footprint without a diagonal bounding box.
+Layout, including omitted labels, is measured once per frame.
+
+Apply commits the label together with all other editor fields; preview, Cancel,
+Cancel draft, Undo/Redo, lock, visibility, duplication, reload, recovery, complete
+codes and named Views keep the existing drawing transaction/persistence rules.
+The [API contract](drawing-api.md) covers normalization and old-reader rejection.
+The [operator checklist](operator-drawings.md) adds the human label workflow.
+
 ## Local diagnostic receipt
 
 Candidate `3557543`, 90 samples (18 cases × five), Apple M1 Max / macOS arm64, Chromium153.0.8010.12. All20 actual endpoint edits applied, made zero `/cube/*` reads, and produced painted samples; no page errors. Worst endpoint-edit input-to-paint p95 was23.5ms; worst pan/edit p95 was23.9ms. Frame-interval p95 stayed at or below16.8ms.

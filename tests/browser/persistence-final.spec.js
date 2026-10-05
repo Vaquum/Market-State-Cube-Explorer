@@ -81,14 +81,15 @@ test.describe("B52 portable state after the final changes", () => {
       await other.close();
     });
 
-  test("a window view on the recorded snapshot refits its prices when it is opened: a code restored in a page that has loaded more says that its scale was another one", async ({ page, context, fakeFor, probe, surface, freshContext }) => {
+  test("a restored window keeps its period Rows scale and names any refitted Cells level", async ({ page, context, fakeFor, probe, surface, freshContext }) => {
     const fake = await fakeFor("recorded");
     await context.grantPermissions(CLIPBOARD, { origin: fake.url });
     await page.goto(`${fake.url}/#w=all&rows=volume&period=90d&vis=2&ap=${P.AP}`);
     await S.atRest(page, fake, probe);
     await expect.poll(async () => (await surface.chip("rows")).data.state, { timeout: 60000 }).toBe("ready");
+    await expect.poll(async () => (await surface.chip("cells")).data.state, { timeout: 60000 }).toBe("ready");
     await probe.waitForQuiet({ quietMs: 700, timeout: 60000 });
-    const before = await reading(surface, "rows");
+    const before = await reading(surface, "rows"), cellsBefore = await reading(surface);
     const { code } = await copyBoth(page);
     const other = await freshContext();
     const tab = await other.newPage();
@@ -98,19 +99,21 @@ test.describe("B52 portable state after the final changes", () => {
     await expect(tab.locator("#ol-copy-status")).toHaveText("View restored");
     const s = observe(tab);
     await expect.poll(async () => (await s.chip("rows")).data.state, { timeout: 60000 }).toBe("ready");
+    await expect.poll(async () => (await s.chip("cells")).data.state, { timeout: 60000 }).toBe("ready");
     await tab.waitForTimeout(900);
-    const after = await reading(s, "rows");
-    // either the same mapping (the prices fitted the same) or a fresh one and the page SAYS the scale of the code was fitted at another level; never a silent difference
+    const after = await reading(s, "rows"), cellsAfter = await reading(s);
+    expect(after, "the background's scale belongs to its period, independently of restored canvas prices").toEqual(before);
+    // The carried-scale notice compares Cells levels, which may refit with the window's prices.
+    const fitted = /n(\d+)m(\d+)$/.exec(cellsBefore.context),
+      shows = /n(\d+)m(\d+)$/.exec(cellsAfter.context);
+    expect(fitted).toBeTruthy(); expect(shows).toBeTruthy();
     const said = await P.notices(tab);
-    if (after.mappingId !== before.mappingId) {
-      expect(after.context, "the context is the one this page shows").not.toBe(before.context);
+    if (fitted[1] !== shows[1] || fitted[2] !== shows[2]) {
+      expect(cellsAfter.context, "the Cells context is the one this page shows").not.toBe(cellsBefore.context);
       const note = said.find((n) => n.code === "scale-context-differs");
       expect(note, "and the page names why").toBeTruthy();
-      // it names both levels: the one the code's scale was fitted at and the one this window shows
-      const fitted = /m(\d+)$/.exec(before.context),
-        shows = /m(\d+)$/.exec(after.context);
-      expect(note.text).toContain(`fitted at n=15, m=${fitted[1]}`);
-      expect(note.text).toContain(`shows n=15, m=${shows[1]}`);
+      expect(note.text).toContain(`fitted at n=${fitted[1]}, m=${fitted[2]}`);
+      expect(note.text).toContain(`shows n=${shows[1]}, m=${shows[2]}`);
     } else expect(said.map((n) => n.code), "the same mapping needs no such notice").not.toContain("scale-context-differs");
     await other.close();
   });

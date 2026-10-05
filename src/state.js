@@ -396,11 +396,11 @@
       return { status: "ok", value: null, raw: null, reason: null, entries, cells, records, clock: Math.max(...records.map((record) => record.clock)) };
     } catch (error) { return { status: "unreadable", entries: [], cells: [], records: [], raw: null, reason: describe(error) }; }
   };
-  const protectedNamedViews = () => {
-    const got = protectedNamedRead();
-    if (got.status === "ok") namedBaseline = JSON.parse(JSON.stringify(got.entries));
-    else if (got.status === "absent") namedBaseline = legacyNamedBaseline();
-    return got.entries;
+  const protectedNamedViews = (options) => {
+    const got = protectedNamedRead(), entries = got.status === "absent" ? cellsToEntries(got.cells) : got.entries;
+    // The UI, status and deletion baseline must describe the same read, even if another tab publishes next.
+    if (got.status === "ok" || got.status === "absent") namedBaseline = JSON.parse(JSON.stringify(entries));
+    return options?.snapshot ? { ...got, entries } : got.entries;
   };
   const pruneNamedRecords = () => {
     const got = protectedNamedRead(); if (got.status !== "ok") return;
@@ -430,7 +430,7 @@
     try {
       const incoming = validateNamedList(list), current = protectedNamedRead();
       if (current.status !== "ok" && current.status !== "absent") throw new Error(current.reason);
-      const baseline = namedBaseline || (current.status === "absent" ? legacyNamedBaseline() : current.entries),
+      const baseline = namedBaseline || (current.status === "absent" ? cellsToEntries(current.cells) : current.entries),
         before = new Map(baseline.map((entry) => [entry.name, JSON.stringify(entry)])), next = new Map(incoming.map((entry) => [entry.name, entry])),
         cells = new Map(current.cells.map((cell) => [cell.name, { ...cell }])), writer = writerId(), clock = current.clock + 1, stamp = [clock, writer];
       if (!Number.isSafeInteger(clock)) throw new Error("named-view version clock exhausted");

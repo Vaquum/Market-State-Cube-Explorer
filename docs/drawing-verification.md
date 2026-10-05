@@ -28,14 +28,18 @@ editors cancel only; and apply the chart successfully before committing imported
 objects/history. Failed chart application restores the prior camera/settings. Retry
 clears its drawing-specific failure notice, later failures remain visible, and row
 removal restores valid focus. Unreadable session originals copy verbatim before a new
-save may replace them; failed copying retains the original.
+save may replace them; failed copying retains the original. Named-View UI reads now
+use one snapshot for status, entries and deletion baseline, preserving a concurrent
+first publication through the next acknowledged save.
 
-All **1,915 unit tests** pass (six existing skips), including25 storage cases for real
+All **1,917 local unit tests** pass (six existing skips), including 27 storage cases for real
 publication interleaving, hundreds of document saves/imports, inherited snapshot expiry,
 secure UUID fallback, compaction, corruption, cached immutable values and retry races.
-Ten new browser regressions cover Undo/cancel/focus, both rejected-application routes,
-quota retry and two-tab state; three core regressions reproduce the defects on
-pre-review `7409f30`. Targeted review/persistence checks passed before final convergence.
+Eleven new browser regressions cover Undo/cancel/focus, both rejected-application routes,
+quota retry and two-tab state. Three core regressions reproduce the defects on
+pre-review `7409f30`; the first-publication race reproduces on `d9ad67f`. All eleven
+review regressions pass on the corrected working page. Final convergence uses the
+committed generated page.
 The final branch's complete browser and build/golden receipts are linked in
 [PR #69 checks](https://github.com/Vaquum/Market-State-Cube-Explorer/pull/69/checks).
 Recovery and named-publication details, including small deletion markers retained for

@@ -83,6 +83,14 @@ Legacy entries require their chart `hash`; v3 entries require their complete `pa
 with no code/hash fallback. Invalid required metadata or payload rejects the entire
 registry before publication or opening; unavailable status must be surfaced.
 
+`namedViews({snapshot:true})` returns one status/entries envelope and establishes the
+private deletion baseline from exactly that snapshot. When protected storage is
+absent, the snapshot includes validated legacy entries from the same read. The UI
+uses this one operation; publication by another tab during or after it cannot change
+the baseline independently of the displayed list. Default `namedViews()` keeps its
+array return, while `namedViewsStatus()` remains diagnostic and does not adopt a
+baseline. Failed snapshot reads remain explicit and never fall back to legacy data.
+
 Each immutable version2 record is `{storageVersion:2,id,writer,clock,cells}`. A cell is
 `{name,value,valueStamp:[clock,writer],position,orderStamp:[clock,writer]}`; null `value`
 is a deletion marker containing no authored payload. The last-read private baseline

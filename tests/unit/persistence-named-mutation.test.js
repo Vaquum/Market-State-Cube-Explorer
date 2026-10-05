@@ -21,11 +21,13 @@ const legacy = (name) => ({
   name, visualVersion: 2, span: 1, lead: 0, tA: 1, tB: 2, cut: 2,
   n: 4, m: 0, live: false, auto: true, hash: "#w=24h&vis=2", mode: "volume",
 });
-function seeded() {
-  const localStorage = new MemoryStorage();
+function adapter(localStorage) {
   const window = { localStorage, sessionStorage: new MemoryStorage(), crypto };
   vm.runInNewContext(SOURCE, { window, console: { warn() {} } });
-  const state = window.explorerState;
+  return window.explorerState;
+}
+function seeded() {
+  const localStorage = new MemoryStorage(), state = adapter(localStorage);
   assert.equal(state.saveNamedViews([legacy("A"), legacy("B")]).ok, true);
   return { state, localStorage };
 }
@@ -50,4 +52,33 @@ test("replacing a returned named entry publishes its edited snapshot in the orig
   list[0] = edited;
   assert.equal(state.saveNamedViews(list).ok, true);
   assert.deepEqual(authoritative(localStorage), [edited, legacy("B")]);
+});
+
+
+test("an absent protected snapshot returns the same legacy list used as its deletion baseline", () => {
+  const localStorage = new MemoryStorage(), reader = adapter(localStorage), other = adapter(localStorage);
+  const original = JSON.stringify([legacy("Legacy")]);
+  localStorage.setItem(PREFIX + "views:v1", original);
+  const snapshot = reader.namedViews({ snapshot: true });
+  assert.equal(snapshot.status, "absent");
+  assert.deepEqual(JSON.parse(JSON.stringify(snapshot.entries)), [legacy("Legacy")]);
+  const concurrent = other.namedViews({ snapshot: true });
+  assert.equal(other.saveNamedViews([...concurrent.entries, legacy("Other tab")]).ok, true);
+  snapshot.entries.push(legacy("This tab"));
+  assert.equal(reader.saveNamedViews(snapshot.entries).ok, true);
+  assert.deepEqual(authoritative(localStorage).map((view) => view.name).sort(), ["Legacy", "Other tab", "This tab"]);
+  assert.equal(localStorage.getItem(PREFIX + "views:v1"), original);
+});
+
+test("deleting from one protected snapshot preserves a name another tab acknowledges after that read", () => {
+  const { localStorage } = seeded(), reader = adapter(localStorage), other = adapter(localStorage);
+  const snapshot = reader.namedViews({ snapshot: true });
+  assert.equal(snapshot.status, "ok");
+  assert.deepEqual(JSON.parse(JSON.stringify(snapshot.entries)), [legacy("A"), legacy("B")]);
+  const concurrent = other.namedViews();
+  assert.equal(other.saveNamedViews([...concurrent, legacy("Other tab")]).ok, true);
+  reader.namedViewsStatus(); // A diagnostic read must not replace the UI's last-read baseline.
+  snapshot.entries.splice(0, 1);
+  assert.equal(reader.saveNamedViews(snapshot.entries).ok, true);
+  assert.deepEqual(authoritative(localStorage).map((view) => view.name).sort(), ["B", "Other tab"]);
 });

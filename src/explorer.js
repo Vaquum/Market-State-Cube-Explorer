@@ -17433,12 +17433,10 @@
       [x.span, x.lead, x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite) && x.span > 0 &&
       (x.live === undefined || typeof x.live === "boolean") && (x.auto === undefined || typeof x.auto === "boolean") &&
       (x.visualVersion === undefined || x.visualVersion === 2);
-    const protectedStatus = window.explorerState?.namedViewsStatus();
-    if (protectedStatus && !["ok", "absent"].includes(protectedStatus.status))
-      postNotice({ code: "import-rejected", key: "protected-views:" + protectedStatus.status, text: `Saved complete Views could not be read and remain preserved: ${protectedStatus.reason}` });
-    const protectedViews = window.explorerState?.namedViews() || [];
-    views.list = protectedStatus?.status === "absent" || !protectedStatus
-      ? (Array.isArray(list) ? list.filter(usable) : []) : protectedViews;
+    const protectedSnapshot = window.explorerState?.namedViews({ snapshot: true });
+    if (protectedSnapshot && !["ok", "absent"].includes(protectedSnapshot.status))
+      postNotice({ code: "import-rejected", key: "protected-views:" + protectedSnapshot.status, text: `Saved complete Views could not be read and remain preserved: ${protectedSnapshot.reason}` });
+    views.list = protectedSnapshot ? protectedSnapshot.entries : (Array.isArray(list) ? list.filter(usable) : []);
     views.foreign = Array.isArray(list) ? list.filter((x) => !usable(x)) : [];
   }
   // Every write is the whole list as it was read (plus the change), so two tabs saving at once both keep

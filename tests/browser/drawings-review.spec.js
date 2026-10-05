@@ -105,6 +105,9 @@ for (const route of ["pasted code", "named View"]) test(`failed ${route} applica
     await closeDrawer(page);
   }
   await fake.idle();
+  // Cube idle precedes the debounced Explore fit. Capture the atomicity baseline
+  // only after its actual address publication, so ordinary fitting cannot race it.
+  await expect.poll(() => D.persistence.param(new URL(page.url()).hash, "sc")).not.toBeNull();
   const beforeRows = await D.rows(page), beforeRevision = await revision(page), beforeDurable = await durable(page), beforeChart = chart(await payload(page));
   const beforeHash = new URL(page.url()).hash; await closeDrawer(page);
   if (route === "pasted code") await D.persistence.importCode(page, D.plainCode(incoming));
@@ -200,5 +203,53 @@ test("concurrent complete named saves in two tabs retain both acknowledged snaps
     expect(entries.find((entry) => entry.name === "Concurrent A").payload.drawings.objects.map((object) => object.id)).toEqual([first.id]);
     expect(entries.find((entry) => entry.name === "Concurrent B").payload.drawings.objects.map((object) => object.id)).toEqual([second.id]);
     expect(entries.every((entry) => /^[A-Za-z0-9_-]{16}$/.test(entry.payload.id))).toBe(true);
+  }
+});
+
+
+test("first protected publication during a named snapshot read survives the next acknowledged save", async ({ page, context, fakeFor }) => {
+  const fake = await fakeFor("mini"); await D.open(page, fake);
+  const legacy = [{ name: "Existing legacy", live: false, span: 10, lead: 0, auto: true, mode: "volume", pane: "cells", rows: "off", period: "90d", hash: "#w=24h&vis=2&ap=" + D.persistence.AP, tA: 1, tB: 2, cut: 3, n: 6, m: 0, window: "24h", replay: false, visualVersion: 2 }];
+  const legacyBytes = JSON.stringify(legacy);
+  await page.evaluate(({ key, raw }) => localStorage.setItem(key, raw), { key: PREFIX + "views:v1", raw: legacyBytes });
+  const other = await context.newPage(); await D.open(other, fake); const drawing = await D.drawing(other);
+  await D.persistence.openViews(other); await other.locator("#ol-view-name").fill("Other tab acknowledged");
+  await other.locator("#ol-view-form button[type=submit]").click();
+  await expect(other.locator("#ol-views-status")).toContainText("Saved “Other tab acknowledged”");
+  const acknowledged = (await D.persistence.namedEntries(other)).find((entry) => entry.name === "Other tab acknowledged");
+  expect(acknowledged.payload.drawings.objects.map((object) => object.id)).toEqual([drawing.id]);
+  const publication = await other.evaluate((prefix) => {
+    const key = Object.keys(localStorage).find((key) => key.startsWith(prefix + "drawing-views:v2:record:"));
+    const raw = localStorage.getItem(key);
+    // Stage the genuine immutable transaction for deterministic publication at
+    // the read boundary, instead of depending on OS/browser tab scheduling.
+    localStorage.removeItem(key); return { key, raw };
+  }, PREFIX);
+  expect(publication.raw).toContain("Other tab acknowledged");
+  await D.persistence.openViews(page); await expect(page.locator("#ol-saved .ol-entry-main")).toHaveText(["Existing legacy"]);
+  await page.locator("#ol-view-name").fill("This tab saved");
+  await page.evaluate(({ publication, pointer }) => {
+    const get = Storage.prototype.getItem, set = Storage.prototype.setItem;
+    window.__reviewNamedPublication = 0;
+    let armed = true;
+    Storage.prototype.getItem = function (key) {
+      const value = get.call(this, key), stack = new Error().stack;
+      // The absent protected snapshot has already enumerated no v2 records.
+      // Publish after its legacy-pointer read and before a second API read.
+      if (armed && this === localStorage && key === pointer && value === null && stack.includes("loadViews") && stack.includes("saveView")) {
+        armed = false; set.call(localStorage, publication.key, publication.raw); window.__reviewNamedPublication++;
+      }
+      return value;
+    };
+  }, { publication, pointer: PREFIX + "drawing-views:v1:pointer" });
+  await page.locator("#ol-view-form button[type=submit]").click();
+  await expect(page.locator("#ol-views-status")).toContainText("Saved “This tab saved”");
+  expect(await page.evaluate(() => window.__reviewNamedPublication)).toBe(1);
+  for (const tab of [page, other]) {
+    await tab.reload(); await D.ready(tab);
+    const entries = await D.persistence.namedEntries(tab);
+    expect(entries.map((entry) => entry.name).sort()).toEqual(["Existing legacy", "Other tab acknowledged", "This tab saved"]);
+    expect(entries.find((entry) => entry.name === "Other tab acknowledged")).toEqual(acknowledged);
+    expect(await tab.evaluate((key) => localStorage.getItem(key), PREFIX + "views:v1")).toBe(legacyBytes);
   }
 });

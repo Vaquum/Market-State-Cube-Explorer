@@ -5161,11 +5161,11 @@
       return { status: "ok", value: null, raw: null, reason: null, entries, cells, records, clock: Math.max(...records.map((record) => record.clock)) };
     } catch (error) { return { status: "unreadable", entries: [], cells: [], records: [], raw: null, reason: describe(error) }; }
   };
-  const protectedNamedViews = () => {
-    const got = protectedNamedRead();
-    if (got.status === "ok") namedBaseline = JSON.parse(JSON.stringify(got.entries));
-    else if (got.status === "absent") namedBaseline = legacyNamedBaseline();
-    return got.entries;
+  const protectedNamedViews = (options) => {
+    const got = protectedNamedRead(), entries = got.status === "absent" ? cellsToEntries(got.cells) : got.entries;
+    // The UI, status and deletion baseline must describe the same read, even if another tab publishes next.
+    if (got.status === "ok" || got.status === "absent") namedBaseline = JSON.parse(JSON.stringify(entries));
+    return options?.snapshot ? { ...got, entries } : got.entries;
   };
   const pruneNamedRecords = () => {
     const got = protectedNamedRead(); if (got.status !== "ok") return;
@@ -5195,7 +5195,7 @@
     try {
       const incoming = validateNamedList(list), current = protectedNamedRead();
       if (current.status !== "ok" && current.status !== "absent") throw new Error(current.reason);
-      const baseline = namedBaseline || (current.status === "absent" ? legacyNamedBaseline() : current.entries),
+      const baseline = namedBaseline || (current.status === "absent" ? cellsToEntries(current.cells) : current.entries),
         before = new Map(baseline.map((entry) => [entry.name, JSON.stringify(entry)])), next = new Map(incoming.map((entry) => [entry.name, entry])),
         cells = new Map(current.cells.map((cell) => [cell.name, { ...cell }])), writer = writerId(), clock = current.clock + 1, stamp = [clock, writer];
       if (!Number.isSafeInteger(clock)) throw new Error("named-view version clock exhausted");
@@ -34448,12 +34448,10 @@
       [x.span, x.lead, x.tA, x.tB, x.cut, x.n, x.m].every(Number.isFinite) && x.span > 0 &&
       (x.live === undefined || typeof x.live === "boolean") && (x.auto === undefined || typeof x.auto === "boolean") &&
       (x.visualVersion === undefined || x.visualVersion === 2);
-    const protectedStatus = window.explorerState?.namedViewsStatus();
-    if (protectedStatus && !["ok", "absent"].includes(protectedStatus.status))
-      postNotice({ code: "import-rejected", key: "protected-views:" + protectedStatus.status, text: `Saved complete Views could not be read and remain preserved: ${protectedStatus.reason}` });
-    const protectedViews = window.explorerState?.namedViews() || [];
-    views.list = protectedStatus?.status === "absent" || !protectedStatus
-      ? (Array.isArray(list) ? list.filter(usable) : []) : protectedViews;
+    const protectedSnapshot = window.explorerState?.namedViews({ snapshot: true });
+    if (protectedSnapshot && !["ok", "absent"].includes(protectedSnapshot.status))
+      postNotice({ code: "import-rejected", key: "protected-views:" + protectedSnapshot.status, text: `Saved complete Views could not be read and remain preserved: ${protectedSnapshot.reason}` });
+    views.list = protectedSnapshot ? protectedSnapshot.entries : (Array.isArray(list) ? list.filter(usable) : []);
     views.foreign = Array.isArray(list) ? list.filter((x) => !usable(x)) : [];
   }
   // Every write is the whole list as it was read (plus the change), so two tabs saving at once both keep

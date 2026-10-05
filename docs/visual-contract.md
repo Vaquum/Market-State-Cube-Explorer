@@ -18,7 +18,7 @@ Run both with `node --test tests/unit/role-lint.test.js tests/unit/visual-contra
 
 **Channels** (parent D4). `CELL` unbounded Cells colour (Explore, per resolution context); `ROW` unbounded Rows colour (Explore, per row and period context); `FIXED` fixed domain (shares, log2 ratios, RSI); `AXIS` ordinary Columns lengths and MACD (Auto axis); `PROF` current and reference profile length (independent Auto axis); `LENS` lens colour (the shared active Cells mapping unless Local contrast); `NAV` main price and time axes; `-` none.
 
-**Owner** is the list of slices with work on the row, as issue numbers: #46 (S1), #47 (S2), #48 (S3), #62 (P4-S1 Candles), #66 (P5-S1 manual trend lines). A row that no slice changes carries #48, whose audit of composed contrast, focus and text verifies that it still meets the target. Per-slice detail is written in the Target cell as `[slices: ...]` where it is not just one slice.
+**Owner** is the list of slices with work on the row, as issue numbers: #46 (S1), #47 (S2), #48 (S3), #62 (P4-S1 Candles), #66 (P5-S1 manual trend lines), #71 (P6-S1 cell comparison). A row that no slice changes carries #48, whose audit of composed contrast, focus and text verifies that it still meets the target. Per-slice detail is written in the Target cell as `[slices: ...]` where it is not just one slice.
 
 **Status** is the first slice with outstanding work: `todo-S1`, `todo-S2`, `todo-S3`; `keep` means legitimate with no change planned; `done` means all planned work is complete. When K finishes the S1 part of a row that still has S2 or S3 work, the status becomes the next slice's `todo`; a row is `done` only when nothing is left. `todo-S2` and `todo-S3` rows are consumers that must keep working in S1 and that S1 must not repaint.
 
@@ -70,6 +70,7 @@ Contrast is WCAG contrast of the hex against `--ol-surface` (`#fff` / `#161f19`)
 | T-34 | The `colors` object and its probe | src/explorer.js: `getColors` 693-730 (probe key list 696-711 with `colors.panel` read but never used; family probe 716-719; tier probe 722-727; ends in `buildRamp`), `colourEpoch` 4127-4133, theme listener 12455-12461 | 14 keys `bg, surface, panel, ink, muted, line, volume, buy, sell, poc, evidence, time, accent, neutral`, then `colors.family`, `colors.tiers`, then the ramp; every value is an opaque `rgb()` string; the theme flip refreshes only `colors`, the LUT and the canvas | Key list without `buy, sell, neutral, time`, with `positive, negative, midpoint, occupancy, state, legacyBuy, legacySell`; the final `buildRamp()` becomes `themeChanged()`; new tokens with alpha never go through `colors.*` | - | #46, #48 | U35, U18, B04, U58 | done |
 | T-35 | Design token `--ol-line-compare` (new in S3) | src/explorer.css custom-property block next to the line family tokens; JS `colors.family.compare` through `getColors`; the cone, its anchor line and the evidence tracks | Does not exist at baseline (the violet `--ol-evidence` carried the continuation) | `REF:Historical comparison neutral`: the muted ink, so the comparison is never a third hue beside the price levels' violet; its two sets are told apart by shape and label | - | #48 | U58, B41 | done |
 | T-36 | Per-object authored RGB `--drawing-rgb` | src/explorer.css `.ol-drawing-swatch`; src/explorer.js `drawingRow`, `drawingSyncInventory`, `drawingSyncUI` | Exact normalized six-digit RGB, independent of theme; a filled hexagon swatch with structural border | `annotation.trend.rgb`: object identity; visible name and exact RGB accompany the swatch; no quantitative or market meaning | - | #66 | U92, B61 | keep |
+| T-37 | Readable comparison properties `--fs-comparison-primary`, `--fs-comparison-value`, `--fs-comparison-label`, `--fs-comparison-card`, `--fs-comparison-support`, `--comparison-card-min`, `--comparison-track-height` | src/explorer.css comparison block; src/comparison-ui.js Focus/Cards/Matrix | 28/20/14 px focus, 18/12 px cards; 200 px card minimum, 6 px track | CHR; registered type/layout sizes; collection growth pages without shrinking text | - | #71 | B63 | keep |
 
 ### 3.2 Canvas consumers (C-)
 
@@ -319,6 +320,15 @@ A Wave-2 package that adds a NEW top-level helper reading `colors.*` under a nam
 | N-48 | The sign mark of a signed cell: a plus, a minus or a ring at the centre of a cell at least 12 css px across each way, in the ink or the surface colour that contrasts more with the fill | src/explorer.js: `signMark()`, `fillCell()`, `lensMark()`, `STROKE.sign`; src/encoding.js: `E.role.SIGN`, `signShape`, `signCoverage`, `signInk` (new in S3) | none: sign was the hue of the fill and the readout | `STATE`: a mark, never a value; the fill keeps the number | CELL, LENS | #48 | B50, U59 | done |
 | N-50 | Exact OHLC candle bodies, wicks, readouts and generated key | src/explorer.js: `paintCandles()`, `candleLegend()`, `candleTip()`, `buildCandleTable()`; src/encoding.js `E.candles`; src/view.html `#ol-candle-legend` | added in P4-S1 | `+/-/mid`, `STATE`: hollow up, filled down, cased doji, no magnitude | CHART, LENS, TABLE | #62 | U90, B90 | done |
 | N-49 | The view summary: the place, level, measures, cutoffs, replay edge, each channel's details, the axes, the profile tracks, the model, the appearance and the vintage statement, in one capture-ready section of the Query tab | src/explorer.js: `summarySections()`, `summaryText()`, `summaryRender()`, `summaryRefresh()`; src/view.html `#ol-summary`; `E.text.ui.summary*` (new in S3) | none: the Details of each chip popover were the only place, one at a time | `CHR`: text and numbers only, no colour of its own; the rows are the legends' own details, so the popovers and the summary cannot disagree | CHART, QUERY | #48 | B53, U64 | done |
+
+
+### 3.10 Cell comparison additions (#71)
+
+| ID | Consumer | File / function / CSS rule | Current | Target role | Measurement / channel | Owner | Tests | Status |
+|---|---|---|---|---|---|---|---|---|
+| N-51 | Captured-cell arithmetic, typed replay gating and exact copy | src/comparison.js `METRICS`, `analyze`, `value`, `captureText`; src/explorer.js `comparisonCapture` | Owned current frame, median/pinned differences and competition ranks; support-gated finite values | CHR / STATE; formula/unit-compatible canonical values, never missing as zero | COMPARE | #71 | U95, B63, B65 | done |
+| N-52 | Focus/Cards/semantic Matrix and cell collection actions | src/comparison-ui.js `create`; src/view.html `#ol-tab-compare`, `#ol-panel-compare`, `#ol-comparisonWorkspace`; src/explorer.css `.ol-comparison-*`, `.ol-cell-menu` | Shared eligible-set linear bars and reference tick; signed numeric labels; max 24 mounted collection entries | UM / +/-/mid / STATE / IX / CHR: existing role inks, explicit numbers/differences/ranks/reasons, shared domain; chart scale is disclosed only as original context | COMPARE | #71 | U95, B63 | done |
+| N-53 | Tab comparison restoration and storage failure notices | src/state.js `comparison`; src/explorer.js `comparisonPersist`, `comparisonExpand`; src/comparison-ui.js storage/copy controls | comparisonVersion 1 session record, 4 MiB UTF-8 boundary, rejected raw text retained, visible recovery | CHR / STATE: Kept in this tab, Unsaved comparison, Retry and confirmed Discard; no chart-history or portable capture payload | COMPARE | #71 | U96, B63 | done |
 
 
 ## 4. The retired-role ratchet
@@ -701,6 +711,9 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | U92 | `tests/unit/drawings.test.js` | Schema, exact coordinate parsing, clipping, finite segment distance, creation/duplication and transaction history | #66 |
 | U93 | `tests/unit/drawing-storage.test.js` | Protected authored records, failed writes, replacement preservation and concurrent named Views | #66 |
 | U94 | `tests/unit/drawing-benchmark.test.js` | Diagnostic matrix counts, price modes, actions and budgets; no performance-pass claim | #66 |
+| U95 | `tests/unit/cell-comparison.test.js` | Independent median/rank/difference/basis vectors, POC boundaries, typed support/replay and copy suppression | #71 |
+| U96 | `tests/unit/comparison-storage.test.js` | Dedicated tab record, validation, actual UTF-8 cap, faults, retained rejection, duplicate-tab and layout restoration | #71 |
+| U97 | `tests/unit/comparison-benchmark.test.js` | v4 preserves pinned navigation inputs, independent near-cap fixture bytes, DOM event/frame timing and declared action budgets | #71 |
 | U64 | `tests/unit/view-summary.test.js` | the summary's contract with its sources: every field the PRD names is produced from a record the popovers read, the strings are `E.text`'s, and nothing leaves the page unless copied | #48 |
 | B01 | `tests/browser/boot.spec.js` | boot in recorded and live mode, the 29 module keys, production globals | H7b |
 | B02 | `tests/browser/recorded-snapshot.spec.js` | real recorded blocks through the page | K |
@@ -767,6 +780,9 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B60 | `tests/browser/drawings-persistence.spec.js` | Complete v3 codes, replacement choice, legacy imports, protected storage and concurrent saved Views | #66 |
 | B61 | `tests/browser/drawings-colors.spec.js` | Finite exact-RGB/casing/hexagon raster samples in both themes at DPR1/2; no universal contrast or recognition claim | #66 |
 | B62 | `tests/browser/drawings-budget.spec.js` | Max-count painted IDs match Shown/Held back inventory and Focus recovers a held drawing | #66 |
+| B63 | `tests/browser/cell-comparison.spec.js` | Cell gesture/menu/access capture, readable bounded dashboard, shared math, keys, expanded restoration, replay and tab recovery | #71 |
+| B64 | `tests/browser/comparison-session.spec.js` | 1/2/3/6/32/128 captures, bounded Cards/Matrix, reference/basis/POC math, reload/tab isolation, faults, replay and expansion | #71 |
+| B65 | `tests/browser/comparison-capture.spec.js` | Canonical live/recorded sums, explicit Update, stale live/motion menus, finer Lens, replay portions/copy, loaded POC freezing, Ctrl-click and pending rectangle facts | #71 |
 
 ## 10. Migration status per slice
 
@@ -774,13 +790,13 @@ Rendered from the Status column at S2's convergence: `done` is the work of S1 an
 
 | Prefix | Rows | keep | todo-S1 | todo-S2 | todo-S3 | done |
 |---|---|---|---|---|---|---|
-| T | 36 | 18 | 0 | 0 | 0 | 18 |
+| T | 37 | 19 | 0 | 0 | 0 | 18 |
 | C | 49 | 3 | 0 | 0 | 0 | 46 |
 | D | 22 | 8 | 0 | 0 | 0 | 14 |
 | F | 17 | 0 | 0 | 0 | 0 | 17 |
 | R | 15 | 0 | 0 | 0 | 0 | 15 |
-| N | 41 | 0 | 0 | 0 | 0 | 41 |
-| all | 180 | 29 | 0 | 0 | 0 | 151 |
+| N | 44 | 0 | 0 | 0 | 0 | 44 |
+| all | 184 | 30 | 0 | 0 | 0 | 154 |
 
 ## 11. Contributor checklist
 

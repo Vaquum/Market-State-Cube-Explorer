@@ -28,7 +28,7 @@ What each normative decision of the parent (D1 to D12) asks for, which slice own
 | Item | Status |
 |---|---|
 | #46 to #48 implemented with applicable evidence | the three slices are implemented and tested as above; the evidence marked OUTSTANDING is not attached, so this item is not done |
-| Every visual consumer has its role and linked regressions in `docs/visual-contract.md`, and no undocumented legacy path remains | done: 180 rows, none left `todo`; the lint allowlist is empty; the retired tokens, tiers and static legend text are gone |
+| Every visual consumer has its role and linked regressions in `docs/visual-contract.md`, and no undocumented legacy path remains | done: 184 rows, none left `todo`; the lint allowlist is empty; the retired tokens, tiers and static legend text are gone |
 | Numerical mapping, visible and inspected records, composition and restored views agree | shown by B03, B44, B14, B52 and B53 on the fake cube |
 | R1 to R34 reflected in implementation and tests | each of the 34 is mapped to its tests below (the section "Review items R1 to R34"); disposition at the specification level is not code verification, and a test is named only where it exists |
 | Final operator, accessibility, replay and model, persistence and performance evidence and authorised production evidence | OUTSTANDING items above; a release with any of them outstanding needs the operator's scoped acceptance in the pull request (none is recorded: the three slices are released all the same), and neither #48 nor #45 closes on such a release |
@@ -78,3 +78,15 @@ The review of the first edition of the parent (disposition comment on #45, 2026-
 ## Historical issues
 
 PRD-0001 #30 stays the financial and cube-definition authority except where PRD-0002 expressly changes how a measurement is communicated; #36 is closed and stays closed. Each keeps its text, with a superseded-by pointer to #45.
+
+## Cell comparison extension (PRD-0006, #70 / P6-S1 #71)
+
+This is one complete implementation slice. The original parent's outstanding operator and production evidence above is unchanged. Candidate acceptance and measured comparison performance belong to the implementation PR on its tested commit; the following links identify checks, not an unrecorded acceptance or deployment.
+
+| Contract | Implementation | Evidence |
+|---|---|---|
+| D1 capture/copy and D6 snapshot support | `src/explorer.js` capture adapter/menu/Inspect/table routes; `src/comparison.js` typed records and copy | `cell-comparison.test.js`; `cell-comparison.spec.js`, `comparison-session.spec.js`, `comparison-capture.spec.js` |
+| D2 readable Focus/Cards/Matrix, pages and expansion | `src/comparison-ui.js`, registered comparison type tokens, guarded panel presentation | `cell-comparison.spec.js`, `comparison-session.spec.js`, `comparison-capture.spec.js` |
+| D3-D5 closed metrics, shared basis/reference/ranks and frozen loaded POC | `src/comparison.js`, Lines-derived POC picker | `cell-comparison.test.js`; `cell-comparison.spec.js`, `comparison-session.spec.js`, `comparison-capture.spec.js` |
+| D6 tab-only collection and storage recovery | `src/state.js` comparison record; coalesced capture/presentation persistence | `comparison-storage.test.js`; `cell-comparison.spec.js`, `comparison-session.spec.js`, `comparison-capture.spec.js` |
+| D7 actual additions and integration gates | this matrix, visual consumer and generated color inventories, README/help, complete browser/unit/golden/build checks | `comparison-benchmark.test.js`; candidate-only DOM diagnostics under navigation.v4, with outcomes recorded in the implementation PR; no extra slice or new operator campaign |

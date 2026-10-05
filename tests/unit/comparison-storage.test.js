@@ -1,0 +1,208 @@
+"use strict";
+// Independent records and real UTF-8 byte counts exercise the tab-only boundary and retention policy.
+const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs"), vm = require("node:vm"), path = require("node:path");
+const SOURCE = fs.readFileSync(path.join(__dirname, "../../src/state.js"), "utf8");
+const KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT", CAP = 4 * 1024 * 1024;
+class Storage {
+  constructor(copy) { this.map = new Map(copy?.map); this.writes = []; this.readError = null; this.writeError = null; this.removeError = null; }
+  getItem(key) { if (this.readError) throw this.readError; return this.map.get(key) ?? null; }
+  setItem(key, text) { if (this.writeError) throw this.writeError; this.map.set(key, String(text)); this.writes.push({ key, text: String(text) }); }
+  removeItem(key) { if (this.removeError) throw this.removeError; this.map.delete(key); }
+}
+const failure = (name) => Object.assign(new Error("blocked"), { name });
+function load(local = new Storage(), session = new Storage(), blocked = false) {
+  const window = { localStorage: local, sessionStorage: session };
+  if (blocked) Object.defineProperty(window, "sessionStorage", { get() { throw failure("SecurityError"); } });
+  vm.runInNewContext(SOURCE, { window, console: { warn() {} } });
+  return { state: window.explorerState, comparison: window.explorerState.comparison, local, session };
+}
+const plain = (value) => JSON.parse(JSON.stringify(value));
+const capture = (row = 0) => ({
+  id: "cell-" + row, instrument: "BTC/USDT", level: { n: 0, m: 0 }, origin: 1000, c: 0, r: row,
+  nominal: { t0: 1000000, t1: 1060000, low: row * 125, high: (row + 1) * 125 },
+  observed: { t0: 1000000, t1: 1030000, low: row * 125, high: (row + 1) * 125, seconds: 30, width: 125 },
+  capturedAt: 2000000, measuredThrough: 1030000, source: "pack-1", completeness: "unfinished · portion",
+  metrics: {
+    volume: { tag: "finite", value: 10, formula: "cells.volume.amount@1", unit: "usdt", supportEnd: 1030000, knownThrough: 1030000, numerator: 10, denominator: null },
+    size: { tag: "undefined", value: null, formula: "cells.size.mean@1", unit: "usdt/trade", supportEnd: 1030000, knownThrough: 1030000, denominator: "trades" },
+  },
+  detail: [{ label: "Original row volume", value: 150, unit: "USDT", tag: "finite", supportEnd: 1900000, knownThrough: 1900000 }],
+  when: { knownAtMs: null, knownAtReason: "column is unfinished", eventStartMs: 1000000, eventEndMs: 1030000 },
+  shortExposure: false, originalScale: "Explore",
+});
+const record = (count = 1) => ({
+  comparisonVersion: 1, instrument: "BTC/USDT", captures: Array.from({ length: count }, (_, row) => capture(row)),
+  focus: count ? "cell-0" : null, reference: null, basis: "auto", sort: { key: "time", direction: "asc" },
+  view: "grid", page: 0, poc: null, expanded: false, restoreLayout: null,
+});
+function freeze(value) { if (value && typeof value === "object") { Object.values(value).forEach(freeze); Object.freeze(value); } return value; }
+
+test("comparison keeps its full schema in a dedicated session slot, independent of visualVersion", () => {
+  const a = load(); assert.equal(a.comparison.read("BTC/USDT").status, "absent");
+  const expected = record(); assert.equal(a.comparison.validate(expected).ok, true);
+  assert.equal(a.comparison.write("BTC/USDT", expected).ok, true);
+  assert.deepEqual(plain(load(a.local, a.session).comparison.read("BTC/USDT").value), expected);
+  assert.deepEqual([...a.session.map.keys()], [KEY]); assert.equal(a.local.map.size, 0);
+  const foreign = { ...expected, visualVersion: 99 };
+  assert.equal(a.comparison.validate(foreign).ok, false, "visual-version metadata is not comparison schema");
+});
+test("captured partial and independently supported diagnostics are retained exactly", () => {
+  const a = load(), expected = record();
+  expected.captures[0].metrics.volume.supportEnd = 1060000;
+  expected.captures[0].metrics.volume.knownThrough = 1080000;
+  expected.captures[0].metrics.size.supportEnd = null;
+  expected.captures[0].metrics.size.knownThrough = null;
+  assert.equal(a.comparison.write("BTC/USDT", expected).ok, true);
+  assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), expected, "support can exceed clipped observation; null finality is preserved");
+});
+test("the whole record rejects duplicate identities, dangling settings and inconsistent support", () => {
+  const a = load();
+  const invalid = [
+    (v) => { v.captures.push({ ...capture(), id: "other-id" }); },
+    (v) => { v.captures.push(capture()); },
+    (v) => { v.focus = "missing"; },
+    (v) => { v.reference = "missing"; },
+    (v) => { v.sort.key = "cascade"; },
+    (v) => { v.sort.direction = "down"; },
+    (v) => { v.page = 1; },
+    (v) => { v.basis = "automatic"; },
+    (v) => { v.view = "other"; },
+    (v) => { v.expanded = true; },
+    (v) => { v.captures[0].observed.t1 = 1070000; },
+    (v) => { v.captures[0].observed.seconds = -1; },
+    (v) => { v.captures[0].observed.seconds = 10; },
+    (v) => { v.captures[0].observed.width = 100; },
+    (v) => { v.captures[0].observed.width = 126; },
+    (v) => { v.captures[0].metrics.volume.knownThrough = 1020000; },
+    (v) => { v.captures[0].metrics.volume.supportEnd = 1060001; },
+    (v) => { v.captures[0].metrics.volume.value = Infinity; },
+    (v) => { v.captures[0].metrics.size.value = 0; },
+    (v) => { v.captures[0].metrics.volume.tag = "complete"; },
+    (v) => { v.captures[0].metrics.volume.profile = [1, 2]; },
+    (v) => { v.captures[0].detail[0].value = [1, 2]; },
+    (v) => { v.captures[0].instrument = "ETH/USDT"; },
+    (v) => { v.captures[0].level.n = -1; },
+  ];
+  for (const corrupt of invalid) {
+    const value = record(); corrupt(value);
+    assert.equal(a.comparison.validate(value).ok, false, corrupt.toString());
+    assert.equal(a.comparison.write("BTC/USDT", value).ok, false);
+  }
+  assert.equal(a.session.writes.length, 0);
+});
+test("frozen POC and expanded restoration layout round-trip with the same session", () => {
+  const a = load(), value = record();
+  value.expanded = true; value.restoreLayout = { sideOpen: true, sideWidth: 312, drawerHeight: 260, drawerOpen: true, drawer: "compare" };
+  value.poc = { id: "90d", label: "90 days", period: "90d", price: 70062.5, rowSize: 125, approximate: true, supportEnd: 1900000, knownThrough: 1900000, from: 100000, through: 1900000, source: "pack-1" };
+  assert.equal(a.comparison.write("BTC/USDT", value).ok, true); assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), value);
+  value.poc.supportEnd = 1800000; assert.equal(a.comparison.validate(value).ok, false);
+});
+test("32 and 128 captures have no count cap and reload all off-page facts", () => {
+  const a = load();
+  for (const count of [32, 128]) {
+    const value = record(count); value.page = Math.ceil(count / 24) - 1;
+    assert.equal(a.comparison.write("BTC/USDT", value).ok, true); assert.equal(a.comparison.read("BTC/USDT").value.captures.length, count);
+  }
+});
+test("corrupt and newer text remain verbatim; Retry cannot replace them without discard", () => {
+  for (const raw of ["{broken", JSON.stringify({ ...record(), comparisonVersion: 2 }), JSON.stringify({ ...record(), focus: "missing" })]) {
+    const a = load(); a.session.map.set(KEY, raw);
+    const read = a.comparison.read("BTC/USDT"); assert.equal(read.value, null); assert.equal(read.raw, raw);
+    assert.equal(a.comparison.write("BTC/USDT", record()).status, "retained"); assert.equal(a.session.getItem(KEY), raw);
+    assert.equal(a.comparison.write("BTC/USDT", record(2)).status, "retained", "manual retry is not implicit discard");
+    assert.equal(a.comparison.discard("BTC/USDT").ok, true); assert.equal(a.comparison.write("BTC/USDT", record(2)).ok, true);
+  }
+});
+test("rejected raw latches until explicit discard even if the slot is later removed", () => {
+  const a = load(); a.session.map.set(KEY, "bad"); a.comparison.read("BTC/USDT"); a.session.removeItem(KEY);
+  assert.equal(a.comparison.write("BTC/USDT", record()).status, "retained");
+  a.comparison.discard("BTC/USDT"); assert.equal(a.comparison.write("BTC/USDT", record()).ok, true);
+});
+test("UTF-8 cap accepts exactly 4 MiB and refuses the next byte before changing stored work", () => {
+  const a = load(), value = record(), emptyBytes = Buffer.byteLength(JSON.stringify(value));
+  value.captures[0].source += "x".repeat(CAP - emptyBytes);
+  const serialized = a.comparison.serialize(value); assert.equal(serialized.ok, true); assert.equal(serialized.bytes, CAP); assert.equal(Buffer.byteLength(serialized.raw), CAP);
+  assert.equal(a.comparison.write("BTC/USDT", serialized).ok, true); const before = a.session.getItem(KEY), writes = a.session.writes.length;
+  value.captures[0].source += "x";
+  assert.equal(a.comparison.serialize(value).status, "oversized"); assert.equal(a.comparison.write("BTC/USDT", value).status, "oversized");
+  assert.equal(a.session.getItem(KEY), before); assert.equal(a.session.writes.length, writes);
+});
+test("multi-byte and surrogate text use actual UTF-8 size, not string length", () => {
+  const a = load(), value = record(); value.captures[0].source = "€😀\ud800";
+  const serialized = a.comparison.serialize(value);
+  assert.equal(serialized.bytes, Buffer.byteLength(serialized.raw));
+  value.captures[0].source = "€".repeat(Math.floor(CAP / 3));
+  assert.ok(JSON.stringify(value).length < CAP); assert.equal(a.comparison.serialize(value).status, "oversized");
+});
+test("oversized stored raw is retained and never JSON-parsed", () => {
+  const a = load(), raw = "[" + "😀".repeat(CAP / 4) + "]";
+  a.session.map.set(KEY, raw); const read = a.comparison.read("BTC/USDT");
+  assert.equal(read.status, "oversized", "invalid JSON still takes the preparse size branch"); assert.equal(read.value, null); assert.equal(read.raw, raw);
+  assert.equal(a.comparison.write("BTC/USDT", record()).status, "retained"); assert.equal(a.session.getItem(KEY), raw);
+});
+test("quota failure keeps the last stored record; Retry saves the latest running state", () => {
+  const a = load(); a.comparison.write("BTC/USDT", record()); const raw = a.session.getItem(KEY);
+  a.session.writeError = failure("QuotaExceededError"); const working = record(2);
+  assert.equal(a.comparison.write("BTC/USDT", working).status, "unsaved"); assert.equal(a.session.getItem(KEY), raw); assert.equal(working.captures.length, 2);
+  working.focus = "cell-1"; a.session.writeError = null;
+  assert.equal(a.comparison.write("BTC/USDT", working).ok, true); assert.equal(a.comparison.read("BTC/USDT").value.focus, "cell-1");
+});
+test("blocked getters/read/remove return explicit failures and do not destroy rejected text", () => {
+  const blocked = load(undefined, undefined, true);
+  assert.equal(blocked.comparison.read("BTC/USDT").status, "unreadable"); assert.equal(blocked.comparison.write("BTC/USDT", record()).status, "unsaved");
+  const a = load(); a.session.map.set(KEY, "bad"); a.comparison.read("BTC/USDT"); a.session.removeError = failure("SecurityError");
+  assert.equal(a.comparison.discard("BTC/USDT").status, "unsaved"); assert.equal(a.session.getItem(KEY), "bad");
+  a.session.removeError = null; assert.equal(a.comparison.write("BTC/USDT", record()).status, "retained");
+});
+test("duplicated tabs initially copy captures then save independently; fresh tabs are absent", () => {
+  const a = load(); a.comparison.write("BTC/USDT", record());
+  const b = load(a.local, new Storage(a.session)); assert.deepEqual(plain(b.comparison.read("BTC/USDT").value), record());
+  b.comparison.write("BTC/USDT", record(2)); a.comparison.write("BTC/USDT", record(3));
+  assert.equal(a.comparison.read("BTC/USDT").value.captures.length, 3); assert.equal(b.comparison.read("BTC/USDT").value.captures.length, 2);
+  assert.equal(load(a.local).comparison.read("BTC/USDT").status, "absent");
+});
+test("immutable capture JSON is cached while mutable captures are reserialized", () => {
+  const a = load(), value = record(); let visits = 0;
+  Object.defineProperty(value.captures[0], "source", { enumerable: true, configurable: true, get() { visits++; return "pack-1"; } });
+  freeze(value.captures[0]); const first = a.comparison.serialize(value); assert.equal(first.ok, true); const firstVisits = visits;
+  value.focus = null; value.view = "matrix";
+  const next = a.comparison.serialize(value); assert.equal(next.ok, true); assert.equal(visits, firstVisits, "presentation saves reuse validated immutable capture serialization");
+  const mutable = record(); a.comparison.serialize(mutable); mutable.captures[0].metrics.volume.value = 42;
+  assert.equal(JSON.parse(a.comparison.serialize(mutable).raw).captures[0].metrics.volume.value, 42);
+});
+test("serialized strings are validated and a successful frozen result writes without reparsing", () => {
+  const a = load(), value = record(), serialized = a.comparison.serialize(value);
+  assert.equal(Object.isFrozen(serialized), true); assert.equal(a.comparison.write("BTC/USDT", serialized).ok, true);
+  assert.equal(a.comparison.write("BTC/USDT", JSON.stringify(record(2))).ok, true);
+  assert.equal(a.comparison.write("BTC/USDT", JSON.stringify({ ...value, reference: "missing" })).ok, false);
+  assert.equal(a.comparison.write("ETH/USDT", value).ok, false);
+  assert.equal(a.comparison.write("BTC/USDT", { ok: true, raw: "bad" }).ok, false, "forged serializer results cannot bypass validation");
+});
+
+
+test("size-only preflight reuses cached captures without joining a near-cap record", () => {
+  const a = load(), value = record(128), remaining = CAP - Buffer.byteLength(JSON.stringify(value));
+  value.captures[0].source += "x".repeat(remaining - 32);
+  value.captures.forEach(freeze);
+  const first = a.comparison.measure(value); assert.equal(first.ok, true); assert.equal(first.bytes, CAP - 32); assert.equal(first.raw, undefined);
+  value.focus = "cell-100"; value.sort = { key: "volume", direction: "desc" };
+  const measured = a.comparison.measure(value); assert.equal(measured.ok, true); assert.equal(measured.raw, undefined);
+  assert.equal(measured.bytes, Buffer.byteLength(a.comparison.serialize(value).raw));
+  assert.equal(a.session.writes.length, 0, "preflight never writes storage");
+});
+test("previously verified slots still reject changed corrupt text before another save", () => {
+  const a = load(); assert.equal(a.comparison.write("BTC/USDT", record()).ok, true);
+  a.session.map.set(KEY, "corrupt after save");
+  assert.equal(a.comparison.write("BTC/USDT", record(2)).status, "retained"); assert.equal(a.session.getItem(KEY), "corrupt after save");
+});
+
+
+test("exposure interval validation permits only representational epoch subtraction rounding", () => {
+  const a = load(), value = record(), capture = value.captures[0], epoch = Date.parse("2026-10-04T06:00:00Z");
+  capture.nominal.t0 += epoch; capture.nominal.t1 += epoch; capture.observed.t0 = epoch + 1000000.1234; capture.observed.t1 = epoch + 1030000.5678;
+  capture.observed.seconds = 30.0004444; capture.measuredThrough += epoch;
+  capture.when.eventStartMs += epoch; capture.when.eventEndMs += epoch;
+  for (const metric of Object.values(capture.metrics)) { metric.supportEnd += epoch; metric.knownThrough += epoch; }
+  assert.equal(a.comparison.validate(value).ok, true);
+  capture.observed.seconds += .01; assert.equal(a.comparison.validate(value).ok, false, "a meaningful exposure change is not roundoff");
+});

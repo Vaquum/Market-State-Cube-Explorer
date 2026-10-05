@@ -24,6 +24,7 @@
   // On the live host the cutoff advances in place as new data arrives. It is
   // the cube's data cutoff, a minute edge, so the base column that holds it is
   // open: it has the latest trades and still gains more.
+  let comparisonSourceRevision = 0;
   let CUT = (Date.parse(PACK.cutoff) / 1000 - T0) / BASE;
   // Where the cube's archived days end; after it, provisional minutes that the
   // day's archive later replaces. The recorded snapshot has no such edge.
@@ -817,6 +818,7 @@
     return layout(width, height, eventKinds().length, S.rows !== "off" ? ROWS_STRIP : 0, profileTrackCount(), S.profileOpen);
   }
   function geometry() {
+    if (comparisonModel.expanded) return;
     const rect = canvas.getBoundingClientRect(),
       width = rect.width,
       height = rect.height,
@@ -1838,6 +1840,7 @@
   // timer exists, and only when something waits and nothing is held (a gesture's end calls noteGesture,
   // which arms again). The expensive work (coherence, cohorts, fits) is scaleTick's.
   function scaleArm() {
+    if (comparisonModel.expanded) return;
     if (
       scaleRt.timer ||
       (!scaleRt.ctl.hasWants() && !(scaleRt.axes.hasPending() && !scaleRt.playing) && !scaleRt.chase) ||
@@ -1848,6 +1851,7 @@
   }
   // Re-arm after the tick with an exact wait (the smallest any piece still has); never two timers.
   function scaleAfter(ms) {
+    if (comparisonModel.expanded) return;
     if (!scaleRt.timer) scaleRt.timer = setTimeout(scaleTick, ms);
   }
   // Is the data a channel would be fitted from coherent and complete? Every read the view needs has answered
@@ -2076,7 +2080,7 @@
     }
   }
   function scaleRun() {
-    if (!ready || scaleRt.fault) return;
+    if (!ready || comparisonModel.expanded || scaleRt.fault) return;
     // A draw is already owed: it resolves every channel again and asks for what the state now needs, so a fit
     // made first could calibrate a context that is no longer the one on screen.
     if (raf) return scaleAfter(16);
@@ -2205,6 +2209,7 @@
 
   function draw() {
     if (!ready) return;
+    if (comparisonModel.expanded) { comparisonRefresh(); return; }
     geometry();
     for (const k in markCount) markCount[k] = 0;
     refTally.clear();
@@ -2487,7 +2492,15 @@
     // A failure noted for a tile says itself while that tile is what the view or the lens needs: a tool that opens or closes changes that without
     // an update, so the line is decided again with the frame (nothing is noted on a healthy page, and then there is nothing to decide).
     if (noted.size || loadingLine.blocks.size) renderLoading();
-    last = { full, query, shown, meas, b, cut, mv, under, sc };
+    const cf = lensShown() ? lensFrame() : null, cp = cf?.src ? lensParts(cf) : null;
+    const comparisonLens = cp ? { ...cp, bounds:cp.lensBounds, sourceEnd:cp.end,
+      motion:lensMotionParts(cp), box:{x:cf.x,y:cf.y,w:cf.w,h:cf.h} } : null;
+    last = { full, query, shown, meas, b, cut, mv, under, sc, src, comparisonLens, n:renderN(), m:renderM(),
+      sourceEnd: sourceRange(src)[1], token:PACK.state_token ?? null, generation:live.generation,
+      sourceVersion:sourcesKey(), sourceRevision:comparisonSourceRevision,
+      camera:[S.tA,S.tB,S.pA,S.pB,S.n,S.m,S.replay,S.anchor],
+      motionEnd:mv?.src?.end ?? null, canon:CANON, dataCut:CUT };
+    comparisonRefresh();
     if (transition) {
       if (u >= 1) transition = null;
       else requestDraw();
@@ -3187,6 +3200,7 @@
   // written here; how it is shown is one loop over the codec's table (applyVisual), so a setting added to
   // the table is applied, written and read back by the same entry.
   function applyView(v) {
+    if (comparisonModel.expanded) comparisonExpand(false);
     const previous = { state: structuredClone(S), carried: scaleRt.carried, local: scaleRt.local,
       appearance: scaleRt.appearance, hover, transition, activeDrawingId, drawingKeyContext,
       tipHidden: el("tip").hidden };
@@ -3901,6 +3915,10 @@
         node.dataset.canonical = String(canonical);
         tr.lastElementChild.append(node);
       }
+      const actions = document.createElement("td");
+      actions.className = "ol-cell-actions";
+      comparisonCellButtons(actions, () => ({ c:c.c, r:c.r, n:listed.n, m:listed.m, surface:"cells" }));
+      tr.append(actions);
       cellRows.set(cellKey(c.c, c.r), { tr, z: c, readout });
       frag.append(tr);
     }
@@ -5296,6 +5314,11 @@
       const button = document.createElement("button"); button.type = "button"; button.textContent = "Edit drawing";
       button.addEventListener("click", () => drawingEdit(entry.hit.drawing, "inspect")); body.append(button);
     }
+    if (["cells", "lens"].includes(inspect.surface) && S.mode !== "candles") {
+      comparisonCellButtons(body, () => {
+        const w=inspectWhere(); return w.inside ? {c:w.c,r:w.r,n:Math.round(Math.log2(w.sp.ts)),m:Math.round(Math.log2(w.sp.ps)),surface:inspect.surface} : null;
+      });
+    }
     el("inspect-detail-title").textContent = el("inspect-position").textContent;
   }
   // The cursor's mark on the plot: the strongest persistent mark of the interaction table, on the item it reads.
@@ -5567,6 +5590,7 @@
   }
   function update() {
     if (!ready) return;
+    if (comparisonModel.expanded) { applyPanels(); comparisonRefresh(); return; }
     limits();
     chooseSource();
     if (S.auto) autoLevel();
@@ -5860,6 +5884,9 @@
       drawer = el("drawer"),
       side = el("side-toggle"),
       sideLabel = S.sideOpen ? "Collapse the inspector" : "Expand the inspector";
+    root.dataset.comparisonExpanded = String(comparisonModel.expanded);
+    for (const node of [root.querySelector(".ol-plot"), el("side"), el("side-grip")]) node.inert = comparisonModel.expanded;
+    el("drawer-grip").hidden = comparisonModel.expanded;
     const sideWidth = clamp(S.sideWidth, 260, sideMax()),
       drawerHeight = clamp(S.drawerHeight, 120, drawerMax());
     main.dataset.side = S.sideOpen ? "open" : "closed";
@@ -5895,8 +5922,10 @@
       (S.drawerOpen ? "Close the drawer" : "Open the drawer") + " (T)";
   }
   function openDrawer(tab, open = true) {
+    if (comparisonModel.expanded && (tab !== "compare" || !open)) comparisonExpand(false);
     S.drawer = tab;
     S.drawerOpen = open;
+    if (tab === "compare" && open) S.drawerHeight=Math.max(S.drawerHeight,Math.min(420,drawerMax()));
     update();
     save();
   }
@@ -16114,7 +16143,7 @@
     return layoutNow(r.width, r.height);
   }
   function autoLevel() {
-    if (!S.auto || !(S.tB > S.tA) || !(S.pB > S.pA)) return false;
+    if (comparisonModel.expanded || !canvas.getClientRects().length || canvas.getBoundingClientRect().height <= 0 || !S.auto || !(S.tB > S.tA) || !(S.pB > S.pA)) return false;
     const g = navGeometry(),
       n = pixelLevel(S.n, S.tB - S.tA, g.w, N_MAX),
       m = S.diagonal ? diagonalM(n) : pixelLevel(S.m, S.pB - S.pA, g.h, M_MAX),
@@ -16368,7 +16397,7 @@
     if (node.hidden) node.hidden = false;
   }
   function scheduleCube() {
-    if (!PACK.live || !ready) return;
+    if (!PACK.live || !ready || comparisonModel.expanded) return;
     clearTimeout(cube.timer);
     cube.timer = setTimeout(pumpCube, 200);
     scheduleMotion();
@@ -16390,7 +16419,7 @@
     return null;
   }
   async function pumpCube() {
-    if (!PACK.live || !ready || cube.busy || cube.stale) return;
+    if (!PACK.live || !ready || comparisonModel.expanded || cube.busy || cube.stale) return;
     const want = cubeWant();
     if (!want) return;
     const generation = live.generation;
@@ -16428,7 +16457,7 @@
       // use, an answer for a pack the page replaced meanwhile is dropped and
       // asked for again, so no two cube states ever mix.
       const decoded = await want.decode(body);
-      if (generation === live.generation) want.apply(decoded);
+      if (generation === live.generation) { comparisonSourceRevision++; want.apply(decoded); }
       else want.drop?.();
     } catch (error) {
       want.drop?.();
@@ -16776,14 +16805,14 @@
     for (const [key, x] of dwellLatest) if (x.span[1] > edge) dwellLatest.delete(key);
   }
   function scheduleMotion() {
-    if (!PACK.live || !ready) return;
+    if (!PACK.live || !ready || comparisonModel.expanded) return;
     clearTimeout(motion.timer);
     motion.timer = setTimeout(pumpMotion, 200);
   }
   // One path and dwell read at a time, beside the cube's other reads. An answer
   // for a pack the page replaced meanwhile is dropped, as theirs are.
   async function pumpMotion() {
-    if (!PACK.live || !ready || motion.busy) return;
+    if (!PACK.live || !ready || comparisonModel.expanded || motion.busy) return;
     const want = motionWant();
     if (!want) return;
     const generation = live.generation,
@@ -16809,7 +16838,7 @@
       }
       if (!response.ok) throw Error(body?.error || `the server answered ${response.status}`);
       const decoded = await want.decode(body);
-      if (generation === live.generation && epoch === motion.epoch) want.apply(decoded);
+      if (generation === live.generation && epoch === motion.epoch) { comparisonSourceRevision++; want.apply(decoded); }
     } catch (error) {
       const message = (
         error.name === "TimeoutError"
@@ -17637,7 +17666,7 @@
     for (const entry of E.codec.VISUAL_KEYS)
       for (const path of entry.fields) {
         if (path.startsWith("scale.")) out.scale[path.slice(6)] = S.scale[path.slice(6)];
-        else out[path] = path === "follow" ? followMode() : S[path];
+        else out[path] = path === "follow" ? followMode() : path === "drawer" && S.drawer === "compare" ? "cells" : S[path];
       }
     return out;
   }
@@ -18996,6 +19025,7 @@
     });
     el("plane").addEventListener("keydown", planeKeys);
     canvas.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || e.ctrlKey) return;
       if (!ready) return;
       const p = at(e),
         axis = onPriceAxis(p);
@@ -19143,6 +19173,7 @@
       noteGesture();
     });
     const finishPointer = (e) => {
+      if (e.button !== 0 || e.ctrlKey) return;
       if (drawingPointerUp(e, at(e))) {
         nav.alt = Boolean(e.altKey);
         if (nav.alt) { requestDraw(); scheduleCube(); }
@@ -19345,6 +19376,7 @@
           Boolean(bracket) ||
           e.key.startsWith("Arrow") ||
           ["+", "=", "-", "_", ",", "."].includes(e.key);
+      if (comparisonOwnsKey(e, target)) return;
       if (ready && drawingKey(e, target)) { e.preventDefault(); nav.pressed.add(id); return; }
       if (drawingDialogOpen()) return;
       // A held key repeats only steps: the arrows, zoom, levels and the anchor.
@@ -19651,6 +19683,7 @@
   // Escape closes what is open first, then clears the selection, then goes
   // back to Pan from Select or the lens.
   function escapeKey() {
+    if (comparisonCloseMenu(true)) return;
     if (trendTool) { drawingCancelOperation(); setTool(drawingEntryTool); return; }
     if (closePop(true)) return;
     if (root.dataset.sheet === "open") {
@@ -19667,6 +19700,8 @@
       inspectExit();
       return;
     }
+    if (comparisonModel.expanded) { comparisonExpand(false); return; }
+    if (document.activeElement?.closest("#ol-panel-compare")) return;
     nav.hold = false;
     nav.alt = false;
     if (S.selection) {
@@ -19863,6 +19898,7 @@
     // Everything is decoded before anything changes: no frame sees half a pack.
     for (const id of TIERS)
       if (body.blocks?.[id]) parts[id] = await unpack(body.blocks[id], id);
+    comparisonSourceRevision++;
     if (whole) {
       for (const id of Object.keys(sources))
         if (!TIERS.includes(id)) {
@@ -19937,9 +19973,7 @@
     groups.clear();
     evidenceCache.clear();
     rebuildReference();
-    followCutoff(was);
-    chooseSource();
-    limits();
+    if (!comparisonModel.expanded) { followCutoff(was); chooseSource(); limits(); }
     update();
     title();
     scaleArm();
@@ -20720,6 +20754,281 @@
     }); drawingSyncUI();
   }
 
+  // PRD-0006: owned snapshots; the chart never remaps this tab's collection.
+  const C = window.explorerComparison;
+  const comparisonEmpty = () => ({comparisonVersion:1,instrument:INSTRUMENT,captures:[],focus:null,reference:null,
+    basis:"auto",sort:{key:"time",direction:"asc"},view:"grid",page:0,poc:null,expanded:false,restoreLayout:null});
+  let comparisonModel = comparisonEmpty(), comparisonUI = null, comparisonAnalysis = null,
+    comparisonStatsKey = "", comparisonRenderKey = "", comparisonRevision = 0, comparisonTimer = null,
+    comparisonUnsaved = false, comparisonRejected = false, comparisonMessage = "", comparisonMenu = null,
+    comparisonPocCache = {key:null,items:[]};
+  const comparisonCounters = {stats:0,writes:0,bytes:0,renders:0};
+  const comparisonMs = (base) => Number.isFinite(base) ? (T0 + base * BASE) * 1000 : null;
+  const comparisonEdge = () => S.replay ? comparisonMs(activeCutoff()) : null;
+  function comparisonFreeze(value) {
+    if (value && typeof value === "object" && !Object.isFrozen(value)) { Object.values(value).forEach(comparisonFreeze); Object.freeze(value); }
+    return value;
+  }
+  function comparisonTarget(p) {
+    if (!last || !inPlot(p) || S.mode === "candles" || comparisonModel.expanded) return null;
+    if (drawingHits(p).length || lineAt(p) || clockAt(p)) return null;
+    const lp = last.comparisonLens;
+    const lens = lensShown() && lp && p.x >= lp.box.x && p.x < lp.box.x+lp.box.w && p.y>=lp.box.y && p.y<lp.box.y+lp.box.h;
+    const n=lens?lp.n:last.n,m=lens?lp.m:last.m;
+    return {c:Math.floor(p.t / 2**n),r:Math.floor(p.p / 2**m),n,m,surface:lens?"lens":"cells"};
+  }
+  function comparisonCapture(target) {
+    if (!target || !last || S.mode === "candles") return null;
+    if (last.sourceRevision !== comparisonSourceRevision || last.dataCut !== CUT ||
+      last.camera.some((value,i)=>value !== [S.tA,S.tB,S.pA,S.pB,S.n,S.m,S.replay,S.anchor][i])) return null;
+    const lens=target.surface === "lens", lp=lens?last.comparisonLens:null,
+      frame=lens?lp:last, n=target.n,m=target.m,ts=2**n,ps=2**m,c=target.c,r=target.r;
+    if (!frame || frame.n !== n || frame.m !== m) return null;
+    const b=lens?lp.bounds:last.b,cut=last.cut,src=lens?lp.src:last.src,
+      sourceStart=sourceRange(src)[0],sourceEnd=lens?lp.sourceEnd:last.sourceEnd;
+    if (Math.min((c+1)*ts,sourceEnd,cut) <= Math.max(c*ts,sourceStart)) return null;
+    const t0=Math.max(c*ts,b[0]),t1=Math.min((c+1)*ts,b[1],cut),
+      low=Math.max(r*ps,b[2]),high=Math.min((r+1)*ps,b[3]);
+    if (!(t1>t0 && high>low)) return null;
+    const q=lens?lp.q:last.shown, z=q.map.get(c+","+r) ?? {c,r,v:0,bv:0,ct:0,bt:0},
+      factsFromQuery=!lens && q === last.query && ["exact","cube"].includes(last.meas.state),
+      // Source boundaries belong to the aggregate, independently of the displayed denominator.
+      factEnd=factsFromQuery ? Math.min((c+1)*ts,last.meas.end??last.meas.b[1],last.dataCut) : Math.min((c+1)*ts,sourceEnd),
+      factSupport=comparisonMs(factEnd),
+      motionFrame=lens?lp.motion:last.mv,
+      motionQuery=lens?motionFrame?.mq:motionFrame?.shown,
+      motionReady=Boolean(lens?motionFrame?.msrc:motionFrame?.src) && c*ts < motionFrame.end,
+      mz=motionQuery?.map.get(cellKey(c,r)) ?? {c,r,v:0,bv:0,ct:0,bt:0,p:0,w:0},
+      motionEnd=motionReady?Math.min((c+1)*ts,(!lens && motionQuery===motionFrame.rect?.query)?motionFrame.rect.end:motionFrame.src?.end??motionFrame.msrc?.end):null,
+      metrics={},detail=[], nominal={t0:comparisonMs(c*ts),t1:comparisonMs((c+1)*ts),low:r*ps*PR,high:(r+1)*ps*PR};
+    let shortExposure=false;
+    const measure=(key,mode,basis="amount",pathBasis="spans",movement=false) => {
+      const readyValue=!movement||motionReady;
+      const measuredValue=E.measure.cellMeasurement({mode,basis,pathBasis,z:movement?mz:z,geom:{BASE,PR},level:{n,m},
+        bounds:b,cut,end:movement?motionFrame?.end??-Infinity:Infinity,CUT:last.dataCut,replay:S.replay,
+        read:readyValue?null:{state:"pending",reason:"Motion not measured"},measured:null,cascade:null});
+      const result=measuredValue.result,end=movement?comparisonMs(motionEnd):factSupport;
+      if(key)metrics[key]={tag:result.tag,value:result.tag==="finite"?result.value:null,formula:measuredValue.formula,
+        unit:measuredValue.unit,supportEnd:end,knownThrough:end,numerator:measuredValue.numerator,
+        denominator:measuredValue.denominator??result.denominator??null,reason:result.reason??""};
+      shortExposure ||= Boolean(measuredValue.exposure?.short);
+      return measuredValue;
+    };
+    for(const mode of ["volume","trades","delta"]) {measure(mode+".amount",mode);measure(mode+".intensity",mode,"intensity");}
+    measure("size","size","mean");measure("flow","flow");measure("flowtrades","flowtrades");
+    measure("path","path","amount","spans",true);measure("dwell","dwell","share","spans",true);
+    const addDetail=(label,value,unit,supportEnd=factSupport,knownThrough=supportEnd,tag="finite")=>detail.push({label,value:Number.isFinite(value)||typeof value==="string"?value:null,unit,tag,supportEnd,knownThrough});
+    addDetail("Taker buys",z.bv,"usdt");addDetail("Taker sells",z.v-z.bv,"usdt");addDetail("Taker-buy trades",z.bt,"trades");
+    if(motionReady) {
+      addDetail("USDT moved",mz.p,"usdt",comparisonMs(motionEnd));
+      const perMinute=measure(null,"path","amount","perMinute",true);
+      addDetail("Row spans per minute",perMinute.result.tag==="finite"?perMinute.result.value:null,perMinute.unit,comparisonMs(motionEnd),comparisonMs(motionEnd),perMinute.result.tag);
+      addDetail("Dwell seconds",mz.w,"seconds",comparisonMs(motionEnd));
+    }
+    if(!lens) {
+      const contextEnd=comparisonMs(last.meas.end??last.meas.b[1]), row=last.query.rows.find(x=>x.r===r);
+      if(["exact","cube","recorded"].includes(last.meas.state) && row) {
+        addDetail("Row volume · captured view",row.v,"usdt",contextEnd);
+        if(last.query.v>0)addDetail("Row share · captured view",row.v/last.query.v,"share",contextEnd);
+      }
+      if(["exact","cube","recorded"].includes(last.meas.state))addDetail("Captured view bounds",JSON.stringify(last.meas.b.slice(0,2).map(comparisonMs))+" UTC; "+last.meas.b.slice(2).map(x=>x*PR).join("–")+" USDT","",contextEnd);
+      const under=last.under, band=under?.bands?.map.get(Math.floor(r/2**(under.bands.m-m))), periodEnd=comparisonMs(under?.through);
+      if(under?.res.state==="ready"&&band) {
+        addDetail("Period · captured context",under.period+" · "+JSON.stringify(under.res.span?.map(comparisonMs))+" UTC","",periodEnd);
+        addDetail("Period row band",[Math.floor(r/2**(under.bands.m-m))*2**under.bands.m*PR,(Math.floor(r/2**(under.bands.m-m))+1)*2**under.bands.m*PR].join("–"),"usdt",periodEnd);
+        if(under.kind==="volume")addDetail("Period row volume",band.v,"usdt",periodEnd);
+        if(under.kind==="delta")addDetail("Period net taker volume",2*band.bv-band.v,"usdt",periodEnd);
+      }
+      for(const row of rowSection(r,(x)=>String(x),(x)=>String(x),true,false)) {
+        if(Number.isFinite(row[3]))addDetail(row[0]+" · captured context",row[3],"",comparisonMs(last.under?.res?.end??last.under?.through));
+      }
+    }
+    const complete=(c+1)*ts<=last.dataCut, timePortion=t0>c*ts||t1<(c+1)*ts,
+      portion=timePortion||low>r*ps||high<(r+1)*ps;
+    const capture={instrument:INSTRUMENT,level:{n,m},origin:T0,c,r,nominal,
+      observed:{t0:comparisonMs(t0),t1:comparisonMs(t1),low:low*PR,high:high*PR,seconds:(t1-t0)*BASE,width:(high-low)*PR},
+      capturedAt:Date.now(),measuredThrough:factSupport,source:`${PACK.live?"cube":"recorded"} · ${src.id} · ${last.token??"snapshot"}`,
+      completeness:(complete?"Complete":"Still open")+(portion?" · portion":"")+(last.canon!==null&&(c+1)*ts>last.canon?" · provisional minutes":""),
+      when:{eventStartMs:nominal.t0,eventEndMs:nominal.t1,knownAtMs:complete&&!timePortion?nominal.t1:null,knownAtReason:complete&&!timePortion?"the end of the interval":"the interval is open or partial"},
+      shortExposure,originalScale:last.sc?.[lens?"lens":"cells"]?.mappingId??"none",metrics,detail};
+    capture.id=C.identity(capture);
+    return comparisonFreeze(capture);
+  }
+  function comparisonFingerprint(capture) {
+    if(!capture)return "";
+    const {capturedAt,...record}=capture;
+    return JSON.stringify([record,comparisonSourceRevision,last?.sourceVersion,live.generation,PACK.state_token,CUT,sourcesKey(),last?.cut,S.mode]);
+  }
+  function comparisonPocs() {
+    const cacheKey=[comparisonSourceRevision,live.generation,PACK.state_token,CUT,activeCutoff(),lineResults.size,S.lines.join(",")].join("|");
+    if(comparisonPocCache.key===cacheKey)return comparisonPocCache.items;
+    const out=[];
+    for(const key of periodLines()) {
+      const span=lineSpan(key), result=span?lineResults.get(lineId(key,span)):null;
+      if(result?.state!=="ready"||result.row===null||!Number.isFinite(result.row)||!(result.total>0))continue;
+      const through=result.end??result.span[1],supportEnd=comparisonMs(through);
+      out.push({id:JSON.stringify([key,result.span[0],through,(result.row+.5)*result.rowPrice*PR,PACK.state_token??"snapshot"]),label:`${lineName(key)} · ${new Date(comparisonMs(result.span[0])).toISOString().slice(0,10)}–${new Date(supportEnd).toISOString().slice(0,16)} UTC`,period:key,
+        price:(result.row+.5)*result.rowPrice*PR,rowSize:result.rowPrice*PR,approximate:!result.exact,
+        from:comparisonMs(result.span[0]),through:supportEnd,supportEnd,knownThrough:supportEnd,source:`${PACK.live?"cube":"recorded"} · ${PACK.state_token??"snapshot"}`});
+    }
+    comparisonPocCache={key:cacheKey,items:out};
+    return out;
+  }
+  function comparisonCounterPublish() {
+    const data=el("comparisonWorkspace").dataset;
+    for(const [key,value]of Object.entries({...comparisonCounters,revision:comparisonRevision}))if(data[key]!==String(value))data[key]=String(value);
+  }
+  function comparisonRefresh(force=false) {
+    if(!comparisonUI)return;
+    comparisonCounterPublish();
+    const edge=comparisonEdge(),eligibility=edge===null?"live":comparisonModel.captures.map(c=>[...Object.values(c.metrics),...c.detail].map(m=>Number.isFinite(m.supportEnd)&&Number.isFinite(m.knownThrough)&&Math.max(m.supportEnd,m.knownThrough)<=edge?1:0).join("")).join("|")+"|"+(comparisonModel.poc&&Math.max(comparisonModel.poc.supportEnd??Infinity,comparisonModel.poc.knownThrough??Infinity)<=edge),
+      statsKey=[comparisonRevision,comparisonModel.basis,comparisonModel.reference,JSON.stringify(comparisonModel.poc),eligibility].join("|");
+    if(statsKey!==comparisonStatsKey) {comparisonUI.clearCopyFallback();comparisonStatsKey=statsKey;comparisonCounters.stats++;comparisonAnalysis=C.analyze(comparisonModel.captures,{...comparisonModel,edge});}
+    const pocs=comparisonPocs(),renderKey=JSON.stringify([statsKey,comparisonModel.focus,comparisonModel.sort,comparisonModel.page,comparisonModel.view,comparisonModel.expanded,comparisonMessage,comparisonUnsaved,comparisonRejected,pocs]);
+    if(!force&&renderKey===comparisonRenderKey)return;
+    // Sorting is pure presentation: it reuses metric cohorts and never refits their statistics.
+    comparisonAnalysis={...comparisonAnalysis,ordered:C.sort?C.sort(comparisonModel.captures,comparisonModel.sort,comparisonAnalysis.metrics):C.analyze(comparisonModel.captures,{...comparisonModel,edge}).ordered};
+    comparisonRenderKey=renderKey;comparisonCounters.renders++;
+    comparisonUI.render(comparisonModel,comparisonAnalysis,{edge,pocOptions:pocs,status:comparisonMessage,unsaved:comparisonUnsaved,storageRejected:comparisonRejected});
+    el("tab-compare").textContent=`Compare${comparisonModel.captures.length?` · ${comparisonModel.captures.length}`:""}`;
+    comparisonCounterPublish();
+    root.dispatchEvent(new CustomEvent("comparison-render",{detail:{revision:comparisonRevision}}));
+  }
+  function comparisonPersist() {
+    clearTimeout(comparisonTimer);
+    comparisonTimer=setTimeout(()=>{
+      const result=window.explorerState.comparison.write(INSTRUMENT,comparisonModel);
+      comparisonCounters.writes++;comparisonCounters.bytes+=result.bytes??0;
+      comparisonUnsaved=!result.ok;comparisonRejected=result.status==="retained";
+      if(!result.ok)comparisonMessage=`Unsaved comparison · ${result.reason}`;
+      comparisonRefresh();
+    },0);
+  }
+  function comparisonCommit(next,content=false) {
+    const prepared=window.explorerState.comparison.measure(next);
+    if(!prepared.ok) {comparisonMessage=prepared.reason;comparisonRefresh();return false;}
+    comparisonModel=next;if(content)comparisonRevision++;
+    comparisonUI.clearCopyFallback();comparisonRefresh(true);comparisonPersist();return true;
+  }
+  function comparisonReveal(id) {
+    const ordered=comparisonAnalysis?.ordered??comparisonModel.captures,i=ordered.findIndex(c=>c.id===id);
+    comparisonModel={...comparisonModel,page:Math.max(0,Math.floor(i/24))};
+  }
+  function comparisonAdd(capture,replace=false) {
+    const i=comparisonModel.captures.findIndex(c=>c.id===capture.id);
+    if(i>=0&&!replace)comparisonMessage="Existing capture opened · original values retained";
+    else comparisonMessage=replace?"Capture updated":"Cell added";
+    const captures=comparisonModel.captures.slice();
+    if(i<0)captures.push(capture);else if(replace)captures[i]=capture;
+    if(!comparisonCommit({...comparisonModel,captures,focus:capture.id},i<0||replace))return;
+    comparisonReveal(capture.id);S.drawer="compare";S.drawerOpen=true;
+    if (!comparisonModel.expanded) S.drawerHeight=Math.max(S.drawerHeight,Math.min(420,drawerMax()));
+    applyPanels();comparisonRefresh(true);comparisonPersist();update();
+    comparisonUI.focusControl("expand");
+  }
+  function comparisonExpand(expanded) {
+    if(expanded===comparisonModel.expanded)return;
+    const layout=expanded?{sideOpen:S.sideOpen,sideWidth:S.sideWidth,drawerHeight:S.drawerHeight,drawerOpen:S.drawerOpen,drawer:S.drawer}:comparisonModel.restoreLayout;
+    const next={...comparisonModel,expanded,restoreLayout:expanded?layout:null};
+    if(!comparisonCommit(next))return;
+    if(!expanded&&layout)Object.assign(S,layout);
+    else if(expanded) {S.drawer="compare";S.drawerOpen=true;transition=null;clearTimeout(scaleRt.timer);scaleRt.timer=0;clearTimeout(cube.timer);clearTimeout(motion.timer);comparisonUI.focusControl("expand");}
+    applyPanels();comparisonUI.focusControl("expand");
+    if(!expanded){geometry();update();scheduleCube();scaleArm();}
+  }
+  async function comparisonCopy(capture) {
+    const text=C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc});
+    try {if(!navigator.clipboard?.writeText)throw Error("Clipboard unavailable");await navigator.clipboard.writeText(text);comparisonMessage="Cell copied";comparisonRefresh();}
+    catch {S.drawer="compare";S.drawerOpen=true;applyPanels();comparisonRefresh(true);comparisonUI.showCopyFallback(C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc}));}
+  }
+  function comparisonConfirm(message,onConfirm) {
+    const returnTo=document.activeElement,dialog=document.createElement("dialog");dialog.className="ol-comparison-confirm";
+    const text=document.createElement("p");text.textContent=message;dialog.append(text);
+    for(const [label,confirm]of [["Cancel",false],["Confirm",true]]) {const b=document.createElement("button");b.type="button";b.textContent=label;b.addEventListener("click",()=>{dialog.close();dialog.remove();returnTo?.isConnected&&returnTo.focus();if(confirm)onConfirm();});dialog.append(b);}
+    dialog.addEventListener("cancel",()=>{dialog.remove();returnTo?.isConnected&&returnTo.focus();});
+    dialog.addEventListener("keydown",e=>e.stopPropagation());root.append(dialog);dialog.showModal();dialog.querySelector("button").focus();
+  }
+  function comparisonDispatch(action) {
+    let next={...comparisonModel};comparisonMessage="";
+    if(action.type==="copy")return comparisonCopy(comparisonModel.captures.find(c=>c.id===action.id));
+    if(action.type==="expand")return comparisonExpand(!comparisonModel.expanded);
+    if(action.type==="clear")return comparisonConfirm(`Clear all ${comparisonModel.captures.length} comparison cells?`,()=>comparisonCommit({...comparisonModel,captures:[],focus:null,reference:null,page:0},true));
+    if(action.type==="discard")return comparisonConfirm("Discard the unusable saved comparison record? Current working cells will be kept.",()=>{const r=window.explorerState.comparison.discard(INSTRUMENT);comparisonRejected=!r.ok;comparisonMessage=r.ok?"Stored record discarded":r.reason;comparisonPersist();});
+    if(action.type==="retry"){comparisonPersist();return;}
+    if(action.type==="focus") {next.focus=action.id;const i=comparisonAnalysis.ordered.findIndex(c=>c.id===action.id);next.page=Math.max(0,Math.floor(i/24));}
+    else if(action.type==="remove") {
+      const order=comparisonAnalysis.ordered,i=order.findIndex(c=>c.id===action.id);
+      next.captures=next.captures.filter(c=>c.id!==action.id);
+      next.page=Math.min(next.page,Math.max(0,Math.ceil(next.captures.length/24)-1));
+      if(next.focus===action.id)next.focus=(order[i+1]??order[i-1])?.id??null;
+      if(next.reference===action.id){next.reference=null;comparisonMessage="Reference removed · using set median";}
+      if(comparisonCommit(next,true)){comparisonReveal(next.focus);comparisonRefresh(true);comparisonPersist();}return;
+    }else if(action.type==="basis")next.basis=action.value;
+    else if(action.type==="reference")next.reference=action.id||null;
+    else if(action.type==="view")next.view=action.value;
+    else if(action.type==="page")next.page=action.value;
+    else if(action.type==="sort"){next.sort={key:action.key,direction:action.direction??(["time","added","poc"].includes(action.key)?"asc":"desc")};next.page=0;}
+    else if(action.type==="poc")next.poc=comparisonFreeze(comparisonPocs().find(p=>p.id===action.id)??null);
+    else return;
+    comparisonCommit(next);
+  }
+  function comparisonCellButtons(parent,resolve) {
+    for(const [type,label]of [["copy","Copy cell"],["add","Add to comparison"],["update","Update capture"]]) {
+      const button=document.createElement("button");button.type="button";button.className="ol-action ol-s ol-cell-compare-action";button.textContent=label;
+      if(type==="update"){const c=comparisonCapture(resolve());if(!c||!comparisonModel.captures.some(x=>x.id===c.id))continue;}
+      button.addEventListener("click",e=>{e.stopPropagation();const capture=comparisonCapture(resolve());if(!capture){comparisonMessage="Cell changed; open its menu again";comparisonRefresh();return;}if(type==="copy")comparisonCopy(capture);else comparisonAdd(capture,type==="update");});parent.append(button);
+    }
+  }
+  function comparisonCloseMenu(focus=false) {
+    if(!comparisonMenu)return false;const state=comparisonMenu;comparisonMenu=null;state.node.remove();
+    if(focus&&state.owner?.isConnected)state.owner.focus({preventScroll:true});return true;
+  }
+  function comparisonOpenMenu(event,target) {
+    const capture=comparisonCapture(target);if(!capture)return;
+    event.preventDefault();comparisonCloseMenu();closePop();
+    const node=document.createElement("div");node.id="ol-cell-menu";node.className="ol-pop ol-cell-menu";node.setAttribute("role","menu");node.setAttribute("aria-label","Cell actions");
+    comparisonMenu={node,owner:document.activeElement,target,capture,fingerprint:comparisonFingerprint(capture)};
+    const existing=comparisonModel.captures.some(c=>c.id===capture.id);
+    for(const [type,label]of [["copy","Copy cell"],["add",existing?"Open existing capture":"Add to comparison"],...(existing?[["update","Update capture"]]:[])]) {
+      const b=document.createElement("button");b.type="button";b.setAttribute("role","menuitem");b.textContent=label;
+      b.addEventListener("click",()=>{
+        const state=comparisonMenu,current=comparisonCapture(state?.target);
+        if(!current||comparisonFingerprint(current)!==state.fingerprint){comparisonCloseMenu(true);comparisonMessage="Cell changed; open its menu again";el("inspect-live").textContent=comparisonMessage;comparisonRefresh();return;}
+        comparisonCloseMenu(type==="copy");if(type==="copy")comparisonCopy(state.capture);else comparisonAdd(state.capture,type==="update");
+      });node.append(b);
+    }
+    root.append(node);node.style.position="fixed";node.style.left=Math.min(event.clientX,innerWidth-node.offsetWidth-8)+"px";node.style.top=Math.min(event.clientY,innerHeight-node.offsetHeight-8)+"px";node.firstElementChild.focus();
+  }
+  function comparisonOwnsKey(event,target) {
+    if(target?.closest(".ol-comparison-confirm"))return true;
+    if(comparisonMenu) {
+      if(event.key==="Escape"){event.preventDefault();comparisonCloseMenu(true);}
+      else if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();const buttons=[...comparisonMenu.node.children],index=buttons.indexOf(document.activeElement);buttons[event.key==="Home"?0:event.key==="End"?buttons.length-1:(index+(event.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length].focus();}
+      else if(event.key==="Tab")comparisonCloseMenu();
+      return true;
+    }
+    if(target?.closest("#ol-panel-compare, #ol-tab-compare")) {
+      if(event.key==="Escape"){event.preventDefault();if(!el("comparisonWorkspace").querySelector(".ol-comparison-copy").hidden){comparisonUI.clearCopyFallback();return true;}if(closePop(true))return true;if(inspect.detail){inspectDetail(false);return true;}if(inspect.on){inspectExit();return true;}if(comparisonModel.expanded)comparisonExpand(false);}
+      return true;
+    }
+    return false;
+  }
+  function comparisonLoad() {
+    const saved=window.explorerState.comparison.read(INSTRUMENT);
+    if(saved.status==="ok") {comparisonModel=saved.value;comparisonModel.captures.forEach(comparisonFreeze);comparisonRevision++;if(comparisonModel.expanded){S.drawer="compare";S.drawerOpen=true;}}
+    else if(saved.status!=="absent") {comparisonRejected=saved.raw!==null;comparisonUnsaved=true;comparisonMessage=`Unsaved comparison · ${saved.reason}`;}
+    comparisonRefresh(true);
+  }
+  function comparisonInit() {
+    comparisonUI=window.explorerComparisonUI.create({root:el("comparisonWorkspace"),dispatch:comparisonDispatch});
+    canvas.addEventListener("contextmenu",event=>comparisonOpenMenu(event,comparisonTarget(at(event))));
+    canvas.addEventListener("pointerdown",event=>{if(event.button===2||event.ctrlKey&&event.button===0){event.stopImmediatePropagation();if(event.ctrlKey)comparisonOpenMenu(event,comparisonTarget(at(event)));}},true);
+    canvas.addEventListener("pointerup",event=>{if(event.button===2||event.ctrlKey&&event.button===0)event.stopImmediatePropagation();},true);
+    document.addEventListener("pointerdown",event=>{if(comparisonMenu&&!comparisonMenu.node.contains(event.target))comparisonCloseMenu(true);},true);
+    comparisonRefresh(true);
+  }
+
+  comparisonInit();
   drawingInitUI();
   document.addEventListener("click", (event) => {
     if (event.target instanceof Element && event.target !== canvas && !event.target.closest("[data-drawing-ui]") && event.target.closest("button,input,select,a,[role=tab]")) drawingKeyContext = false;
@@ -20753,6 +21062,7 @@
       applyView(linked);
       reportView(linked);
     } else reportRefused(address);
+    comparisonLoad();
     transition = null;
     qsa("button,input,select").forEach((control) => (control.disabled = false));
     startHistory(linked ? "Link" : restored ? "Restored" : "Opened");
@@ -20760,7 +21070,7 @@
     scaleArm();
     title();
     new ResizeObserver(() => {
-      if (ready) {
+      if (ready && !comparisonModel.expanded && canvas.getBoundingClientRect().height > 0) {
         if (drawingDrag) drawingCancelOperation();
         geometry();
         if (S.auto) autoLevel();

@@ -1252,6 +1252,18 @@
             >
               Query<span id="ol-query-mini" class="ol-num ol-query-mini"></span>
             </button>
+            <button
+              type="button"
+              role="tab"
+              id="ol-tab-compare"
+              class="cursor-interaction"
+              data-drawer="compare"
+              aria-controls="ol-panel-compare"
+              aria-selected="false"
+              title="Read captured cells and compare their measurements"
+            >
+              Compare <span id="ol-comparison-count" class="ol-num">0</span>
+            </button>
           </div>
           <span class="ol-drawer-space"></span>
           <button
@@ -1269,6 +1281,15 @@
           </button>
         </div>
         <div class="ol-drawer-body" id="ol-drawer-body">
+          <div
+            class="ol-panel ol-comparison-panel"
+            id="ol-panel-compare"
+            role="tabpanel"
+            aria-labelledby="ol-tab-compare"
+            hidden
+          >
+            <div id="ol-comparisonWorkspace" class="ol-comparison-workspace" tabindex="-1"></div>
+          </div>
           <div
             class="ol-panel"
             id="ol-panel-cells"
@@ -1344,6 +1365,7 @@
                       State
                     </button>
                   </th>
+                  <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody id="ol-table-body"></tbody>
@@ -2104,6 +2126,12 @@
       <p class="ol-keys-note">
         On a touch screen: drag to pan, pinch to zoom, hold to see finer cells,
         and tap a column to anchor it.
+      </p>
+      <p class="ol-keys-note">
+        Compare: right-click a cell to Copy cell or Add to comparison, or use
+        cell Inspect detail and the Cells table. Captures are kept in this tab.
+        Expand opens the readable workspace; Restore chart returns the chart.
+        Cards and Matrix share the same focus, reference and sorting.
       </p>
     </div>
   </dialog>

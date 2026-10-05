@@ -4,8 +4,9 @@
 //   npm run benchmark                  the full protocol on this machine (30 to 90 minutes; leave the machine alone)
 //   npm run benchmark:smoke            the same code on a reduced protocol: proves the tool works and its report validates
 //   node tools/benchmark_navigation.mjs --config tools/benchmark/navigation.v1.json --out reports/benchmark
-//        [--baseline <sha>] [--preceding <sha>] [--candidate <sha|HEAD>] [--smoke] [--browser-mode chromium-new-headless|headless-shell]
+//        [--baseline <sha>] [--preceding <sha>] [--candidate <sha|HEAD|working>] [--smoke] [--browser-mode chromium-new-headless|headless-shell]
 //        [--label <name>] [--designated <name>] [--cpu-throttle <rate>] [--allow-dirty] [--force-inconclusive]
+//        [--comparison-only] (v4 DOM actions); --candidate working --allow-dirty snapshots the explicit built working page
 //
 // What it does, in the order D12 states it: materialise each build from git (never rebuilt), serve it from a fake cube (one fake per build,
 // the same profile and seed, the same pack token asserted), run 10 alternating A/A pairs on the original build for the per-case noise
@@ -29,6 +30,7 @@ import { aaSchedule, abSchedule } from "./benchmark/schedule.mjs";
 import { validateConfig } from "./benchmark/schema.mjs";
 import { analyse, analyseAA, analyseScreening } from "./benchmark/stats.mjs";
 import { buildReport, writeReport } from "./benchmark/report.mjs";
+import { COMPARISON_KEY, comparisonFixture, comparisonSummary } from "./benchmark/comparison.mjs";
 
 const require = createRequire(import.meta.url);
 const { startFake } = require("../tests/support/cube-fake.js");
@@ -52,6 +54,7 @@ function parseArgs(argv) {
     const flag = argv[i];
     if (flag === "--smoke") args.smoke = true;
     else if (flag === "--allow-dirty") args.allowDirty = true;
+    else if (flag === "--comparison-only") args.comparisonOnly = true;
     else if (flag === "--force-inconclusive") args.forceInconclusive = true;
     else if (flag === "--help" || flag === "-h") args.help = true;
     else if (takesValue.has(flag)) {
@@ -75,6 +78,18 @@ function resolveCommit(ref) {
   } catch {
     throw new Error(`${ref} is not a commit of this clone; fetch it with: git fetch --no-tags --depth=1 origin ${ref}`);
   }
+}
+
+// An explicitly requested working candidate is copied once before any trial. Its HEAD identifies
+// the parent commit; the report identifies the tested bytes with their hashes and workingTree flag.
+function snapshotWorkingPage(sha, label) {
+  const dir = path.join(REPO_ROOT, "reports", "builds", `${label}-working-${sha.slice(0, 7)}-${Date.now()}`);
+  for (const relative of ["index.html", "vendor/d3.min.js", "vendor/D3-LICENSE"]) {
+    const target = path.join(dir, relative); fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(path.join(REPO_ROOT, relative), target);
+  }
+  const hashFile = (relative) => crypto.createHash("sha256").update(fs.readFileSync(path.join(dir, relative))).digest("hex");
+  return { dir, sha, workingTree: true, indexSha256: hashFile("index.html"), vendorSha256: hashFile("vendor/d3.min.js") };
 }
 
 // The protocol this run executes: the configuration as committed, or, for --smoke, its `smoke` block laid over it. The family size
@@ -257,6 +272,82 @@ function launchOptions(mode) {
   return mode === "chromium-new-headless" ? { headless: true, channel: "chromium" } : { headless: true };
 }
 
+// Candidate-only Compare diagnostics reuse the same runner, fake, page instrumentation and report
+// directory. Older builds have no comparison surface, so these are not folded into the paired
+// navigation verdict. --candidate working --allow-dirty explicitly records the actual built bytes.
+async function runComparisonDiagnostics({ config, configPath, configBytes, args, mode }) {
+  if (!config.comparison) throw new Error("Comparison diagnostics require navigation.v4.json");
+  const candidateRef = args.candidate ?? "HEAD";
+  const working = candidateRef === "working";
+  if (working && !args.allowDirty) throw new Error("--candidate working requires --allow-dirty");
+  if (!working && candidateRef === "HEAD" && !args.allowDirty && git("status", "--porcelain", "--untracked-files=no")) throw new Error("Commit the candidate or explicitly name --candidate working --allow-dirty");
+  const sha = resolveCommit(working ? "HEAD" : candidateRef);
+  const build = working ? snapshotWorkingPage(sha, "comparison-candidate") : materialise(sha, "comparison-candidate");
+  const fake = await startFake({ mode: "live", profile: config.data.profile, seed: config.data.seed, cutoff: config.data.cutoff, pageRoot: build.dir });
+  const browser = await chromium.launch(launchOptions(mode)), samples = [], errors = [];
+  try {
+    const version = browser.version();
+    if (Number.parseInt(version, 10) !== config.browser.expectMajor) throw new Error(`Chromium ${version} is not pinned major ${config.browser.expectMajor}`);
+    const cases = [...config.comparison.counts.map((count) => ({ id: `comparison-${count}`, count, bytes: 0 })), { id: "comparison-near-cap", count: 128, bytes: config.comparison.nearLimitBytes }];
+    for (const caseDef of cases) {
+      const model = comparisonFixture(caseDef.count, caseDef.bytes), raw = JSON.stringify(model), recordBytes = Buffer.byteLength(raw, "utf8");
+      const context = await browser.newContext({ viewport: config.viewport, deviceScaleFactor: config.dpr, colorScheme: "light", reducedMotion: config.browser.reducedMotion, serviceWorkers: "block" });
+      try {
+        await context.addInitScript({ path: INSTRUMENT });
+        await context.addInitScript(({ key, text }) => sessionStorage.setItem(key, text), { key: COMPARISON_KEY, text: raw });
+        const page = await context.newPage();
+        page.on("pageerror", (error) => errors.push(String(error)));
+        if (args.cpuThrottle) { const session = await context.newCDPSession(page); await session.send("Emulation.setCPUThrottlingRate", { rate: args.cpuThrottle }); }
+        await page.goto(`${fake.url}/#w=24h&vis=2&n=4&m=0&auto=0&poc=0&lines=`, { waitUntil: "load", timeout: config.trial.loadTimeoutMs });
+        await page.waitForFunction(() => document.getElementById("ol-loading")?.hidden, null, { timeout: config.trial.loadTimeoutMs });
+        await fake.idle({ quietMs: config.trial.idleQuietMs, timeoutMs: config.trial.idleTimeoutMs });
+        await page.locator("#ol-tab-compare").click();
+        const workspace = page.locator("#ol-comparisonWorkspace");
+        if (caseDef.count) await workspace.locator('[data-comparison-action="expand"]').click();
+        await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        for (const action of config.comparison.actions) {
+          if (!caseDef.count && action !== "expand") continue;
+          for (let iteration = 0; iteration < config.comparison.samples; iteration++) {
+            fake.clearLog();
+            const before = await workspace.evaluate((node) => { window.__bench.armComparison(); return { stats: +node.dataset.stats, writes: +node.dataset.writes, bytes: +node.dataset.bytes }; });
+            if (action === "focus") {
+              const id = iteration % 2 ? "bench-cell-2" : "bench-cell-1";
+              await workspace.locator(`[data-comparison-action="focus"][data-id="${id}"]`).click();
+            } else if (action === "sort") {
+              await workspace.locator('[data-comparison-control="sort"]').selectOption(iteration % 2 ? "time" : "volume");
+            } else if (action === "matrix") {
+              await workspace.locator(`[data-comparison-action="view"][data-value="${iteration % 2 ? "grid" : "matrix"}"]`).click();
+            } else if (action === "expand") await workspace.locator('[data-comparison-action="expand"]').click();
+            await page.waitForFunction(() => window.__bench.comparisonResult() !== null, null, { timeout: config.trial.idleTimeoutMs });
+            const result = await page.evaluate(() => window.__bench.comparisonResult());
+            await fake.idle({ quietMs: config.trial.idleQuietMs, timeoutMs: config.trial.idleTimeoutMs });
+            const reads = readsOf(fake), settled = await workspace.evaluate((node) => ({ stats: +node.dataset.stats, writes: +node.dataset.writes, bytes: +node.dataset.bytes }));
+            samples.push({ case: caseDef.id, action, iteration, captureCount: caseDef.count, recordBytes, ...result,
+              paintCounters: { stats: result.stats, writes: result.writes, bytes: result.bytes },
+              stats: settled.stats - before.stats, writes: settled.writes - before.writes, bytes: settled.bytes - before.bytes,
+              readBytes: reads.bytes, reads: reads.reads, readOrder: reads.readOrder, unexpected: reads.unexpected });
+          }
+        }
+        log(`[comparison] ${caseDef.id}: ${recordBytes} stored bytes`);
+      } finally { await context.close(); }
+    }
+    const summary = comparisonSummary(samples, config.comparison.budgets);
+    const report = { kind: "comparison-action-diagnostic", schemaVersion: 1, createdAtUtc: new Date().toISOString(),
+      candidate: { sha, workingTree: working, indexSha256: build.indexSha256, vendorSha256: build.vendorSha256 },
+      config: { path: path.relative(REPO_ROOT, configPath), sha256: crypto.createHash("sha256").update(configBytes).digest("hex") },
+      environment: { os: `${os.type()} ${os.release()} ${os.arch()}`, cpuModel: os.cpus()[0]?.model || "unknown", cores: os.cpus().length, node: process.version, browser: { version, mode }, viewport: config.viewport, dpr: config.dpr, reducedMotion: config.browser.reducedMotion, cpuThrottle: args.cpuThrottle ?? null, ci: Boolean(process.env.CI) },
+      definition: "Input click/change timestamp to committed comparison-render then two native animation frames; DOM/layout paint opportunity, not compositor presentation or canvas input-to-paint. Storage counters also recorded after action settlement.",
+      statement: "Candidate-only local diagnostics against predeclared budgets; no paired navigation, CI precision gate or designated-machine certificate.",
+      budgets: config.comparison.budgets, samples, summary, errors };
+    const out = path.resolve(REPO_ROOT, args.out); fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(path.join(out, "comparison-actions.json"), JSON.stringify(report, null, 2) + "\n");
+    const markdown = ["# Comparison action diagnostics", "", report.statement, "", `Build ${sha}${working ? " (working tree)" : ""}; index SHA-256 ${build.indexSha256}.`, "", report.definition, "", "| Case | Action | Samples | p95 ms | Mounted max | Declared budget |", "|---|---|---|---|---|---|", ...summary.map((row) => `| ${row.case} | ${row.action} | ${row.samples} | ${row.p95ActionToVisibleMs.toFixed(2)} | ${row.maxMounted} | ${row.meetsDeclaredBudget ? "met locally" : "exceeded locally"} |`), ""];
+    fs.writeFileSync(path.join(out, "comparison-actions.md"), markdown.join("\n"));
+    log(`comparison diagnostics: ${path.relative(REPO_ROOT, out)}/comparison-actions.json`);
+    if (errors.length) throw new Error(`Comparison diagnostics recorded ${errors.length} page error(s)`);
+  } finally { await browser.close(); await fake.close(); }
+}
+
 // ---- main ----
 
 async function main() {
@@ -275,27 +366,32 @@ async function main() {
   const plan = effective(config, smoke);
   const mode = args.browserMode ?? config.browser.mode;
   if (!["chromium-new-headless", "headless-shell"].includes(mode)) throw new Error(`--browser-mode ${mode}: use chromium-new-headless or headless-shell`);
+  if (args.comparisonOnly) { await runComparisonDiagnostics({ config, configPath, configBytes, args, mode }); return; }
   const coreIds = plan.core.map((c) => c.id);
   const heavyIds = plan.heavy.map((c) => c.id);
   const caseById = new Map([...plan.core, ...plan.heavy].map((c) => [c.id, c]));
   const { protocol } = plan;
   const seed = config.seed;
 
-  // Builds: each commit is materialised from git exactly as committed.
+  // Committed builds are materialised exactly; an explicit working candidate is snapshotted once.
   const baseline = resolveCommit(args.baseline ?? ORIGINAL_SHA);
   const preceding = resolveCommit(args.preceding ?? baseline);
   const candidateRef = args.candidate ?? (smoke ? baseline : "HEAD");
-  const candidate = resolveCommit(candidateRef);
+  const working = candidateRef === "working";
+  if (working && !args.allowDirty) throw new Error("--candidate working requires --allow-dirty");
+  const candidate = resolveCommit(working ? "HEAD" : candidateRef);
   if (candidateRef === "HEAD" && !args.allowDirty && git("status", "--porcelain", "--untracked-files=no")) {
     throw new Error("the working tree has uncommitted changes and the candidate is HEAD: commit them, name a commit with --candidate, or pass --allow-dirty");
   }
   const roles = { original: baseline, preceding, candidate };
-  const builds = new Map();
+  const builds = new Map(), roleKeys = {};
   for (const [role, sha] of Object.entries(roles)) {
-    if (!builds.has(sha)) builds.set(sha, { sha, roles: [], ...materialise(sha, role) });
-    builds.get(sha).roles.push(role);
+    const key = role === "candidate" && working ? `${sha}:working` : sha;
+    roleKeys[role] = key;
+    if (!builds.has(key)) builds.set(key, { sha, roles: [], ...(role === "candidate" && working ? snapshotWorkingPage(sha, "navigation-candidate") : materialise(sha, role)) });
+    builds.get(key).roles.push(role);
   }
-  const buildOf = (role) => builds.get(roles[role]);
+  const buildOf = (role) => builds.get(roleKeys[role]);
 
   const needLive = [...plan.core, ...plan.heavy].some((c) => c.mode === "fake-live");
   for (const build of builds.values()) {
@@ -315,7 +411,7 @@ async function main() {
 
   // ---- the trials ----
   const samples = [];
-  const warnings = [];
+  const warnings = working ? [`Candidate is an explicit working-page snapshot based on HEAD ${candidate}; the candidate SHA is its parent commit, not the tested working contents. Exact index/vendor hashes and workingTree=true identify those bytes.`] : [];
   let timerResolutionMs = 0;
   let browserVersion = null;
   const trialOptions = { config, gesture: plan.gesture, mode, cpuThrottle: args.cpuThrottle ?? null, reducedMotion: config.browser.reducedMotion };
@@ -449,7 +545,7 @@ async function main() {
         cpuThrottle: args.cpuThrottle ?? null,
       },
       roles,
-      builds: [...builds.values()].map((b) => ({ label: b.roles.join("/"), sha: b.sha, indexSha256: b.indexSha256, vendorSha256: b.vendorSha256, protocol: Number(PROTOCOL) })),
+      builds: [...builds.values()].map((b) => ({ label: b.roles.join("/") + (b.workingTree ? " (working page)" : ""), sha: b.sha, workingTree: Boolean(b.workingTree), indexSha256: b.indexSha256, vendorSha256: b.vendorSha256, protocol: Number(PROTOCOL) })),
       data,
       protocol: { ...protocol, coreIds, heavyIds },
       budgets: config.budgets,
@@ -464,6 +560,7 @@ async function main() {
   log(`verdict: ${analysis.verdict}`);
   log(`report: ${path.relative(REPO_ROOT, json)}`);
   log(`summary: ${path.relative(REPO_ROOT, markdown)}`);
+  if (config.comparison) await runComparisonDiagnostics({ config, configPath, configBytes, args: { ...args, candidate: working ? "working" : candidate }, mode });
 }
 
 main().then(

@@ -455,7 +455,222 @@
   };
   const protectedDrawings = Object.freeze({ load: () => drawingLoad(), save: (collection, revision = 0) => drawingWrite(collection, revision, false), preserve: (collection) => drawingWrite(collection, 0, true), recover: drawingRecover });
 
+  // Comparison captures are owned by this tab. Their schema is independent of visual versions,
+  // named views and chart history; rejected text stays in its original slot until explicit discard.
+  const comparisonRoot = "comparison:v1:", comparisonMaxBytes = 4 * 1024 * 1024;
+  const comparisonRejected = new Map(), comparisonVerifiedRaw = new Map(), comparisonCaptures = new WeakMap(), comparisonSerialized = new WeakSet();
+  const comparisonTags = new Set(["finite", "negative-infinite", "no-reference", "empty-both", "empty-population", "undefined", "no-coarser-parent", "waiting-for-complete-parent", "outside-support", "hidden", "pending", "failed", "unsupported", "invalid-input"]);
+  const comparisonSorts = new Set(["time", "added", "volume", "trades", "delta", "intensity", "size", "flow", "poc"]);
+  const comparisonFields = ["comparisonVersion", "instrument", "captures", "focus", "reference", "basis", "sort", "view", "page", "poc", "expanded", "restoreLayout"];
+  const comparisonFailure = (status, reason) => ({ ok: false, status, reason });
+  // Count UTF-8 without allocating a second multi-megabyte buffer. Unpaired UTF-16 surrogates
+  // become the three-byte replacement character, matching browser TextEncoder/JSON storage.
+  const comparisonBytes = (raw) => {
+    let bytes = 0;
+    for (let i = 0; i < raw.length; i++) {
+      const code = raw.charCodeAt(i);
+      if (code < 128) bytes++;
+      else if (code < 2048) bytes += 2;
+      else if (code >= 0xd800 && code <= 0xdbff && raw.charCodeAt(i + 1) >= 0xdc00 && raw.charCodeAt(i + 1) <= 0xdfff) { bytes += 4; i++; }
+      else bytes += 3;
+      if (bytes > comparisonMaxBytes) return bytes;
+    }
+    return bytes;
+  };
+  const comparisonAssert = (condition, reason) => { if (!condition) throw new Error(reason); };
+  const comparisonObject = (value) => isObject(value) && Object.prototype.toString.call(value) === "[object Object]";
+  const comparisonText = (value) => typeof value === "string" && value.length > 0;
+  const comparisonTime = (value) => value === null || (Number.isFinite(value) && value >= 0);
+  const comparisonKeys = (value, required, optional = []) => comparisonObject(value) && required.every((key) => Object.prototype.hasOwnProperty.call(value, key)) && Object.keys(value).every((key) => required.includes(key) || optional.includes(key));
+  // Scalar diagnostics may carry a few named objects, but never profile arrays, host objects,
+  // non-finite numbers or cycles. This is storage validation, not a second market calculator.
+  const comparisonScalars = (value, ancestors = []) => {
+    if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+    if (typeof value === "number") return Number.isFinite(value);
+    if (!comparisonObject(value) || ancestors.includes(value) || ancestors.length >= 8) return false;
+    return Object.values(value).every((member) => comparisonScalars(member, [...ancestors, value]));
+  };
+  const comparisonDeepFrozen = (value, ancestors = []) => {
+    if (value === null || typeof value !== "object") return true;
+    if (!Object.isFrozen(value) || ancestors.includes(value)) return false;
+    return Object.values(value).every((member) => comparisonDeepFrozen(member, [...ancestors, value]));
+  };
+  const comparisonSupport = (record, reason) => {
+    comparisonAssert(comparisonTime(record.supportEnd) && comparisonTime(record.knownThrough), reason + " support must be finite or null");
+    comparisonAssert(record.supportEnd === null || record.knownThrough === null || record.supportEnd <= record.knownThrough, reason + " support extends beyond its snapshot cutoff");
+  };
+  const comparisonCapture = (capture, instrument) => {
+    const cached = comparisonCaptures.get(capture);
+    if (cached) { comparisonAssert(capture.instrument === instrument, "capture instrument does not match its collection"); return; }
+    comparisonAssert(comparisonKeys(capture, ["id", "instrument", "level", "origin", "c", "r", "nominal", "observed", "capturedAt", "measuredThrough", "source", "completeness", "metrics", "detail"], ["when", "shortExposure", "originalScale"]), "invalid capture fields");
+    comparisonAssert(comparisonText(capture.id) && capture.instrument === instrument, "invalid capture identity or instrument");
+    comparisonAssert(comparisonKeys(capture.level, ["n", "m"]) && [capture.level.n, capture.level.m].every((v) => Number.isSafeInteger(v) && v >= 0 && v <= 52), "invalid original cell level");
+    comparisonAssert(Number.isFinite(capture.origin) && capture.origin >= 0 && [capture.c, capture.r].every((v) => Number.isSafeInteger(v) && v >= 0), "invalid original cell origin or coordinates");
+    const nominal = capture.nominal, observed = capture.observed;
+    comparisonAssert(comparisonKeys(nominal, ["t0", "t1", "low", "high"]) && Object.values(nominal).every(Number.isFinite) && nominal.t0 >= 0 && nominal.t0 < nominal.t1 && nominal.low >= 0 && nominal.low < nominal.high, "invalid nominal cell bounds");
+    comparisonAssert(comparisonKeys(observed, ["t0", "t1", "low", "high", "seconds", "width"]) && Object.values(observed).every(Number.isFinite), "invalid observed cell bounds");
+    comparisonAssert(observed.t0 >= nominal.t0 && observed.t1 <= nominal.t1 && observed.t0 <= observed.t1 && observed.low >= nominal.low && observed.high <= nominal.high && observed.low <= observed.high, "observed bounds extend outside the nominal cell");
+    comparisonAssert(observed.seconds >= 0 && observed.seconds <= (nominal.t1 - nominal.t0) / 1000 && observed.width >= 0 && observed.width <= nominal.high - nominal.low, "invalid observed cell exposure");
+    // Subtracting epoch milliseconds loses a few representational bits. Permit only that numeric
+    // rounding bound; this does not change comparison's exact exposure equality or ranking.
+    const timeRoundoff = 4 * Number.EPSILON * Math.max(1, Math.abs(observed.t0), Math.abs(observed.t1)) / 1000,
+      priceRoundoff = 4 * Number.EPSILON * Math.max(1, Math.abs(observed.low), Math.abs(observed.high));
+    comparisonAssert(Math.abs(observed.seconds - (observed.t1 - observed.t0) / 1000) <= timeRoundoff && Math.abs(observed.width - (observed.high - observed.low)) <= priceRoundoff, "observed exposure does not match its intervals");
+    comparisonAssert(Number.isFinite(capture.capturedAt) && capture.capturedAt >= 0 && comparisonTime(capture.measuredThrough) && comparisonText(capture.source) && comparisonText(capture.completeness), "invalid capture provenance");
+    comparisonAssert(comparisonObject(capture.metrics) && Object.keys(capture.metrics).length > 0, "capture has no typed metrics");
+    for (const [key, metric] of Object.entries(capture.metrics)) {
+      comparisonAssert(comparisonText(key) && comparisonObject(metric) && comparisonTags.has(metric.tag) && comparisonText(metric.formula) && comparisonText(metric.unit) && comparisonScalars(metric), "invalid typed metric " + key);
+      comparisonAssert(Object.prototype.hasOwnProperty.call(metric, "value") && (metric.tag === "finite" ? Number.isFinite(metric.value) : metric.value === null), "invalid typed value " + key);
+      comparisonAssert(Object.prototype.hasOwnProperty.call(metric, "supportEnd") && Object.prototype.hasOwnProperty.call(metric, "knownThrough"), "metric support is missing: " + key);
+      comparisonSupport(metric, "metric " + key);
+      comparisonAssert(metric.supportEnd === null || (metric.supportEnd >= nominal.t0 && metric.supportEnd <= nominal.t1), "metric support is outside its nominal cell: " + key);
+      comparisonAssert(metric.reason === undefined || typeof metric.reason === "string", "invalid metric reason " + key);
+    }
+    comparisonAssert(Array.isArray(capture.detail), "capture detail is not a list");
+    for (const detail of capture.detail) {
+      comparisonAssert(comparisonKeys(detail, ["label", "value", "supportEnd", "knownThrough"], ["unit", "tag", "reason"]) && comparisonText(detail.label) && (detail.value === null || typeof detail.value === "string" || Number.isFinite(detail.value)), "invalid supporting detail");
+      comparisonAssert((detail.unit === undefined || typeof detail.unit === "string") && (detail.tag === undefined || comparisonTags.has(detail.tag)) && (detail.reason === undefined || typeof detail.reason === "string"), "invalid supporting detail metadata");
+      comparisonSupport(detail, "detail");
+    }
+    if (capture.when !== undefined) {
+      const when = capture.when;
+      comparisonAssert(comparisonKeys(when, ["knownAtMs", "knownAtReason", "eventStartMs", "eventEndMs"]) && comparisonTime(when.knownAtMs) && typeof when.knownAtReason === "string" && Number.isFinite(when.eventStartMs) && Number.isFinite(when.eventEndMs) && when.eventStartMs >= nominal.t0 && when.eventStartMs <= when.eventEndMs && when.eventEndMs <= nominal.t1, "invalid structural cell timing");
+    }
+    comparisonAssert(capture.shortExposure === undefined || typeof capture.shortExposure === "boolean", "invalid short exposure flag");
+    comparisonAssert(capture.originalScale === undefined || typeof capture.originalScale === "string", "invalid original chart scale");
+    if (comparisonDeepFrozen(capture)) comparisonCaptures.set(capture, { raw: null, bytes: 0 });
+  };
+  const comparisonValidate = (record) => {
+    try {
+      comparisonAssert(comparisonObject(record), "comparison record is not an object");
+      if (record.comparisonVersion !== 1) return comparisonFailure("unknown-version", "unsupported comparison version " + JSON.stringify(record.comparisonVersion));
+      comparisonAssert(comparisonKeys(record, comparisonFields), "invalid comparison record fields");
+      comparisonAssert(record.instrument === "BTC/USDT", "unsupported comparison instrument");
+      comparisonAssert(Array.isArray(record.captures), "comparison captures are not a list");
+      const ids = new Set(), identities = new Set();
+      for (const capture of record.captures) {
+        comparisonCapture(capture, record.instrument);
+        const identity = JSON.stringify([capture.instrument, capture.level.n, capture.level.m, capture.origin, capture.c, capture.r, capture.nominal.t0, capture.nominal.t1, capture.nominal.low, capture.nominal.high]);
+        comparisonAssert(!ids.has(capture.id) && !identities.has(identity), "duplicate comparison capture identity");
+        ids.add(capture.id); identities.add(identity);
+      }
+      comparisonAssert((record.focus === null || ids.has(record.focus)) && (record.reference === null || ids.has(record.reference)), "dangling comparison focus or reference");
+      comparisonAssert(["auto", "amount", "intensity"].includes(record.basis) && ["grid", "matrix"].includes(record.view), "invalid comparison basis or view");
+      comparisonAssert(comparisonKeys(record.sort, ["key", "direction"]) && comparisonSorts.has(record.sort.key) && ["asc", "desc"].includes(record.sort.direction), "invalid comparison sort");
+      comparisonAssert(Number.isSafeInteger(record.page) && record.page >= 0 && record.page < Math.max(1, Math.ceil(record.captures.length / 24)), "invalid comparison page");
+      comparisonAssert(typeof record.expanded === "boolean", "invalid comparison expanded state");
+      if (record.poc !== null) {
+        const poc = record.poc;
+        comparisonAssert(comparisonKeys(poc, ["id", "label", "period", "price", "rowSize", "approximate", "supportEnd", "knownThrough", "from", "through", "source"]) && [poc.id, poc.label, poc.period, poc.source].every(comparisonText) && Number.isFinite(poc.price) && poc.price >= 0 && Number.isFinite(poc.rowSize) && poc.rowSize > 0 && typeof poc.approximate === "boolean", "invalid frozen POC reference");
+        comparisonAssert(Number.isFinite(poc.from) && Number.isFinite(poc.through) && poc.from >= 0 && poc.from <= poc.through, "invalid POC measured period");
+        comparisonSupport(poc, "POC");
+        comparisonAssert(poc.supportEnd === null || poc.supportEnd === poc.through, "POC support does not match its measured period");
+      }
+      if (record.restoreLayout !== null) {
+        const layout = record.restoreLayout;
+        comparisonAssert(comparisonKeys(layout, ["sideOpen", "sideWidth", "drawerHeight", "drawerOpen", "drawer"]) && typeof layout.sideOpen === "boolean" && typeof layout.drawerOpen === "boolean" && Number.isFinite(layout.sideWidth) && layout.sideWidth > 0 && Number.isFinite(layout.drawerHeight) && layout.drawerHeight > 0 && ["cells", "cases", "query", "compare"].includes(layout.drawer), "invalid comparison restoration layout");
+      }
+      comparisonAssert(!record.expanded || record.restoreLayout !== null, "expanded comparison has no restoration layout");
+      return { ok: true, status: "ok", reason: null };
+    } catch (error) { return comparisonFailure("unreadable", error.message || "invalid comparison record"); }
+  };
+  const comparisonParse = (raw, instrument) => {
+    const bytes = comparisonBytes(raw);
+    if (bytes > comparisonMaxBytes) return { ...comparisonFailure("oversized", "comparison exceeds the 4 MiB tab limit"), value: null, raw, bytes };
+    let value;
+    try { value = JSON.parse(raw); }
+    catch { return { ...comparisonFailure("unreadable", "saved comparison is not valid JSON"), value: null, raw, bytes }; }
+    const checked = comparisonValidate(value);
+    if (!checked.ok) return { ...checked, value: null, raw, bytes };
+    if (value.instrument !== instrument) return { ...comparisonFailure("unreadable", "saved comparison instrument does not match its slot"), value: null, raw, bytes };
+    return { ok: true, status: "ok", value, raw, bytes, reason: null };
+  };
+  const comparisonRead = (instrument) => {
+    if (instrument !== "BTC/USDT") return { ...comparisonFailure("unreadable", "unsupported comparison instrument"), value: null, raw: null };
+    const got = fetchText("sessionStorage", comparisonRoot + instrument);
+    if (!got.ok) return { ...comparisonFailure("unreadable", "storage is unavailable (" + describe(got.error) + ")"), value: null, raw: null };
+    if (got.text === null) return { ok: true, status: "absent", value: null, raw: null, reason: null };
+    const parsed = comparisonParse(got.text, instrument);
+    if (!parsed.ok) comparisonRejected.set(instrument, parsed);
+    else comparisonVerifiedRaw.set(instrument, parsed.raw);
+    return parsed;
+  };
+  const comparisonPrepare = (record) => {
+    const checked = comparisonValidate(record);
+    if (!checked.ok) return checked;
+    try {
+      // Serialize each immutable capture once. Size preflight only builds this small envelope;
+      // joining the whole record belongs to the coalesced save after the visible update.
+      const envelope = JSON.stringify({ ...record, captures: [] }), marker = '"captures":[]', at = envelope.indexOf(marker);
+      let bytes = comparisonBytes(envelope);
+      const chunks = [];
+      for (const capture of record.captures) {
+        let cached = comparisonCaptures.get(capture);
+        if (!cached?.raw) {
+          const raw = JSON.stringify(capture), entry = { raw, bytes: comparisonBytes(raw) };
+          if (cached) comparisonCaptures.set(capture, entry);
+          cached = entry;
+        }
+        bytes += cached.bytes + (chunks.length ? 1 : 0);
+        if (bytes > comparisonMaxBytes) return comparisonFailure("oversized", "comparison exceeds the 4 MiB tab limit");
+        chunks.push(cached.raw);
+      }
+      return { ok: true, envelope, marker, at, bytes, chunks };
+    } catch (error) { return comparisonFailure("unreadable", "comparison could not be serialized (" + describe(error) + ")"); }
+  };
+  const comparisonMeasure = (record) => {
+    const prepared = comparisonPrepare(record);
+    return prepared.ok ? { ok: true, status: "ok", bytes: prepared.bytes, reason: null } : prepared;
+  };
+  const comparisonSerialize = (record) => {
+    const prepared = comparisonPrepare(record);
+    if (!prepared.ok) return prepared;
+    const { envelope, marker, at, bytes, chunks } = prepared;
+    const raw = envelope.slice(0, at) + '"captures":[' + chunks.join(",") + "]" + envelope.slice(at + marker.length);
+    const serialized = Object.freeze({ ok: true, status: "ok", raw, bytes, instrument: record.instrument, reason: null });
+    comparisonSerialized.add(serialized);
+    return serialized;
+  };
+  const comparisonWrite = (instrument, record) => {
+    if (instrument !== "BTC/USDT") return comparisonFailure("unreadable", "unsupported comparison instrument");
+    let serialized;
+    if (typeof record === "string") serialized = comparisonParse(record, instrument);
+    else if (record && comparisonSerialized.has(record)) serialized = record;
+    else serialized = comparisonSerialize(record);
+    if (!serialized.ok) return serialized;
+    if (serialized.instrument !== undefined && serialized.instrument !== instrument) return comparisonFailure("unreadable", "comparison instrument does not match its slot");
+    const got = fetchText("sessionStorage", comparisonRoot + instrument);
+    if (!got.ok) return comparisonFailure("unsaved", "comparison storage is unavailable (" + describe(got.error) + ")");
+    // The exact raw text most recently read or written is already validated. A changed slot still
+    // revalidates before overwrite; repeated presentation saves never parse the whole collection.
+    if (got.text !== null && comparisonVerifiedRaw.get(instrument) !== got.text) {
+      const current = comparisonRead(instrument);
+      if (!current.ok && current.raw === null) return comparisonFailure("unsaved", current.reason);
+    }
+    const rejected = comparisonRejected.get(instrument);
+    if (rejected) return { ...comparisonFailure("retained", "saved comparison was rejected; discard that stored record before replacing it"), raw: rejected.raw, rejectedStatus: rejected.status };
+    try {
+      const area = window.sessionStorage, key = prefix + comparisonRoot + instrument;
+      area.setItem(key, serialized.raw);
+      if (area.getItem(key) !== serialized.raw) return comparisonFailure("unsaved", "comparison storage write could not be verified");
+      comparisonVerifiedRaw.set(instrument, serialized.raw);
+      return { ok: true, status: "ok", bytes: serialized.bytes, reason: null };
+    } catch (error) { return comparisonFailure("unsaved", "comparison storage failed (" + describe(error) + ")"); }
+  };
+  const comparisonDiscard = (instrument) => {
+    if (instrument !== "BTC/USDT") return comparisonFailure("unreadable", "unsupported comparison instrument");
+    try {
+      const area = window.sessionStorage, key = prefix + comparisonRoot + instrument;
+      area.removeItem(key);
+      if (area.getItem(key) !== null) return comparisonFailure("unsaved", "stored comparison could not be discarded");
+      comparisonRejected.delete(instrument); comparisonVerifiedRaw.delete(instrument);
+      return { ok: true, status: "ok", reason: null };
+    } catch (error) { return comparisonFailure("unsaved", "stored comparison could not be discarded (" + describe(error) + ")"); }
+  };
+  const comparison = Object.freeze({ read: comparisonRead, validate: comparisonValidate, measure: comparisonMeasure, serialize: comparisonSerialize, write: comparisonWrite, discard: comparisonDiscard });
+
   window.explorerState = {
+    comparison,
     drawings: protectedDrawings,
     namedViews: protectedNamedViews,
     namedViewsStatus: protectedNamedRead,

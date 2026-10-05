@@ -105,11 +105,13 @@ test("the page holds state, encoding and app script text verbatim, in that order
   const bytes = fs.readFileSync(t.file("out/index.html"));
   const page = bytes.toString("utf8");
   const els = scripts(page);
-  assert.deepEqual(els.map((e) => e.attrs), ['src="vendor/d3.min.js"', 'type="application/json" id="origo-lens-data"', "", "", ""]);
-  const [d3, data, state, encoding, app] = els;
+  assert.deepEqual(els.map((e) => e.attrs), ['src="vendor/d3.min.js"', 'type="application/json" id="origo-lens-data"', "", "", "", "", ""]);
+  const [d3, data, state, encoding, comparison, dashboard, app] = els;
   assert.equal(d3.body, "");
   assert.equal(state.body, t.read("src/state.js"));
   assert.equal(encoding.body, t.read("src/encoding.js"));
+  assert.equal(comparison.body, t.read("src/comparison.js"));
+  assert.equal(dashboard.body, t.read("src/comparison-ui.js"));
   assert.equal(app.body, t.read("src/explorer.js"));
   assert.ok(JSON.parse(data.body).recent || Object.keys(JSON.parse(data.body)).length > 0, "the data block is the snapshot as JSON");
   // Bytes, not just characters: the UTF-8 of the file is the UTF-8 in the page (the module holds - x . -> ~ and a subscript).
@@ -124,14 +126,14 @@ test("the page holds state, encoding and app script text verbatim, in that order
 
 test("src/document.html names each marker exactly once, and the encoding line sits between the state and app lines", () => {
   const doc = fs.readFileSync(path.join(ROOT, "src/document.html"), "utf8");
-  const markers = ["__EXPLORER_STYLE__", "__EXPLORER_VIEW__", "__EXPLORER_DATA__", "__EXPLORER_STATE__", "__EXPLORER_ENCODING__", "__EXPLORER_SCRIPT__"];
+  const markers = ["__EXPLORER_STYLE__", "__EXPLORER_VIEW__", "__EXPLORER_DATA__", "__EXPLORER_STATE__", "__EXPLORER_ENCODING__", "__EXPLORER_COMPARISON__", "__EXPLORER_COMPARISONUI__", "__EXPLORER_SCRIPT__"];
   for (const m of markers) assert.equal(doc.split(m).length - 1, 1, `${m} must occur exactly once`);
   assert.deepEqual(doc.match(/__EXPLORER_[A-Z]+__/g), markers, "the six markers, in page order, and no other");
   const lines = doc.split("\n");
   const at = (m) => lines.findIndex((l) => l.includes(m));
   assert.equal(lines[at("__EXPLORER_ENCODING__")], "    <script>__EXPLORER_ENCODING__</script>");
   assert.equal(at("__EXPLORER_ENCODING__"), at("__EXPLORER_STATE__") + 1, "directly after the state line");
-  assert.equal(at("__EXPLORER_SCRIPT__"), at("__EXPLORER_ENCODING__") + 1, "directly before the app line");
+  assert.equal(at("__EXPLORER_SCRIPT__"), at("__EXPLORER_ENCODING__") + 3, "comparison scripts precede the app line");
 });
 
 // ---------------------------------------------------------------------------------------------------
@@ -162,7 +164,7 @@ test("check_inline exits on </script and <!-- in any case, and says which script
 });
 
 test("the build applies both guards to state.js, encoding.js and explorer.js, naming the file, and writes nothing", () => {
-  for (const file of ["src/state.js", "src/encoding.js", "src/explorer.js"]) {
+  for (const file of ["src/state.js", "src/encoding.js", "src/comparison.js", "src/comparison-ui.js", "src/explorer.js"]) {
     for (const [what, text, message] of [
       ["a </script", "\n// </script>\n", /contains <\/script or <!--/],
       ["a <!--", "\nconst x = '<!--';\n", /contains <\/script or <!--/],

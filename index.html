@@ -4747,7 +4747,7 @@
             </div>
             <div>
               <dt>Fit the price range</dt>
-              <dd><kbd>F</kbd></dd>
+              <dd><kbd>F</kbd> or double-click the price axis</dd>
             </div>
             <div>
               <dt>Back to the latest data</dt>
@@ -20799,13 +20799,13 @@
     const spec = measureSpec(r, n, m);
     return measured.has(spec.key) ? null : spec;
   }
-  function fit() {
+  function fit(padding = null) {
     if (S.mode === "candles") {
       const r = candleRange(renderN(), S.tA, S.tB);
       if (r.state !== "ready" || !r.bars.length) return;
       let low = Infinity, high = -Infinity;
       for (const b of r.bars) { low = Math.min(low, b.low / PR); high = Math.max(high, b.high / PR); }
-      const pad = Math.max((high - low) * 0.1, low * 0.0001);
+      const pad = Math.max((high - low) * (padding ?? 0.1), low * 0.0001);
       S.pA = Math.max(0, low - pad); S.pB = high + pad;
       return;
     }
@@ -20822,7 +20822,9 @@
       high = Math.max(high, (c.r + 1) * ps);
     }
     if (!Number.isFinite(low)) return;
-    const pad = Math.max(2 * ps, Math.ceil(((high - low) * 0.1) / ps) * ps);
+    const pad = padding === null
+      ? Math.max(2 * ps, Math.ceil(((high - low) * 0.1) / ps) * ps)
+      : (high - low) * padding;
     S.pA = Math.max(0, low - pad);
     S.pB = high + pad;
   }
@@ -37284,6 +37286,10 @@
         if (hits.length) { drawingEdit(hits[0].id, "chart"); e.preventDefault(); return; }
       }
       const p = at(e);
+      if (onPriceAxis(p)) {
+        fitPrice("Fit price", 0.05);
+        return;
+      }
       if (!inPlot(p)) return;
       if (e.shiftKey) priceByHand();
       zoomNavigation(0.5, p, e.shiftKey);
@@ -37578,8 +37584,8 @@
     recordView(S.auto ? "Auto" : "Locked");
     save();
   }
-  function fitPrice(label) {
-    fit();
+  function fitPrice(label, padding) {
+    fit(padding);
     if (S.auto) autoLevel();
     recordView(label);
     update();

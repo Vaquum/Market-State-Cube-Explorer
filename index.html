@@ -2644,6 +2644,182 @@
 #origo-lens .ol-drawing-replay-note { margin: 0; padding: var(--sp-1) var(--gutter); font-size: var(--fs-s); line-height: 1.4; color: var(--ol-muted); border-bottom: 1px solid var(--ol-line); }
 #origo-lens .ol-drawing-replay-note[hidden] { display: none; }
 
+/* Captured-cell comparison (PRD-0006). These type tokens are minimum readable sizes, independent
+   of the chart's density. Existing surface, ink and signed-role tokens retain their meanings. */
+#origo-lens {
+  --fs-comparison-primary: 28px;
+  --fs-comparison-value: 20px;
+  --fs-comparison-label: 14px;
+  --fs-comparison-card: 18px;
+  --fs-comparison-support: 12px;
+  --comparison-card-min: 200px;
+  --comparison-track-height: 6px;
+}
+#origo-lens .ol-comparison-panel {
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+}
+#origo-lens .ol-drawer-body:has(> .ol-comparison-panel:not([hidden])) {
+  overflow: hidden;
+}
+#origo-lens .ol-comparison-workspace {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  container-type: inline-size;
+  container-name: comparison;
+  font-size: var(--fs-comparison-label);
+}
+#origo-lens .ol-comparison-toolbar {
+  flex: none;
+  padding: var(--sp-2) var(--gutter);
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-comparison-heading,
+#origo-lens .ol-comparison-controls,
+#origo-lens .ol-comparison-notice,
+#origo-lens .ol-comparison-storage,
+#origo-lens .ol-comparison-focus-actions,
+#origo-lens .ol-comparison-page {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+#origo-lens .ol-comparison-heading { margin-bottom: var(--sp-2); }
+#origo-lens .ol-comparison-heading > strong { font-weight: 600; }
+#origo-lens .ol-comparison-summary { margin-right: auto; color: var(--ol-muted); font-size: var(--fs-comparison-support); }
+#origo-lens .ol-comparison-controls { gap: var(--sp-2) var(--sp-3); }
+#origo-lens .ol-comparison-controls label { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); min-width: 0; }
+#origo-lens .ol-comparison-workspace :is(button, select) { min-height: var(--h-l); font-size: var(--fs-comparison-label); }
+#origo-lens .ol-comparison-workspace select { max-width: min(100%, 280px); min-width: 0; }
+#origo-lens .ol-comparison-notice,
+#origo-lens .ol-comparison-storage { color: var(--ol-muted); font-size: var(--fs-comparison-support); }
+#origo-lens .ol-comparison-notice { margin-top: var(--sp-1); gap: var(--sp-1) var(--sp-3); }
+#origo-lens .ol-comparison-storage:has([data-comparison-status]:empty):not(:has(button:not([hidden]))) { display: none; }
+#origo-lens .ol-comparison-storage { margin-top: var(--sp-1); }
+#origo-lens .ol-comparison-empty { padding: var(--sp-5); max-width: 680px; overflow: auto; }
+#origo-lens .ol-comparison-empty h2 { margin: 0 0 var(--sp-3); font-size: var(--fs-comparison-value); font-weight: 500; }
+#origo-lens .ol-comparison-empty p { margin: 0 0 var(--sp-3); }
+#origo-lens .ol-comparison-panes {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+#origo-lens .ol-comparison-workspace[data-singleton="true"][data-view="grid"] .ol-comparison-panes { grid-template-columns: minmax(0, 1fr); }
+#origo-lens .ol-comparison-focus,
+#origo-lens .ol-comparison-collection {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-4);
+}
+#origo-lens .ol-comparison-focus { border-right: 1px solid var(--ol-line); }
+#origo-lens .ol-comparison-workspace[data-singleton="true"][data-view="grid"] .ol-comparison-focus { border-right: 0; }
+#origo-lens .ol-comparison-focus-head { padding-bottom: var(--sp-3); border-bottom: 1px solid var(--ol-line); }
+#origo-lens .ol-comparison-eyebrow,
+#origo-lens .ol-comparison-capture-stamp,
+#origo-lens .ol-comparison-completeness { color: var(--ol-muted); font-size: var(--fs-comparison-label); }
+#origo-lens .ol-comparison-focus-head h2 { margin: var(--sp-1) 0; font-size: var(--fs-comparison-value); font-weight: 500; overflow-wrap: anywhere; }
+#origo-lens .ol-comparison-band { margin: 0 0 var(--sp-2); font-size: var(--fs-comparison-value); font-variant-numeric: tabular-nums; }
+#origo-lens .ol-comparison-completeness { margin: var(--sp-1) 0; }
+#origo-lens .ol-comparison-capture-stamp { display: flex; flex-direction: column; gap: var(--sp-1); overflow-wrap: anywhere; }
+#origo-lens .ol-comparison-focus-actions { margin-top: var(--sp-3); }
+#origo-lens .ol-comparison-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: var(--sp-4); margin: var(--sp-4) 0; }
+#origo-lens .ol-comparison-metrics h3 { grid-column: 1 / -1; margin: var(--sp-1) 0 calc(-1 * var(--sp-2)); color: var(--ol-muted); font-size: var(--fs-comparison-label); font-weight: 500; }
+#origo-lens .ol-comparison-metric { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); font-variant-numeric: tabular-nums; }
+#origo-lens .ol-comparison-label { color: var(--ol-muted); font-size: var(--fs-comparison-label); }
+#origo-lens .ol-comparison-value { font-size: var(--fs-comparison-value); line-height: 1.25; font-weight: 500; overflow-wrap: anywhere; }
+#origo-lens .ol-comparison-primary { grid-column: 1 / -1; }
+#origo-lens .ol-comparison-primary .ol-comparison-value { font-size: var(--fs-comparison-primary); }
+#origo-lens .ol-comparison-difference,
+#origo-lens .ol-comparison-rank { font-size: var(--fs-comparison-label); overflow-wrap: anywhere; }
+#origo-lens .ol-comparison-rank { color: var(--ol-muted); }
+#origo-lens .ol-comparison-track { display: block; position: relative; height: var(--comparison-track-height); margin: var(--sp-1) 0; background: var(--ol-panel); }
+#origo-lens .ol-comparison-track i { position: absolute; top: 0; height: 100%; }
+#origo-lens .ol-comparison-fill { background: var(--ol-muted); }
+#origo-lens .ol-comparison-fill[data-role="positive"] { background: var(--ol-positive); }
+#origo-lens .ol-comparison-fill[data-role="negative"] { background: var(--ol-negative); }
+#origo-lens .ol-comparison-fill[data-role="midpoint"] { background: var(--ol-midpoint); }
+#origo-lens .ol-comparison-track .ol-comparison-reference { top: -2px; height: calc(100% + 4px); border-left: 2px solid var(--ol-ink); }
+#origo-lens .ol-comparison-track .ol-comparison-zero { border-left: 1px solid var(--ol-muted); }
+#origo-lens .ol-comparison-details { border-top: 1px solid var(--ol-line); padding-top: var(--sp-3); }
+#origo-lens .ol-comparison-details summary { font-size: var(--fs-comparison-label); cursor: pointer; }
+#origo-lens .ol-comparison-details dl { margin: var(--sp-3) 0; }
+#origo-lens .ol-comparison-details dl > div { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(0, 2fr); gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid var(--ol-line); }
+#origo-lens .ol-comparison-details dt { color: var(--ol-muted); }
+#origo-lens .ol-comparison-details dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+#origo-lens .ol-comparison-details p { color: var(--ol-muted); }
+#origo-lens .ol-comparison-page { position: static; background: var(--ol-surface); margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) var(--sp-3); padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--ol-line); }
+#origo-lens .ol-comparison-page > span { flex: 1; color: var(--ol-muted); font-size: var(--fs-comparison-support); }
+#origo-lens .ol-comparison-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(var(--comparison-card-min), 100%), 1fr)); gap: var(--sp-3); }
+#origo-lens .ol-comparison-card { min-width: 0; border: 1px solid var(--ol-line); border-radius: var(--r-l); background: var(--ol-surface); padding: var(--sp-3); }
+#origo-lens .ol-comparison-card[data-focused="true"] { border-color: var(--ol-accent); box-shadow: inset 0 0 0 1px var(--ol-accent); }
+#origo-lens .ol-comparison-card-head { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--sp-1); padding-bottom: var(--sp-2); border-bottom: 1px solid var(--ol-line); }
+#origo-lens button.ol-comparison-card-focus,
+#origo-lens button.ol-comparison-matrix-focus { flex: 1; min-width: 0; height: auto; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; text-align: left; padding: 0; white-space: normal; font-size: var(--fs-comparison-support); }
+#origo-lens .ol-comparison-card-focus strong,
+#origo-lens .ol-comparison-matrix-focus strong { font-size: var(--fs-comparison-label); font-weight: 500; }
+#origo-lens .ol-comparison-card-focus > span,
+#origo-lens .ol-comparison-matrix-focus > span { overflow-wrap: anywhere; }
+#origo-lens .ol-comparison-reference-label { color: var(--ol-muted); }
+#origo-lens .ol-comparison-card-head > button[data-comparison-action="remove"] { font-size: var(--fs-comparison-support); }
+#origo-lens .ol-comparison-card-metrics { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); margin-top: var(--sp-3); }
+#origo-lens .ol-comparison-card :is(.ol-comparison-label, .ol-comparison-difference, .ol-comparison-rank),
+#origo-lens .ol-comparison-matrix :is(.ol-comparison-label, .ol-comparison-difference, .ol-comparison-rank) { font-size: var(--fs-comparison-support); }
+#origo-lens .ol-comparison-card .ol-comparison-value,
+#origo-lens .ol-comparison-matrix .ol-comparison-value { font-size: var(--fs-comparison-card); }
+#origo-lens .ol-comparison-matrix-scroll { overflow: auto; }
+#origo-lens .ol-comparison-matrix { width: 100%; border-collapse: collapse; }
+#origo-lens .ol-comparison-matrix :is(th, td) { min-width: var(--comparison-card-min); padding: var(--sp-3); vertical-align: top; text-align: left; border-bottom: 1px solid var(--ol-line); }
+#origo-lens .ol-comparison-matrix thead th { color: var(--ol-muted); font-size: var(--fs-comparison-support); font-weight: 500; }
+#origo-lens .ol-comparison-matrix tr[data-focused="true"] { background: var(--ol-panel); }
+#origo-lens .ol-comparison-matrix tbody th { position: sticky; left: 0; background: var(--ol-surface); }
+#origo-lens .ol-comparison-matrix tr[data-focused="true"] th { background: var(--ol-panel); }
+#origo-lens .ol-comparison-matrix .ol-comparison-label { display: none; }
+#origo-lens .ol-comparison-copy { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; padding: var(--sp-4); background: var(--ol-surface); }
+#origo-lens .ol-comparison-copy > div { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+#origo-lens .ol-comparison-copy > p { margin: var(--sp-2) 0; }
+#origo-lens .ol-comparison-copy textarea { flex: 1; width: 100%; min-height: 0; resize: none; color: var(--ol-ink); background: var(--ol-panel); border: 1px solid var(--ol-border); border-radius: var(--r-m); padding: var(--sp-3); font: var(--fs-comparison-label) / 1.5 monospace; }
+/* Expanded Compare takes the chart column's whole height; its market status remains reachable. */
+#origo-lens[data-comparison-expanded="true"] .ol-main { display: grid; grid-template-columns: minmax(0, 1fr); }
+#origo-lens[data-comparison-expanded="true"] :is(.ol-plot, .ol-side, .ol-side-grip, .ol-drawer-grip) { display: none; }
+#origo-lens[data-comparison-expanded="true"] .ol-drawer { flex: 1; min-height: 0; }
+#origo-lens[data-comparison-expanded="true"] .ol-drawer-body { flex: 1; height: auto; min-height: 0; max-height: none; }
+@container comparison (max-width: 639px) {
+  #origo-lens .ol-comparison-panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(200px, 1fr) minmax(200px, 1fr); overflow: auto; }
+  #origo-lens .ol-comparison-focus { border-right: 0; border-bottom: 1px solid var(--ol-line); }
+  #origo-lens .ol-comparison-workspace[data-singleton="true"][data-view="grid"] .ol-comparison-panes { grid-template-rows: minmax(0, 1fr); }
+  #origo-lens .ol-comparison-controls { align-items: flex-start; }
+  #origo-lens .ol-comparison-controls label { flex: 1 1 180px; }
+  #origo-lens .ol-comparison-controls select { flex: 1; max-width: 100%; }
+  #origo-lens .ol-comparison-details dl > div { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
+}
+@media (max-width: 760px) {
+  #origo-lens .ol-drawer-body:has(> .ol-comparison-panel:not([hidden])) { height: min(70vh, 640px); }
+  #origo-lens .ol-drawer-tabs { flex-wrap: wrap; }
+}
+@media (any-pointer: coarse) {
+  #origo-lens .ol-comparison-workspace :is(button, select, summary) { min-height: 44px; }
+}
+#origo-lens .ol-cell-actions { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+#origo-lens .ol-cell-menu { position: fixed; top: auto; width: max-content; max-width: calc(100vw - 2 * var(--sp-2)); display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2); }
+#origo-lens .ol-cell-menu > button { justify-content: flex-start; min-height: var(--h-l); }
+#origo-lens .ol-comparison-confirm { width: min(420px, calc(100vw - 2 * var(--sp-4))); max-height: calc(100dvh - 2 * var(--sp-4)); padding: var(--sp-4); color: var(--ol-ink); background: var(--ol-surface); border: 1px solid var(--ol-line); border-radius: var(--r-l); font-size: var(--fs-comparison-label); }
+#origo-lens .ol-comparison-confirm p { margin: 0 0 var(--sp-4); }
+#origo-lens .ol-comparison-confirm > button { margin-right: var(--sp-2); border-color: var(--ol-border); }
+#origo-lens .ol-comparison-confirm::backdrop { background: var(--ol-scrim); }
+@media (any-pointer: coarse) {
+  #origo-lens :is(.ol-cell-menu, .ol-comparison-confirm) button,
+  #origo-lens .ol-cell-compare-action { min-height: 44px; }
+}
+
     </style>
   </head>
   <body>
@@ -3902,6 +4078,18 @@
             >
               Query<span id="ol-query-mini" class="ol-num ol-query-mini"></span>
             </button>
+            <button
+              type="button"
+              role="tab"
+              id="ol-tab-compare"
+              class="cursor-interaction"
+              data-drawer="compare"
+              aria-controls="ol-panel-compare"
+              aria-selected="false"
+              title="Read captured cells and compare their measurements"
+            >
+              Compare <span id="ol-comparison-count" class="ol-num">0</span>
+            </button>
           </div>
           <span class="ol-drawer-space"></span>
           <button
@@ -3919,6 +4107,15 @@
           </button>
         </div>
         <div class="ol-drawer-body" id="ol-drawer-body">
+          <div
+            class="ol-panel ol-comparison-panel"
+            id="ol-panel-compare"
+            role="tabpanel"
+            aria-labelledby="ol-tab-compare"
+            hidden
+          >
+            <div id="ol-comparisonWorkspace" class="ol-comparison-workspace" tabindex="-1"></div>
+          </div>
           <div
             class="ol-panel"
             id="ol-panel-cells"
@@ -3994,6 +4191,7 @@
                       State
                     </button>
                   </th>
+                  <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody id="ol-table-body"></tbody>
@@ -4756,6 +4954,12 @@
         On a touch screen: drag to pan, pinch to zoom, hold to see finer cells,
         and tap a column to anchor it.
       </p>
+      <p class="ol-keys-note">
+        Compare: right-click a cell to Copy cell or Add to comparison, or use
+        cell Inspect detail and the Cells table. Captures are kept in this tab.
+        Expand opens the readable workspace; Restore chart returns the chart.
+        Cards and Matrix share the same focus, reference and sorting.
+      </p>
     </div>
   </dialog>
 </div>
@@ -5221,7 +5425,240 @@
   };
   const protectedDrawings = Object.freeze({ load: () => drawingLoad(), save: (collection, revision = 0) => drawingWrite(collection, revision, false), preserve: (collection) => drawingWrite(collection, 0, true), recover: drawingRecover });
 
+  // Comparison captures are owned by this tab. Their schema is independent of visual versions,
+  // named views and chart history; rejected text stays in its original slot until explicit discard.
+  const comparisonRoot = "comparison:v1:", comparisonMaxBytes = 4 * 1024 * 1024;
+  const comparisonRejected = new Map(), comparisonVerifiedRaw = new Map(), comparisonUnread = new Set(), comparisonCaptures = new WeakMap(), comparisonSerialized = new WeakSet();
+  const comparisonTags = new Set(["finite", "negative-infinite", "no-reference", "empty-both", "empty-population", "undefined", "no-coarser-parent", "waiting-for-complete-parent", "outside-support", "hidden", "pending", "failed", "unsupported", "invalid-input"]);
+  const comparisonSorts = new Set(["time", "added", "volume", "trades", "delta", "intensity", "size", "flow", "poc"]);
+  const comparisonFields = ["comparisonVersion", "instrument", "captures", "focus", "reference", "basis", "sort", "view", "page", "poc", "expanded", "restoreLayout"];
+  const comparisonFailure = (status, reason) => ({ ok: false, status, reason });
+  // Count UTF-8 without allocating a second multi-megabyte buffer. Unpaired UTF-16 surrogates
+  // become the three-byte replacement character, matching browser TextEncoder/JSON storage.
+  const comparisonBytes = (raw) => {
+    let bytes = 0;
+    for (let i = 0; i < raw.length; i++) {
+      const code = raw.charCodeAt(i);
+      if (code < 128) bytes++;
+      else if (code < 2048) bytes += 2;
+      else if (code >= 0xd800 && code <= 0xdbff && raw.charCodeAt(i + 1) >= 0xdc00 && raw.charCodeAt(i + 1) <= 0xdfff) { bytes += 4; i++; }
+      else bytes += 3;
+      if (bytes > comparisonMaxBytes) return bytes;
+    }
+    return bytes;
+  };
+  const comparisonAssert = (condition, reason) => { if (!condition) throw new Error(reason); };
+  const comparisonObject = (value) => isObject(value) && Object.prototype.toString.call(value) === "[object Object]";
+  const comparisonText = (value) => typeof value === "string" && value.length > 0;
+  const comparisonTime = (value) => value === null || (Number.isFinite(value) && value >= 0);
+  const comparisonKeys = (value, required, optional = []) => comparisonObject(value) && required.every((key) => Object.prototype.hasOwnProperty.call(value, key)) && Object.keys(value).every((key) => required.includes(key) || optional.includes(key));
+  // Scalar diagnostics may carry a few named objects, but never profile arrays, host objects,
+  // non-finite numbers or cycles. This is storage validation, not a second market calculator.
+  const comparisonScalars = (value, ancestors = []) => {
+    if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+    if (typeof value === "number") return Number.isFinite(value);
+    if (!comparisonObject(value) || ancestors.includes(value) || ancestors.length >= 8) return false;
+    return Object.values(value).every((member) => comparisonScalars(member, [...ancestors, value]));
+  };
+  const comparisonDeepFrozen = (value, ancestors = []) => {
+    if (value === null || typeof value !== "object") return true;
+    if (!Object.isFrozen(value) || ancestors.includes(value)) return false;
+    return Object.values(value).every((member) => comparisonDeepFrozen(member, [...ancestors, value]));
+  };
+  const comparisonSupport = (record, reason) => {
+    comparisonAssert(comparisonTime(record.supportEnd) && comparisonTime(record.knownThrough), reason + " support must be finite or null");
+    comparisonAssert(record.supportEnd === null || record.knownThrough === null || record.supportEnd <= record.knownThrough, reason + " support extends beyond its snapshot cutoff");
+  };
+  const comparisonCapture = (capture, instrument) => {
+    const cached = comparisonCaptures.get(capture);
+    if (cached) { comparisonAssert(capture.instrument === instrument, "capture instrument does not match its collection"); return; }
+    comparisonAssert(comparisonKeys(capture, ["id", "instrument", "level", "origin", "c", "r", "nominal", "observed", "capturedAt", "measuredThrough", "source", "completeness", "metrics", "detail"], ["when", "shortExposure", "originalScale"]), "invalid capture fields");
+    comparisonAssert(comparisonText(capture.id) && capture.instrument === instrument, "invalid capture identity or instrument");
+    comparisonAssert(comparisonKeys(capture.level, ["n", "m"]) && [capture.level.n, capture.level.m].every((v) => Number.isSafeInteger(v) && v >= 0 && v <= 52), "invalid original cell level");
+    comparisonAssert(Number.isFinite(capture.origin) && capture.origin >= 0 && [capture.c, capture.r].every((v) => Number.isSafeInteger(v) && v >= 0), "invalid original cell origin or coordinates");
+    const nominal = capture.nominal, observed = capture.observed;
+    comparisonAssert(comparisonKeys(nominal, ["t0", "t1", "low", "high"]) && Object.values(nominal).every(Number.isFinite) && nominal.t0 >= 0 && nominal.t0 < nominal.t1 && nominal.low >= 0 && nominal.low < nominal.high, "invalid nominal cell bounds");
+    comparisonAssert(comparisonKeys(observed, ["t0", "t1", "low", "high", "seconds", "width"]) && Object.values(observed).every(Number.isFinite), "invalid observed cell bounds");
+    comparisonAssert(observed.t0 >= nominal.t0 && observed.t1 <= nominal.t1 && observed.t0 <= observed.t1 && observed.low >= nominal.low && observed.high <= nominal.high && observed.low <= observed.high, "observed bounds extend outside the nominal cell");
+    comparisonAssert(observed.seconds >= 0 && observed.seconds <= (nominal.t1 - nominal.t0) / 1000 && observed.width >= 0 && observed.width <= nominal.high - nominal.low, "invalid observed cell exposure");
+    // Subtracting epoch milliseconds loses a few representational bits. Permit only that numeric
+    // rounding bound; this does not change comparison's exact exposure equality or ranking.
+    const timeRoundoff = 4 * Number.EPSILON * Math.max(1, Math.abs(observed.t0), Math.abs(observed.t1)) / 1000,
+      priceRoundoff = 4 * Number.EPSILON * Math.max(1, Math.abs(observed.low), Math.abs(observed.high));
+    comparisonAssert(Math.abs(observed.seconds - (observed.t1 - observed.t0) / 1000) <= timeRoundoff && Math.abs(observed.width - (observed.high - observed.low)) <= priceRoundoff, "observed exposure does not match its intervals");
+    comparisonAssert(Number.isFinite(capture.capturedAt) && capture.capturedAt >= 0 && comparisonTime(capture.measuredThrough) && comparisonText(capture.source) && comparisonText(capture.completeness), "invalid capture provenance");
+    comparisonAssert(comparisonObject(capture.metrics) && Object.keys(capture.metrics).length > 0, "capture has no typed metrics");
+    for (const [key, metric] of Object.entries(capture.metrics)) {
+      comparisonAssert(comparisonText(key) && comparisonObject(metric) && comparisonTags.has(metric.tag) && comparisonText(metric.formula) && comparisonText(metric.unit) && comparisonScalars(metric), "invalid typed metric " + key);
+      comparisonAssert(Object.prototype.hasOwnProperty.call(metric, "value") && (metric.tag === "finite" ? Number.isFinite(metric.value) : metric.value === null), "invalid typed value " + key);
+      comparisonAssert(Object.prototype.hasOwnProperty.call(metric, "supportEnd") && Object.prototype.hasOwnProperty.call(metric, "knownThrough"), "metric support is missing: " + key);
+      comparisonSupport(metric, "metric " + key);
+      comparisonAssert(metric.supportEnd === null || (metric.supportEnd >= nominal.t0 && metric.supportEnd <= nominal.t1), "metric support is outside its nominal cell: " + key);
+      comparisonAssert(metric.reason === undefined || typeof metric.reason === "string", "invalid metric reason " + key);
+    }
+    comparisonAssert(Array.isArray(capture.detail), "capture detail is not a list");
+    for (const detail of capture.detail) {
+      comparisonAssert(comparisonKeys(detail, ["label", "value", "supportEnd", "knownThrough"], ["unit", "tag", "reason"]) && comparisonText(detail.label) && (detail.value === null || typeof detail.value === "string" || Number.isFinite(detail.value)), "invalid supporting detail");
+      comparisonAssert((detail.unit === undefined || typeof detail.unit === "string") && (detail.tag === undefined || comparisonTags.has(detail.tag)) && (detail.reason === undefined || typeof detail.reason === "string"), "invalid supporting detail metadata");
+      comparisonSupport(detail, "detail");
+    }
+    if (capture.when !== undefined) {
+      const when = capture.when;
+      comparisonAssert(comparisonKeys(when, ["knownAtMs", "knownAtReason", "eventStartMs", "eventEndMs"]) && comparisonTime(when.knownAtMs) && typeof when.knownAtReason === "string" && Number.isFinite(when.eventStartMs) && Number.isFinite(when.eventEndMs) && when.eventStartMs >= nominal.t0 && when.eventStartMs <= when.eventEndMs && when.eventEndMs <= nominal.t1, "invalid structural cell timing");
+    }
+    comparisonAssert(capture.shortExposure === undefined || typeof capture.shortExposure === "boolean", "invalid short exposure flag");
+    comparisonAssert(capture.originalScale === undefined || typeof capture.originalScale === "string", "invalid original chart scale");
+    if (comparisonDeepFrozen(capture)) comparisonCaptures.set(capture, { raw: null, bytes: 0 });
+  };
+  const comparisonValidate = (record) => {
+    try {
+      comparisonAssert(comparisonObject(record), "comparison record is not an object");
+      if (record.comparisonVersion !== 1) return comparisonFailure("unknown-version", "unsupported comparison version " + JSON.stringify(record.comparisonVersion));
+      comparisonAssert(comparisonKeys(record, comparisonFields), "invalid comparison record fields");
+      comparisonAssert(record.instrument === "BTC/USDT", "unsupported comparison instrument");
+      comparisonAssert(Array.isArray(record.captures), "comparison captures are not a list");
+      const ids = new Set(), identities = new Set();
+      for (const capture of record.captures) {
+        comparisonCapture(capture, record.instrument);
+        const identity = JSON.stringify([capture.instrument, capture.level.n, capture.level.m, capture.origin, capture.c, capture.r, capture.nominal.t0, capture.nominal.t1, capture.nominal.low, capture.nominal.high]);
+        comparisonAssert(!ids.has(capture.id) && !identities.has(identity), "duplicate comparison capture identity");
+        ids.add(capture.id); identities.add(identity);
+      }
+      comparisonAssert((record.focus === null || ids.has(record.focus)) && (record.reference === null || ids.has(record.reference)), "dangling comparison focus or reference");
+      comparisonAssert(["auto", "amount", "intensity"].includes(record.basis) && ["grid", "matrix"].includes(record.view), "invalid comparison basis or view");
+      comparisonAssert(comparisonKeys(record.sort, ["key", "direction"]) && comparisonSorts.has(record.sort.key) && ["asc", "desc"].includes(record.sort.direction), "invalid comparison sort");
+      comparisonAssert(Number.isSafeInteger(record.page) && record.page >= 0 && record.page < Math.max(1, Math.ceil(record.captures.length / 24)), "invalid comparison page");
+      comparisonAssert(typeof record.expanded === "boolean", "invalid comparison expanded state");
+      if (record.poc !== null) {
+        const poc = record.poc;
+        comparisonAssert(comparisonKeys(poc, ["id", "label", "period", "price", "rowSize", "approximate", "supportEnd", "knownThrough", "from", "through", "source"]) && [poc.id, poc.label, poc.period, poc.source].every(comparisonText) && Number.isFinite(poc.price) && poc.price >= 0 && Number.isFinite(poc.rowSize) && poc.rowSize > 0 && typeof poc.approximate === "boolean", "invalid frozen POC reference");
+        comparisonAssert(Number.isFinite(poc.from) && Number.isFinite(poc.through) && poc.from >= 0 && poc.from <= poc.through, "invalid POC measured period");
+        comparisonSupport(poc, "POC");
+        comparisonAssert(poc.supportEnd === null || poc.supportEnd === poc.through, "POC support does not match its measured period");
+      }
+      if (record.restoreLayout !== null) {
+        const layout = record.restoreLayout;
+        comparisonAssert(comparisonKeys(layout, ["sideOpen", "sideWidth", "drawerHeight", "drawerOpen", "drawer"]) && typeof layout.sideOpen === "boolean" && typeof layout.drawerOpen === "boolean" && Number.isFinite(layout.sideWidth) && layout.sideWidth > 0 && Number.isFinite(layout.drawerHeight) && layout.drawerHeight > 0 && ["cells", "cases", "query", "compare"].includes(layout.drawer), "invalid comparison restoration layout");
+      }
+      comparisonAssert(!record.expanded || record.restoreLayout !== null, "expanded comparison has no restoration layout");
+      return { ok: true, status: "ok", reason: null };
+    } catch (error) { return comparisonFailure("unreadable", error.message || "invalid comparison record"); }
+  };
+  const comparisonParse = (raw, instrument) => {
+    const bytes = comparisonBytes(raw);
+    if (bytes > comparisonMaxBytes) return { ...comparisonFailure("oversized", "comparison exceeds the 4 MiB tab limit"), value: null, raw, bytes };
+    let value;
+    try { value = JSON.parse(raw); }
+    catch { return { ...comparisonFailure("unreadable", "saved comparison is not valid JSON"), value: null, raw, bytes }; }
+    const checked = comparisonValidate(value);
+    if (!checked.ok) return { ...checked, value: null, raw, bytes };
+    if (value.instrument !== instrument) return { ...comparisonFailure("unreadable", "saved comparison instrument does not match its slot"), value: null, raw, bytes };
+    return { ok: true, status: "ok", value, raw, bytes, reason: null };
+  };
+  const comparisonRead = (instrument) => {
+    if (instrument !== "BTC/USDT") return { ...comparisonFailure("unreadable", "unsupported comparison instrument"), value: null, raw: null };
+    const got = fetchText("sessionStorage", comparisonRoot + instrument);
+    if (!got.ok) {
+      if (!comparisonVerifiedRaw.has(instrument)) comparisonUnread.add(instrument);
+      return { ...comparisonFailure("unreadable", "storage is unavailable (" + describe(got.error) + ")"), value: null, raw: null };
+    }
+    if (got.text === null) {
+      comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, null);
+      if (comparisonRejected.get(instrument)?.status === "not-loaded") comparisonRejected.delete(instrument);
+      return { ok: true, status: "absent", value: null, raw: null, reason: null };
+    }
+    const parsed = comparisonParse(got.text, instrument);
+    if (!parsed.ok) comparisonRejected.set(instrument, parsed);
+    else {
+      comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, parsed.raw);
+      if (comparisonRejected.get(instrument)?.status === "not-loaded") comparisonRejected.delete(instrument);
+    }
+    return parsed;
+  };
+  const comparisonPrepare = (record) => {
+    const checked = comparisonValidate(record);
+    if (!checked.ok) return checked;
+    try {
+      // Serialize each immutable capture once. Size preflight only builds this small envelope;
+      // joining the whole record belongs to the coalesced save after the visible update.
+      const envelope = JSON.stringify({ ...record, captures: [] }), marker = '"captures":[]', at = envelope.indexOf(marker);
+      let bytes = comparisonBytes(envelope);
+      if (bytes > comparisonMaxBytes) return comparisonFailure("oversized", "comparison exceeds the 4 MiB tab limit");
+      const chunks = [];
+      for (const capture of record.captures) {
+        let cached = comparisonCaptures.get(capture);
+        if (!cached?.raw) {
+          const raw = JSON.stringify(capture), entry = { raw, bytes: comparisonBytes(raw) };
+          if (cached) comparisonCaptures.set(capture, entry);
+          cached = entry;
+        }
+        bytes += cached.bytes + (chunks.length ? 1 : 0);
+        if (bytes > comparisonMaxBytes) return comparisonFailure("oversized", "comparison exceeds the 4 MiB tab limit");
+        chunks.push(cached.raw);
+      }
+      return { ok: true, envelope, marker, at, bytes, chunks };
+    } catch (error) { return comparisonFailure("unreadable", "comparison could not be serialized (" + describe(error) + ")"); }
+  };
+  const comparisonMeasure = (record) => {
+    const prepared = comparisonPrepare(record);
+    return prepared.ok ? { ok: true, status: "ok", bytes: prepared.bytes, reason: null } : prepared;
+  };
+  const comparisonSerialize = (record) => {
+    const prepared = comparisonPrepare(record);
+    if (!prepared.ok) return prepared;
+    const { envelope, marker, at, bytes, chunks } = prepared;
+    const raw = envelope.slice(0, at) + '"captures":[' + chunks.join(",") + "]" + envelope.slice(at + marker.length);
+    const serialized = Object.freeze({ ok: true, status: "ok", raw, bytes, instrument: record.instrument, reason: null });
+    comparisonSerialized.add(serialized);
+    return serialized;
+  };
+  const comparisonWrite = (instrument, record) => {
+    if (instrument !== "BTC/USDT") return comparisonFailure("unreadable", "unsupported comparison instrument");
+    let serialized;
+    if (typeof record === "string") serialized = comparisonParse(record, instrument);
+    else if (record && comparisonSerialized.has(record)) serialized = record;
+    else serialized = comparisonSerialize(record);
+    if (!serialized.ok) return serialized;
+    if (serialized.instrument !== undefined && serialized.instrument !== instrument) return comparisonFailure("unreadable", "comparison instrument does not match its slot");
+    const got = fetchText("sessionStorage", comparisonRoot + instrument);
+    if (!got.ok) return comparisonFailure("unsaved", "comparison storage is unavailable (" + describe(got.error) + ")");
+    // Confirmed absence establishes ownership even if the following write cannot be verified.
+    if (got.text === null) { comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, null); }
+    // The exact raw text most recently read or written is already validated. A changed slot still
+    // revalidates before overwrite; repeated presentation saves never parse the whole collection.
+    if (got.text !== null && comparisonVerifiedRaw.get(instrument) !== got.text) {
+      const current = comparisonParse(got.text, instrument);
+      if (!current.ok) comparisonRejected.set(instrument, current);
+      // A validation read during Retry does not adopt captures the running model never loaded.
+      else if (comparisonUnread.has(instrument)) comparisonRejected.set(instrument, { ...current, status: "not-loaded" });
+      else comparisonVerifiedRaw.set(instrument, current.raw);
+    }
+    const rejected = comparisonRejected.get(instrument);
+    if (rejected) return { ...comparisonFailure("retained", rejected.status === "not-loaded"
+      ? "saved comparison was not loaded; reload to restore it or discard that stored record before replacing it"
+      : "saved comparison was rejected; discard that stored record before replacing it"), raw: rejected.raw, rejectedStatus: rejected.status };
+    try {
+      const area = window.sessionStorage, key = prefix + comparisonRoot + instrument;
+      area.setItem(key, serialized.raw);
+      if (area.getItem(key) !== serialized.raw) return comparisonFailure("unsaved", "comparison storage write could not be verified");
+      comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, serialized.raw);
+      return { ok: true, status: "ok", bytes: serialized.bytes, reason: null };
+    } catch (error) { return comparisonFailure("unsaved", "comparison storage failed (" + describe(error) + ")"); }
+  };
+  const comparisonDiscard = (instrument) => {
+    if (instrument !== "BTC/USDT") return comparisonFailure("unreadable", "unsupported comparison instrument");
+    try {
+      const area = window.sessionStorage, key = prefix + comparisonRoot + instrument;
+      area.removeItem(key);
+      if (area.getItem(key) !== null) return comparisonFailure("unsaved", "stored comparison could not be discarded");
+      comparisonRejected.delete(instrument); comparisonUnread.delete(instrument); comparisonVerifiedRaw.delete(instrument);
+      return { ok: true, status: "ok", reason: null };
+    } catch (error) { return comparisonFailure("unsaved", "stored comparison could not be discarded (" + describe(error) + ")"); }
+  };
+  const comparison = Object.freeze({ read: comparisonRead, validate: comparisonValidate, measure: comparisonMeasure, serialize: comparisonSerialize, write: comparisonWrite, discard: comparisonDiscard });
+
   window.explorerState = {
+    comparison,
     drawings: protectedDrawings,
     namedViews: protectedNamedViews,
     namedViewsStatus: protectedNamedRead,
@@ -17023,6 +17460,453 @@
 
 });
 </script>
+    <script>/* Owned cell-capture comparison: arithmetic and presentation records only.
+ * Source measurements are supplied by the explorer; this module never reads
+ * the cube, the chart, storage or a clock. PRD-0006 D3-D6. */
+(() => {
+  "use strict";
+  const metric = (key, label, group, kind, formula, unit, variants = null) => Object.freeze({
+    key, label, group, kind, formula, unit,
+    ...(variants ? { basis: true, formulas: Object.freeze({ amount: formula, intensity: variants[0] }), units: Object.freeze({ amount: unit, intensity: variants[1] }) } : {}),
+  });
+  const METRICS = Object.freeze([
+    metric("volume", "Volume", "Activity", "nonnegative", "cells.volume.amount@1", "usdt", ["cells.volume.intensity@1", "usdt-per-min-per-125usdt"]),
+    metric("trades", "Trades", "Activity", "nonnegative", "cells.trades.amount@1", "trades", ["cells.trades.intensity@1", "trades-per-min-per-125usdt"]),
+    metric("size", "Mean trade size", "Activity", "nonnegative", "cells.size.mean@1", "usdt-per-trade"),
+    metric("flow", "Taker-buy volume share", "Flow", "share", "cells.flow.share@1", "share"),
+    metric("flowtrades", "Taker-buy trade share", "Flow", "share", "cells.flowtrades.share@1", "share"),
+    metric("delta", "Net taker volume", "Flow", "signed", "cells.delta.amount@1", "usdt", ["cells.delta.intensity@1", "usdt-per-min-per-125usdt"]),
+    metric("path", "Path / price span", "Movement", "nonnegative", "cells.path.spans@1", "row-spans"),
+    metric("dwell", "Dwell share", "Movement", "share", "cells.dwell.share@1", "share"),
+    metric("poc", "POC distance", "Price context", "distance", "comparison.poc-distance@1", "usdt"),
+  ]);
+  const byKey = Object.fromEntries(METRICS.map((m) => [m.key, m]));
+  const finite = Number.isFinite;
+  const unavailable = (tag, reason, meta = {}) => ({ tag, reason, ...meta });
+  const metadata = (record) => ({ formula: record?.formula, unit: record?.unit, supportEnd: record?.supportEnd, knownThrough: record?.knownThrough });
+  const visible = (record, edge) => edge == null || (finite(edge) && finite(record?.supportEnd) && finite(record?.knownThrough) && record.supportEnd <= edge && record.knownThrough <= edge);
+  // Suppressed records expose no value, numerator, denominator or other source
+  // payload. Structural timestamps describe support, never establish it.
+  function safeRecord(record, edge) {
+    if (!record) return unavailable("pending", "Not measured");
+    const meta = metadata(record);
+    if (!visible(record, edge)) return unavailable("hidden", "Unavailable in replay", meta);
+    if (record.tag !== "finite") return unavailable(record.tag || "undefined", record.reason || String(record.tag || "Not measured"), { ...meta, ...(typeof record.denominator === "string" ? { denominator: record.denominator } : {}) });
+    if (!finite(record.value)) return unavailable("failed", "Invalid measurement", meta);
+    return { ...meta, tag: "finite", value: record.value, ...(record.shortExposure ? { shortExposure: true } : {}) };
+  }
+  function identity(capture) {
+    const { instrument, level, origin, c, r, nominal } = capture || {};
+    if (typeof instrument !== "string" || !instrument || !level || !nominal || !finite(origin) ||
+      !Number.isInteger(level.n) || !Number.isInteger(level.m) || level.n < 0 || level.m < 0 ||
+      !Number.isInteger(c) || !Number.isInteger(r) || c < 0 || r < 0 ||
+      ![nominal.t0, nominal.t1, nominal.low, nominal.high].every(finite) || nominal.t1 <= nominal.t0 || nominal.high <= nominal.low)
+      throw new TypeError("Invalid cell identity");
+    return JSON.stringify([instrument, level.n, level.m, origin, c, r, nominal.t0, nominal.t1, nominal.low, nominal.high]);
+  }
+  function selection(key, basis) {
+    const pieces = key.split("."), descriptor = byKey[pieces[0]], chosen = pieces[1] || (basis === "intensity" ? "intensity" : "amount");
+    if (!descriptor) return null;
+    return { descriptor, chosen, storedKey: descriptor.basis ? descriptor.key + "." + chosen : descriptor.key,
+      formula: descriptor.basis ? descriptor.formulas[chosen] : descriptor.formula,
+      unit: descriptor.basis ? descriptor.units[chosen] : descriptor.unit };
+  }
+  function value(capture, key, basis = "amount", edge = null) {
+    const spec = selection(key, basis);
+    if (!spec) return unavailable("unsupported", "Unknown comparison metric");
+    if (spec.descriptor.key === "poc") return unavailable("undefined", "Choose a POC", { formula: spec.formula, unit: spec.unit });
+    const record = safeRecord(capture?.metrics?.[spec.storedKey], edge);
+    if (record.tag === "finite" && (record.formula !== spec.formula || record.unit !== spec.unit))
+      return unavailable("incompatible", "Incompatible measurement", { formula: spec.formula, unit: spec.unit });
+    return { ...record, formula: record.formula || spec.formula, unit: record.unit || spec.unit };
+  }
+  function pocValue(capture, poc, edge) {
+    const meta = { formula: byKey.poc.formula, unit: "usdt", supportEnd: poc?.supportEnd, knownThrough: poc?.knownThrough };
+    if (!poc || !finite(poc.price)) return unavailable("undefined", "Choose a POC", meta);
+    if (!visible(poc, edge)) return unavailable("hidden", "Unavailable in replay", meta);
+    const low = capture?.nominal?.low, high = capture?.nominal?.high;
+    if (!finite(low) || !finite(high) || high <= low) return unavailable("failed", "Invalid price band", meta);
+    const distance = Math.max(low - poc.price, poc.price - high, 0);
+    if (!finite(distance)) return unavailable("undefined", "Distance unavailable", meta);
+    return { ...meta, tag: "finite", value: distance, relation: low <= poc.price && poc.price < high ? "Contains" : poc.price === high ? "Touches" : low > poc.price ? "Above" : "Below" };
+  }
+  function midpoint(a, b) {
+    if (a === b) return a;
+    return Math.sign(a) === Math.sign(b) ? a + (b - a) / 2 : (a + b) / 2;
+  }
+  function median(values) {
+    if (!values.length) return null;
+    const ordered = [...values].sort((a, b) => a < b ? -1 : a > b ? 1 : 0), half = Math.floor(ordered.length / 2);
+    return ordered.length % 2 ? ordered[half] : midpoint(ordered[half - 1], ordered[half]);
+  }
+  function exposureArea(capture) {
+    const seconds = capture?.observed?.seconds, width = capture?.observed?.width;
+    const area = seconds * width;
+    return finite(seconds) && seconds > 0 && finite(width) && width > 0 && finite(area) ? area : null;
+  }
+  function chooseBasis(captures, requested, edge) {
+    const eligible = captures.filter((capture) => ["volume", "trades", "delta"].some((key) => value(capture, key, "amount", edge).tag === "finite"));
+    const areas = eligible.map(exposureArea);
+    const geometryDiffers = areas.length > 1 && (areas.some((area) => area === null) || areas.some((area) => area !== areas[0]));
+    return { basis: requested === "intensity" ? "intensity" : requested === "amount" ? "amount" : geometryDiffers ? "intensity" : "amount", geometryDiffers };
+  }
+  function domainOf(descriptor, values) {
+    if (values.length < 2) return null;
+    if (descriptor.kind === "share") return [0, 1];
+    if (descriptor.kind === "signed") {
+      const bound = values.reduce((best, x) => Math.max(best, Math.abs(x)), 0);
+      return [-bound, bound];
+    }
+    return [0, values.reduce((best, x) => Math.max(best, x), 0)];
+  }
+  function analyze(captures, options = {}) {
+    const items = Array.isArray(captures) ? captures : [], edge = options.edge ?? null;
+    const resolved = chooseBasis(items, options.basis || "auto", edge), metrics = {};
+    for (const descriptor of METRICS) {
+      const records = items.map((capture) => ({ capture, record: descriptor.key === "poc" ? pocValue(capture, options.poc, edge) : value(capture, descriptor.key, resolved.basis, edge) }));
+      const eligible = records.filter(({ record }) => record.tag === "finite"), values = eligible.map(({ record }) => record.value), count = values.length;
+      const pinned = options.reference == null ? null : records.find(({ capture }) => capture.id === options.reference);
+      const reference = options.reference == null ? median(values) : pinned?.record.tag === "finite" ? pinned.record.value : null;
+      const domain = domainOf(descriptor, values), entries = {}, ranks = new Map(), allEqual = count > 1 && values.every((x) => x === values[0]);
+      const ranked = [...values].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0) * (descriptor.kind === "distance" ? 1 : -1));
+      for (let i = 0; i < ranked.length; i++) if (!ranks.has(ranked[i])) ranks.set(ranked[i], i + 1);
+      for (const { capture, record } of records) {
+        const valid = record.tag === "finite", singleton = valid && count === 1;
+        const rawDifference = valid && reference !== null && !singleton ? record.value - reference : null;
+        const difference = rawDifference === null ? null : descriptor.kind === "share" ? rawDifference * 100 : rawDifference;
+        const percent = rawDifference !== null && ["volume", "trades", "size"].includes(descriptor.key) && reference > 0 ? rawDifference / reference * 100 : null;
+        entries[capture.id] = {
+          value: valid ? record.value : null, tag: record.tag, reason: valid ? reference === null ? "Reference unavailable" : singleton ? "Only comparable cell" : null : record.reason,
+          formula: record.formula, unit: record.unit,
+          difference: finite(difference) ? difference : null, percent: finite(percent) ? percent : null,
+          rank: valid && !singleton ? ranks.get(record.value) : null,
+          count, domain: valid ? domain : null, allEqual, reference,
+          ...(rawDifference !== null && !finite(difference) ? { differenceReason: "Difference unavailable" } : {}),
+          ...(percent !== null && !finite(percent) ? { percentReason: "Percentage unavailable" } : {}),
+          ...(record.relation ? { relation: record.relation } : {}),
+        };
+      }
+      metrics[descriptor.key] = entries;
+    }
+    // Fixed intensity is a named sort even when the active comparison basis
+    // is Amount. Cache its gated values with the statistics, so resorting never
+    // consults current capture/source data or reruns cohort arithmetic.
+    metrics["volume.intensity"] = resolved.basis === "intensity" ? metrics.volume : Object.fromEntries(items.map((capture) => {
+      const record = value(capture, "volume.intensity", "intensity", edge);
+      return [capture.id, { tag: record.tag, value: record.tag === "finite" ? record.value : null, reason: record.reason || null }];
+    }));
+    return { ...resolved, ordered: sort(items, options.sort, metrics), metrics };
+  }
+  function sort(captures, requested = {}, metrics = {}) {
+    const items = Array.isArray(captures) ? captures : [];
+    const rawKey = requested?.key || "time", key = rawKey === "added" ? "order" : rawKey === "intensity" || rawKey === "volumeIntensity" ? "volume.intensity" : rawKey;
+    const direction = requested?.direction;
+    const factor = direction === "asc" || direction === 1 ? 1 : direction === "desc" || direction === -1 ? -1 : key === "time" || key === "order" || key === "poc" ? 1 : -1;
+    const indexed = items.map((capture, index) => {
+      const entry = metrics[key]?.[capture.id];
+      const number = key === "order" ? index : key === "time" ? capture.nominal?.t0 : entry?.tag === "finite" ? entry.value : null;
+      return { capture, index, number: finite(number) ? number : null };
+    });
+    indexed.sort((a, b) => a.number === null || b.number === null ? a.number === b.number ? a.index - b.index : a.number === null ? 1 : -1 : (a.number < b.number ? -1 : a.number > b.number ? 1 : 0) * factor || a.index - b.index);
+    return indexed.map((item) => item.capture);
+  }
+  const iso = (x) => finite(x) && !Number.isNaN(new Date(x).getTime()) ? new Date(x).toISOString() : "Unknown";
+  const numberText = (x) => String(x);
+  const rangeText = (bounds) => bounds ? `${iso(bounds.t0)}–${iso(bounds.t1)} UTC; ${numberText(bounds.low)}–${numberText(bounds.high)} USDT` : "Unknown";
+  function captureText(capture, { edge = null, poc = null } = {}) {
+    const lines = [String(capture.instrument), `Cell: ${rangeText(capture.nominal)}`, `Level: ${capture.level?.n},${capture.level?.m}`, `Observed: ${rangeText(capture.observed)}`];
+    const row = (label, record) => lines.push(`${label}: ${record.tag === "finite" ? numberText(record.value) + (record.unit ? " " + record.unit : "") : record.reason || record.tag}`);
+    for (const descriptor of METRICS) {
+      if (descriptor.key === "poc") row(descriptor.label, pocValue(capture, poc, edge));
+      else {
+        row(descriptor.label, value(capture, descriptor.key, "amount", edge));
+        if (descriptor.basis) row(descriptor.label + " intensity", value(capture, descriptor.key, "intensity", edge));
+      }
+    }
+    for (const detail of capture.detail || []) {
+      if (!visible(detail, edge)) { lines.push(`${detail.label}: Unavailable in replay`); continue; }
+      const payload = detail.tag && detail.tag !== "finite" ? detail.reason || detail.tag : detail.value == null ? detail.reason || "Not measured" : String(detail.value) + (detail.unit ? " " + detail.unit : "");
+      lines.push(`${detail.label}: ${payload}`);
+    }
+    if (capture.completeness) lines.push(`Completeness: ${typeof capture.completeness === "string" ? capture.completeness : capture.completeness.label || capture.completeness.state || "Unknown"}`);
+    if (capture.shortExposure) lines.push("Exposure: Short exposure");
+    if (capture.originalScale) lines.push(`Original chart scale: ${capture.originalScale}; not a comparison scale`);
+    if (capture.when) lines.push(`Structural whole-cell known at: ${finite(capture.when.knownAtMs) ? iso(capture.when.knownAtMs) : capture.when.knownAtReason || "Unknown"}`);
+    const source = capture.source;
+    const sourceText = source && typeof source === "object" ? Object.entries(source).filter(([, v]) => typeof v === "string" || typeof v === "number" || typeof v === "boolean").map(([k, v]) => `${k}=${v}`).join("; ") : source;
+    lines.push(`Source: ${sourceText || "Unknown"}`, `Captured at: ${iso(capture.capturedAt)}`, `Measured through: ${iso(capture.measuredThrough)}`);
+    if (poc) lines.push(`POC reference: ${visible(poc, edge) ? `${poc.label || poc.period || "POC"}; ${finite(poc.price) ? numberText(poc.price) + " USDT" : "Unavailable"}; measured through ${iso(poc.knownThrough)}` : "Unavailable in replay"}`);
+    return lines.join("\n");
+  }
+  const api = Object.freeze({ METRICS, identity, value, analyze, sort, captureText });
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (typeof window !== "undefined") window.explorerComparison = api;
+})();
+</script>
+    <script>/* The captured-cell dashboard owns presentation and local focus only. Capture, comparison math,
+   clipboard access, replay eligibility and session mutations belong to its caller. */
+(function (root, factory) {
+  "use strict";
+  const api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  else root.explorerComparisonUI = api;
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+  "use strict";
+  const PAGE_SIZE = 24;
+  const fallbackMetrics = [
+    { key: "volume", label: "Volume", group: "Activity", unit: "USDT" },
+    { key: "trades", label: "Trades", group: "Activity", unit: "trades" },
+    { key: "size", label: "Mean trade size", group: "Activity", unit: "USDT/trade" },
+    { key: "flow", label: "Taker-buy volume share", group: "Flow", unit: "share", share: true },
+    { key: "flowtrades", label: "Taker-buy trade share", group: "Flow", unit: "share", share: true },
+    { key: "delta", label: "Net taker volume", group: "Flow", unit: "USDT", signed: true },
+    { key: "path", label: "Path / price span", group: "Movement", unit: "row spans" },
+    { key: "dwell", label: "Dwell share", group: "Movement", unit: "share", share: true },
+    { key: "poc", label: "POC distance", group: "Price context", unit: "USDT" },
+  ];
+  const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+  const finite = (value) => typeof value === "number" && Number.isFinite(value);
+  const replayVisible = (record, edge) => edge == null || (finite(edge) && finite(record?.supportEnd) && finite(record?.knownThrough) && record.supportEnd <= edge && record.knownThrough <= edge);
+  const number = (value, maximumFractionDigits = 2) => finite(value)
+    ? value.toLocaleString("en-US", { maximumFractionDigits })
+    : "—";
+  const signed = (value, digits = 2) => (value > 0 ? "+" : value < 0 ? "−" : "") + number(Math.abs(value), digits);
+  function utc(value, exact = false) {
+    if (!finite(value)) return "Unknown";
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return "Unknown";
+    return exact ? date.toISOString() : date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
+  }
+  function timeRange(capture, compact = false) {
+    const { t0, t1 } = capture.nominal || {};
+    if (!finite(t0) || !finite(t1)) return "Time unavailable";
+    const start = utc(t0, true), end = utc(t1, true);
+    if (start === "Unknown" || end === "Unknown") return "Time unavailable";
+    if (compact && start.slice(0, 10) === end.slice(0, 10))
+      return `${start.slice(5, 10)} ${start.slice(11, 19)}–${end.slice(11, 19)} UTC`;
+    return `${utc(t0)}–${utc(t1)}`;
+  }
+  function band(capture) {
+    return `${number(capture.nominal?.low, 8)}–${number(capture.nominal?.high, 8)} USDT`;
+  }
+  const unitText = (unit) => ({ usdt: "USDT", "usdt-per-trade": "USDT/trade", "usdt-per-min-per-125usdt": "USDT/min per 125 USDT", "trades-per-min-per-125usdt": "trades/min per 125 USDT", "row-spans": "row spans" })[unit] || unit;
+  function valueText(metric, value) {
+    if (!finite(value)) return "—";
+    if (metric.share || metric.unit === "share" || metric.unit === "fraction") return number(value * 100) + "%";
+    return (metric.signed ? signed(value) : number(value, metric.key === "trades" && metric.unit === "trades" ? 0 : 2)) + (metric.unit ? " " + unitText(metric.unit) : "");
+  }
+  function deltaText(metric, entry) {
+    if (!finite(entry.difference)) return entry.differenceReason || "Reference unavailable";
+    const difference = metric.share || metric.unit === "share" || metric.unit === "fraction"
+      ? signed(entry.difference) + " pp"
+      : signed(entry.difference) + (metric.unit ? " " + unitText(metric.unit) : "");
+    return difference + (finite(entry.percent) ? ` (${signed(entry.percent)}%)` : "");
+  }
+  function safeDetail(detail, edge) {
+    if (!replayVisible(detail, edge))
+      return { label: detail.label, value: "Unavailable in replay" };
+    if (detail.tag && detail.tag !== "finite") return { label: detail.label, value: detail.reason || detail.tag };
+    if (detail.value == null) return { label: detail.label, value: detail.reason || "Not measured" };
+    return detail;
+  }
+  function create({ root, dispatch }) {
+    if (!root || typeof dispatch !== "function") throw new TypeError("A comparison root and dispatch function are required");
+    const document = root.ownerDocument;
+    let state = null, options = {}, currentAnalysis = null, copyText = null;
+    root.innerHTML = `
+      <div class="ol-comparison-toolbar">
+        <div class="ol-comparison-heading"><strong>Cell comparison</strong><span class="ol-comparison-summary"></span>
+          <button type="button" class="ol-action cursor-interaction" data-comparison-action="expand" data-focus-key="expand">Expand</button>
+          <button type="button" class="ol-action cursor-interaction" data-comparison-action="clear" data-focus-key="clear">Clear</button>
+        </div>
+        <div class="ol-comparison-controls">
+          <label>Compare <select data-comparison-control="basis" data-focus-key="basis" aria-label="Comparison basis"><option value="auto">Auto</option><option value="amount">Amount</option><option value="intensity">Intensity</option></select></label>
+          <label>Against <select data-comparison-control="reference" data-focus-key="reference" aria-label="Comparison reference"></select></label>
+          <label>Sort <select data-comparison-control="sort" data-focus-key="sort" aria-label="Sort captured cells"></select></label>
+          <button type="button" class="ol-action cursor-interaction" data-comparison-action="direction" data-focus-key="direction"></button>
+          <label>POC <select data-comparison-control="poc" data-focus-key="poc" aria-label="Loaded period POC"></select></label>
+          <div class="ol-seg" role="group" aria-label="Collection view"><button type="button" class="cursor-interaction" data-comparison-action="view" data-value="grid" data-focus-key="grid" aria-pressed="true">Cards</button><button type="button" class="cursor-interaction" data-comparison-action="view" data-value="matrix" data-focus-key="matrix" aria-pressed="false">Matrix</button></div>
+        </div>
+        <div class="ol-comparison-notice"><span class="ol-comparison-basis-note"></span><span class="ol-comparison-poc-note"></span></div>
+        <div class="ol-comparison-storage"><span data-comparison-status role="status" aria-live="polite"></span><button type="button" class="ol-action cursor-interaction" data-comparison-action="retry" data-focus-key="retry" hidden>Retry save</button><button type="button" class="ol-action cursor-interaction" data-comparison-action="discard" data-focus-key="discard" hidden>Discard stored record</button></div>
+      </div>
+      <div class="ol-comparison-empty" hidden><h2>No captured cells</h2><p>Right-click a cell and choose Add to comparison. Copy and Add are also available in cell Inspect detail and the Cells table.</p><p>Kept in this tab.</p></div>
+      <div class="ol-comparison-panes"><section class="ol-comparison-focus" aria-label="Focused cell"></section><section class="ol-comparison-collection" aria-label="Captured cells"><div class="ol-comparison-page"><span data-comparison-position></span><button type="button" class="ol-action cursor-interaction" data-comparison-action="page" data-value="previous" data-focus-key="previous">Previous</button><button type="button" class="ol-action cursor-interaction" data-comparison-action="page" data-value="next" data-focus-key="next">Next</button></div><div class="ol-comparison-entries"></div></section></div>
+      <section class="ol-comparison-copy" role="dialog" aria-labelledby="ol-comparison-copy-title" hidden><div><strong id="ol-comparison-copy-title">Copy cell text</strong><button type="button" class="ol-action cursor-interaction" data-comparison-action="close-copy" data-focus-key="close-copy">Close</button></div><p>Clipboard access failed. Select and copy this text.</p><textarea readonly aria-label="Copyable captured cell text" data-focus-key="copy-text"></textarea></section>`;
+    const q = (selector) => root.querySelector(selector);
+    const setOptions = (control, entries, value) => {
+      const select = q(`[data-comparison-control="${control}"]`), markup = entries.map((entry) => `<option value="${escape(entry.value)}"${entry.disabled ? ' disabled=""' : ""}>${escape(entry.label)}</option>`).join("");
+      if (select.innerHTML !== markup) select.innerHTML = markup;
+      select.value = value ?? "";
+    };
+    function metrics(analysis) {
+      return Array.isArray(options.metrics) ? options.metrics : globalThis.explorerComparison?.METRICS || fallbackMetrics;
+    }
+    function metricEntry(analysis, metric, capture) {
+      // The pure module owns all eligibility and derived numbers. An absent result is a non-value.
+      const entry = analysis?.metrics?.[metric.key]?.[capture.id];
+      return entry && finite(entry.value) ? entry : { ...(entry || {}), value: null, reason: entry?.reason || "Unavailable" };
+    }
+    function mark(metric, entry) {
+      if (!finite(entry.value) || !(entry.count > 1)) return "";
+      const scale = entry.domain ? { min: entry.domain[0], max: entry.domain[1], allEqual: entry.allEqual } : null;
+      if (!scale || !finite(scale.min) || !finite(scale.max) || !(scale.max > scale.min) || scale.allEqual) return "";
+      // Signed domains may span -MAX_VALUE..MAX_VALUE, whose subtraction overflows.
+      const position = (value) => Math.max(0, Math.min(100, metric.signed
+        ? (0.5 + value / scale.max / 2) * 100
+        : (value - scale.min) / (scale.max - scale.min) * 100));
+      const zero = position(metric.signed ? 0 : scale.min), point = position(entry.value), reference = entry.reference;
+      const roleValue = metric.share ? entry.value - 0.5 : entry.value;
+      const role = metric.signed || metric.share ? (roleValue > 0 ? "positive" : roleValue < 0 ? "negative" : "midpoint") : "neutral";
+      return `<span class="ol-comparison-track" aria-hidden="true"><i class="ol-comparison-fill" data-role="${role}" style="left:${Math.min(zero, point)}%;width:${Math.abs(point - zero)}%"></i>${metric.signed ? `<i class="ol-comparison-zero" style="left:${zero}%"></i>` : ""}${finite(reference) ? `<i class="ol-comparison-reference" style="left:${position(reference)}%"></i>` : ""}</span>`;
+    }
+    function metricBlock(metric, capture, compact, analysis) {
+      const entry = metricEntry(analysis, metric, capture), available = finite(entry.value);
+      metric = { ...metric, unit: entry.unit || metric.unit, share: metric.share || metric.kind === "share", signed: metric.signed || metric.kind === "signed" };
+      const rank = entry.count === 1 ? "Only comparable cell" : entry.count > 1 && finite(entry.rank) ? `Rank ${entry.rank} of ${entry.count}` : `${entry.count || 0} comparable`;
+      return `<div class="ol-comparison-metric${metric.key === "volume" && !compact ? " ol-comparison-primary" : ""}" data-metric="${escape(metric.key)}" data-state="${escape(entry.tag || "undefined")}"${available ? ` data-canonical="${escape(entry.value)}"${entry.formula ? ` data-formula="${escape(entry.formula)}"` : ""}` : ""}>
+        <span class="ol-comparison-label">${escape(metric.label)}</span><strong class="ol-comparison-value">${escape(available ? valueText(metric, entry.value) : entry.reason)}</strong>
+        ${available ? `${entry.count === 1 ? "" : `<span class="ol-comparison-difference">${escape(deltaText(metric, entry))}</span>`}<span class="ol-comparison-rank">${escape(rank)}</span>${mark(metric, entry)}` : ""}${available && entry.relation ? `<span class="ol-comparison-rank">${escape(entry.relation)}</span>` : ""}
+      </div>`;
+    }
+    function captureName(capture) { return `${timeRange(capture, true)} · ${band(capture)}`; }
+    function renderFocus(capture, analysis) {
+      if (!capture) return "";
+      const reference = state.reference === capture.id;
+      const observed = capture.observed || {}, captureSource = typeof capture.source === "string" ? capture.source : capture.source?.label || capture.source?.kind || "Unknown source";
+      const sourceLabel = captureSource.split(" · ").slice(0, 2).join(" · ");
+      const completeness = typeof capture.completeness === "string" ? capture.completeness : capture.completeness?.label || capture.completeness?.state || "";
+      const metadata = [
+        { label: "Captured at", value: utc(capture.capturedAt, true) },
+        { label: "Measured through", value: utc(capture.measuredThrough, true) },
+        { label: "Source", value: captureSource },
+        { label: "Completeness", value: completeness || "Unknown" },
+        { label: "Original level", value: `n ${capture.level?.n ?? "Unknown"}, m ${capture.level?.m ?? "Unknown"}` },
+        { label: "Structural whole-cell known at", value: finite(capture.when?.knownAtMs) ? utc(capture.when.knownAtMs, true) : capture.when?.knownAtReason || "Unknown" },
+        { label: "Original chart scale", value: capture.originalScale || "Unknown" },
+        { label: "Nominal time · half-open", value: `[${utc(capture.nominal?.t0, true)}, ${utc(capture.nominal?.t1, true)})` },
+        { label: "Nominal band · half-open", value: `[${number(capture.nominal?.low, 8)}, ${number(capture.nominal?.high, 8)}) USDT` },
+        { label: "Observed time", value: `${utc(observed.t0, true)}–${utc(observed.t1, true)}` },
+        { label: "Observed band", value: finite(observed.low) && finite(observed.high) ? `[${number(observed.low, 8)}, ${number(observed.high, 8)}) USDT` : (finite(observed.width) ? `${number(observed.width, 8)} USDT wide` : "Unknown") },
+        { label: "Observed exposure", value: `${number(observed.seconds, 8)} seconds × ${number(observed.width, 8)} USDT` },
+        ...(Array.isArray(capture.detail) ? capture.detail.map((detail) => safeDetail(detail, options.edge)) : []),
+      ];
+      let previousGroup = "";
+      const blocks = metrics(analysis).map((metric) => {
+        const heading = metric.group && metric.group !== previousGroup ? `<h3>${escape(metric.group)}</h3>` : "";
+        previousGroup = metric.group;
+        return heading + metricBlock(metric, capture, false, analysis);
+      }).join("");
+      return `<div class="ol-comparison-focus-head"><span class="ol-comparison-eyebrow">Focused cell${reference ? " · Reference" : ""}</span><h2>${escape(timeRange(capture, true))}</h2><p class="ol-comparison-band">${escape(band(capture))}</p>${completeness ? `<p class="ol-comparison-completeness">${escape(completeness)}${capture.shortExposure ? " · Short exposure" : ""}</p>` : ""}<div class="ol-comparison-capture-stamp"><span>Captured ${escape(utc(capture.capturedAt))}</span><span>Measured through ${escape(utc(capture.measuredThrough))}</span><span>${escape(sourceLabel)}</span></div><div class="ol-comparison-focus-actions"><button type="button" class="ol-action cursor-interaction" data-comparison-action="reference" data-id="${escape(reference ? "" : capture.id)}" data-focus-key="pin">${reference ? "Use set median" : "Use as reference"}</button><button type="button" class="ol-action cursor-interaction" data-comparison-action="copy" data-id="${escape(capture.id)}" data-focus-key="copy">Copy cell</button><button type="button" class="ol-action cursor-interaction" data-comparison-action="remove" data-id="${escape(capture.id)}" data-focus-key="remove-focus">Remove</button></div></div><div class="ol-comparison-metrics">${blocks}</div><details class="ol-comparison-details" ><summary data-focus-key="details">Capture details</summary><dl>${metadata.map((detail) => `<div><dt>${escape(detail.label)}</dt><dd>${escape(typeof detail.value === "number" ? number(detail.value, 8) : detail.value ?? "Unavailable")}${detail.unit ? " " + escape(unitText(detail.unit)) : ""}${detail.tag ? ` <span>${escape(detail.tag)}</span>` : ""}</dd></div>`).join("")}</dl><p>Original chart scale; not a comparison scale.</p></details>`;
+    }
+    function renderCards(captures, analysis) {
+      const all = metrics(analysis), primary = ["volume", "trades", "flow", "delta"], cardMetrics = all.filter((metric) => metric.card === true || primary.includes(metric.key));
+      return `<div class="ol-comparison-grid">${captures.map((capture) => `<article class="ol-comparison-card" data-capture-id="${escape(capture.id)}" data-focused="${capture.id === state.focus}" data-reference="${capture.id === state.reference}"><div class="ol-comparison-card-head"><button type="button" class="ol-comparison-card-focus cursor-interaction" data-comparison-action="focus" data-id="${escape(capture.id)}" data-focus-key="cell:${escape(capture.id)}"${capture.id === state.focus ? ' aria-current="true"' : ""}><span>${escape(timeRange(capture, true))}</span><strong>${escape(band(capture))}</strong>${capture.id === state.reference ? '<span class="ol-comparison-reference-label">Reference</span>' : ""}</button><button type="button" class="ol-action cursor-interaction" data-comparison-action="remove" data-id="${escape(capture.id)}" data-focus-key="remove:${escape(capture.id)}" aria-label="Remove ${escape(captureName(capture))}">Remove</button></div><div class="ol-comparison-card-metrics">${cardMetrics.map((metric) => metricBlock(metric, capture, true, analysis)).join("")}</div></article>`).join("")}</div>`;
+    }
+    function renderMatrix(captures, analysis) {
+      return `<div class="ol-comparison-matrix-scroll"><table class="ol-comparison-matrix"><caption class="ol-sr">Captured cells with comparison metrics; focus, reference and sorting match Cards.</caption><thead><tr><th scope="col">Cell · UTC / USDT</th>${metrics(analysis).map((metric) => `<th scope="col">${escape(metric.label)}</th>`).join("")}<th scope="col">Actions</th></tr></thead><tbody>${captures.map((capture) => `<tr data-capture-id="${escape(capture.id)}" data-focused="${capture.id === state.focus}" data-reference="${capture.id === state.reference}"><th scope="row"><button type="button" class="ol-comparison-matrix-focus cursor-interaction" data-comparison-action="focus" data-id="${escape(capture.id)}" data-focus-key="cell:${escape(capture.id)}"${capture.id === state.focus ? ' aria-current="true"' : ""}><span>${escape(timeRange(capture, true))}</span><strong>${escape(band(capture))}</strong>${capture.id === state.reference ? '<span class="ol-comparison-reference-label">Reference</span>' : ""}</button></th>${metrics(analysis).map((metric) => `<td>${metricBlock(metric, capture, true, analysis)}</td>`).join("")}<td><button type="button" class="ol-action cursor-interaction" data-comparison-action="remove" data-id="${escape(capture.id)}" data-focus-key="remove:${escape(capture.id)}" aria-label="Remove ${escape(captureName(capture))}">Remove</button></td></tr>`).join("")}</tbody></table></div>`;
+    }
+    function render(model, analysis, nextOptions = {}) {
+      if (copyText !== null && options.edge !== nextOptions.edge) clearCopyFallback();
+      state = model;
+      currentAnalysis = analysis;
+      options = nextOptions;
+      const focusedKey = root.contains(document.activeElement) ? document.activeElement.dataset.focusKey : null;
+      const focusPane = q(".ol-comparison-focus"), collectionPane = q(".ol-comparison-collection"), scroll = [focusPane.scrollTop, collectionPane.scrollTop];
+      const detailsOpen = !!q(".ol-comparison-details")?.open;
+      const captures = model.captures || [], byId = new Map(captures.map((capture) => [capture.id, capture]));
+      const ordered = (analysis?.ordered || captures).map((entry) => typeof entry === "string" ? byId.get(entry) : entry).filter(Boolean);
+      const selected = byId.get(model.focus) || ordered[0];
+      const pages = Math.max(1, Math.ceil(ordered.length / PAGE_SIZE)), page = Math.max(0, Math.min(pages - 1, model.page || 0)), entries = ordered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+      root.dataset.view = model.view || "grid";
+      root.dataset.singleton = String(captures.length === 1);
+      root.dataset.empty = String(!captures.length);
+      q(".ol-comparison-summary").textContent = `${captures.length} ${captures.length === 1 ? "cell" : "cells"} · Kept in this tab`;
+      q('[data-comparison-action="expand"]').textContent = model.expanded ? "Restore chart" : "Expand";
+      q('[data-comparison-action="expand"]').setAttribute("aria-expanded", String(!!model.expanded));
+      q('[data-comparison-action="clear"]').disabled = !captures.length;
+      q('[data-comparison-control="basis"]').value = model.basis || "auto";
+      setOptions("reference", [{ value: "", label: "Set median" }, ...captures.map((capture) => ({ value: capture.id, label: captureName(capture) }))], model.reference);
+      const usedBasis = analysis?.basis || "amount", unit = usedBasis === "intensity" ? " · intensity" : " · amount";
+      setOptions("sort", [{ value: "time", label: "Market time" }, { value: "added", label: "Collection order" }, { value: "volume", label: "Volume" + unit }, { value: "trades", label: "Trades" + unit }, { value: "delta", label: "Net taker volume" + unit }, { value: "intensity", label: "Volume intensity" }, { value: "size", label: "Mean trade size · USDT/trade" }, { value: "flow", label: "Taker-buy volume share · %" }, { value: "poc", label: "POC distance · USDT" }], model.sort?.key || "time");
+      const direction = model.sort?.direction || (model.sort?.key === "time" || model.sort?.key === "added" || model.sort?.key === "poc" ? "asc" : "desc");
+      q('[data-comparison-action="direction"]').textContent = direction === "asc" ? "Ascending ↑" : "Descending ↓";
+      q('[data-comparison-action="direction"]').setAttribute("aria-label", `Sort ${direction === "asc" ? "ascending; switch to descending" : "descending; switch to ascending"}`);
+      const hiddenPoc = model.poc && !replayVisible(model.poc, options.edge),
+        loadedPocs = (options.pocOptions || []).filter((poc) => replayVisible(poc, options.edge) && (!hiddenPoc || poc.id !== model.poc.id));
+      const pocs = [{ value: "", label: "Choose a POC" }, ...loadedPocs.map((poc) => ({ value: poc.id, label: poc.label }))];
+      // The snapshot stays owned by the model; its id can embed a price, so even option values must be gated.
+      if (hiddenPoc) pocs.push({ value: "unavailable-in-replay", label: "Unavailable in replay", disabled: true });
+      else if (model.poc && !pocs.some((poc) => poc.value === model.poc.id)) pocs.push({ value: model.poc.id, label: model.poc.label || "Captured POC reference" });
+      setOptions("poc", pocs, hiddenPoc ? "unavailable-in-replay" : model.poc?.id);
+      q(".ol-comparison-basis-note").textContent = `${model.basis === "auto" || !model.basis ? "Auto → " : ""}${usedBasis === "intensity" ? "Intensity" : "Amount"}${analysis?.geometryDiffers ? " · Geometry differs" : ""}`;
+      q(".ol-comparison-poc-note").textContent = hiddenPoc ? "Unavailable in replay" : !loadedPocs.length && !model.poc ? "Enable a POC in Lines first" : model.poc?.label || "";
+      const status = options.status || "";
+      q('[data-comparison-status]').textContent = options.unsaved && !status.startsWith("Unsaved comparison")
+        ? `Unsaved comparison${status ? " · " + status : ""}` : status;
+      q('[data-comparison-action="retry"]').hidden = !options.unsaved || !!options.storageRejected;
+      q('[data-comparison-action="discard"]').hidden = !options.storageRejected;
+      for (const button of root.querySelectorAll('[data-comparison-action="view"]')) button.setAttribute("aria-pressed", String(button.dataset.value === (model.view || "grid")));
+      q(".ol-comparison-empty").hidden = !!captures.length;
+      q(".ol-comparison-panes").hidden = !captures.length;
+      focusPane.innerHTML = renderFocus(selected, analysis);
+      q(".ol-comparison-entries").innerHTML = model.view === "matrix" ? renderMatrix(entries, analysis) : renderCards(entries, analysis);
+      q(".ol-comparison-collection").hidden = captures.length === 1 && model.view !== "matrix";
+      q('[data-comparison-position]').textContent = ordered.length ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, ordered.length)} of ${ordered.length} · Page ${page + 1} of ${pages}` : "0 cells";
+      q('[data-value="previous"]').disabled = page === 0;
+      q('[data-value="next"]').disabled = page === pages - 1;
+      if (detailsOpen && q(".ol-comparison-details")) q(".ol-comparison-details").open = true;
+      focusPane.scrollTop = scroll[0]; collectionPane.scrollTop = scroll[1];
+      const active = focusedKey && Array.from(root.querySelectorAll("[data-focus-key]")).find((element) => element.dataset.focusKey === focusedKey && !element.disabled && !element.closest("[hidden]"));
+      if (active && active !== document.activeElement) active.focus({ preventScroll: true });
+      else if (focusedKey && !active) q('[data-comparison-action="expand"]').focus({ preventScroll: true });
+    }
+    function onClick(event) {
+      const control = event.target.closest("[data-comparison-action]");
+      if (!control || !root.contains(control) || control.disabled) return;
+      const type = control.dataset.comparisonAction;
+      if (type === "close-copy") { clearCopyFallback(); return; }
+      if (type === "direction") dispatch({ type: "sort", key: state.sort?.key || "time", direction: state.sort?.direction === "desc" ? "asc" : "desc" });
+      else if (type === "page") dispatch({ type, value: Math.max(0, (state.page || 0) + (control.dataset.value === "previous" ? -1 : 1)) });
+      else if (type === "reference") dispatch({ type, id: control.dataset.id || null });
+      else if (type === "view") dispatch({ type, value: control.dataset.value });
+      else dispatch({ type, ...(control.dataset.id ? { id: control.dataset.id } : {}) });
+    }
+    function onChange(event) {
+      const type = event.target.dataset.comparisonControl;
+      if (type === "sort") dispatch({ type, key: event.target.value, direction: ["time", "added", "poc"].includes(event.target.value) ? "asc" : "desc" });
+      else if (type === "reference" || type === "poc") dispatch({ type, id: event.target.value || null });
+      else if (type) dispatch({ type, value: event.target.value });
+    }
+    function showCopyFallback(text) {
+      copyText = String(text);
+      const panel = q(".ol-comparison-copy"), textarea = panel.querySelector("textarea");
+      panel.hidden = false;
+      for (const surface of root.querySelectorAll(".ol-comparison-toolbar, .ol-comparison-panes, .ol-comparison-empty")) surface.inert = true;
+      textarea.value = copyText;
+      textarea.focus(); textarea.select();
+    }
+    function clearCopyFallback() {
+      const panel = q(".ol-comparison-copy"), open = !panel.hidden;
+      panel.hidden = true;
+      panel.querySelector("textarea").value = "";
+      copyText = null;
+      for (const surface of root.querySelectorAll(".ol-comparison-toolbar, .ol-comparison-panes, .ol-comparison-empty")) surface.inert = false;
+      if (open) (q('[data-comparison-action="copy"]') || q('[data-comparison-action="expand"]')).focus({ preventScroll: true });
+      return open;
+    }
+    function focusControl(action = "expand") {
+      const control = q(`[data-comparison-action="${action}"]`);
+      if (control && !control.disabled) control.focus({ preventScroll: true });
+      else root.focus({ preventScroll: true });
+    }
+    root.addEventListener("click", onClick);
+    root.addEventListener("change", onChange);
+    return { render, showCopyFallback, clearCopyFallback, focusControl, destroy() { root.removeEventListener("click", onClick); root.removeEventListener("change", onChange); } };
+  }
+  return Object.freeze({ create, PAGE_SIZE });
+});
+</script>
     <script>(async () => {
   "use strict";
   const root = document.getElementById("origo-lens"),
@@ -17049,12 +17933,24 @@
   // On the live host the cutoff advances in place as new data arrives. It is
   // the cube's data cutoff, a minute edge, so the base column that holds it is
   // open: it has the latest trades and still gains more.
+  let comparisonSourceRevision = 0;
   let CUT = (Date.parse(PACK.cutoff) / 1000 - T0) / BASE;
   // Where the cube's archived days end; after it, provisional minutes that the
   // day's archive later replaces. The recorded snapshot has no such edge.
   const canonOf = (pack) =>
     pack.canonical_through ? (Date.parse(pack.canonical_through) / 1000 - T0) / BASE : null;
   let CANON = canonOf(PACK);
+  // Notices can apply panel layout while saved calibration is read during startup.
+  const C = window.explorerComparison;
+  const comparisonEmpty = () => ({comparisonVersion:1,instrument:INSTRUMENT,captures:[],focus:null,reference:null,
+    basis:"auto",sort:{key:"time",direction:"asc"},view:"grid",page:0,poc:null,expanded:false,restoreLayout:null});
+  let comparisonModel = comparisonEmpty(), comparisonUI = null, comparisonAnalysis = null,
+    comparisonStatsKey = "", comparisonRenderKey = "", comparisonLastEdge = undefined, comparisonRevision = 0, comparisonTimer = null,
+    comparisonUnsaved = false, comparisonRejected = false, comparisonMessage = "", comparisonMenu = null,
+    comparisonPocCache = {key:null,items:[]};
+  const comparisonCounters = {stats:0,writes:0,bytes:0,renders:0};
+  const comparisonMs = (base) => Number.isFinite(base) ? (T0 + base * BASE) * 1000 : null;
+  const comparisonEdge = () => S.replay ? comparisonMs(activeCutoff()) : null;
   // Diagonal through the resolution lattice: least-squares fit of
   // log2(median column price range / 125) against n over the full history,
   // n = 6..13, measured on the 2026-09-24 extraction (exponent 0.49). The two
@@ -17842,6 +18738,7 @@
     return layout(width, height, eventKinds().length, S.rows !== "off" ? ROWS_STRIP : 0, profileTrackCount(), S.profileOpen);
   }
   function geometry() {
+    if (comparisonModel.expanded) return;
     const rect = canvas.getBoundingClientRect(),
       width = rect.width,
       height = rect.height,
@@ -18863,6 +19760,7 @@
   // timer exists, and only when something waits and nothing is held (a gesture's end calls noteGesture,
   // which arms again). The expensive work (coherence, cohorts, fits) is scaleTick's.
   function scaleArm() {
+    if (comparisonModel.expanded) return;
     if (
       scaleRt.timer ||
       (!scaleRt.ctl.hasWants() && !(scaleRt.axes.hasPending() && !scaleRt.playing) && !scaleRt.chase) ||
@@ -18873,6 +19771,7 @@
   }
   // Re-arm after the tick with an exact wait (the smallest any piece still has); never two timers.
   function scaleAfter(ms) {
+    if (comparisonModel.expanded) return;
     if (!scaleRt.timer) scaleRt.timer = setTimeout(scaleTick, ms);
   }
   // Is the data a channel would be fitted from coherent and complete? Every read the view needs has answered
@@ -19101,7 +20000,7 @@
     }
   }
   function scaleRun() {
-    if (!ready || scaleRt.fault) return;
+    if (!ready || comparisonModel.expanded || scaleRt.fault) return;
     // A draw is already owed: it resolves every channel again and asks for what the state now needs, so a fit
     // made first could calibrate a context that is no longer the one on screen.
     if (raf) return scaleAfter(16);
@@ -19232,6 +20131,7 @@
     // Candidates, main paint and Lens share one label measurement per frame.
     drawingLabelLayouts = new WeakMap();
     if (!ready) return;
+    if (comparisonModel.expanded) { comparisonRefresh(); return; }
     geometry();
     for (const k in markCount) markCount[k] = 0;
     refTally.clear();
@@ -19514,7 +20414,15 @@
     // A failure noted for a tile says itself while that tile is what the view or the lens needs: a tool that opens or closes changes that without
     // an update, so the line is decided again with the frame (nothing is noted on a healthy page, and then there is nothing to decide).
     if (noted.size || loadingLine.blocks.size) renderLoading();
-    last = { full, query, shown, meas, b, cut, mv, under, sc };
+    const cf = lensShown() ? lensFrame() : null, cp = cf?.src ? lensParts(cf) : null;
+    const comparisonLens = cp ? { ...cp, bounds:cp.lensBounds, sourceEnd:cp.end,
+      motion:lensMotionParts(cp), box:{x:cf.x,y:cf.y,w:cf.w,h:cf.h} } : null;
+    last = { full, query, shown, meas, b, cut, mv, under, sc, src, comparisonLens, n:renderN(), m:renderM(),
+      sourceEnd: sourceRange(src)[1], token:PACK.state_token ?? null, generation:live.generation,
+      sourceVersion:sourcesKey(), sourceRevision:comparisonSourceRevision,
+      camera:[S.tA,S.tB,S.pA,S.pB,S.n,S.m,S.replay,S.anchor],
+      motionEnd:mv?.src?.end ?? null, canon:CANON, dataCut:CUT };
+    comparisonRefresh();
     if (transition) {
       if (u >= 1) transition = null;
       else requestDraw();
@@ -20214,6 +21122,7 @@
   // written here; how it is shown is one loop over the codec's table (applyVisual), so a setting added to
   // the table is applied, written and read back by the same entry.
   function applyView(v) {
+    if (comparisonModel.expanded) comparisonExpand(false);
     const previous = { state: structuredClone(S), carried: scaleRt.carried, local: scaleRt.local,
       appearance: scaleRt.appearance, hover, transition, activeDrawingId, drawingKeyContext,
       tipHidden: el("tip").hidden };
@@ -20764,7 +21673,8 @@
   let cellRows = new Map(),
     cellRowsLevel = null,
     hoverRow = null,
-    cellsTimer = 0;
+    cellsTimer = 0,
+    cellsFocusRestoring = false;
   // The words of a cell's finality, from the one predicate (E.measure.cellState) the readout and the
   // inspector's counts use, so the table, the tooltip and the counts cannot say different things.
   function cellState(c, b, ts = stepT(), ps = stepP()) {
@@ -20928,20 +21838,31 @@
         node.dataset.canonical = String(canonical);
         tr.lastElementChild.append(node);
       }
+      const actions = document.createElement("td");
+      actions.className = "ol-cell-actions";
+      comparisonCellButtons(actions, () => ({ c:c.c, r:c.r, n:listed.n, m:listed.m, surface:"cells" }));
+      tr.append(actions);
       cellRows.set(cellKey(c.c, c.r), { tr, z: c, readout });
       frag.append(tr);
     }
     // A rebuild (a refresh, a sort, a page) must not take the keyboard away from the row that has it: the row with the same cell is given it back, or else the
     // first row, and it is the table's tab stop
-    const held = document.activeElement && el("table-body").contains(document.activeElement) ? document.activeElement.dataset.cellKey : null;
-    el("table-body").replaceChildren(frag);
-    if (held !== null) {
-      const same = [...el("table-body").children].find((r) => r.dataset.cellKey === held) ?? el("table-body").firstElementChild;
-      if (same) {
-        for (const r of el("table-body").children) r.tabIndex = r === same ? 0 : -1;
-        same.focus({ preventScroll: true });
+    const active = document.activeElement, held = el("table-body").contains(active) ? active.closest("tr")?.dataset.cellKey : null,
+      heldAction = active?.dataset.cellComparisonAction;
+    cellsFocusRestoring = true;
+    try {
+      el("table-body").replaceChildren(frag);
+      if (held != null) {
+        const exact = [...el("table-body").children].find((r) => r.dataset.cellKey === held), same = exact ?? el("table-body").firstElementChild;
+        if (same) {
+          for (const r of el("table-body").children) r.tabIndex = r === same ? 0 : -1;
+          (exact && heldAction ? exact.querySelector(`[data-cell-comparison-action="${heldAction}"]`) ?? same : same).focus({ preventScroll: true });
+          const [n,m]=same.dataset.level.split(":").map(Number);
+          tableHover={c:Number(same.dataset.c),r:Number(same.dataset.r),n,m};
+          if(!exact)requestDraw();
+        }
       }
-    }
+    } finally { cellsFocusRestoring = false; }
     hoverRow = null;
     // The rows are new: a row the pointer is on keeps its marker on the legend.
     if (tableHover) rowMarker();
@@ -22323,6 +23244,11 @@
       const button = document.createElement("button"); button.type = "button"; button.textContent = "Edit drawing";
       button.addEventListener("click", () => drawingEdit(entry.hit.drawing, "inspect")); body.append(button);
     }
+    if (["cells", "lens"].includes(inspect.surface) && S.mode !== "candles") {
+      comparisonCellButtons(body, () => {
+        const w=inspectWhere(); return w.inside ? {c:w.c,r:w.r,n:Math.round(Math.log2(w.sp.ts)),m:Math.round(Math.log2(w.sp.ps)),surface:inspect.surface} : null;
+      });
+    }
     el("inspect-detail-title").textContent = el("inspect-position").textContent;
   }
   // The cursor's mark on the plot: the strongest persistent mark of the interaction table, on the item it reads.
@@ -22594,6 +23520,7 @@
   }
   function update() {
     if (!ready) return;
+    if (comparisonModel.expanded) { applyPanels(); comparisonRefresh(); return; }
     limits();
     chooseSource();
     if (S.auto) autoLevel();
@@ -22772,6 +23699,7 @@
       rows[to].focus();
     });
     el("table-body").addEventListener("focusin", (e) => {
+      if(cellsFocusRestoring)return;
       const tr = e.target.closest("tr");
       if (!tr) return;
       const [n, m] = tr.dataset.level.split(":").map(Number);
@@ -22780,6 +23708,7 @@
       requestDraw();
     });
     el("table-body").addEventListener("focusout", () => {
+      if(cellsFocusRestoring)return;
       tableHover = null;
       rowMarker();
       requestDraw();
@@ -22887,6 +23816,9 @@
       drawer = el("drawer"),
       side = el("side-toggle"),
       sideLabel = S.sideOpen ? "Collapse the inspector" : "Expand the inspector";
+    root.dataset.comparisonExpanded = String(comparisonModel.expanded);
+    for (const node of [root.querySelector(".ol-plot"), el("side"), el("side-grip")]) node.inert = comparisonModel.expanded;
+    el("drawer-grip").hidden = comparisonModel.expanded;
     const sideWidth = clamp(S.sideWidth, 260, sideMax()),
       drawerHeight = clamp(S.drawerHeight, 120, drawerMax());
     main.dataset.side = S.sideOpen ? "open" : "closed";
@@ -22922,8 +23854,10 @@
       (S.drawerOpen ? "Close the drawer" : "Open the drawer") + " (T)";
   }
   function openDrawer(tab, open = true) {
+    if (comparisonModel.expanded && (tab !== "compare" || !open)) comparisonExpand(false);
     S.drawer = tab;
     S.drawerOpen = open;
+    if (tab === "compare" && open) S.drawerHeight=Math.max(S.drawerHeight,Math.min(420,drawerMax()));
     update();
     save();
   }
@@ -33141,7 +34075,7 @@
     return layoutNow(r.width, r.height);
   }
   function autoLevel() {
-    if (!S.auto || !(S.tB > S.tA) || !(S.pB > S.pA)) return false;
+    if (comparisonModel.expanded || !canvas.getClientRects().length || canvas.getBoundingClientRect().height <= 0 || !S.auto || !(S.tB > S.tA) || !(S.pB > S.pA)) return false;
     const g = navGeometry(),
       n = pixelLevel(S.n, S.tB - S.tA, g.w, N_MAX),
       m = S.diagonal ? diagonalM(n) : pixelLevel(S.m, S.pB - S.pA, g.h, M_MAX),
@@ -33395,7 +34329,7 @@
     if (node.hidden) node.hidden = false;
   }
   function scheduleCube() {
-    if (!PACK.live || !ready) return;
+    if (!PACK.live || !ready || comparisonModel.expanded) return;
     clearTimeout(cube.timer);
     cube.timer = setTimeout(pumpCube, 200);
     scheduleMotion();
@@ -33417,7 +34351,7 @@
     return null;
   }
   async function pumpCube() {
-    if (!PACK.live || !ready || cube.busy || cube.stale) return;
+    if (!PACK.live || !ready || comparisonModel.expanded || cube.busy || cube.stale) return;
     const want = cubeWant();
     if (!want) return;
     const generation = live.generation;
@@ -33455,7 +34389,7 @@
       // use, an answer for a pack the page replaced meanwhile is dropped and
       // asked for again, so no two cube states ever mix.
       const decoded = await want.decode(body);
-      if (generation === live.generation) want.apply(decoded);
+      if (generation === live.generation) { comparisonSourceRevision++; want.apply(decoded); }
       else want.drop?.();
     } catch (error) {
       want.drop?.();
@@ -33803,14 +34737,14 @@
     for (const [key, x] of dwellLatest) if (x.span[1] > edge) dwellLatest.delete(key);
   }
   function scheduleMotion() {
-    if (!PACK.live || !ready) return;
+    if (!PACK.live || !ready || comparisonModel.expanded) return;
     clearTimeout(motion.timer);
     motion.timer = setTimeout(pumpMotion, 200);
   }
   // One path and dwell read at a time, beside the cube's other reads. An answer
   // for a pack the page replaced meanwhile is dropped, as theirs are.
   async function pumpMotion() {
-    if (!PACK.live || !ready || motion.busy) return;
+    if (!PACK.live || !ready || comparisonModel.expanded || motion.busy) return;
     const want = motionWant();
     if (!want) return;
     const generation = live.generation,
@@ -33836,7 +34770,7 @@
       }
       if (!response.ok) throw Error(body?.error || `the server answered ${response.status}`);
       const decoded = await want.decode(body);
-      if (generation === live.generation && epoch === motion.epoch) want.apply(decoded);
+      if (generation === live.generation && epoch === motion.epoch) { comparisonSourceRevision++; want.apply(decoded); }
     } catch (error) {
       const message = (
         error.name === "TimeoutError"
@@ -34664,7 +35598,7 @@
     for (const entry of E.codec.VISUAL_KEYS)
       for (const path of entry.fields) {
         if (path.startsWith("scale.")) out.scale[path.slice(6)] = S.scale[path.slice(6)];
-        else out[path] = path === "follow" ? followMode() : S[path];
+        else out[path] = path === "follow" ? followMode() : path === "drawer" && S.drawer === "compare" ? "cells" : S[path];
       }
     return out;
   }
@@ -36023,6 +36957,7 @@
     });
     el("plane").addEventListener("keydown", planeKeys);
     canvas.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || e.ctrlKey) return;
       if (!ready) return;
       const p = at(e),
         axis = onPriceAxis(p);
@@ -36170,6 +37105,8 @@
       noteGesture();
     });
     const finishPointer = (e) => {
+      // The last released button can be secondary even though primary started this gesture.
+      if (e.button !== 0 && !nav.pointers.has(e.pointerId)) return;
       if (drawingPointerUp(e, at(e))) {
         nav.alt = Boolean(e.altKey);
         if (nav.alt) { requestDraw(); scheduleCube(); }
@@ -36372,6 +37309,7 @@
           Boolean(bracket) ||
           e.key.startsWith("Arrow") ||
           ["+", "=", "-", "_", ",", "."].includes(e.key);
+      if (comparisonOwnsKey(e, target)) return;
       if (ready && drawingKey(e, target)) { e.preventDefault(); nav.pressed.add(id); return; }
       if (drawingDialogOpen()) return;
       // A held key repeats only steps: the arrows, zoom, levels and the anchor.
@@ -36678,6 +37616,7 @@
   // Escape closes what is open first, then clears the selection, then goes
   // back to Pan from Select or the lens.
   function escapeKey() {
+    if (comparisonCloseMenu(true)) return;
     if (trendTool) { drawingCancelOperation(); setTool(drawingEntryTool); return; }
     if (closePop(true)) return;
     if (root.dataset.sheet === "open") {
@@ -36694,6 +37633,8 @@
       inspectExit();
       return;
     }
+    if (comparisonModel.expanded) { comparisonExpand(false); return; }
+    if (document.activeElement?.closest("#ol-panel-compare")) return;
     nav.hold = false;
     nav.alt = false;
     if (S.selection) {
@@ -36890,6 +37831,7 @@
     // Everything is decoded before anything changes: no frame sees half a pack.
     for (const id of TIERS)
       if (body.blocks?.[id]) parts[id] = await unpack(body.blocks[id], id);
+    comparisonSourceRevision++;
     if (whole) {
       for (const id of Object.keys(sources))
         if (!TIERS.includes(id)) {
@@ -36964,9 +37906,7 @@
     groups.clear();
     evidenceCache.clear();
     rebuildReference();
-    followCutoff(was);
-    chooseSource();
-    limits();
+    if (!comparisonModel.expanded) { followCutoff(was); chooseSource(); limits(); }
     update();
     title();
     scaleArm();
@@ -37814,6 +38754,290 @@
     }); drawingSyncUI();
   }
 
+  // PRD-0006: owned snapshots; the chart never remaps this tab's collection.
+  function comparisonFreeze(value) {
+    if (value && typeof value === "object" && !Object.isFrozen(value)) { Object.values(value).forEach(comparisonFreeze); Object.freeze(value); }
+    return value;
+  }
+  function comparisonTarget(p) {
+    if (!last || !inPlot(p) || S.mode === "candles" || comparisonModel.expanded) return null;
+    if (drawingHits(p).length || lineAt(p) || clockAt(p)) return null;
+    const lp = last.comparisonLens;
+    const lens = lensShown() && lp && p.x >= lp.box.x && p.x < lp.box.x+lp.box.w && p.y>=lp.box.y && p.y<lp.box.y+lp.box.h;
+    const n=lens?lp.n:last.n,m=lens?lp.m:last.m;
+    return {c:Math.floor(p.t / 2**n),r:Math.floor(p.p / 2**m),n,m,surface:lens?"lens":"cells"};
+  }
+  function comparisonCapture(target) {
+    if (!target || !last || S.mode === "candles") return null;
+    if (last.sourceRevision !== comparisonSourceRevision || last.dataCut !== CUT ||
+      last.camera.some((value,i)=>value !== [S.tA,S.tB,S.pA,S.pB,S.n,S.m,S.replay,S.anchor][i])) return null;
+    const lens=target.surface === "lens", lp=lens?last.comparisonLens:null,
+      frame=lens?lp:last, n=target.n,m=target.m,ts=2**n,ps=2**m,c=target.c,r=target.r;
+    if (!frame || frame.n !== n || frame.m !== m) return null;
+    const b=lens?lp.bounds:last.b,cut=last.cut,src=lens?lp.src:last.src,
+      sourceStart=sourceRange(src)[0],sourceEnd=lens?lp.sourceEnd:last.sourceEnd;
+    if (Math.min((c+1)*ts,sourceEnd,cut) <= Math.max(c*ts,sourceStart)) return null;
+    const t0=Math.max(c*ts,b[0]),t1=Math.min((c+1)*ts,b[1],cut),
+      low=Math.max(r*ps,b[2]),high=Math.min((r+1)*ps,b[3]);
+    if (!(t1>t0 && high>low)) return null;
+    const q=lens?lp.q:last.shown, z=q.map.get(c+","+r) ?? {c,r,v:0,bv:0,ct:0,bt:0},
+      factsFromQuery=!lens && q === last.query && ["exact","cube"].includes(last.meas.state),
+      // Source boundaries belong to the aggregate, independently of the displayed denominator.
+      factEnd=factsFromQuery ? Math.min((c+1)*ts,last.meas.end??last.meas.b[1],last.dataCut) : Math.min((c+1)*ts,sourceEnd),
+      factSupport=comparisonMs(factEnd),
+      motionFrame=lens?lp.motion:last.mv,
+      motionQuery=lens?motionFrame?.mq:motionFrame?.shown,
+      motionReady=Boolean(lens?motionFrame?.msrc:motionFrame?.src) && c*ts < motionFrame.end,
+      mz=motionQuery?.map.get(cellKey(c,r)) ?? {c,r,v:0,bv:0,ct:0,bt:0,p:0,w:0},
+      motionEnd=motionReady?Math.min((c+1)*ts,(!lens && motionQuery===motionFrame.rect?.query)?motionFrame.rect.end:motionFrame.src?.end??motionFrame.msrc?.end):null,
+      metrics={},detail=[], nominal={t0:comparisonMs(c*ts),t1:comparisonMs((c+1)*ts),low:r*ps*PR,high:(r+1)*ps*PR};
+    let shortExposure=false;
+    const measure=(key,mode,basis="amount",pathBasis="spans",movement=false) => {
+      const readyValue=!movement||motionReady;
+      const measuredValue=E.measure.cellMeasurement({mode,basis,pathBasis,z:movement?mz:z,geom:{BASE,PR},level:{n,m},
+        bounds:b,cut,end:movement?motionFrame?.end??-Infinity:Infinity,CUT:last.dataCut,replay:S.replay,
+        read:readyValue?null:{state:"pending",reason:"Motion not measured"},measured:null,cascade:null});
+      const result=measuredValue.result,end=movement?comparisonMs(motionEnd):factSupport;
+      if(key)metrics[key]={tag:result.tag,value:result.tag==="finite"?result.value:null,formula:measuredValue.formula,
+        unit:measuredValue.unit,supportEnd:end,knownThrough:end,numerator:measuredValue.numerator,
+        denominator:measuredValue.denominator??result.denominator??null,reason:result.reason??""};
+      shortExposure ||= Boolean(measuredValue.exposure?.short);
+      return measuredValue;
+    };
+    for(const mode of ["volume","trades","delta"]) {measure(mode+".amount",mode);measure(mode+".intensity",mode,"intensity");}
+    measure("size","size","mean");measure("flow","flow");measure("flowtrades","flowtrades");
+    measure("path","path","amount","spans",true);measure("dwell","dwell","share","spans",true);
+    const addDetail=(label,value,unit,supportEnd=factSupport,knownThrough=supportEnd,tag="finite")=>detail.push({label,value:Number.isFinite(value)||typeof value==="string"?value:null,unit,tag,supportEnd,knownThrough});
+    addDetail("Taker buys",z.bv,"usdt");addDetail("Taker sells",z.v-z.bv,"usdt");addDetail("Taker-buy trades",z.bt,"trades");
+    if(motionReady) {
+      addDetail("USDT moved",mz.p,"usdt",comparisonMs(motionEnd));
+      const perMinute=measure(null,"path","amount","perMinute",true);
+      addDetail("Row spans per minute",perMinute.result.tag==="finite"?perMinute.result.value:null,perMinute.unit,comparisonMs(motionEnd),comparisonMs(motionEnd),perMinute.result.tag);
+      addDetail("Dwell seconds",mz.w,"seconds",comparisonMs(motionEnd));
+    }
+    if(!lens) {
+      const contextEnd=comparisonMs(last.meas.end??last.meas.b[1]), row=last.query.rows.find(x=>x.r===r);
+      if(["exact","cube","recorded"].includes(last.meas.state) && row) {
+        addDetail("Row volume · captured view",row.v,"usdt",contextEnd);
+        if(last.query.v>0)addDetail("Row share · captured view",row.v/last.query.v,"share",contextEnd);
+      }
+      if(["exact","cube","recorded"].includes(last.meas.state))addDetail("Captured view bounds",JSON.stringify(last.meas.b.slice(0,2).map(comparisonMs))+" UTC; "+last.meas.b.slice(2).map(x=>x*PR).join("–")+" USDT","",contextEnd);
+      const under=last.under, band=under?.bands?.map.get(Math.floor(r/2**(under.bands.m-m))), periodEnd=comparisonMs(under?.through);
+      if(under?.res.state==="ready"&&band) {
+        addDetail("Period · captured context",under.period+" · "+JSON.stringify(under.res.span?.map(comparisonMs))+" UTC","",periodEnd);
+        addDetail("Period row band",[Math.floor(r/2**(under.bands.m-m))*2**under.bands.m*PR,(Math.floor(r/2**(under.bands.m-m))+1)*2**under.bands.m*PR].join("–"),"usdt",periodEnd);
+        if(under.kind==="volume")addDetail("Period row volume",band.v,"usdt",periodEnd);
+        if(under.kind==="delta")addDetail("Period net taker volume",2*band.bv-band.v,"usdt",periodEnd);
+      }
+      const volumePeriodEnd=under?.vol.state==="ready"?comparisonMs(under.vol.end??under.vol.span?.[1]):null,
+        relativeSupport=Number.isFinite(contextEnd)&&Number.isFinite(volumePeriodEnd)&&["exact","cube","recorded"].includes(last.meas.state)?Math.max(contextEnd,volumePeriodEnd):null;
+      for(const row of rowSection(r,(x)=>String(x),(x)=>String(x),true,false)) {
+        if(Number.isFinite(row[3]))addDetail(row[0]+" · captured context",row[3],"",relativeSupport);
+      }
+      if(under?.volBands) {
+        addDetail("Relative volume rectangle through",Number.isFinite(contextEnd)?new Date(contextEnd).toISOString():"Unknown","",relativeSupport);
+        addDetail("Relative volume reference through",Number.isFinite(volumePeriodEnd)?new Date(volumePeriodEnd).toISOString():"Unknown","",relativeSupport);
+      }
+    }
+    const complete=(c+1)*ts<=last.dataCut, timePortion=t0>c*ts||t1<(c+1)*ts,
+      portion=timePortion||low>r*ps||high<(r+1)*ps;
+    const capture={instrument:INSTRUMENT,level:{n,m},origin:T0,c,r,nominal,
+      observed:{t0:comparisonMs(t0),t1:comparisonMs(t1),low:low*PR,high:high*PR,seconds:(t1-t0)*BASE,width:(high-low)*PR},
+      capturedAt:Date.now(),measuredThrough:factSupport,source:`${PACK.live?"cube":"recorded"} · ${src.id} · ${last.token??"snapshot"}`,
+      completeness:(complete?"Complete":"Still open")+(portion?" · portion":"")+(last.canon!==null&&(c+1)*ts>last.canon?" · provisional minutes":""),
+      when:{eventStartMs:nominal.t0,eventEndMs:nominal.t1,knownAtMs:complete&&!timePortion?nominal.t1:null,knownAtReason:complete&&!timePortion?"the end of the interval":"the interval is open or partial"},
+      shortExposure,originalScale:last.sc?.[lens?"lens":"cells"]?.mappingId??"none",metrics,detail};
+    capture.id=C.identity(capture);
+    return comparisonFreeze(capture);
+  }
+  function comparisonFingerprint(capture) {
+    if(!capture)return "";
+    const {capturedAt,...record}=capture;
+    return JSON.stringify([record,comparisonSourceRevision,last?.sourceVersion,live.generation,PACK.state_token,CUT,sourcesKey(),last?.cut,S.mode]);
+  }
+  function comparisonPocs() {
+    const cacheKey=[comparisonSourceRevision,live.generation,PACK.state_token,CUT,activeCutoff(),lineResults.size,S.lines.join(",")].join("|");
+    if(comparisonPocCache.key===cacheKey)return comparisonPocCache.items;
+    const out=[];
+    for(const key of periodLines()) {
+      const span=lineSpan(key), result=span?lineResults.get(lineId(key,span)):null;
+      if(result?.state!=="ready"||result.row===null||!Number.isFinite(result.row)||!(result.total>0))continue;
+      const through=result.end??result.span[1],supportEnd=comparisonMs(through);
+      out.push({id:JSON.stringify([key,result.span[0],through,(result.row+.5)*result.rowPrice*PR,PACK.state_token??"snapshot"]),label:`${lineName(key)} · ${new Date(comparisonMs(result.span[0])).toISOString().slice(0,10)}–${new Date(supportEnd).toISOString().slice(0,16)} UTC`,period:key,
+        price:(result.row+.5)*result.rowPrice*PR,rowSize:result.rowPrice*PR,approximate:!result.exact,
+        from:comparisonMs(result.span[0]),through:supportEnd,supportEnd,knownThrough:supportEnd,source:`${PACK.live?"cube":"recorded"} · ${PACK.state_token??"snapshot"}`});
+    }
+    comparisonPocCache={key:cacheKey,items:out};
+    return out;
+  }
+  function comparisonCounterPublish() {
+    const data=el("comparisonWorkspace").dataset;
+    for(const [key,value]of Object.entries({...comparisonCounters,revision:comparisonRevision}))if(data[key]!==String(value))data[key]=String(value);
+  }
+  function comparisonRefresh(force=false,preparedAnalysis=null) {
+    if(!comparisonUI)return;
+    comparisonCounterPublish();
+    const edge=comparisonEdge();
+    // An uncaptured Copy is outside metric cohorts; clear its text even when cached statistics and DOM stay unchanged.
+    if(edge!==comparisonLastEdge) {comparisonUI.clearCopyFallback();comparisonLastEdge=edge;}
+    const eligibility=edge===null?"live":comparisonModel.captures.map(c=>[...Object.values(c.metrics),...c.detail].map(m=>Number.isFinite(m.supportEnd)&&Number.isFinite(m.knownThrough)&&Math.max(m.supportEnd,m.knownThrough)<=edge?1:0).join("")).join("|")+"|"+(comparisonModel.poc&&Math.max(comparisonModel.poc.supportEnd??Infinity,comparisonModel.poc.knownThrough??Infinity)<=edge),
+      statsKey=[comparisonRevision,comparisonModel.basis,comparisonModel.reference,JSON.stringify(comparisonModel.poc),eligibility].join("|");
+    if(statsKey!==comparisonStatsKey) {comparisonUI.clearCopyFallback();comparisonStatsKey=statsKey;comparisonCounters.stats++;comparisonAnalysis=preparedAnalysis??C.analyze(comparisonModel.captures,{...comparisonModel,edge});}
+    const pocs=comparisonPocs(),pocEligibility=edge===null?"live":pocs.map(p=>Number.isFinite(p.supportEnd)&&Number.isFinite(p.knownThrough)&&Math.max(p.supportEnd,p.knownThrough)<=edge),renderKey=JSON.stringify([statsKey,comparisonModel.focus,comparisonModel.sort,comparisonModel.page,comparisonModel.view,comparisonModel.expanded,comparisonMessage,comparisonUnsaved,comparisonRejected,pocs,pocEligibility]);
+    if(!force&&renderKey===comparisonRenderKey)return;
+    // Sorting is pure presentation: it reuses metric cohorts and never refits their statistics.
+    comparisonAnalysis={...comparisonAnalysis,ordered:C.sort?C.sort(comparisonModel.captures,comparisonModel.sort,comparisonAnalysis.metrics):C.analyze(comparisonModel.captures,{...comparisonModel,edge}).ordered};
+    comparisonRenderKey=renderKey;comparisonCounters.renders++;
+    comparisonUI.render(comparisonModel,comparisonAnalysis,{edge,pocOptions:pocs,status:comparisonMessage,unsaved:comparisonUnsaved,storageRejected:comparisonRejected});
+    el("tab-compare").textContent=`Compare${comparisonModel.captures.length?` · ${comparisonModel.captures.length}`:""}`;
+    comparisonCounterPublish();
+    root.dispatchEvent(new CustomEvent("comparison-render",{detail:{revision:comparisonRevision}}));
+  }
+  function comparisonPersist() {
+    clearTimeout(comparisonTimer);
+    comparisonTimer=setTimeout(()=>{
+      const result=window.explorerState.comparison.write(INSTRUMENT,comparisonModel);
+      comparisonCounters.writes++;comparisonCounters.bytes+=result.bytes??0;
+      comparisonUnsaved=!result.ok;comparisonRejected=result.status==="retained";
+      if(!result.ok)comparisonMessage=`Unsaved comparison · ${result.reason}`;
+      else if(comparisonMessage.startsWith("Unsaved comparison"))comparisonMessage="";
+      comparisonRefresh();
+    },0);
+  }
+  function comparisonCommit(next,content=false,reveal=false) {
+    let preparedAnalysis=null;
+    if(reveal) {
+      // Reveal belongs to the candidate record; reuse its analysis after the size preflight.
+      preparedAnalysis=content?C.analyze(next.captures,{...next,edge:comparisonEdge()}):comparisonAnalysis;
+      const ordered=preparedAnalysis?.ordered??next.captures,i=ordered.findIndex(c=>c.id===next.focus);
+      next={...next,page:Math.max(0,Math.floor(i/24))};
+    }
+    const prepared=window.explorerState.comparison.measure(next);
+    if(!prepared.ok) {comparisonMessage=prepared.reason;comparisonRefresh(true);return false;}
+    comparisonModel=next;if(content)comparisonRevision++;
+    comparisonUI.clearCopyFallback();comparisonRefresh(true,preparedAnalysis);comparisonPersist();return true;
+  }
+  function comparisonAdd(capture,replace=false) {
+    const i=comparisonModel.captures.findIndex(c=>c.id===capture.id);
+    if(i>=0&&!replace)comparisonMessage="Existing capture opened · original values retained";
+    else comparisonMessage=replace?"Capture updated":"Cell added";
+    const captures=comparisonModel.captures.slice();
+    if(i<0)captures.push(capture);else if(replace)captures[i]=capture;
+    if(!comparisonCommit({...comparisonModel,captures,focus:capture.id},i<0||replace,true))return;
+    S.drawer="compare";S.drawerOpen=true;
+    if (!comparisonModel.expanded) S.drawerHeight=Math.max(S.drawerHeight,Math.min(420,drawerMax()));
+    applyPanels();comparisonRefresh(true);comparisonPersist();update();
+    comparisonUI.focusControl("expand");
+  }
+  function comparisonExpand(expanded) {
+    if(expanded===comparisonModel.expanded)return;
+    const layout=expanded?{sideOpen:S.sideOpen,sideWidth:S.sideWidth,drawerHeight:S.drawerHeight,drawerOpen:S.drawerOpen,drawer:S.drawer}:comparisonModel.restoreLayout;
+    const next={...comparisonModel,expanded,restoreLayout:expanded?layout:null};
+    if(!comparisonCommit(next))return;
+    if(!expanded&&layout)Object.assign(S,layout);
+    else if(expanded) {S.drawer="compare";S.drawerOpen=true;transition=null;clearTimeout(scaleRt.timer);scaleRt.timer=0;clearTimeout(cube.timer);clearTimeout(motion.timer);comparisonUI.focusControl("expand");}
+    applyPanels();comparisonUI.focusControl("expand");
+    if(!expanded){geometry();update();scheduleCube();scaleArm();}
+  }
+  async function comparisonCopy(capture) {
+    const text=C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc});
+    try {if(!navigator.clipboard?.writeText)throw Error("Clipboard unavailable");await navigator.clipboard.writeText(text);comparisonMessage="Cell copied";comparisonRefresh();}
+    catch {S.drawer="compare";S.drawerOpen=true;applyPanels();comparisonRefresh(true);comparisonUI.showCopyFallback(C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc}));}
+  }
+  function comparisonConfirm(message,onConfirm) {
+    const returnTo=document.activeElement,dialog=document.createElement("dialog");dialog.className="ol-comparison-confirm";
+    const text=document.createElement("p");text.textContent=message;dialog.append(text);
+    for(const [label,confirm]of [["Cancel",false],["Confirm",true]]) {const b=document.createElement("button");b.type="button";b.textContent=label;b.addEventListener("click",()=>{dialog.close();dialog.remove();returnTo?.isConnected&&returnTo.focus();if(confirm)onConfirm();});dialog.append(b);}
+    dialog.addEventListener("cancel",()=>{dialog.remove();returnTo?.isConnected&&returnTo.focus();});
+    dialog.addEventListener("keydown",e=>e.stopPropagation());root.append(dialog);dialog.showModal();dialog.querySelector("button").focus();
+  }
+  function comparisonDispatch(action) {
+    let next={...comparisonModel};comparisonMessage="";
+    if(action.type==="copy")return comparisonCopy(comparisonModel.captures.find(c=>c.id===action.id));
+    if(action.type==="expand")return comparisonExpand(!comparisonModel.expanded);
+    if(action.type==="clear")return comparisonConfirm(`Clear all ${comparisonModel.captures.length} comparison cells?`,()=>comparisonCommit({...comparisonModel,captures:[],focus:null,reference:null,page:0},true));
+    if(action.type==="discard")return comparisonConfirm("Discard the saved comparison record? Current working cells will be kept.",()=>{const r=window.explorerState.comparison.discard(INSTRUMENT);comparisonRejected=!r.ok;comparisonMessage=r.ok?"Stored record discarded":r.reason;comparisonPersist();});
+    if(action.type==="retry"){comparisonPersist();return;}
+    if(action.type==="focus") {next.focus=action.id;const i=comparisonAnalysis.ordered.findIndex(c=>c.id===action.id);next.page=Math.max(0,Math.floor(i/24));}
+    else if(action.type==="remove") {
+      const order=comparisonAnalysis.ordered,i=order.findIndex(c=>c.id===action.id);
+      next.captures=next.captures.filter(c=>c.id!==action.id);
+      next.page=Math.min(next.page,Math.max(0,Math.ceil(next.captures.length/24)-1));
+      if(next.focus===action.id)next.focus=(order[i+1]??order[i-1])?.id??null;
+      if(next.reference===action.id){next.reference=null;comparisonMessage="Reference removed · using set median";}
+      comparisonCommit(next,true,true);return;
+    }else if(action.type==="basis")next.basis=action.value;
+    else if(action.type==="reference")next.reference=action.id||null;
+    else if(action.type==="view")next.view=action.value;
+    else if(action.type==="page")next.page=action.value;
+    else if(action.type==="sort"){next.sort={key:action.key,direction:action.direction??(["time","added","poc"].includes(action.key)?"asc":"desc")};next.page=0;}
+    else if(action.type==="poc")next.poc=comparisonFreeze(comparisonPocs().find(p=>p.id===action.id)??null);
+    else return;
+    comparisonCommit(next);
+  }
+  function comparisonCellButtons(parent,resolve) {
+    for(const [type,label]of [["copy","Copy cell"],["add","Add to comparison"],["update","Update capture"]]) {
+      const button=document.createElement("button");button.type="button";button.className="ol-action ol-s ol-cell-compare-action";button.dataset.cellComparisonAction=type;button.textContent=label;
+      if(type==="update"){const c=comparisonCapture(resolve());if(!c||!comparisonModel.captures.some(x=>x.id===c.id))continue;}
+      // Native button activation owns these keys; the table's row navigator does not.
+      button.addEventListener("keydown",e=>{if(e.key!=="Escape")e.stopPropagation();});
+      button.addEventListener("click",e=>{e.stopPropagation();const capture=comparisonCapture(resolve());if(!capture){comparisonMessage="Cell changed; open its menu again";el("inspect-live").textContent=comparisonMessage;comparisonRefresh();return;}if(type==="copy")comparisonCopy(capture);else comparisonAdd(capture,type==="update");});parent.append(button);
+    }
+  }
+  function comparisonCloseMenu(focus=false) {
+    if(!comparisonMenu)return false;const state=comparisonMenu;comparisonMenu=null;state.node.remove();
+    if(focus&&state.owner?.isConnected)state.owner.focus({preventScroll:true});return true;
+  }
+  function comparisonOpenMenu(event,target) {
+    const capture=comparisonCapture(target);if(!capture)return;
+    event.preventDefault();comparisonCloseMenu();closePop();
+    const node=document.createElement("div");node.id="ol-cell-menu";node.className="ol-pop ol-cell-menu";node.setAttribute("role","menu");node.setAttribute("aria-label","Cell actions");
+    comparisonMenu={node,owner:document.activeElement,target,capture,fingerprint:comparisonFingerprint(capture)};
+    const existing=comparisonModel.captures.some(c=>c.id===capture.id);
+    for(const [type,label]of [["copy","Copy cell"],["add",existing?"Open existing capture":"Add to comparison"],...(existing?[["update","Update capture"]]:[])]) {
+      const b=document.createElement("button");b.type="button";b.setAttribute("role","menuitem");b.textContent=label;
+      b.addEventListener("click",()=>{
+        const state=comparisonMenu,current=comparisonCapture(state?.target);
+        if(!current||comparisonFingerprint(current)!==state.fingerprint){comparisonCloseMenu(true);comparisonMessage="Cell changed; open its menu again";el("inspect-live").textContent=comparisonMessage;comparisonRefresh();return;}
+        comparisonCloseMenu(type==="copy");if(type==="copy")comparisonCopy(state.capture);else comparisonAdd(state.capture,type==="update");
+      });node.append(b);
+    }
+    root.append(node);node.style.position="fixed";node.style.left=Math.min(event.clientX,innerWidth-node.offsetWidth-8)+"px";node.style.top=Math.min(event.clientY,innerHeight-node.offsetHeight-8)+"px";node.firstElementChild.focus();
+  }
+  function comparisonOwnsKey(event,target) {
+    if(target?.closest(".ol-comparison-confirm"))return true;
+    if(comparisonMenu) {
+      if(event.key==="Escape"){event.preventDefault();comparisonCloseMenu(true);}
+      else if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();const buttons=[...comparisonMenu.node.children],index=buttons.indexOf(document.activeElement);buttons[event.key==="Home"?0:event.key==="End"?buttons.length-1:(index+(event.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length].focus();}
+      else if(event.key==="Tab")comparisonCloseMenu();
+      return true;
+    }
+    if(target?.closest("#ol-panel-compare, #ol-tab-compare")) {
+      if(event.key==="Escape"){event.preventDefault();if(!el("comparisonWorkspace").querySelector(".ol-comparison-copy").hidden){comparisonUI.clearCopyFallback();return true;}if(closePop(true))return true;if(inspect.detail){inspectDetail(false);return true;}if(inspect.on){inspectExit();return true;}if(comparisonModel.expanded)comparisonExpand(false);}
+      return true;
+    }
+    return false;
+  }
+  function comparisonLoad() {
+    const saved=window.explorerState.comparison.read(INSTRUMENT);
+    if(saved.status==="ok") {comparisonModel=saved.value;comparisonModel.captures.forEach(comparisonFreeze);comparisonRevision++;if(comparisonModel.expanded){S.drawer="compare";S.drawerOpen=true;}}
+    else if(saved.status!=="absent") {comparisonRejected=saved.raw!==null;comparisonUnsaved=true;comparisonMessage=`Unsaved comparison · ${saved.reason}`;}
+    comparisonRefresh(true);
+  }
+  function comparisonInit() {
+    comparisonUI=window.explorerComparisonUI.create({root:el("comparisonWorkspace"),dispatch:comparisonDispatch});
+    canvas.addEventListener("contextmenu",event=>comparisonOpenMenu(event,comparisonTarget(at(event))));
+    const menuPresses=new Set();
+    // Mouse chords have one pointer sequence; its last released button can differ from its first.
+    // A new press supersedes ownership whose release escaped the document/window.
+    canvas.addEventListener("pointerdown",event=>{menuPresses.delete(event.pointerId);if(event.button===2||event.ctrlKey&&event.button===0){menuPresses.add(event.pointerId);event.stopImmediatePropagation();if(event.ctrlKey)comparisonOpenMenu(event,comparisonTarget(at(event)));}},true);
+    document.addEventListener("pointerup",event=>{if(menuPresses.delete(event.pointerId)&&event.target===canvas)event.stopImmediatePropagation();},true);
+    document.addEventListener("pointercancel",event=>{menuPresses.delete(event.pointerId);},true);
+    document.addEventListener("pointerdown",event=>{if(comparisonMenu&&!comparisonMenu.node.contains(event.target))comparisonCloseMenu(true);},true);
+    comparisonRefresh(true);
+  }
+
+  comparisonInit();
   drawingInitUI();
   document.addEventListener("click", (event) => {
     if (event.target instanceof Element && event.target !== canvas && !event.target.closest("[data-drawing-ui]") && event.target.closest("button,input,select,a,[role=tab]")) drawingKeyContext = false;
@@ -37847,14 +39071,16 @@
       applyView(linked);
       reportView(linked);
     } else reportRefused(address);
-    transition = null;
     qsa("button,input,select").forEach((control) => (control.disabled = false));
+    // The restored comparison owns control availability after the global startup lock is released.
+    comparisonLoad();
+    transition = null;
     startHistory(linked ? "Link" : restored ? "Restored" : "Opened");
     update();
     scaleArm();
     title();
     new ResizeObserver(() => {
-      if (ready) {
+      if (ready && !comparisonModel.expanded && canvas.getBoundingClientRect().height > 0) {
         if (drawingDrag) drawingCancelOperation();
         geometry();
         if (S.auto) autoLevel();

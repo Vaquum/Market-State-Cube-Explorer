@@ -239,7 +239,7 @@ test("the existing properties keep their shapes: saved (v5 or v4), views(), hist
   put(session, "history:v1", { entries: [{ id: "h1" }], index: 0 });
   assert.deepEqual(plain(state.views()), [{ name: "a" }]);
   assert.deepEqual(plain(state.history()), { entries: [{ id: "h1" }], index: 0 });
-  assert.deepEqual(Object.keys(state).sort(), ["backup", "drawings", "history", "namedViews", "namedViewsStatus", "notice", "read", "save", "saveHistory", "saveNamedViews", "saveNotice", "saveScales", "saved", "saveViews", "scales", "views", "viewsKey"].sort(), "additive: seven baseline members and the new ones");
+  assert.deepEqual(Object.keys(state).sort(), ["backup", "comparison", "drawings", "history", "namedViews", "namedViewsStatus", "notice", "read", "save", "saveHistory", "saveNamedViews", "saveNotice", "saveScales", "saved", "saveViews", "scales", "views", "viewsKey"].sort(), "additive: seven baseline members and the new ones");
   // a newer build's view is not handed to the page as if it were its own; it stays in storage
   put(local, "view:v5", { version: 5, visualVersion: 3, prefs: {}, view: "#vis=3" });
   const { state: s2, warns } = load(win);
@@ -490,6 +490,6 @@ test("state.js source: the existing members are untouched in meaning, nothing is
   for (const re of [/\beval\s*\(/, /\bnew\s+Function\b/, /\binnerHTML\b/, /\bdocument\b/, /Object\.assign\s*\(\s*(?:window|S)\b/])
     assert.equal(re.test(code), false, String(re));
   // the keys are the baseline's, plus scales:v1, notice:v2 and backup:<key>
-  const keys = [...new Set([...code.matchAll(/"((?:view|views|history|scales|notice|backup)(?::[a-z0-9]+)*)"/g)].map((m) => m[1]))].sort();
+  const keys = [...new Set([...code.matchAll(/"((?:view|views|history|scales|notice|backup)(?::[a-z0-9]+)+)"/g)].map((m) => m[1]))].sort();
   assert.deepEqual(keys, ["backup:history:v1", "history:v1", "notice:v2", "scales:v1", "view:v4", "view:v5", "views:v1"].sort());
 });

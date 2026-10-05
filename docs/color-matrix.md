@@ -51,6 +51,11 @@ Testing it: `tests/unit/color-matrix.test.js` (U60) fails when this file is not 
 | candle.up | Candle up: hollow body | outline | #2d769c | #73b8d4 | glyph, legend, number | hollow / filled / cased doji; labelled key and exact directional OHLC readout (U90, B90) |
 | candle.down | Candle down: filled body | area | #b3624b | #d89777 | glyph, legend, number | hollow / filled / cased doji; labelled key and exact directional OHLC readout (U90, B90) |
 | candle.doji | Candle unchanged: neutral cased stroke | outline | #b9c2bc | #5f6b64 | glyph, legend, number | hollow / filled / cased doji; labelled key and exact directional OHLC readout (U90, B90) |
+| comparison.unsigned | Comparison magnitude bar | area | #5c7263 | #a1b5a7 | label, number, position | metric label, numeric value/difference/rank, and shared eligible-set domain (U95, B63) |
+| comparison.positive | Comparison positive bar | area | #2d769c | #73b8d4 | label, number, position | signed net-volume number or labeled share above midpoint, shared domain (U95, B63) |
+| comparison.negative | Comparison negative bar | area | #b3624b | #d89777 | label, number, position | signed net-volume number or labeled share below midpoint, shared domain (U95, B63) |
+| comparison.midpoint | Comparison midpoint bar | area | #b9c2bc | #5f6b64 | label, number, position | explicit zero or 50-percent number, shared domain (U95, B63) |
+| comparison.reference | Comparison reference tick | stroke | #20392b | #e0eee4 | label, position | Against control names Set median or pinned cell; unit difference alongside the bar (U95, B63) |
 
 ## Contexts
 
@@ -65,15 +70,16 @@ Testing it: `tests/unit/color-matrix.test.js` (U60) fails when this file is not 
 | profiles | The profile track: bar, inset, POC and the state ink | 10 |
 | plane | The resolution plane, the menus and the controls | 6 |
 | candles | Directional candle bodies and wicks | 3 |
+| comparison | Captured-cell metric bars and their reference ticks on opaque dashboard surfaces | 10 |
 
 ## Summary
 
-134 pairs, each in two themes.
+144 pairs, each in two themes.
 
 | Theme | Pairs | Separated (>= 8 under every condition) | Form | Redundant | FAIL |
 |---|---|---|---|---|---|
-| light | 134 | 95 | 25 | 14 | 0 |
-| dark | 134 | 98 | 23 | 13 | 0 |
+| light | 144 | 102 | 25 | 17 | 0 |
+| dark | 144 | 105 | 23 | 16 | 0 |
 
 ## The PRD's named pairs
 
@@ -238,3 +244,13 @@ Each cell is the least CIEDE2000 over the eight conditions, with the condition t
 | candle.up and candle.down | candles | 45.2 | 3.6 (gray) | form | 42.9 | 2.6 (gray) | form |
 | candle.up and candle.doji | candles | 33.1 | 26.3 (gray) | separated | 30.1 | 25.0 (gray) | separated |
 | candle.down and candle.doji | candles | 36.4 | 22.7 (gray) | separated | 36.2 | 22.5 (gray) | separated |
+| comparison.unsigned and comparison.positive | comparison | 22.6 | 0.8 (gray) | redundant | 18.7 | 0.3 (gray) | redundant |
+| comparison.unsigned and comparison.negative | comparison | 35.0 | 4.4 (gray) | redundant | 30.6 | 2.9 (gray) | redundant |
+| comparison.unsigned and comparison.midpoint | comparison | 28.1 | 27.0 (protan-1) | separated | 25.4 | 25.0 (protan-0.5) | separated |
+| comparison.unsigned and comparison.reference | comparison | 19.8 | 19.5 (tritan-0.5) | separated | 14.5 | 14.0 (protan-1) | separated |
+| comparison.positive and comparison.negative | comparison | 45.2 | 3.6 (gray) | redundant | 42.9 | 2.6 (gray) | redundant |
+| comparison.positive and comparison.midpoint | comparison | 33.1 | 26.3 (gray) | separated | 30.1 | 25.0 (gray) | separated |
+| comparison.positive and comparison.reference | comparison | 30.3 | 20.5 (gray) | separated | 23.4 | 14.4 (gray) | separated |
+| comparison.negative and comparison.midpoint | comparison | 36.4 | 22.7 (gray) | separated | 36.2 | 22.5 (gray) | separated |
+| comparison.negative and comparison.reference | comparison | 43.7 | 21.5 (protan-1) | separated | 32.9 | 16.9 (gray) | separated |
+| comparison.midpoint and comparison.reference | comparison | 56.6 | 55.6 (protan-1) | separated | 38.5 | 38.2 (protan-0.5) | separated |

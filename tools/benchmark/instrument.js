@@ -90,6 +90,31 @@
     nativeRaf(beat);
   };
 
+  // Compare is a DOM surface. Its committed render event and two native frame boundaries define
+  // action-to-visible DOM latency without waiting for, or attributing it to, a chart canvas draw.
+  let comparisonArmed = null, comparisonPending = false, comparisonFinished = null;
+  const comparisonCounters = () => {
+    const node = document.getElementById("ol-comparisonWorkspace"), data = node?.dataset;
+    return { stats: Number(data?.stats || 0), writes: Number(data?.writes || 0), bytes: Number(data?.bytes || 0), renders: Number(data?.renders || 0) };
+  };
+  for (const type of ["click", "change"]) window.addEventListener(type, (event) => {
+    if (comparisonArmed && comparisonArmed.inputAt === null && event.target?.closest?.("#ol-comparisonWorkspace")) comparisonArmed.inputAt = event.timeStamp;
+  }, { capture: true, passive: true });
+  window.addEventListener("comparison-render", () => {
+    if (!comparisonArmed || comparisonArmed.inputAt === null || comparisonPending) return;
+    comparisonPending = true;
+    nativeRaf(() => nativeRaf(() => {
+      const current = comparisonCounters(), before = comparisonArmed.before;
+      comparisonFinished = {
+        actionToVisibleMs: clock() - comparisonArmed.inputAt,
+        stats: current.stats - before.stats, writes: current.writes - before.writes,
+        bytes: current.bytes - before.bytes, renders: current.renders - before.renders,
+        mounted: document.querySelectorAll(".ol-comparison-entries .ol-comparison-card, .ol-comparison-matrix tbody tr").length,
+        cohort: document.querySelector(".ol-comparison-focus [data-metric='volume'] .ol-comparison-rank")?.textContent || null,
+      };
+      comparisonArmed = null; comparisonPending = false;
+    }));
+  }, { capture: true });
   const bench = {
     version: 1,
     begin() {
@@ -108,6 +133,11 @@
       for (let i = 1; i < frames.length; i++) frameIntervals.push(frames[i] - frames[i - 1]);
       return { draws, frameIntervals, frameCount: frames.length, inputToPaint: paint, unpainted: pending.length, outsideSets };
     },
+    armComparison() {
+      comparisonArmed = { inputAt: null, before: comparisonCounters() };
+      comparisonPending = false; comparisonFinished = null;
+    },
+    comparisonResult() { return comparisonFinished; },
     timerResolution() {
       let best = Infinity;
       let last = clock();

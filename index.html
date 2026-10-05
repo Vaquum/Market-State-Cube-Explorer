@@ -38906,11 +38906,14 @@
         if(under.kind==="delta")addDetail("Period net taker volume",2*band.bv-band.v,"usdt",periodEnd);
       }
       const volumePeriodEnd=under?.vol.state==="ready"?comparisonMs(under.vol.end??under.vol.span?.[1]):null,
-        relativeSupport=Number.isFinite(contextEnd)&&Number.isFinite(volumePeriodEnd)&&["exact","cube","recorded"].includes(last.meas.state)?Math.max(contextEnd,volumePeriodEnd):null;
+        relativeSupport=under?.kind==="relvol"?volumePeriodEnd:
+          Number.isFinite(contextEnd)&&Number.isFinite(volumePeriodEnd)&&["exact","cube","recorded"].includes(last.meas.state)?Math.max(contextEnd,volumePeriodEnd):null;
       for(const row of rowSection(r,(x)=>String(x),(x)=>String(x),true,false)) {
         if(Number.isFinite(row[3]))addDetail(row[0]+" · captured context",row[3],"",relativeSupport);
       }
-      if(under?.volBands) {
+      if(under?.kind==="relvol"&&under.volBands) {
+        addDetail("Relative volume period through",Number.isFinite(volumePeriodEnd)?new Date(volumePeriodEnd).toISOString():"Unknown","",relativeSupport);
+      } else if(under?.volBands) {
         addDetail("Relative volume rectangle through",Number.isFinite(contextEnd)?new Date(contextEnd).toISOString():"Unknown","",relativeSupport);
         addDetail("Relative volume reference through",Number.isFinite(volumePeriodEnd)?new Date(volumePeriodEnd).toISOString():"Unknown","",relativeSupport);
       }

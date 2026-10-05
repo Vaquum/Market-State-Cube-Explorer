@@ -131,7 +131,7 @@ for(const tool of ["pan","trend"])
     await probe.waitForQuiet({quietMs:300});
     if(tool==="trend") {
       await expect(page.locator("#ol-canvas")).toHaveAttribute("data-drawing-count","1");
-      await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed","true");
+      await expect(page.locator('[data-tool="trend"]')).toHaveAttribute("aria-pressed","true");
     }
     const after=await page.evaluate(()=>location.hash);
     await page.mouse.move(b.x+60,b.y+30);await probe.waitForQuiet({quietMs:300});
@@ -156,7 +156,7 @@ for(const boundary of ["canvas","viewport"])
       await probe.waitForQuiet({quietMs:300});
       if(tool==="trend") {
         await expect(page.locator("#ol-canvas")).toHaveAttribute("data-drawing-count","1");
-        await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed","true");
+        await expect(page.locator('[data-tool="trend"]')).toHaveAttribute("aria-pressed","true");
       } else expect(await page.evaluate(()=>location.hash)).not.toBe(before);
       const after=await page.evaluate(()=>location.hash);
       await page.mouse.move(end.x+60,end.y+30);await probe.waitForQuiet({quietMs:300});
@@ -176,7 +176,7 @@ for(const tool of ["pan","trend"])
     await probe.waitForQuiet({quietMs:300});
     if(tool==="trend") {
       await expect(page.locator("#ol-canvas")).toHaveAttribute("data-drawing-count","1");
-      await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed","true");
+      await expect(page.locator('[data-tool="trend"]')).toHaveAttribute("aria-pressed","true");
     } else expect(await page.evaluate(()=>location.hash)).not.toBe(before);
     const after=await page.evaluate(()=>location.hash);
     await page.mouse.move(b.x+60,b.y+30);await probe.waitForQuiet({quietMs:300});
@@ -205,7 +205,7 @@ for(const tool of ["pan","trend"])
     await probe.waitForQuiet({quietMs:300});
     if(tool==="trend") {
       await expect(page.locator("#ol-canvas")).toHaveAttribute("data-drawing-count","1");
-      await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed","true");
+      await expect(page.locator('[data-tool="trend"]')).toHaveAttribute("aria-pressed","true");
     } else expect(await page.evaluate(()=>location.hash)).not.toBe(before);
     const after=await page.evaluate(()=>location.hash);
     await page.mouse.move(b.x+60,b.y+30);await probe.waitForQuiet({quietMs:300});

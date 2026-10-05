@@ -92,8 +92,8 @@ test("label is optional; preview, Cancel and two-stage Undo preserve committed n
   await setLabel(page, id, TAG + "committed"); expect(await object(page, id)).toMatchObject({ ...named, label: TAG + "committed" });
   await D.edit(page, id); await page.locator("#ol-drawing-label").fill(TAG + "dirty"); await page.locator("#ol-drawing-editor-undo").click();
   await expect(page.locator("#ol-drawing-editor")).toBeHidden(); expect((await object(page, id)).label).toBe(TAG + "committed");
-  await D.manager(page); await page.locator("#ol-drawing-undo").click(); expect(await object(page, id)).toEqual(named);
-  await page.locator("#ol-drawing-redo").click(); expect((await object(page, id)).label).toBe(TAG + "committed");
+  await D.command(page, "undo"); expect(await object(page, id)).toEqual(named);
+  await D.command(page, "redo"); expect((await object(page, id)).label).toBe(TAG + "committed");
   await D.closeManager(page); await setLabel(page, id, "   "); await expect.poll(() => texts(page)).toEqual([]);
   expect((await object(page, id)).label || "").toBe("");
   expect((await object(page, id)).a).toEqual(original.a); expect((await object(page, id)).b).toEqual(original.b);
@@ -110,7 +110,7 @@ test("label literal text survives duplicate, hide, delete and Undo without becom
   await D.action(page, id, "visible"); await D.action(page, duplicate, "visible"); await D.closeManager(page); await expect.poll(() => texts(page)).toEqual([]);
   await D.action(page, duplicate, "visible"); await D.closeManager(page); await expect.poll(async () => (await texts(page)).length).toBeGreaterThan(0);
   await D.action(page, duplicate, "delete"); await D.closeManager(page); await expect.poll(() => texts(page)).toEqual([]);
-  await D.manager(page); await page.locator("#ol-drawing-undo").click(); expect((await object(page, duplicate)).label).toBe(label);
+  await D.command(page, "undo"); expect((await object(page, duplicate)).label).toBe(label);
 });
 
 test("label reload, complete code and named View restore the exact optional text with no local lookup", async ({ page, freshContext, fakeFor }) => {
@@ -190,6 +190,28 @@ test("invalid optional labels reject the complete code atomically while blank la
     expect(await object(page, id)).toEqual(before); expect(await revision(page)).toBe(beforeRevision);
   }
 });
+
+for (const [name, suffix] of [["combining marks", "e\u0301".repeat(35)], ["ZWJ emoji", "👩‍👩‍👧‍👦".repeat(10)]]) {
+  test(`without Intl.Segmenter, ${name} labels stay intact or omit and recover when the line widens`, async ({ page, fakeFor }) => {
+    await page.addInitScript(() => { Object.defineProperty(Intl, "Segmenter", { configurable: true, value: undefined }); });
+    await observeText(page); const fake = await fakeFor("mini"); await D.open(page, fake);
+    const { id } = await D.drawing(page, [.125, .5], [.875, .5]), label = TAG + suffix;
+    await setLabel(page, id, label);
+    await expect.poll(async () => (await texts(page)).map((t) => t.text)).toEqual([label]);
+    for (const [a, b, shown] of [[[.45, .5], [.55, .5], false], [[.125, .5], [.875, .5], true]]) {
+      await D.edit(page, id);
+      await expect(page.locator("#ol-drawing-label")).toHaveValue(label);
+      for (const [key, pair] of [["a", a], ["b", b]]) {
+        const value = D.expected(...pair);
+        await page.locator(`#ol-drawing-${key}-time`).fill(new Date(value.timeMs).toISOString());
+        await page.locator(`#ol-drawing-${key}-price`).fill((value.priceCents / 100).toFixed(2));
+      }
+      await page.locator("#ol-drawing-apply").click(); await D.closeManager(page);
+      await expect.poll(async () => (await texts(page)).map((t) => t.text)).toEqual(shown ? [label] : []);
+      expect((await object(page, id)).label).toBe(label);
+    }
+  });
+}
 
 test.describe("phone label fitting", () => {
   test.use({ viewport: { width: 430, height: 932 }, deviceScaleFactor: 2, hasTouch: true });

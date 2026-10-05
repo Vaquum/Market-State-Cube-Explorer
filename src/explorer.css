@@ -1187,6 +1187,21 @@
 #origo-lens canvas#ol-canvas[data-cursor="ns-resize"] {
   cursor: ns-resize;
 }
+#origo-lens canvas#ol-canvas[data-cursor="move"] {
+  cursor: move;
+}
+#origo-lens canvas#ol-canvas[data-cursor="not-allowed"] {
+  cursor: not-allowed;
+}
+#origo-lens canvas#ol-canvas[data-cursor="ew-resize"] {
+  cursor: ew-resize;
+}
+#origo-lens canvas#ol-canvas[data-cursor="nwse-resize"] {
+  cursor: nwse-resize;
+}
+#origo-lens canvas#ol-canvas[data-cursor="nesw-resize"] {
+  cursor: nesw-resize;
+}
 #origo-lens .ol-tip {
   position: absolute;
   z-index: 4;
@@ -2534,7 +2549,8 @@
 #origo-lens .ol-drawing-status { color: var(--ol-muted); font-size: var(--fs-s); }
 #origo-lens .ol-drawing-status:empty { display: none; }
 /* Keep endpoint readouts from resizing the plot after the first drawing contact. */
-#origo-lens .ol-drawing-toolbar:has(#ol-drawing-keep-label:not([hidden])) .ol-drawing-status {
+#origo-lens .ol-drawing-toolbar .ol-drawing-status {
+  display: block;
   flex-basis: 100%;
   order: 5;
   min-width: 0;
@@ -2552,7 +2568,13 @@
 }
 #origo-lens .ol-drawing-check[hidden] { display: none; }
 #origo-lens .ol-drawing-more-group { margin-left: auto; }
-#origo-lens .ol-drawing-actions { width: 230px; }
+#origo-lens .ol-drawing-actions {
+  width: 230px;
+  max-height: min(70dvh, calc(100dvh - var(--drawing-menu-top, 120px) - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#origo-lens .ol-drawing-actions > button { flex-shrink: 0; }
 #origo-lens .ol-drawing-swatch {
   flex: none;
   display: inline-block;
@@ -2609,8 +2631,7 @@
   #origo-lens .ol-drawing-toolbar { gap: var(--sp-1); }
   #origo-lens .ol-drawing-toolbar-name { max-width: none; flex: 1; }
   #origo-lens .ol-drawing-toolbar .ol-drawing-status { flex-basis: 100%; order: 5; }
-  #origo-lens .ol-drawing-toolbar .ol-drawing-check { order: 4; }
-  #origo-lens .ol-drawing-toolbar :is(button, .ol-drawing-check) { min-height: 44px; }
+  #origo-lens .ol-drawing-toolbar button { min-height: 44px; }
   #origo-lens .ol-drawing-dialog { width: 100%; max-width: 100%; max-height: 92dvh; margin: auto 0 0; border-radius: var(--r-l) var(--r-l) 0 0; box-sizing: border-box; }
   #origo-lens .ol-drawing-dialog .ol-keys-body { padding: var(--sp-3); padding-bottom: max(var(--sp-3), env(safe-area-inset-bottom)); }
   #origo-lens .ol-drawing-anchor { grid-template-columns: minmax(0, 1fr); }

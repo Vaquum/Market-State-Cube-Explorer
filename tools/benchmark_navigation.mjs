@@ -25,7 +25,6 @@ import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { chromium } from "@playwright/test";
 import { aaSchedule, abSchedule } from "./benchmark/schedule.mjs";
 import { validateConfig } from "./benchmark/schema.mjs";
 import { analyse, analyseAA, analyseScreening } from "./benchmark/stats.mjs";
@@ -190,7 +189,7 @@ const fitsOf = (page) =>
 async function trial({ build, caseDef, config, gesture, mode, cpuThrottle, reducedMotion }) {
   const fake = caseDef.mode === "recorded" ? build.recorded : build.live;
   fake.clearLog();
-  const browser = await chromium.launch(launchOptions(mode));
+  const browser = await (await import("@playwright/test")).chromium.launch(launchOptions(mode));
   try {
     const context = await browser.newContext({
       viewport: config.viewport,
@@ -298,7 +297,7 @@ async function runComparisonDiagnostics({ config, configPath, configBytes, args,
   const build = working ? snapshotWorkingPage(sha, "comparison-candidate") : materialise(sha, "comparison-candidate");
   requireComparisonSurface(build);
   const fake = await startFake({ mode: "live", profile: config.data.profile, seed: config.data.seed, cutoff: config.data.cutoff, pageRoot: build.dir });
-  const browser = await chromium.launch(launchOptions(mode)), samples = [], errors = [];
+  const browser = await (await import("@playwright/test")).chromium.launch(launchOptions(mode)), samples = [], errors = [];
   try {
     const version = browser.version();
     if (Number.parseInt(version, 10) !== config.browser.expectMajor) throw new Error(`Chromium ${version} is not pinned major ${config.browser.expectMajor}`);
@@ -471,7 +470,7 @@ async function main() {
 
   // The browser's version is part of the environment and must be the pinned major before any trial counts.
   {
-    const probe = await chromium.launch(launchOptions(mode));
+    const probe = await (await import("@playwright/test")).chromium.launch(launchOptions(mode));
     browserVersion = probe.version();
     await probe.close();
     const major = Number.parseInt(browserVersion, 10);
@@ -578,7 +577,7 @@ async function main() {
   if (config.comparison) await runComparisonDiagnostics({ config, configPath, configBytes, args: { ...args, candidate: working ? "working" : candidate }, mode });
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().then(
+if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) main().then(
   () => process.exit(0),
   (error) => {
     process.stderr.write(`benchmark failed: ${error.stack ?? error}\n`);

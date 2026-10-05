@@ -1,6 +1,6 @@
 "use strict";
 // Independent committed counts/budgets, exact UTF-8 length and a manually driven DOM frame clock.
-const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path"), vm = require("node:vm"), crypto = require("node:crypto");
+const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path"), vm = require("node:vm"), crypto = require("node:crypto"), os = require("node:os");
 const { execFileSync } = require("node:child_process");
 const { materialise } = require("../support/builds.js");
 const root = path.resolve(__dirname, "../.."), load = (name) => import(path.join(root, "tools/benchmark", name));
@@ -38,12 +38,25 @@ test("default v4 smoke resolves to the exact committed HEAD page with the Compar
   assert.equal(build.indexSha256, crypto.createHash("sha256").update(git("show", `${sha}:index.html`)).digest("hex"));
   assert.doesNotThrow(() => requireComparisonSurface(build));
 });
-test("an explicit pre-Compare candidate rejects the DOM phase before browser setup", async () => {
+test("an explicit pre-Compare candidate rejects the DOM phase without browser dependencies or fetched history", async () => {
   const { parseArgs, candidateReference } = await import(path.join(root, "tools/benchmark_navigation.mjs"));
-  const old = "59d42696d3708f93bf46e6c1691a64eabb2d5fd5", configPath = path.join(root, "tools/benchmark/navigation.v4.json");
-  const args = parseArgs(["--config", "tools/benchmark/navigation.v4.json", "--comparison-only", "--candidate", old]);
-  assert.equal(candidateReference(args, config(4), old), old);
-  for (const phase of ["--comparison-only", "--smoke"]) assert.throws(() => execFileSync(process.execPath, [path.join(root, "tools/benchmark_navigation.mjs"), "--config", configPath, phase, "--candidate", old], { encoding: "utf8", timeout: 5000, stdio: "pipe" }), (error) => error.status === 1 && /Comparison diagnostics unsupported for candidate 59d4269.*required Compare surface missing.*no DOM samples were measured/.test(error.stderr));
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "comparison-cli-"));
+  try {
+    // A real independent commit keeps this CLI regression usable in the dependency-free, shallow CI Node job.
+    for (const rel of ["tools/benchmark", "tests/support"]) fs.cpSync(path.join(root, rel), path.join(fixture, rel), { recursive: true });
+    fs.copyFileSync(path.join(root, "tools/benchmark_navigation.mjs"), path.join(fixture, "tools/benchmark_navigation.mjs"));
+    fs.mkdirSync(path.join(fixture, "vendor"));
+    fs.writeFileSync(path.join(fixture, "index.html"), "<!doctype html><title>Before Compare</title>\n");
+    for (const file of ["d3.min.js", "D3-LICENSE"]) fs.writeFileSync(path.join(fixture, "vendor", file), "fixture\n");
+    const git = (...argv) => execFileSync("git", ["-C", fixture, ...argv], { encoding: "utf8", stdio: "pipe" });
+    git("init", "--quiet"); git("add", "index.html", "vendor");
+    git("-c", "user.name=CLI fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "Before Compare");
+    const old = git("rev-parse", "HEAD").trim(), configPath = path.join(fixture, "tools/benchmark/navigation.v4.json");
+    const args = parseArgs(["--config", configPath, "--comparison-only", "--candidate", old]);
+    assert.equal(candidateReference(args, config(4), old), old);
+    assert.equal(fs.existsSync(path.join(fixture, "node_modules")), false);
+    for (const phase of ["--comparison-only", "--smoke"]) assert.throws(() => execFileSync(process.execPath, [path.join(fixture, "tools/benchmark_navigation.mjs"), "--config", configPath, phase, "--baseline", old, "--candidate", old], { encoding: "utf8", timeout: 5000, stdio: "pipe" }), (error) => error.status === 1 && error.stderr.includes(`Comparison diagnostics unsupported for candidate ${old}: required Compare surface missing`) && /no DOM samples were measured/.test(error.stderr));
+  } finally { fs.rmSync(fixture, { recursive: true, force: true }); }
 });
 test("benchmark captures are independent typed facts with exact near-cap bytes in off-page detail", async () => {
   const { comparisonFixture } = await load("comparison.mjs");

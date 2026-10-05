@@ -3,7 +3,7 @@ const { test, expect } = require("./fixtures.js");
 const D = require("./drawings-support.js");
 test.use({ reducedMotion: "reduce" });
 
-test("G creates continuous anchors once, returns to Pan, and moves endpoints and body without changing the vector", async ({ page, fakeFor }) => {
+test("Trend creates continuous anchors once, stays selected, and moves endpoints and body without changing the vector", async ({ page, fakeFor }) => {
   const fake = await fakeFor("mini"); await D.open(page, fake);
   const { id, A, B, p } = await D.drawing(page);
   const original = await D.row(page, id);
@@ -38,7 +38,7 @@ test("draft Undo, Escape, mode switch and late release never commit a canceled t
   await page.mouse.move(made.B.x, made.B.y); await page.mouse.down(); await page.mouse.move(made.B.x - 30, made.B.y + 20);
   await page.keyboard.press("k"); await page.mouse.up();
   await expect(page.locator("#ol-mode-text")).toHaveText("Candles"); expect(await D.row(page, made.id)).toEqual(before);
-  await page.locator("#ol-canvas").focus(); await page.keyboard.press("g");
+  await D.trend(page); await page.locator("#ol-canvas").focus();
   p = await D.plot(page); a = D.point(p, .2, .2); b = D.point(p, .5, .5);
   await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(b.x, b.y);
   await page.setViewportSize({ width: 1420, height: 910 }); await page.mouse.up();
@@ -65,7 +65,7 @@ test("exact edit is atomic; fields own native Undo; lock and hide block canvas o
   await D.action(page, id, "visible"); expect(await D.active(page)).toBe("");
   expect((await D.row(page, id)).visible).toBe(false);
   await D.action(page, id, "delete"); await expect.poll(() => D.count(page)).toBe(0);
-  await page.locator("#ol-drawing-section").getByRole("button", { name: /^Undo/ }).click(); await expect.poll(() => D.count(page)).toBe(1);
+  await D.command(page, "undo"); await expect.poll(() => D.count(page)).toBe(1);
   expect(await D.row(page, id)).toMatchObject({ id, name: applied.name, color: applied.color, a: applied.a, b: applied.b, locked: true, visible: false });
 });
 
@@ -83,36 +83,44 @@ test("chart Delete retains drawing Undo ownership, duplicate chooser reaches sib
   expect(await D.count(page)).toBe(2);
 });
 
-test("coincident B keeps A for correction and explicit Keep drawing retains Trend until disabled", async ({ page, fakeFor }) => {
-  const fake = await fakeFor("mini"); await D.open(page, fake); await page.locator("#ol-canvas").focus(); await page.keyboard.press("g");
+test("coincident B keeps A for correction; successive creations remain in Trend until an explicit tool change", async ({ page, fakeFor }) => {
+  const fake = await fakeFor("mini"); await D.open(page, fake); await D.trend(page);
   const p = await D.plot(page), a = D.point(p, .25, .75), b = D.point(p, .75, .25);
   await page.mouse.click(a.x, a.y); await page.mouse.click(a.x, a.y);
   expect(await D.count(page)).toBe(0); await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
   await page.mouse.click(b.x, b.y); await expect.poll(() => D.count(page)).toBe(1);
   expect((await D.rows(page))[0].a).toEqual(D.expected(.25, .75));
-  await page.locator("#ol-canvas").focus(); await page.keyboard.press("g"); await page.locator("#ol-drawing-keep").check();
-  await page.mouse.click(a.x, a.y); await page.mouse.click(b.x, b.y); await expect.poll(() => D.count(page)).toBe(2);
   await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
-  await page.locator("#ol-drawing-keep").uncheck(); await page.locator("#ol-canvas").focus(); await page.mouse.click(a.x, a.y); await page.mouse.click(b.x, b.y);
-  await expect.poll(() => D.count(page)).toBe(3); await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed", "true");
+  await D.drawing(page, [.125, .2], [.375, .3]); await D.drawing(page, [.625, .8], [.875, .9], { drag: true });
+  expect(await D.count(page)).toBe(3); await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
+  const first = (await D.rows(page))[0], intentional = await D.drawing(page, [.125, .9], [.5, .5]);
+  expect(await D.row(page, first.id)).toEqual(first); expect(await D.row(page, intentional.id)).toMatchObject({ a: D.expected(.125, .9), b: D.expected(.5, .5) });
+  await D.pan(page); expect(await D.count(page)).toBe(4);
 });
 
 test("keyboard Coordinates creates only on Apply; Cancel commits nothing; native checkbox Space leaves replay paused", async ({ page, fakeFor }) => {
   const fake = await fakeFor("mini"); await D.open(page, fake, "&replay=1&at=2026-09-23T21:00Z");
   await page.locator("#ol-lines").focus(); await page.keyboard.press("Enter");
   await expect(page.locator("#ol-drawing-section")).toBeVisible();
+  await expect(page.locator("#ol-lines-pop .ol-family").first()).toHaveAttribute("id", "ol-drawing-section");
+  await expect(page.locator("#ol-family-drawing-head")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#ol-family-drawing")).toBeHidden();
+  await page.locator("#ol-family-drawing-head").focus(); await page.keyboard.press("Enter");
+  await expect(page.locator("#ol-family-drawing")).toBeVisible();
+  await expect(page.locator('#ol-drawing-section [data-drawing-action="edit"],#ol-drawing-section [data-drawing-action="delete"],#ol-drawing-section [data-drawing-action="move"]')).toHaveCount(0);
   await page.locator("#ol-drawing-group-visible").focus(); const play = await page.locator("#ol-play").getAttribute("aria-pressed");
   await page.keyboard.press("Space"); await expect(page.locator("#ol-drawing-group-visible")).not.toBeChecked(); await expect(page.locator("#ol-play")).toHaveAttribute("aria-pressed", play);
-  await page.locator("#ol-drawing-new-exact").focus(); await page.keyboard.press("Enter"); await expect(page.locator("#ol-drawing-editor")).toBeVisible();
+  await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed", "true");
+  await D.manager(page); await page.locator("#ol-drawing-new-exact").focus(); await page.keyboard.press("Enter"); await expect(page.locator("#ol-drawing-editor")).toBeVisible();
   expect(await D.count(page)).toBe(0); await page.locator("#ol-drawing-cancel").focus(); await page.keyboard.press("Enter");
-  await expect(page.locator("#ol-drawing-editor")).toBeHidden(); expect(await D.count(page)).toBe(0); await expect(page.locator("#ol-drawing-new-exact")).toBeFocused();
-  await page.keyboard.press("Enter");
+  await expect(page.locator("#ol-drawing-editor")).toBeHidden(); expect(await D.count(page)).toBe(0); await expect(page.locator("#ol-drawing-more")).toBeFocused();
+  await D.manager(page); await page.locator("#ol-drawing-new-exact").focus(); await page.keyboard.press("Enter");
   for (const [key, value] of Object.entries({ name: "Keyboard authored", "a-time": "2026-09-23T16:00:00.123Z", "a-price": "24800.25", "b-time": "2026-09-24T04:00:00.456Z", "b-price": "25100.75", color: "#123456" })) {
     await page.locator("#ol-drawing-" + key).focus(); await page.keyboard.press("ControlOrMeta+a"); await page.keyboard.type(value);
   }
   await page.locator("#ol-drawing-apply").focus(); await page.keyboard.press("Enter"); await expect.poll(() => D.count(page)).toBe(1);
   expect((await D.rows(page))[0]).toMatchObject({ name: "Keyboard authored", color: "#123456", a: { timeMs: Date.parse("2026-09-23T16:00:00.123Z"), priceCents: 2480025 }, b: { timeMs: Date.parse("2026-09-24T04:00:00.456Z"), priceCents: 2510075 } });
-  await page.locator("#ol-drawing-undo").focus(); await page.keyboard.press("Enter"); await expect.poll(() => D.count(page)).toBe(0); await expect(page.locator("#ol-drawing-group-visible")).not.toBeChecked();
+  await D.manager(page); await page.locator("#ol-drawing-undo").focus(); await page.keyboard.press("Enter"); await expect.poll(() => D.count(page)).toBe(0); await expect(page.locator("#ol-drawing-group-visible")).not.toBeChecked();
 });
 
 
@@ -142,7 +150,8 @@ test("Alt pressed during creation, endpoint and body drags retains drawing owner
   expect(translated.a).toEqual(D.expected(.34375, .65625)); expect(translated.b).toEqual(D.expected(.78125, .21875));
   expect(translated.b.timeMs - translated.a.timeMs).toBe(beforeBody.b.timeMs - beforeBody.a.timeMs);
   expect(translated.b.priceCents - translated.a.priceCents).toBe(beforeBody.b.priceCents - beforeBody.a.priceCents);
-  await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
+  await D.pan(page); p = await D.plot(page);
   const blank = D.point(p, .125, .125); await page.mouse.move(blank.x, blank.y); await page.keyboard.down("Alt");
   await page.mouse.move(blank.x + 1, blank.y); await expect.poll(lensRegion).toContain("lens:");
   await page.keyboard.up("Alt"); await expect.poll(lensRegion).not.toContain("lens:");
@@ -160,7 +169,7 @@ test("G from focused tool buttons toggles Trend and returns to the entry tool wh
   await page.locator('[data-tool="pan"]').click(); await D.manager(page); await page.locator("#ol-drawing-new-exact").click();
   const input = page.locator("#ol-drawing-name"), before = await input.inputValue();
   await input.focus(); await page.keyboard.press("End"); await page.keyboard.press("g");
-  await expect(input).toHaveValue(before + "g"); await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "false");
+  await expect(input).toHaveValue(before + "g"); await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
   await page.locator("#ol-drawing-cancel").click(); expect(await D.count(page)).toBe(0);
 });
 
@@ -189,7 +198,7 @@ test("held ArrowRight repeats camera movement before and after drawing activity 
     expect(times[2][1] - times[2][0]).toBe(times[0][1] - times[0][0]);
   };
   await repeatPan(); expect(await D.count(page)).toBe(0);
-  const made = await D.drawing(page); const object = await D.row(page, made.id); await repeatPan();
+  const made = await D.drawing(page); const object = await D.row(page, made.id); await D.pan(page); await repeatPan();
   expect(await D.row(page, made.id)).toEqual(object);
   await page.keyboard.down("g"); await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.down("g"); await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "true");

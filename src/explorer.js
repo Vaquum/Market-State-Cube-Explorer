@@ -2593,6 +2593,8 @@
   // crosshair to select, zoom for the lens (held Alt and a touch hold too); on
   // the price labels, and while they're dragged, a vertical resize.
   function setCursor(p = nav.last) {
+    const target = trendTool && !drawingDraft && p && inPlot(p) ? drawingHits(p)[0] : null,
+      handle = drawingDrag?.kind || target?.handle;
     const cursor =
       drag?.axis || (!drag && p && onPriceAxis(p))
         ? "ns-resize"
@@ -2600,6 +2602,10 @@
           ? ""
           : S.lens || nav.alt || nav.hold || drag?.lens
             ? "zoom-in"
+            : trendTool && (drawingDrag && drawingDrag.kind !== "create" || target)
+              ? target?.object.locked || handle === "locked" ? "not-allowed"
+                : handle === "a" || handle === "b" ? drawingResizeCursor(drawingDrag?.original || target.object)
+                  : drawingDrag ? "grabbing" : "move"
             : S.select || trendTool
               ? "crosshair"
               : drag
@@ -4722,7 +4728,7 @@
     let readout = null;
     // A line or its tag under the pointer names the line; a clock line or a
     // CME gap, its event.
-    const authored = inspect.forced === null && tool() === "pan" ? drawingHits(p)[0] : null;
+    const authored = inspect.forced === null && ["pan", "trend"].includes(tool()) && !drawingDraft ? drawingHits(p)[0] : null;
     const hit = inspect.forced === false ? null : (inspect.forced ?? (authored ? { id: "drawing|" + authored.id, drawing: authored.id } : null) ?? (last && lineHits.length && inPlot(p) ? lineAt(p) : null)),
       // a CME gap chosen as a reference is read as the gap it is, with the details of its own
       onGap = hit?.gap ? { gap: hit.gap } : null,
@@ -5867,6 +5873,7 @@
   // wanted, the lens until it is left.
   function setTool(next) {
     const previous = tool();
+    drawingCloseContext();
     drawingCancelOperation();
     drawingKeyContext = false;
     if (next === "trend") {
@@ -5875,7 +5882,7 @@
       trendTool = true; S.select = S.lens = false;
       hover = null; el("tip").hidden = true; update(); return;
     }
-    if (["select", "lens", "inspect"].includes(next)) activeDrawingId = null;
+    activeDrawingId = null; drawingAnchorTime = null;
     if (next === "inspect") {
       inspectEnter();
       return;
@@ -14840,11 +14847,9 @@
       renderLines();
       // Into the list: the first line on in an open family, or else the first
       // family's head.
-      (root.querySelector(`[data-drawing-row="${activeDrawingId}"] [data-drawing-action="edit"]`) ||
-        (drawingCollection().objects.length && root.querySelector("[data-drawing-row] [data-drawing-action=edit]")) ||
-        root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:checked") ||
+      (root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:checked") ||
         root.querySelector("#ol-lines-pop .ol-family-body:not([hidden]) input:not(:disabled)") ||
-        el("family-profile-head"))?.focus();
+        root.querySelector("#ol-lines-pop .ol-family-head"))?.focus();
     });
     el("lines-pop").addEventListener("click", (e) => {
       const keyButton = e.target.closest("[data-line-focus]"),
@@ -19189,11 +19194,9 @@
         drag = null;
         return;
       }
+      if (axis && drawingDraft) drawingCancelOperation();
       if (drawingPointerDown(e, p)) { setCursor(p); return; }
-      const manualHits = tool() === "pan" && !e.altKey ? drawingHits(p, e.pointerType) : [];
       drag = {
-        drawingHits: manualHits,
-        drawingBlankActive: tool() === "pan" && !manualHits.length && Boolean(activeDrawingId),
         start: p,
         view: [S.tA, S.tB, S.pA, S.pB],
         moved: false,
@@ -19203,7 +19206,7 @@
         axis: axis ? { price: clamp(p.p, S.pA, S.pB), y: p.y } : null,
       };
       setCursor(p);
-      if (e.pointerType === "touch" && !axis && !manualHits.length)
+      if (e.pointerType === "touch" && !axis)
         nav.holdTimer = setTimeout(() => {
           if (drag && !drag.moved) {
             nav.hold = true;
@@ -19345,15 +19348,6 @@
         // column clicked, for the continuations.
         cleared = click && S.select && S.selection !== null;
       // A tap with Inspect is a reading and nothing else: no anchor, no selection, no evidence tab, no replay edge, no history entry
-      if (click && drag.drawingHits?.length) {
-        drawingAnchorTime = p.t;
-        if (drag.drawingHits.length > 1) drawingChooser(drag.drawingHits, p.t, canvas);
-        else drawingActivate(drag.drawingHits[0].id, p.t);
-        drag = null; nav.hold = false; setCursor(p); update(); return;
-      }
-      if (click && drag.drawingBlankActive) {
-        drawingActivate(null); drag = null; nav.hold = false; setCursor(p); update(); return;
-      }
       drawingKeyContext = false;
       if (click && inspect.on) inspectTap(p, e.pointerType === "touch");
       else if (click && S.select) S.selection = null;
@@ -19480,10 +19474,10 @@
     );
     canvas.addEventListener("dblclick", (e) => {
       if (!ready) return;
-      if (trendTool || performance.now() - drawingLastCreate < 350) { e.preventDefault(); return; }
-      if (tool() === "pan") {
-        const hits = drawingHits(at(e), e.pointerType);
-        if (hits.length) { drawingEdit(hits[0].id, "chart"); e.preventDefault(); return; }
+      if (trendTool) {
+        const hits = !drawingDraft && performance.now() - drawingLastCreate >= 350 ? drawingHits(at(e), e.pointerType) : [];
+        if (hits.length === 1) drawingEdit(hits[0].id, "chart");
+        e.preventDefault(); return;
       }
       const p = at(e);
       if (onPriceAxis(p)) {
@@ -19515,7 +19509,7 @@
           Boolean(bracket) ||
           e.key.startsWith("Arrow") ||
           ["+", "=", "-", "_", ",", "."].includes(e.key);
-      if (comparisonOwnsKey(e, target)) return;
+      if (drawingContextOwnsKey(e) || comparisonOwnsKey(e, target)) return;
       if (ready && drawingKey(e, target)) { e.preventDefault(); nav.pressed.add(id); return; }
       if (drawingDialogOpen()) return;
       // A held key repeats only steps: the arrows, zoom, levels and the anchor.
@@ -19823,13 +19817,13 @@
   // back to Pan from Select or the lens.
   function escapeKey() {
     if (comparisonCloseMenu(true)) return;
-    if (trendTool) { drawingCancelOperation(); setTool(drawingEntryTool); return; }
     if (closePop(true)) return;
     if (root.dataset.sheet === "open") {
       setSheet(false);
       el("sheet-toggle").focus();
       return;
     }
+    if (trendTool) { drawingCancelOperation(); setTool(drawingEntryTool); return; }
     // Escape's order with Inspect: the detail first, then Inspect itself, and only a later Escape clears the selection or goes back to Pan
     if (inspect.detail) {
       inspectDetail(false);
@@ -20193,7 +20187,7 @@
 
   // Manual analysis is a tab-owned collection, independent of market queries and view history.
   let drawingStore = E.drawings.createStore(E.drawings.empty());
-  let activeDrawingId = null, trendTool = false, drawingKeep = false, drawingEntryTool = "pan",
+  let activeDrawingId = null, trendTool = false, drawingEntryTool = "pan", drawingContext = null,
     drawingAnchorTime = null, drawingDraft = null, drawingDrag = null, drawingEditorPreview = null,
     drawingKeyContext = false, drawingLastCreate = 0, drawingLastColor = null, drawingTipRevision = -1,
     drawingUnsaved = false, drawingStorageReason = "", drawingRecoveries = [],
@@ -20211,7 +20205,7 @@
     if (!el("drawing-toolbar").hidden) el("drawing-toolbar-status").textContent = text;
     if (/Unsaved|need recovery|View not opened/.test(text)) {
       const key = drawingStorageNoticeId ? `drawing-storage:${drawingStorageNoticeRun}` : `drawing-storage:${++drawingStorageNoticeRun}`;
-      drawingStorageNoticeId = postNotice({ code: "storage-failed", key, text: text + " Open Lines for Export, Retry save or Recover drawings." }).id;
+      drawingStorageNoticeId = postNotice({ code: "storage-failed", key, text: text + " Use line mode’s More menu for Export, Retry save or Recover drawings." }).id;
     }
   }
   function drawingPersist() {
@@ -20258,8 +20252,9 @@
     return drawingCommit(label, next);
   }
   function drawingActivate(id, hitTime = null) {
+    drawingCancelOperation();
     drawingAnchorTime = Number.isFinite(hitTime) ? hitTime : null;
-    if (id && tool() !== "pan") setTool("pan");
+    if (id && !trendTool) setTool("trend");
     activeDrawingId = drawingById(id) ? id : null;
     drawingKeyContext = Boolean(activeDrawingId);
     drawingSyncUI();
@@ -20305,8 +20300,8 @@
   function drawingApplyNew(patch) {
     const object = E.drawings.newObject(drawingCollection(), { ...patch, color: patch.color });
     drawingMutate("Create drawing", (c) => { c.visible = true; c.objects.push(object); });
-    trendTool = false; if (inspect.on) { inspect.prev = "pan"; inspectExit(); }
-    S.lens = S.select = false; drawingLastColor = object.color; drawingEditorPreview = null;
+    if (!trendTool) setTool("trend");
+    drawingLastColor = object.color; drawingEditorPreview = null;
     drawingActivate(object.id); update(); return true;
   }
   function drawingCreate(a, b) {
@@ -20317,7 +20312,6 @@
       drawingLastColor = object.color;
       drawingDraft = null;
       drawingLastCreate = performance.now();
-      if (!drawingKeep) { trendTool = false; S.lens = S.select = false; }
       drawingSyncUI(); update();
       return object;
     } catch (error) { drawingNotice(error.message); return null; }
@@ -20325,7 +20319,6 @@
   function drawingCommand(action, id, value) {
     const object = drawingById(id);
     if (action === "new") { closePop(); setSheet(false); setTool("trend"); canvas.focus(); return; }
-    if (action === "keep") { drawingKeep = Boolean(value ?? id); drawingSyncUI(); requestDraw(); return; }
     if (action === "cancel") { drawingCancelOperation(); return; }
     if (action === "anchor") {
       const t = Number.isFinite(value) ? value : drawingAnchorTime;
@@ -20336,6 +20329,9 @@
     if (action === "focus") { focus.drawing = focus.drawing === id ? null : id; focus.key = focus.family = focus.saved = null; focusChanged(); return; }
     if (action === "export") { copyText(viewCode, "Complete view code with drawings"); return; }
     if (action === "retry") { drawingPersist(); return; }
+    if (!trendTool && !["visible", "group-visible"].includes(action)) setTool("trend");
+    if (action === "choose") { drawingChooser(drawingCollection().objects, null); return; }
+    if (action === "recover-list") { drawingRecoveryChooser(); return; }
     if (action === "recover") {
       const recovered = window.explorerState?.drawings?.recover(id);
       if (recovered?.status === "ok") drawingReplace(recovered.collection).then((ok) => { if (ok) { update(); drawingNotice("Recovered drawings."); } });
@@ -20405,7 +20401,9 @@
     const direction = dx < 0 || (dx === 0 && dy > 0) ? -1 : 1,
       ux = direction * dx / length, uy = direction * dy / length,
       mid = { x: (g.a.x + g.b.x) / 2, y: (g.a.y + g.b.y) / 2 },
-      parts = drawingLabelSegmenter ? [...drawingLabelSegmenter.segment(object.label)].map((p) => p.segment) : Array.from(object.label);
+      // Without grapheme segmentation, keep the label indivisible: render it
+      // whole when it fits, otherwise omit rather than alter its characters.
+      parts = drawingLabelSegmenter ? [...drawingLabelSegmenter.segment(object.label)].map((p) => p.segment) : [object.label];
     // No shortening can rescue ink whose above-line bottom edge misses the plot.
     if (rect.w <= 2 || rect.h <= 2 || !E.drawings.clip(
       { x: g.a.x + uy * 5.5, y: g.a.y - ux * 5.5 },
@@ -20463,7 +20461,7 @@
       out.push({ id: "drawing|" + object.id, hot: focus.drawing === object.id,
         priority: focus.drawing === object.id ? 1 : activeDrawingId === object.id ? 3 : 4,
         rank: object.ordinal, rects: g.anchors.map((p) => {
-          const half = object.id === activeDrawingId && !object.locked && tool() === "pan" ? 5.75 : 4.5;
+          const half = object.id === activeDrawingId && !object.locked && trendTool && !drawingDraft ? 5.75 : 4.5;
           return [p.x - half, p.y - half, p.x + half, p.y + half];
         }),
         strokes: [{ a: g.a, b: g.b, width: 3.5 }, ...(label?.strokes || [])] });
@@ -20493,7 +20491,7 @@
       ctx.beginPath(); ctx.moveTo(g.a.x, g.a.y); ctx.lineTo(g.b.x, g.b.y);
       ctx.lineWidth = 3.5; ctx.strokeStyle = drawingCasing(object.color); ctx.stroke();
       ctx.lineWidth = 1.5; ctx.strokeStyle = object.color; ctx.stroke();
-      if (!preview && object.id === activeDrawingId && !object.locked && !trendTool && !inspect.on && !S.select && !S.lens) {
+      if (!preview && object.id === activeDrawingId && !object.locked && trendTool && !drawingDraft && rect.x === G.x && rect.y === G.y && rect.w === G.w && rect.h === G.h) {
         for (const p of Object.values(g.endpoints)) {
           if (p.x < rect.x || p.x > rect.x + rect.w || p.y < rect.y || p.y > rect.y + rect.h) continue;
           ctx.fillStyle = colors.surface; ctx.strokeStyle = colors.ink; ctx.lineWidth = 1.5;
@@ -20528,24 +20526,35 @@
   }
   function drawingHits(p, pointerType = "mouse", readOnly = false) {
     if (!inPlot(p) || !readOnly && drawingLensOwns(p) || !drawingCollection().visible) return [];
-    const radius = pointerType === "touch" ? 22 : 4;
+    const radius = pointerType === "touch" ? 22 : 10;
     return drawingCollection().objects.filter((o) => drawingStatus(o.id) === "Shown").map((o) => {
-      const g = drawingGeometry(o), distance = E.drawings.distance(p, g);
-      return { id: o.id, object: o, distance };
-    }).filter((hit) => hit.distance <= radius).sort((a, b) => Number(b.id === activeDrawingId) - Number(a.id === activeDrawingId) || a.distance - b.distance || a.object.ordinal - b.object.ordinal);
+      const g = drawingGeometry(o), distance = E.drawings.distance(p, g), handle = drawingHandle(p, pointerType, o, g);
+      return { id: o.id, object: o, distance, handle };
+    }).filter((hit) => hit.distance <= radius || hit.handle).sort((a, b) => Number(["a", "b"].includes(b.handle)) - Number(["a", "b"].includes(a.handle)) || Number(b.id === activeDrawingId) - Number(a.id === activeDrawingId) || a.distance - b.distance || a.object.ordinal - b.object.ordinal);
   }
-  function drawingHandle(p, pointerType) {
-    const o = drawingById(activeDrawingId);
+  function drawingHandle(p, pointerType, o = drawingById(activeDrawingId), g = o && drawingGeometry(o)) {
     if (!o || o.locked || drawingStatus(o.id) !== "Shown" || drawingLensOwns(p)) return null;
-    const g = drawingGeometry(o), radius = pointerType === "touch" ? 22 : 10,
+    const radius = pointerType === "touch" ? 22 : 14,
       da = !inPlot(g.endpoints.a) ? Infinity : Math.hypot(p.x - g.endpoints.a.x, p.y - g.endpoints.a.y), db = !inPlot(g.endpoints.b) ? Infinity : Math.hypot(p.x - g.endpoints.b.x, p.y - g.endpoints.b.y);
-    return Math.min(da, db) <= radius ? da <= db ? "a" : "b" : E.drawings.distance(p, g) <= (pointerType === "touch" ? 22 : 4) ? "body" : null;
+    return Math.min(da, db) <= radius ? da <= db ? "a" : "b" : E.drawings.distance(p, g) <= (pointerType === "touch" ? 22 : 10) ? "body" : null;
+  }
+  function drawingResizeCursor(object) {
+    const a = drawingPixel(object.a), b = drawingPixel(object.b), dx = b.x - a.x, dy = b.y - a.y;
+    return Math.abs(dx) >= 2 * Math.abs(dy) ? "ew-resize" : Math.abs(dy) >= 2 * Math.abs(dx) ? "ns-resize" : dx * dy >= 0 ? "nwse-resize" : "nesw-resize";
   }
   function drawingPointerDown(e, p) {
     drawingCancelledPointers.delete(e.pointerId);
     const surface = [window.innerWidth, window.innerHeight, canvas.clientWidth, canvas.clientHeight, S.tA, S.tB, S.pA, S.pB].join(",");
-    if (!inPlot(p) || drawingLensOwns(p)) return false;
+    if (!inPlot(p) || drawingLensOwns(p) || e.altKey) return false;
     if (trendTool) {
+      const hits = drawingDraft ? [] : drawingHits(p, e.pointerType), endpoints = hits.filter((h) => ["a", "b"].includes(h.handle)),
+        hit = endpoints.length ? endpoints.find((h) => h.id === activeDrawingId) || (endpoints.length === 1 ? endpoints[0] : null) : hits.find((h) => h.id === activeDrawingId) || (hits.length === 1 ? hits[0] : null);
+      if (hits.length) {
+        if (hit) drawingActivate(hit.id, p.t);
+        drawingDrag = { pointerId: e.pointerId, surface, start: p, kind: hit ? hit.handle || "locked" : "choose", original: hit?.object, moved: false, hits };
+        drawingKeyContext = true; drag = null; hover = null; el("tip").hidden = true; clearTimeout(nav.holdTimer);
+        canvas.focus({ preventScroll: true }); requestDraw(); return true;
+      }
       try {
         const point = drawingPoint(p);
         drawingDrag = { pointerId: e.pointerId, surface, start: p, kind: "create", moved: false, second: Boolean(drawingDraft), a: drawingDraft?.a || point, b: point };
@@ -20554,12 +20563,6 @@
       } catch (error) { drawingNotice(error.message); }
       return true;
     }
-    if (tool() !== "pan" || e.altKey) return false;
-    const handle = drawingHandle(p, e.pointerType), hits = drawingHits(p, e.pointerType);
-    if (handle) {
-      drawingDrag = { pointerId: e.pointerId, surface, start: p, kind: handle, original: drawingById(activeDrawingId), moved: false, hits };
-      drag = null; clearTimeout(nav.holdTimer); hover = null; return true;
-    }
     return false;
   }
   function drawingPointerMove(e, p) {
@@ -20567,13 +20570,14 @@
       if (trendTool && drawingDraft && inPlot(p) && !drawingLensOwns(p)) {
         try { drawingDraft.b = drawingPoint(p); requestDraw(); } catch { /* Out-of-domain previews stay at their last valid position. */ }
       }
-      if (trendTool) { el("tip").hidden = true; hover = null; return true; }
+      if (trendTool && drawingDraft) { el("tip").hidden = true; hover = null; return true; }
       return false;
     }
     if (e.pointerId !== drawingDrag.pointerId) return true;
     const d = drawingDrag;
     d.moved ||= Math.abs(p.x - d.start.x) + Math.abs(p.y - d.start.y) > 4;
     if (!d.moved) return true;
+    if (d.kind === "locked" || d.kind === "choose") return true;
     try {
       if (d.kind === "create") { d.b = drawingPoint(p); drawingDraft.b = d.b; }
       else {
@@ -20592,19 +20596,20 @@
     if (d.kind === "create") {
       if (d.moved || d.second) { const b = drawingPoint(p); if (!drawingCreate(d.a, b)) drawingDraft = { a: d.a, b }; }
       else drawingDraft = { a: d.a, b: d.a };
-    } else if (d.moved && d.preview) drawingApplyEdit(d.original.id, d.preview);
+    } else if (d.kind === "choose") drawingChooser(d.hits, p.t, canvas);
+    else if (d.moved && d.preview) drawingApplyEdit(d.original.id, d.preview);
     else {
       drawingAnchorTime = p.t;
       if (d.hits.length > 1) drawingChooser(d.hits, p.t, canvas); else drawingActivate(d.original.id, p.t);
     }
-    update(); return true;
+    setCursor(p); update(); return true;
   }
   function drawingKey(e, target) {
     if (e.defaultPrevented || e.isComposing || target?.closest('input:not([type="checkbox"]):not([type="radio"]),select,textarea,[contenteditable]:not([contenteditable="false"])')) return false;
     if (drawingDialogOpen()) return false;
     const held = e.repeat && nav.pressed.has(e.code || e.key),
       chart = !target || target === canvas || target === root || target === document.body,
-      owns = drawingUIOwns(target) || chart && ["pan", "trend"].includes(tool()) && Boolean(activeDrawingId || drawingDraft || drawingDrag || drawingKeyContext);
+      owns = trendTool && (drawingUIOwns(target) || chart && Boolean(activeDrawingId || drawingDraft || drawingDrag || drawingKeyContext));
     if ((e.ctrlKey || e.metaKey) && !e.altKey && owns) {
       const k = e.key.toLowerCase();
       if (k === "z" || k === "y") { if (!held) drawingCommand(k === "y" || e.shiftKey ? "redo" : "undo"); return true; }
@@ -20614,10 +20619,10 @@
     if (!chart) return false;
     if (e.key === "Escape" && (drawingDrag || drawingDraft)) { if (!held) drawingCancelOperation(); return true; }
     if (e.key === "Escape" && activeDrawingId) { if (!held) drawingActivate(null); return true; }
-    if (["Delete", "Backspace"].includes(e.key) && activeDrawingId && tool() === "pan") {
+    if (["Delete", "Backspace"].includes(e.key) && activeDrawingId && trendTool) {
       if (!held && !drawingById(activeDrawingId)?.locked) drawingCommand("delete", activeDrawingId); return true;
     }
-    if (e.key === "Enter" && activeDrawingId && tool() === "pan") { if (!held) drawingEdit(activeDrawingId, "chart"); return true; }
+    if (e.key === "Enter" && activeDrawingId && trendTool) { if (!held) drawingEdit(activeDrawingId, "chart"); return true; }
     return false;
   }
   async function drawingReplace(incoming, apply = null) {
@@ -20690,35 +20695,30 @@
     if (id) button.dataset.drawingId = id;
     if (menu) button.setAttribute("role", "menuitem");
     button.addEventListener("click", () => {
-      const at = drawingCollection().objects.findIndex((o) => o.id === id);
       if (action === "new-exact") { drawingNewExact(button); return; }
       if (action === "edit") { drawingEdit(id, button); return; }
       if (action === "move") { closePop(); setSheet(false); drawingActivate(id); canvas.focus({ preventScroll: true }); return; }
       if (action === "delete-all") { drawingConfirmDelete(button); return; }
+      if (action === "recover") { drawingCloseChooser(); drawingUICmd(action, id); return; }
       if (menu) closePop();
       drawingUICmd(action, id, typeof value === "function" ? value() : value);
-      if (action === "duplicate" && el("drawing-section")) {
-        el("drawing-section").querySelector(`[data-drawing-row="${activeDrawingId}"] [data-drawing-action="move"]`)?.focus({ preventScroll: true });
-      } else if (action === "delete" && !button.isConnected && el("drawing-section")) {
-        const rows = [...el("drawing-section").querySelectorAll("[data-drawing-row]")];
-        (rows[Math.min(at, rows.length - 1)]?.querySelector('[data-drawing-action="edit"]') || el("drawing-new"))?.focus({ preventScroll: true });
-      } else if (menu) canvas.focus({ preventScroll: true });
+      if (action === "retry") drawingBuildActions();
+      if (action === "duplicate") el("drawing-edit").focus({ preventScroll: true });
+      else if (action === "delete") el("drawing-more").focus({ preventScroll: true });
+      else if (menu) canvas.focus({ preventScroll: true });
     }); return button;
   }
   function drawingRestoreFocus(origin, id, index = 0) {
-    if (origin?.list) {
-      if (PHONE.matches) setSheet(true);
-      if (el("lines-pop").hidden) openLines();
-      drawingMenuSection(el("lines-pop")); drawingSyncUI();
-      const rows = [...el("drawing-section").querySelectorAll("[data-drawing-row]")],
-        row = rows.find((r) => r.dataset.drawingRow === id) || rows[Math.max(0, Math.min(index, rows.length - 1))];
-      (row?.querySelector('[data-drawing-action="edit"]') || el("drawing-new"))?.focus({ preventScroll: true });
+    if (origin?.menu) {
+      const objects = drawingCollection().objects, object = drawingById(id) || objects[Math.max(0, Math.min(origin.index, objects.length - 1))];
+      if (object && origin.action !== "new-exact") drawingActivate(object.id);
+      (object && origin.action !== "new-exact" ? el("drawing-edit") : el("drawing-more")).focus({ preventScroll: true });
     } else canvas.focus({ preventScroll: true });
   }
   function drawingOrigin(origin, id) {
     const node = origin instanceof Element ? origin : document.activeElement,
-      list = origin === "lines" || Boolean(node?.closest?.(".ol-drawing-section"));
-    return { list, index: list ? drawingCollection().objects.findIndex((o) => o.id === id) : 0 };
+      menu = Boolean(node?.closest?.("#ol-drawing-actions, #ol-drawing-toolbar"));
+    return { menu, action: node === el("drawing-edit") ? "edit" : node?.dataset?.drawingAction || "new-exact", index: drawingCollection().objects.findIndex((o) => o.id === id) };
   }
   function drawingFieldError(key, message) {
     drawingAttr(el(`drawing-${key}`), "aria-invalid", Boolean(message)); drawingWrite(el(`drawing-${key}-error`), message);
@@ -20756,6 +20756,7 @@
     const object = draft || drawingById(id); if (!object) return;
     if (drawingEditorOpen()) drawingCloseEditor(true);
     const from = drawingOrigin(origin, id);
+    if (!trendTool) setTool("trend");
     drawingCancelOperation(); closePop(); setSheet(false);
     drawingEditorState = { id: object.id, origin: from, isNew: Boolean(draft), object: draft };
     el("drawing-editor").dataset.drawingId = object.id;
@@ -20768,7 +20769,7 @@
     }
     for (const key of drawingFieldIds) drawingFieldError(key, "");
     drawingWrite(el("drawing-editor-error"), "");
-    drawingWrite(el("drawing-editor-note"), object.locked ? "Drawing locked. Name, label and color remain editable; unlock in Lines to move its points." : "Free coordinates · UTC time and USDT price. Apply saves all fields together.");
+    drawingWrite(el("drawing-editor-note"), object.locked ? "Drawing locked. Name, label and color remain editable; unlock in More to move its points." : "Free coordinates · UTC time and USDT price. Apply saves all fields together.");
     drawingEditorState.fields = drawingFieldIds.map((key) => el(`drawing-${key}`).value);
     drawingSyncEditorUndo();
     el("drawing-editor").showModal();
@@ -20781,7 +20782,6 @@
     if (el("drawing-editor").open) el("drawing-editor").close(cancel ? "cancel" : "apply");
     delete el("drawing-editor").dataset.drawingId;
     drawingRestoreFocus(previous.origin, previous.isNew && !cancel ? activeDrawingId : previous.id, previous.origin.index);
-    if (previous.isNew && cancel && previous.origin.list) el("drawing-new-exact")?.focus({ preventScroll: true });
     return true;
   }
   function drawingCloseChooser() {
@@ -20790,8 +20790,9 @@
     if (origin?.isConnected && origin.focus) origin.focus({ preventScroll: true }); else canvas.focus({ preventScroll: true });
     return true;
   }
-  function drawingChooser(candidates, time, origin = canvas) {
+  function drawingChooser(candidates, time, origin = canvas, onChoose = null) {
     drawingCloseChooser(); closePop(); const choices = el("drawing-choices"); choices.replaceChildren();
+    drawingWrite(el("drawing-chooser-title"), "Choose drawing");
     drawingChoiceOrigin = origin instanceof Element ? origin : canvas;
     for (const candidate of candidates) {
       const id = typeof candidate === "string" ? candidate : candidate.id || candidate.object?.id || candidate.drawing?.id, object = drawingById(id);
@@ -20800,9 +20801,20 @@
       button.type = "button"; button.className = "ol-action cursor-interaction"; button.dataset.drawingChoice = id;
       swatch.className = "ol-drawing-swatch"; swatch.style.setProperty("--drawing-rgb", object.color); swatch.setAttribute("aria-hidden", "true");
       name.textContent = object.name + (object.locked ? " · Locked" : ""); button.append(swatch, name);
-      button.addEventListener("click", () => { drawingCloseChooser(); drawingActivate(id, time); canvas.focus({ preventScroll: true }); }); choices.append(button);
+      button.addEventListener("click", () => { drawingCloseChooser(); if (onChoose) onChoose(id); else { drawingActivate(id, time); canvas.focus({ preventScroll: true }); } }); choices.append(button);
     }
-    const anchor = drawingUIButton("Anchor evidence here", "anchor", null, time); anchor.addEventListener("click", drawingCloseChooser); choices.append(anchor);
+    if (Number.isFinite(time)) {
+      const anchor = drawingUIButton("Anchor evidence here", "anchor", null, time); anchor.addEventListener("click", drawingCloseChooser); choices.append(anchor);
+    }
+    el("drawing-chooser").showModal(); choices.querySelector("button")?.focus({ preventScroll: true });
+  }
+  function drawingRecoveryChooser() {
+    drawingCloseChooser(); closePop(); const choices = el("drawing-choices"); choices.replaceChildren();
+    drawingChoiceOrigin = el("drawing-more"); drawingWrite(el("drawing-chooser-title"), "Recover drawings");
+    for (const record of drawingRecoveries) {
+      const button = drawingUIButton(record.label || record.createdAt || "Saved drawing workspace", "recover", record.id);
+      choices.append(button);
+    }
     el("drawing-chooser").showModal(); choices.querySelector("button")?.focus({ preventScroll: true });
   }
   function drawingConfirmDelete(origin) {
@@ -20819,73 +20831,48 @@
   function drawingMenuSection(parent) {
     let section = el("drawing-section");
     if (!section) {
-      section = document.createElement("section"); section.id = "ol-drawing-section"; section.className = "ol-drawing-section"; section.dataset.drawingUi = ""; section.setAttribute("aria-labelledby", "ol-drawing-section-title");
-      section.innerHTML = '<div class="ol-drawing-section-head"><h3 id="ol-drawing-section-title">Your drawings</h3></div><div class="ol-drawing-section-tools"></div><p id="ol-drawing-summary" class="ol-drawing-summary" role="status"></p><p id="ol-drawing-menu-replay" class="ol-drawing-summary"></p><div id="ol-drawing-list" class="ol-drawing-list"></div><p id="ol-drawing-storage-status" class="ol-drawing-summary" role="status"></p><div id="ol-drawing-storage-actions" class="ol-drawing-section-tools"></div><details id="ol-drawing-recover"><summary>Recover drawings</summary><p class="ol-drawing-summary">Rolling history: up to 24 recent saves and 8 prior replacements. Older recoveries expire; this tab’s drawings stay intact. Save a View or export a complete code to keep a snapshot.</p><div id="ol-drawing-recover-list" class="ol-drawing-choices"></div></details>';
-      const head = section.querySelector(".ol-drawing-section-head"), tools = section.querySelector(".ol-drawing-section-tools"), create = drawingUIButton("New", "new");
-      create.id = "ol-drawing-new"; create.setAttribute("aria-label", "New trend line"); create.addEventListener("click", () => { closePop(); setSheet(false); canvas.focus({ preventScroll: true }); }); head.append(create);
-      const exact = drawingUIButton("Coordinates", "new-exact"); exact.id = "ol-drawing-new-exact";
-      exact.setAttribute("aria-label", "New trend line with exact coordinates"); head.append(exact);
-      const visibility = document.createElement("label"), box = document.createElement("input"); visibility.className = "ol-drawing-check"; box.type = "checkbox"; box.id = "ol-drawing-group-visible";
-      box.addEventListener("change", () => drawingUICmd("group-visible", null, box.checked)); visibility.append(box, document.createTextNode("Show drawings"));
-      const undo = drawingUIButton("Undo", "undo"), redo = drawingUIButton("Redo", "redo"), remove = drawingUIButton("Delete all", "delete-all");
-      undo.id = "ol-drawing-undo"; redo.id = "ol-drawing-redo"; remove.id = "ol-drawing-delete-all"; tools.append(visibility, undo, redo, remove);
-      const exportButton = drawingUIButton("Export complete view code", "export"), retry = drawingUIButton("Retry save", "retry"); exportButton.id = "ol-drawing-export"; retry.id = "ol-drawing-retry";
-      section.querySelector("#ol-drawing-storage-actions").append(exportButton, retry); parent.insertBefore(section, parent.querySelector(".ol-family"));
+      section = document.createElement("section"); section.id = "ol-drawing-section"; section.className = "ol-family"; section.dataset.family = "drawing"; section.dataset.drawingUi = "";
+      section.innerHTML = '<button type="button" class="ol-family-head cursor-interaction" id="ol-family-drawing-head" aria-expanded="false" aria-controls="ol-family-drawing"><i class="ol-family-dot" aria-hidden="true"></i><span class="ol-family-name">Your drawings</span><span class="ol-family-count ol-num"></span><svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5" /></svg></button><div class="ol-family-body" id="ol-family-drawing" role="group" aria-labelledby="ol-family-drawing-head" hidden><div id="ol-drawing-list" class="ol-lines-list"></div><p id="ol-drawing-summary" class="ol-family-status" role="status"></p><p id="ol-drawing-menu-replay" class="ol-family-status"></p></div>';
+      const head = section.querySelector(".ol-family-head"), body = section.querySelector(".ol-family-body"), visibility = document.createElement("label"), box = document.createElement("input"), swatch = document.createElement("i"), name = document.createElement("span");
+      visibility.className = "ol-line-row cursor-interaction"; box.type = "checkbox"; box.id = "ol-drawing-group-visible"; swatch.className = "ol-line-swatch"; swatch.setAttribute("aria-hidden", "true"); name.className = "ol-line-name"; name.textContent = "Show drawings";
+      box.addEventListener("change", () => drawingUICmd("group-visible", null, box.checked)); visibility.append(box, swatch, name); body.prepend(visibility);
+      familiesOpen(); const open = Boolean(familyOpen.drawing); head.setAttribute("aria-expanded", String(open)); body.hidden = !open;
+      head.addEventListener("click", () => { const open = head.getAttribute("aria-expanded") !== "true"; setFamilyOpen("drawing", open); head.setAttribute("aria-expanded", String(open)); body.hidden = !open; });
+      parent.insertBefore(section, parent.querySelector(".ol-family"));
     }
     drawingSyncInventory(); return section;
   }
   function drawingRow(object) {
-    const row = document.createElement("div"), head = document.createElement("div"), swatch = document.createElement("i"), name = document.createElement("span"), status = document.createElement("span"), actions = document.createElement("div"), details = document.createElement("details"), summary = document.createElement("summary"), more = document.createElement("div");
-    row.className = "ol-drawing-row"; row.dataset.drawingRow = object.id; row.dataset.id = object.id;
-    head.className = "ol-drawing-row-head"; swatch.className = "ol-drawing-swatch"; swatch.setAttribute("aria-hidden", "true"); name.className = "ol-drawing-row-name"; status.className = "ol-drawing-status"; head.append(swatch, name, status);
-    actions.className = "ol-drawing-row-actions"; actions.append(drawingUIButton("Move", "move", object.id), drawingUIButton("Edit", "edit", object.id), drawingUIButton("Hide", "visible", object.id, () => !drawingById(object.id)?.visible));
-    details.className = "ol-drawing-row-more"; summary.textContent = "More actions"; more.className = "ol-drawing-row-more-actions";
-    more.append(drawingUIButton("Lock", "lock", object.id, () => !drawingById(object.id)?.locked), drawingUIButton("Focus", "focus", object.id), drawingUIButton("Duplicate", "duplicate", object.id), drawingUIButton("Delete", "delete", object.id));
-    details.append(summary, more); actions.append(details); row.append(head, actions); return row;
+    const row = document.createElement("label"), box = document.createElement("input"), swatch = document.createElement("i"), name = document.createElement("span"), status = document.createElement("span");
+    row.className = "ol-line-row cursor-interaction"; row.dataset.drawingRow = object.id; row.dataset.id = object.id;
+    box.type = "checkbox"; box.dataset.drawingAction = "visible"; box.dataset.drawingId = object.id; box.addEventListener("change", () => drawingUICmd("visible", object.id, box.checked));
+    swatch.className = "ol-line-swatch"; swatch.setAttribute("aria-hidden", "true"); swatch.style.setProperty("--weight", "1.5px"); name.className = "ol-line-name"; status.className = "ol-line-reason ol-num";
+    row.append(box, swatch, name, status); return row;
   }
   function drawingSyncInventory() {
     const section = el("drawing-section"); if (!section) return;
-    const inventoryKey = [drawingStore.revision, activeDrawingId, focus.drawing, drawingUnsaved, drawingStorageReason, drawingRecoveries.length, drawingRecoveries[0]?.id, el("lines-pop").hidden ? "closed" : [S.tA, S.tB, S.pA, S.pB, [...occlusion.off].join(",")].join("|")].join("|");
+    const inventoryKey = [drawingStore.revision, activeDrawingId, colourEpoch, canvas.dataset.drawingReplay, el("lines-pop").hidden ? "closed" : [S.tA, S.tB, S.pA, S.pB, [...occlusion.off].join(",")].join("|")].join("|");
     if (inventoryKey === drawingInventoryKey) return;
     drawingInventoryKey = inventoryKey;
-    const collection = drawingCollection(), objects = collection.objects, history = drawingHistory(), list = el("drawing-list"), key = objects.map((o) => o.id).join(",");
+    const collection = drawingCollection(), objects = collection.objects, list = el("drawing-list"), key = objects.map((o) => o.id).join(",");
     if (key !== drawingRowsKey) {
       const existing = new Map([...list.querySelectorAll("[data-drawing-row]")].map((r) => [r.dataset.drawingRow, r]));
       for (const [id, row] of existing) if (!objects.some((o) => o.id === id)) row.remove();
       for (const object of objects) list.append(existing.get(object.id) || drawingRow(object)); drawingRowsKey = key;
     }
     for (const row of list.querySelectorAll("[data-drawing-row]")) {
-      const object = drawingById(row.dataset.drawingRow), state = drawingStatus(object.id);
+      const object = drawingById(row.dataset.drawingRow), state = drawingStatus(object.id), box = row.querySelector('[data-drawing-action="visible"]');
       for (const [attr, value] of Object.entries({ name: object.name, label: object.label || "", color: object.color, visible: String(object.visible), locked: String(object.locked), active: String(object.id === activeDrawingId), state, timeA: object.a.timeMs, timeB: object.b.timeMs, priceA: object.a.priceCents, priceB: object.b.priceCents, aTimeMs: object.a.timeMs, aPriceCents: object.a.priceCents, bTimeMs: object.b.timeMs, bPriceCents: object.b.priceCents })) if (row.dataset[attr] !== String(value)) row.dataset[attr] = String(value);
-      drawingWrite(row.querySelector(".ol-drawing-row-name"), object.name); drawingWrite(row.querySelector(".ol-drawing-status"), [object.locked ? "Locked" : "", state === "Shown" ? "" : state].filter(Boolean).join(" · "));
-      const swatch = row.querySelector(".ol-drawing-swatch"); if (swatch.style.getPropertyValue("--drawing-rgb") !== object.color) swatch.style.setProperty("--drawing-rgb", object.color);
-      for (const [action, text, pressed] of [["visible", object.visible ? "Hide" : "Show", object.visible], ["lock", object.locked ? "Unlock" : "Lock", object.locked]]) {
-        const button = row.querySelector(`[data-drawing-action="${action}"]`); drawingWrite(button, text); drawingAttr(button, "aria-label", `${text} ${object.name}`); drawingAttr(button, "aria-pressed", pressed);
-      }
-      for (const action of ["move", "edit", "duplicate", "delete", "focus"]) drawingAttr(row.querySelector(`[data-drawing-action="${action}"]`), "aria-label", `${action[0].toUpperCase() + action.slice(1)} ${object.name}`);
-      row.querySelector('[data-drawing-action="move"]').disabled = object.locked;
-      row.querySelector('[data-drawing-action="focus"]').disabled = !collection.visible || !object.visible;
-      drawingAttr(row.querySelector('[data-drawing-action="focus"]'), "aria-pressed", focus.drawing === object.id);
+      drawingWrite(row.querySelector(".ol-line-name"), object.name); drawingWrite(row.querySelector(".ol-line-reason"), [object.locked ? "Locked" : "", state === "Shown" ? "" : state].filter(Boolean).join(" · "));
+      const swatch = row.querySelector(".ol-line-swatch"); if (swatch.style.getPropertyValue("--line") !== object.color) swatch.style.setProperty("--line", object.color);
+      box.checked = object.visible; drawingAttr(box, "aria-label", `Show ${object.name}`); row.title = `${object.name} · ${object.locked ? "Locked · " : ""}${state}`;
     }
-    drawingWrite(el("drawing-menu-replay"), canvas.dataset.drawingReplay || "");
-    el("drawing-menu-replay").hidden = !canvas.dataset.drawingReplay;
+    section.querySelector(".ol-family-dot").style.background = colors.ink;
     const enabled = objects.filter((o) => collection.visible && o.visible).length, shown = objects.filter((o) => drawingStatus(o.id) === "Shown").length;
-    drawingWrite(el("drawing-summary"), objects.length ? `${shown} shown / ${enabled} enabled / ${objects.length} total` : "No drawings yet. Draw two points or drag on the price chart.");
-    el("drawing-group-visible").checked = collection.visible; el("drawing-new").disabled = el("drawing-new-exact").disabled = objects.length >= 200; el("drawing-delete-all").disabled = !objects.length;
-    for (const action of ["undo", "redo"]) {
-      const button = el(`drawing-${action}`), available = history[action === "undo" ? "canUndo" : "canRedo"], label = history[`${action}Label`];
-      button.disabled = !available; button.title = label ? `${action === "undo" ? "Undo" : "Redo"}: ${label}` : ""; drawingAttr(button, "aria-label", button.title || (action === "undo" ? "Undo drawing" : "Redo drawing"));
-    }
-    const storage = drawingStorageStatus(); drawingWrite(el("drawing-storage-status"), storage.unsaved ? `Unsaved drawings${storage.reason ? ": " + storage.reason : ""}` : ""); el("drawing-retry").hidden = !storage.unsaved;
-    const recoveries = storage.recoveries || [], recoveryKey = JSON.stringify(recoveries);
-    if (recoveryKey !== drawingRecoveryKey) {
-      const entries = recoveries.map((record) => {
-        const stamp = record.createdAt || record.time || record.at, parsed = stamp ? new Date(stamp) : null,
-          label = record.label || record.name || (parsed && Number.isFinite(parsed.getTime()) ? parsed.toISOString() : "Saved drawing workspace");
-        return drawingUIButton(label, "recover", record.id);
-      }); el("drawing-recover-list").replaceChildren(...entries); drawingRecoveryKey = recoveryKey;
-    }
-    el("drawing-recover").hidden = !recoveries.length;
+    drawingWrite(section.querySelector(".ol-family-count"), enabled || "");
+    drawingWrite(el("drawing-summary"), objects.length ? `${shown} shown / ${enabled} enabled / ${objects.length} total` : "No drawings yet. Use Trend line mode to draw.");
+    el("drawing-group-visible").checked = collection.visible;
+    drawingWrite(el("drawing-menu-replay"), canvas.dataset.drawingReplay || ""); el("drawing-menu-replay").hidden = !canvas.dataset.drawingReplay;
   }
   function drawingSyncUI() {
     if (!drawingUIInitialized) return;
@@ -20893,14 +20880,14 @@
     const object = activeDrawingId ? drawingById(activeDrawingId) : null, toolbar = el("drawing-toolbar"),
       state = object ? drawingStatus(object.id) : "", replay = canvas.dataset.drawingReplay || "",
       draft = drawingDraft ? [drawingDraft.a.timeMs, drawingDraft.a.priceCents, drawingDraft.b?.timeMs, drawingDraft.b?.priceCents] : null,
-      key = JSON.stringify([Boolean(trendTool), drawingKeep, object?.id, object?.name, object?.color, object?.locked, state, replay, draft]);
+      key = JSON.stringify([Boolean(trendTool), object?.id, object?.name, object?.color, object?.locked, state, replay, draft]);
     if (key !== drawingToolbarKey) {
-      toolbar.hidden = !trendTool && !object; toolbar.dataset.activeId = object?.id || "";
-      drawingWrite(el("drawing-toolbar-name"), trendTool ? "Trend line · Free" : object?.name || ""); el("drawing-toolbar-name").title = object?.name || "";
+      toolbar.hidden = !trendTool; toolbar.dataset.activeId = object?.id || "";
+      drawingWrite(el("drawing-toolbar-name"), !draft && object ? object.name : "Trend line"); el("drawing-toolbar-name").title = object?.name || "";
       const placement = draft ? ["a", "b"].filter((point) => drawingDraft[point]).map((point) => `${point.toUpperCase()} · ${E.drawings.formatTime(drawingDraft[point].timeMs)} · ${E.drawings.formatPrice(drawingDraft[point].priceCents)} USDT`).join("\n") : "Click two points or drag";
-      drawingWrite(el("drawing-toolbar-status"), object && !trendTool ? [object.locked ? "Locked" : "", state === "Shown" ? "" : state].filter(Boolean).join(" · ") : placement);
+      drawingWrite(el("drawing-toolbar-status"), draft || !object ? placement : object.locked ? "Locked · Right-click for line actions" : state !== "Shown" ? state : "Drag line to move · Drag an endpoint to resize");
       el("drawing-toolbar-swatch").hidden = !object; if (object) el("drawing-toolbar-swatch").style.setProperty("--drawing-rgb", object.color);
-      el("drawing-keep-label").hidden = !trendTool; el("drawing-keep").checked = drawingKeep; el("drawing-edit").hidden = !object;
+      el("drawing-edit").hidden = false; el("drawing-edit").disabled = !object;
       const note = el("drawing-replay-status"); note.replaceChildren(...replay.split(" · ").filter(Boolean).flatMap((text, i) => { const span = document.createElement("span"); span.textContent = text; return i ? [" · ", span] : [span]; })); note.hidden = !replay;
       drawingToolbarKey = key;
     }
@@ -20910,32 +20897,97 @@
   }
   function drawingBuildActions() {
     const panel = el("drawing-actions"), object = activeDrawingId ? drawingById(activeDrawingId) : null, history = drawingHistory(),
-      key = [object?.id, object?.visible, object?.locked, history.canUndo, history.canRedo, drawingAnchorTime === null].join("|");
+      key = [object?.id, object?.visible, object?.locked, history.canUndo, history.canRedo, drawingCollection().objects.length, drawingUnsaved, drawingStorageReason, drawingRecoveries.length, drawingAnchorTime === null].join("|");
     if (drawingActionsKey === key && panel.childElementCount) return; drawingActionsKey = key;
-    const focused = panel.contains(document.activeElement) ? document.activeElement.dataset.drawingAction : null, buttons = [];
+    const focused = panel.contains(document.activeElement) ? document.activeElement.dataset.drawingAction : null, buttons = [],
+      choose = drawingUIButton("Choose line", "choose", null, null, true), exact = drawingUIButton("Coordinates", "new-exact", null, null, true);
+    choose.disabled = !drawingCollection().objects.length; exact.id = "ol-drawing-new-exact"; exact.disabled = drawingCollection().objects.length >= 200;
+    buttons.push(choose, exact);
     if (object) {
-      buttons.push(drawingUIButton("Move / select", "move", object.id, null, true), drawingUIButton("Edit exact coordinates", "edit", object.id, null, true), drawingUIButton(object.visible ? "Hide drawing" : "Show drawing", "visible", object.id, !object.visible, true), drawingUIButton(object.locked ? "Unlock drawing" : "Lock drawing", "lock", object.id, !object.locked, true), drawingUIButton("Focus drawing", "focus", object.id, null, true), drawingUIButton("Duplicate drawing", "duplicate", object.id, null, true), drawingUIButton("Delete drawing", "delete", object.id, null, true)); buttons[0].disabled = object.locked;
+      const move = drawingUIButton("Move / select", "move", object.id, null, true); move.disabled = object.locked;
+      buttons.push(move, drawingUIButton("Edit exact coordinates", "edit", object.id, null, true), drawingUIButton(object.visible ? "Hide drawing" : "Show drawing", "visible", object.id, !object.visible, true), drawingUIButton(object.locked ? "Unlock drawing" : "Lock drawing", "lock", object.id, !object.locked, true), drawingUIButton("Focus drawing", "focus", object.id, null, true), drawingUIButton("Duplicate drawing", "duplicate", object.id, null, true), drawingUIButton("Delete drawing", "delete", object.id, null, true));
       const anchor = drawingUIButton("Anchor evidence here", "anchor", object.id, undefined, true); anchor.disabled = drawingAnchorTime === null; buttons.push(anchor);
     }
-    const undo = drawingUIButton("Undo drawing", "undo", null, null, true), redo = drawingUIButton("Redo drawing", "redo", null, null, true); undo.disabled = !history.canUndo; redo.disabled = !history.canRedo; buttons.push(undo, redo);
+    const undo = drawingUIButton("Undo drawing", "undo", null, null, true), redo = drawingUIButton("Redo drawing", "redo", null, null, true),
+      remove = drawingUIButton("Delete all drawings", "delete-all", null, null, true), exported = drawingUIButton("Export complete view code", "export", null, null, true),
+      retry = drawingUIButton("Retry save", "retry", null, null, true), recover = drawingUIButton("Recover drawings", "recover-list", null, null, true), status = document.createElement("p");
+    undo.id = "ol-drawing-undo"; redo.id = "ol-drawing-redo"; remove.id = "ol-drawing-delete-all"; exported.id = "ol-drawing-export"; retry.id = "ol-drawing-retry";
+    undo.disabled = !history.canUndo; redo.disabled = !history.canRedo; remove.disabled = !drawingCollection().objects.length;
+    retry.hidden = !drawingUnsaved; recover.hidden = !drawingRecoveries.length; status.id = "ol-drawing-storage-status"; status.className = "ol-drawing-summary";
+    status.textContent = drawingUnsaved ? `Unsaved drawings${drawingStorageReason ? ": " + drawingStorageReason : ""}` : ""; status.hidden = !drawingUnsaved;
+    buttons.push(undo, redo, remove, exported, retry, recover, status);
     panel.replaceChildren(...buttons); if (focused) panel.querySelector(`[data-drawing-action="${focused}"]`)?.focus({ preventScroll: true });
   }
   function drawingPlaceActions() {
     const panel = el("drawing-actions"), group = el("drawing-more").parentElement; let sheet = el("drawing-sheet-group");
     if (!sheet) { sheet = document.createElement("div"); sheet.id = "ol-drawing-sheet-group"; sheet.className = "ol-group ol-drawing-sheet-group"; el("controls").append(sheet); }
     const parent = PHONE.matches ? sheet : group; if (panel.parentElement !== parent) parent.append(panel); sheet.hidden = !PHONE.matches || panel.hidden;
+    if (!panel.hidden && !PHONE.matches) panel.style.setProperty("--drawing-menu-top", Math.max(0, panel.getBoundingClientRect().top) + "px");
+  }
+  const drawingMenuItems = panel => menuItems(panel).filter(button => !button.disabled && !button.hidden);
+  function drawingFocusMenuItem(panel, index) {
+    const items = drawingMenuItems(panel);
+    if (items.length) items[(index % items.length + items.length) % items.length].focus({ preventScroll: true });
+  }
+  function drawingCloseContext(focus = false) {
+    if (!drawingContext) return false;
+    drawingContext.node.remove(); drawingContext = null;
+    if (focus) canvas.focus({ preventScroll: true });
+    return true;
+  }
+  function drawingOpenContext(event) {
+    if (!trendTool) return false;
+    // A secondary button cannot take an established drag from its primary owner.
+    if (drawingDrag) { event.preventDefault(); return true; }
+    const hits = drawingHits(at(event), event.pointerType), hit = hits.find((candidate) => candidate.id === activeDrawingId) || (hits.length === 1 ? hits[0] : null);
+    if (!hits.length) { drawingCloseContext(); return false; }
+    event.preventDefault(); drawingCloseContext(); comparisonCloseMenu(); drawingCancelOperation(); closePop();
+    const position = { x: event.clientX, y: event.clientY };
+    if (hit) drawingShowContext(hit.id, position);
+    else drawingChooser(hits, null, canvas, (id) => drawingShowContext(id, position));
+    return true;
+  }
+  function drawingShowContext(id, position) {
+    const object = drawingById(id); if (!trendTool || !object) return;
+    drawingActivate(id); el("tip").hidden = true;
+    const node = document.createElement("div"); node.id = "ol-drawing-context"; node.className = "ol-pop ol-cell-menu";
+    node.dataset.drawingUi = ""; node.setAttribute("role", "menu"); node.setAttribute("aria-label", `Actions for ${object.name}`);
+    drawingContext = { node, id };
+    for (const [action, label] of [["edit", "Edit line"], ["delete", "Delete line"]]) {
+      const button = document.createElement("button"); button.type = "button"; button.className = "ol-item cursor-interaction";
+      button.setAttribute("role", "menuitem"); button.dataset.drawingAction = action; button.textContent = label;
+      button.addEventListener("click", () => {
+        const id = drawingContext?.id; drawingCloseContext(true);
+        if (!trendTool || !drawingById(id)) return;
+        if (action === "edit") drawingEdit(id, "chart"); else drawingUICmd("delete", id);
+      }); node.append(button);
+    }
+    root.append(node); node.style.left = clamp(position.x, 8, Math.max(8, innerWidth - node.offsetWidth - 8)) + "px";
+    node.style.top = clamp(position.y, 8, Math.max(8, innerHeight - node.offsetHeight - 8)) + "px"; node.firstElementChild.focus({ preventScroll: true });
+  }
+  function drawingContextOwnsKey(event) {
+    if (!drawingContext) return false;
+    if (event.key === "Escape") { event.preventDefault(); drawingCloseContext(true); }
+    else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      event.preventDefault(); const items = drawingMenuItems(drawingContext.node), index = items.indexOf(document.activeElement);
+      drawingFocusMenuItem(drawingContext.node, event.key === "Home" ? 0 : event.key === "End" ? -1 : index + (event.key === "ArrowDown" ? 1 : -1));
+    } else if (event.key === "Tab") drawingCloseContext();
+    return true;
   }
   function drawingInitUI() {
     if (drawingUIInitialized) return; drawingUIInitialized = true;
-    el("drawing-keep").addEventListener("change", () => drawingUICmd("keep", null, el("drawing-keep").checked)); el("drawing-edit").addEventListener("click", () => drawingEdit(activeDrawingId, "chart"));
+    document.addEventListener("pointerdown", (event) => { if (drawingContext && !drawingContext.node.contains(event.target)) drawingCloseContext(); }, true);
+    for (const event of ["resize", "scroll"]) window.addEventListener(event, () => drawingCloseContext(), true);
+    window.addEventListener("blur", () => drawingCloseContext());
+    el("drawing-edit").addEventListener("click", () => drawingEdit(activeDrawingId, el("drawing-edit")));
     el("drawing-more").addEventListener("click", () => {
       const panel = el("drawing-actions"), button = el("drawing-more");
       if (pop.open?.panel === panel) { closePop(); drawingPlaceActions(); return; }
-      closePop(); drawingBuildActions(); panel.hidden = false; button.setAttribute("aria-expanded", "true"); pop.open = { button, panel }; drawingPlaceActions(); if (PHONE.matches) setSheet(true); focusMenuItem(panel, 0);
+      closePop(); drawingBuildActions(); panel.hidden = false; button.setAttribute("aria-expanded", "true"); pop.open = { button, panel }; drawingPlaceActions(); if (PHONE.matches) setSheet(true); drawingFocusMenuItem(panel, 0);
     });
     el("drawing-actions").addEventListener("keydown", (event) => {
       if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-        event.preventDefault(); event.stopPropagation(); const items = menuItems(el("drawing-actions")), i = items.indexOf(document.activeElement); focusMenuItem(el("drawing-actions"), event.key === "Home" ? 0 : event.key === "End" ? -1 : i + (event.key === "ArrowDown" ? 1 : -1));
+        event.preventDefault(); event.stopPropagation(); const items = drawingMenuItems(el("drawing-actions")), i = items.indexOf(document.activeElement); drawingFocusMenuItem(el("drawing-actions"), event.key === "Home" ? 0 : event.key === "End" ? -1 : i + (event.key === "ArrowDown" ? 1 : -1));
       } else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closePop(true); drawingPlaceActions(); }
     });
     PHONE.addEventListener("change", () => { closePop(); drawingPlaceActions(); }); drawingPlaceActions();
@@ -21233,11 +21285,12 @@
   }
   function comparisonInit() {
     comparisonUI=window.explorerComparisonUI.create({root:el("comparisonWorkspace"),dispatch:comparisonDispatch});
-    canvas.addEventListener("contextmenu",event=>comparisonOpenMenu(event,comparisonTarget(at(event))));
+    const openContext = event => { if (!drawingOpenContext(event)) comparisonOpenMenu(event,comparisonTarget(at(event))); };
+    canvas.addEventListener("contextmenu",openContext);
     const menuPresses=new Set();
     // Mouse chords have one pointer sequence; its last released button can differ from its first.
     // A new press supersedes ownership whose release escaped the document/window.
-    canvas.addEventListener("pointerdown",event=>{menuPresses.delete(event.pointerId);if(event.button===2||event.ctrlKey&&event.button===0){menuPresses.add(event.pointerId);event.stopImmediatePropagation();if(event.ctrlKey)comparisonOpenMenu(event,comparisonTarget(at(event)));}},true);
+    canvas.addEventListener("pointerdown",event=>{menuPresses.delete(event.pointerId);if(event.button===2||event.ctrlKey&&event.button===0){menuPresses.add(event.pointerId);event.stopImmediatePropagation();if(event.ctrlKey)openContext(event);}},true);
     document.addEventListener("pointerup",event=>{if(menuPresses.delete(event.pointerId)&&event.target===canvas)event.stopImmediatePropagation();},true);
     document.addEventListener("pointercancel",event=>{menuPresses.delete(event.pointerId);},true);
     document.addEventListener("pointerdown",event=>{if(comparisonMenu&&!comparisonMenu.node.contains(event.target))comparisonCloseMenu(true);},true);

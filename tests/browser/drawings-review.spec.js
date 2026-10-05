@@ -60,7 +60,7 @@ for (const route of ["button", "keyboard"]) test(`clean exact editor ${route} Un
   await expect(page.locator("#ol-drawing-editor")).toBeHidden();
   expect(await D.row(page, id)).toEqual(original); expect(await revision(page)).toBe(beforeRevision + 1);
   expect(JSON.parse((await durable(page)).session).collection.objects[0]).toMatchObject({ name: original.name, color: original.color });
-  await D.manager(page); await page.locator("#ol-drawing-redo").click();
+  await D.command(page, "redo");
   expect(await D.row(page, id)).toEqual(edited); expect(await revision(page)).toBe(beforeRevision + 2);
 });
 
@@ -79,7 +79,7 @@ test("dirty, invalid and new exact drafts cancel before committed Undo", async (
     expect(await D.rows(page)).toEqual(edited); expect(await revision(page)).toBe(beforeRevision);
     expect(await durable(page)).toEqual(beforeDurable);
   }
-  await D.manager(page); await page.locator("#ol-drawing-undo").click();
+  await D.command(page, "undo");
   expect((await D.rows(page))[0].name).not.toBe("Committed edit");
   expect(await revision(page)).toBe(beforeRevision + 1);
 });
@@ -120,9 +120,9 @@ for (const route of ["pasted code", "named View"]) test(`failed ${route} applica
   expect(await D.rows(page)).toEqual(beforeRows); expect(await revision(page)).toBe(beforeRevision);
   expect(await durable(page)).toEqual(beforeDurable); expect(new URL(page.url()).hash).toBe(beforeHash);
   expect(chart(await payload(page)), "the full chart payload must roll back after assignments already ran").toEqual(beforeChart);
-  await closeDrawer(page); await D.manager(page); await page.locator("#ol-drawing-undo").click();
+  await closeDrawer(page); await D.command(page, "undo");
   expect(await D.count(page)).toBe(beforeRows.length - 1);
-  await page.locator("#ol-drawing-redo").click(); expect(await D.rows(page)).toEqual(beforeRows);
+  await D.command(page, "redo"); expect(await D.rows(page)).toEqual(beforeRows);
   await page.reload(); await D.ready(page); expect(await D.rows(page)).toEqual(beforeRows);
 });
 
@@ -159,14 +159,15 @@ test("dismissed drawing quota failure retries cleanly and the next failure annou
 });
 
 
-for (const neighbor of [false, true]) test(`clean editor Undo removing a creation restores ${neighbor ? "neighbor" : "New"} focus`, async ({ page, fakeFor }) => {
+for (const neighbor of [false, true]) test(`clean editor Undo removing a creation restores ${neighbor ? "neighbor Edit" : "More"} focus`, async ({ page, fakeFor }) => {
   const fake = await fakeFor("mini"); await D.open(page, fake);
   const first = await D.drawing(page), removed = neighbor ? await D.drawing(page, [.125, .25], [.5, .625]) : first;
   await D.edit(page, removed.id); await page.locator("#ol-drawing-editor-undo").click();
   await expect(page.locator("#ol-drawing-editor")).toBeHidden();
   expect(await D.count(page)).toBe(neighbor ? 1 : 0);
-  await expect(page.locator(neighbor ? `[data-drawing-row="${first.id}"] [data-drawing-action="edit"]` : "#ol-drawing-new")).toBeFocused();
-  await page.locator("#ol-drawing-redo").click(); expect(await D.row(page, removed.id)).toBeDefined();
+  await expect(page.locator(neighbor ? "#ol-drawing-edit" : "#ol-drawing-more")).toBeFocused();
+  if (neighbor) expect(await D.active(page)).toBe(first.id);
+  await D.command(page, "redo"); expect(await D.row(page, removed.id)).toBeDefined();
 });
 
 test("untouched duplicate retains its complete session after source recovery history is pruned", async ({ page, fakeFor }) => {

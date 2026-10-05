@@ -543,7 +543,7 @@
             aria-label="Pan"
             aria-keyshortcuts="V"
             data-keys="V"
-            data-hint="Drag to move the view; click a column to anchor"
+            data-hint="Drag to navigate; click a column to anchor; G edits drawings"
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path
@@ -580,7 +580,7 @@
             aria-label="Trend line"
             aria-keyshortcuts="G"
             data-keys="G"
-            data-hint="Click two points or drag to draw; return to Pan to adjust the line"
+            data-hint="Draw on blank space; drag a line or endpoint to adjust; right-click for Delete line"
           >
             <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="m4 12 8-8M2 11l2-1 2 1v2l-2 1-2-1zM10 3l2-1 2 1v2l-2 1-2-1z" />
@@ -1004,7 +1004,6 @@
         <i id="ol-drawing-toolbar-swatch" class="ol-drawing-swatch" aria-hidden="true"></i>
         <span id="ol-drawing-toolbar-name" class="ol-drawing-toolbar-name"></span>
         <span id="ol-drawing-toolbar-status" class="ol-drawing-status"></span>
-        <label id="ol-drawing-keep-label" class="ol-drawing-check" hidden><input id="ol-drawing-keep" type="checkbox" />Keep drawing</label>
         <button type="button" id="ol-drawing-edit" class="ol-action cursor-interaction">Edit</button>
         <div class="ol-group ol-drawing-more-group">
           <button type="button" id="ol-drawing-more" class="ol-action cursor-interaction" aria-haspopup="menu" aria-expanded="false" aria-controls="ol-drawing-actions">More</button>
@@ -1984,11 +1983,11 @@
               <dd><kbd>V</kbd> <kbd>S</kbd> <kbd>L</kbd> <kbd>E</kbd></dd>
             </div>
             <div>
-              <dt>Draw a trend line; G again cancels</dt>
+              <dt>Trend line mode: draw, move and resize</dt>
               <dd><kbd>G</kbd></dd>
             </div>
             <div>
-              <dt>Edit the active drawing</dt>
+              <dt>Edit the active line in Trend mode</dt>
               <dd><kbd>Enter</kbd></dd>
             </div>
             <div>
@@ -1996,8 +1995,12 @@
               <dd><kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>Z</kbd> / <kbd>Shift</kbd> <kbd>Z</kbd></dd>
             </div>
             <div>
-              <dt>Delete an active unlocked drawing</dt>
+              <dt>Delete an active unlocked line in Trend mode</dt>
               <dd><kbd>Delete</kbd></dd>
+            </div>
+            <div>
+              <dt>Line menu in Trend mode</dt>
+              <dd>Right click → Delete line</dd>
             </div>
             <div>
               <dt>Lens depth</dt>

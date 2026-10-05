@@ -122,19 +122,15 @@ function storage(page) {
     return { local: read(localStorage), session: read(sessionStorage) };
   });
 }
-// The authoritative protected named registry, read directly from its verified pointer.
-// A missing record is an error; tests never substitute a shortened hash or legacy cache.
+// The production storage boundary merges immutable named transactions. Assert its
+// status before reading entries; never substitute a chart hash or a legacy cache.
 async function namedEntries(page) {
-  const saved = await storage(page), raw = saved.local["drawing-views:v1:pointer"];
-  if (raw === undefined) return [];
-  const pointer = JSON.parse(raw), record = saved.local["drawing-views:v1:record:" + pointer.id];
-  if (record === undefined) throw new Error("protected named payload is missing");
-  const parsed = JSON.parse(record);
-  if (pointer.storageVersion !== 1 || parsed.storageVersion !== 1 || parsed.id !== pointer.id || !Array.isArray(parsed.entries)) throw new Error("invalid protected named registry");
-  return parsed.entries;
+  const status = await page.evaluate(() => window.explorerState.namedViewsStatus());
+  if (!["ok", "absent"].includes(status.status) || !Array.isArray(status.entries)) throw new Error("protected named registry: " + (status.reason || status.status));
+  return status.entries;
 }
 function namedStorage(page) {
-  return page.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith("market-state-cube-explorer:drawing-views:v1:")).map((k) => [k, localStorage.getItem(k)])));
+  return page.evaluate(() => Object.fromEntries(Object.keys(localStorage).filter((k) => /^market-state-cube-explorer:drawing-views:v[12]:/.test(k)).map((k) => [k, localStorage.getItem(k)])));
 }
 
 // Open the Query tab of the drawer (where the view code and the import live).

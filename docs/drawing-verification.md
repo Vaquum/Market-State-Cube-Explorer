@@ -18,6 +18,30 @@ Browser coverage includes exact geometry, direct gestures and cancellation, keyb
 
 Local timing is diagnostic evidence, with pinned 0/20/200 objects, Volume/Candles, pan/endpoint edit/Play and five samples per case. It is not designated-machine performance certification. Human first-attempt sessions and physical-device recognition remain outstanding under the [operator checklist](operator-drawings.md); screenshots and automated tests do not complete them.
 
+## PR #69 review corrections (2026-10-05)
+
+The review corrections give duplicated tabs complete independent session snapshots;
+cap shared recovery history at24 ordinary and8 prior replacements; compact obsolete
+named payloads through atomic immutable per-name publications; support secure UUIDs
+without `randomUUID`; make clean editor Undo reverse committed work while dirty/new
+editors cancel only; and apply the chart successfully before committing imported
+objects/history. Failed chart application restores the prior camera/settings. Retry
+clears its drawing-specific failure notice, later failures remain visible, and row
+removal restores valid focus. Unreadable session originals copy verbatim before a new
+save may replace them; failed copying retains the original.
+
+All **1,915 unit tests** pass (six existing skips), including25 storage cases for real
+publication interleaving, hundreds of document saves/imports, inherited snapshot expiry,
+secure UUID fallback, compaction, corruption, cached immutable values and retry races.
+Ten new browser regressions cover Undo/cancel/focus, both rejected-application routes,
+quota retry and two-tab state; three core regressions reproduce the defects on
+pre-review `7409f30`. Targeted review/persistence checks passed before final convergence.
+The final branch's complete browser and build/golden receipts are linked in
+[PR #69 checks](https://github.com/Vaquum/Market-State-Cube-Explorer/pull/69/checks).
+Recovery and named-publication details, including small deletion markers retained for
+paused publishers, are in [the API contract](drawing-api.md). The diagnostic below
+remains the measured earlier candidate; human operator sessions remain outstanding.
+
 ## Local diagnostic receipt
 
 Candidate `3557543`, 90 samples (18 cases × five), Apple M1 Max / macOS arm64, Chromium153.0.8010.12. All20 actual endpoint edits applied, made zero `/cube/*` reads, and produced painted samples; no page errors. Worst endpoint-edit input-to-paint p95 was23.5ms; worst pan/edit p95 was23.9ms. Frame-interval p95 stayed at or below16.8ms.

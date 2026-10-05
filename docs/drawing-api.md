@@ -46,35 +46,70 @@ Chart URLs and calibration state remain version2 and carry no drawings. The exis
 `src/state.js` exposes `explorerState.drawings.load()`, `save(collection,revision?)`,
 `preserve(collection)` and `recover(id)`. Load/recover return a status envelope with
 `collection`, `reason`, original `raw` and validated `recoveries`; save/preserve return
-`{ok,id?,reason?}` without throwing. Missing/corrupt/unsupported originals remain
-unapplied. Preservation writes a pinned immutable snapshot without replacing the tab
-pointer. Callers must preserve a nonempty prior collection before accepting replacement.
+`{ok,id?,expired?,reason?}` without throwing. Missing/corrupt/unsupported required data
+is never applied. Preservation writes a prior-replacement recovery without changing
+the current tab snapshot. Callers must preserve a nonempty prior collection before
+accepting replacement. Recovery collections are immutable; normalize them before editing.
 
-Protected keys use the existing `market-state-cube-explorer:` prefix:
-`drawings:v1:session` in sessionStorage, and immutable `drawings:v1:record:<UUID>` plus
-`drawings:v1:index` in localStorage. Each document forks its writer before writing,
-while reload/duplicated tabs load their inherited session pointer. The index is a
-hint reconciled from actual records, not authority to erase raced snapshots. New
-records/pointers verify before pruning only older own unpinned revisions; latest2
-own revisions, pinned replacements and other writers' records remain. Failed writes
-retain running work/prior pointers and require an explicit Unsaved/export/retry UI.
+Protected keys use the existing `market-state-cube-explorer:` prefix. The complete
+`drawings:v1:session` snapshot in sessionStorage now has
+`{storageVersion:2,id,writer,revision,collection}` and is the current tab's authority.
+Reload/duplicate tabs retain those exact collection bytes even after their old local
+recovery expires or is corrupt. Each document forks its writer before writing. A v1
+session pointer migrates to a verified complete snapshot when its valid record is
+read; failed migration returns an explicit error and retains its original bytes.
+Storage identities use `crypto.randomUUID()` or secure UUIDv4 `getRandomValues()`.
 
-`namedViews()`, `namedViewsStatus()` and `saveNamedViews(list)` own the protected
-`drawing-views:v1:pointer`/immutable `record:<UUID>` namespace. This registry accepts
-valid legacy entries and complete sealed v3 entries in one ordered list. Each entry
-requires finite `span,lead,tA,tB,cut,n,m`, a positive span, and boolean `live`/`auto`
-when present. Legacy entries require their chart `hash`; v3 entries require their
-complete `payload`, with no code/hash fallback. Invalid metadata or payload rejects
-the whole list before publication or opening; unavailable status must be surfaced.
+Local recovery records remain immutable `drawings:v1:record:<UUID>`; their version1
+shape adds nonnegative integer `createdAt` (legacy absence reads as0). The index is
+an advisory inventory reconciled from actual validated records. Successful saves
+retain at most24 ordinary recoveries across documents, including the current writer's
+latest2, plus the8 newest prior-replacement recoveries. Pinned means reserved from
+ordinary pruning, not permanent archive. Older recoveries expire on successful writes;
+use complete codes for permanent copies. Unknown/corrupt recovery originals are preserved. Before a new ordinary save replaces an
+unreadable session, a verified byte-for-byte `drawings:v1:unreadable-session:<SHA256>`
+copy preserves it; the digest deduplicates retries. Backup failure leaves the original
+session authoritative and the new running work Unsaved.
+The recovery validator caches at most64 immutable records and checks raw bytes before
+reuse, so rewritten/corrupt data always revalidates. Failed writes retain the previous
+complete tab snapshot and require explicit Unsaved/export/retry UI.
 
-Before a protected pointer exists the app reads legitimate legacy `views:v1` entries.
-The first save migrates the complete ordered list. Once the pointer exists it is the
-sole named-list authority, including an empty list after deletion. New builds never
-rewrite the old namespace; foreign legacy entries remain there verbatim. One verified
-pointer update publishes save/rename/delete/Undo atomically; failed writes leave the
-prior ordered list authoritative. Immutable prior records remain for rollback.
-Last-read baselines preserve other tabs' concurrent additions and upgraded entries;
-the caller retains given order, delete-Undo position and live-camera behavior.
-Legacy writers cannot erase these protected namespaces. Geometry/transactions and
-preservation are covered by `tests/unit/drawings.test.js` and
-`tests/unit/drawing-storage.test.js`.
+`namedViews()`, `namedViewsStatus()` and synchronous `saveNamedViews(list)` own
+`drawing-views:v2:record:<UUID>`. This registry accepts valid legacy entries and complete
+sealed v3 entries in one ordered list. Each entry requires finite
+`span,lead,tA,tB,cut,n,m`, a positive span, and boolean `live`/`auto` when present.
+Legacy entries require their chart `hash`; v3 entries require their complete `payload`,
+with no code/hash fallback. Invalid required metadata or payload rejects the entire
+registry before publication or opening; unavailable status must be surfaced.
+
+Each immutable version2 record is `{storageVersion:2,id,writer,clock,cells}`. A cell is
+`{name,value,valueStamp:[clock,writer],position,orderStamp:[clock,writer]}`; null `value`
+is a deletion marker containing no authored payload. The last-read private baseline
+identifies the caller's changed/deleted names. Unchanged stale entries cannot resurrect
+a deletion or downgrade an upgraded view. One verified record write atomically publishes
+the caller's transaction; there is no shared v2 pointer. Readers merge independently
+versioned cells across published records. Truly concurrent additions and edits to
+different names survive; same-name conflicts choose the greater logical clock, then
+lexicographically greater writer UUID. Position has its own version, preserving the
+caller order and delete-Undo position without coupling unrelated payload edits.
+
+Compaction removes a full record only when a retained complete snapshot dominates
+every value and order version. Sequential use keeps at most2 full snapshots; concurrent
+undominated branches remain until a subsequent merged save covers them. Small null
+markers retain deletion causality for paused publishers; they grow with distinct
+historically deleted names. Deleted full payloads and obsolete registry snapshots are
+reclaimed. Expiring those markers without serialized publisher membership could revive
+an old deleted name, so this synchronous API preserves them. If GC invalidates both
+bounded read attempts, the read fails explicitly with a retry reason and applies no
+legacy or empty fallback.
+
+With no v2 publication, `drawing-views:v1:pointer` and its required v1 record remain
+readable migration sources; if absent, the app reads legitimate `views:v1` entries.
+The first save migrates the complete list. Once a v2 record exists, its merged registry
+is sole authority, including an empty list after deletion. Successful migration prunes
+obsolete validated v1 full snapshots while retaining the required v1 pointer record and
+unreadable/foreign originals. New builds never rewrite legacy namespaces. Quota failure
+before atomic publication changes no authoritative names. Legacy writers cannot erase
+these protected namespaces. Geometry/transactions and preservation are covered by
+`tests/unit/drawings.test.js`, `tests/unit/drawing-storage.test.js` and
+`tests/unit/persistence-named-mutation.test.js`.

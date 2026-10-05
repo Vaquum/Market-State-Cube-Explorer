@@ -3187,24 +3187,37 @@
   // written here; how it is shown is one loop over the codec's table (applyVisual), so a setting added to
   // the table is applied, written and read back by the same entry.
   function applyView(v) {
-    drawingCancelOperation(); activeDrawingId = null; drawingKeyContext = false;
-    scaleRt.carried = null;
-    if (v.window) setWindow(v.window);
-    else {
-      [S.tA, S.tB, S.pA, S.pB] = [v.tA, v.tB, v.pA, v.pB];
-      S.window = "";
+    const previous = { state: structuredClone(S), carried: scaleRt.carried, local: scaleRt.local,
+      appearance: scaleRt.appearance, hover, transition, activeDrawingId, drawingKeyContext,
+      tipHidden: el("tip").hidden };
+    try {
+      drawingCancelOperation(); activeDrawingId = null; drawingKeyContext = false;
+      scaleRt.carried = null;
+      if (v.window) setWindow(v.window);
+      else {
+        [S.tA, S.tB, S.pA, S.pB] = [v.tA, v.tB, v.pA, v.pB];
+        S.window = "";
+      }
+      S.auto = v.auto;
+      if (!v.auto) { S.n = v.n; S.m = v.m; }
+      for (const k of ["selection", "anchor", "replay"]) S[k] = v[k];
+      // Descriptor-store/axis mutations wait until the checked camera and UI apply successfully.
+      const commitScales = applyVisual(v);
+      hover = null;
+      el("tip").hidden = true;
+      confine();
+      if (S.auto) autoLevel();
+      commitScales?.();
+    } catch (error) {
+      Object.assign(S, previous.state);
+      scaleRt.carried = previous.carried; scaleRt.local = previous.local;
+      if (scaleRt.appearance !== previous.appearance) { scaleRt.appearance = previous.appearance; themeChanged(); }
+      hover = previous.hover; transition = previous.transition;
+      activeDrawingId = previous.activeDrawingId; drawingKeyContext = previous.drawingKeyContext;
+      el("tip").hidden = previous.tipHidden;
+      drawingSyncUI(); requestDraw();
+      throw error;
     }
-    S.auto = v.auto;
-    if (!v.auto) {
-      S.n = v.n;
-      S.m = v.m;
-    }
-    for (const k of ["selection", "anchor", "replay"]) S[k] = v[k];
-    applyVisual(v);
-    hover = null;
-    el("tip").hidden = true;
-    confine();
-    if (S.auto) autoLevel();
   }
   // The Query tab: the six parameters of the rectangle, and what the numbers
   // shown are for them.
@@ -3327,11 +3340,13 @@
   // A version-2 code's validated pieces, in place at once: the view as the codec checked it (its own
   // window or rectangle, level, selection and replay), then the descriptors and the appearance.
   async function applyPortable(value, dropped) {
-    if (value.drawings && !await drawingReplace(value.drawings)) return;
     try {
-      applyView(portableView(value, value.id));
+      const view = portableView(value, value.id);
+      if (value.drawings) { if (!await drawingReplace(value.drawings, () => applyView(view))) return; }
+      else applyView(view);
     } catch (error) {
-      el("copy-status").textContent = error.message;
+      el("copy-status").textContent = `The view code was not applied: ${error.reason || error.message}`;
+      postNotice({ code: "import-rejected", params: { reason: error.reason || error.message } });
       return;
     }
     recordView("Restored query");
@@ -17508,11 +17523,17 @@
         postNotice({ code: "import-rejected", params: { reason: "Invalid saved live-view camera" } }); return;
       }
     }
-    if (view.drawings && !await drawingReplace(view.drawings)) return;
-    transition = reduce
-      ? null
-      : { n: renderN(), m: renderM(), start: performance.now() };
-    applyView(view);
+    try {
+      const apply = () => {
+        const priorTransition = transition;
+        transition = reduce ? null : { n: renderN(), m: renderM(), start: performance.now() };
+        try { applyView(view); } catch (error) { transition = priorTransition; throw error; }
+      };
+      if (view.drawings) { if (!await drawingReplace(view.drawings, apply)) return; }
+      else apply();
+    } catch (error) {
+      postNotice({ code: "import-rejected", params: { reason: error.reason || error.message } }); return;
+    }
     reportView(view);
     if (x.live) {
       fit();
@@ -17896,8 +17917,8 @@
       themeChanged();
     } else postNotice({ code: "appearance-mismatch", params: { ap, current: running } });
   }
-  // The mapping records of a view in place: the preferences and the descriptors are replaced TOGETHER by
-  // what the view carries, so a link without a lock does not keep this tab's lock. A record that is only an
+  // Prepare a view's mapping records; publish store/axis changes after its camera applies successfully.
+  // Preferences and descriptors come from the view, so a link without a lock does not keep this tab's lock. A record that is only an
   // id is found in the live cache or left out; what cannot be placed is listed and the rest is applied.
   // Nothing is refitted: a context with no record fits afresh once the view settles.
   function adoptScales(v) {
@@ -17940,24 +17961,27 @@
     // What is protected from eviction while these are committed: the context in view and every held one.
     const cells = cellsContext(),
       keep = () => [...(cells ? [E.context.keyString(cells)] : []), ...Object.values(out.scale.held).map((r) => r.key)];
-    for (const { workspace, record } of out.commits) {
-      // The mapping the view carries is the active one, not a newer fit this tab made for the same context.
-      store.remove(workspace, record.key);
-      store.commit(workspace, record, keep);
-    }
-    for (const axis of scaleRt.axes.list(ws))
-      if (axis.policy === "frozen") scaleRt.axes.unfreeze(axis.id, { workspace: ws });
-    for (const axis of out.frozen) {
-      try {
-        scaleRt.axes.freeze(axis.id, { workspace: ws, domain: axis.domain, through: axis.through });
-      } catch (error) {
-        dropped.push({ chan: "a." + axis.id, reason: error.message });
+    const commit = () => {
+      for (const { workspace, record } of out.commits) {
+        // The mapping the view carries is the active one, not a newer fit this tab made for the same context.
+        store.remove(workspace, record.key);
+        store.commit(workspace, record, keep);
       }
-    }
+      for (const axis of scaleRt.axes.list(ws))
+        if (axis.policy === "frozen") scaleRt.axes.unfreeze(axis.id, { workspace: ws });
+      for (const axis of out.frozen) {
+        try {
+          scaleRt.axes.freeze(axis.id, { workspace: ws, domain: axis.domain, through: axis.through });
+        } catch (error) {
+          dropped.push({ chan: "a." + axis.id, reason: error.message });
+        }
+      }
+      dropped.push(...out.dropped);
+      if (dropped.length)
+        postNotice({ code: "scale-dropped", details: dropped.map((d) => `${d.chan}: ${d.reason}`) });
+    };
     scaleRt.local = out.lens;
-    dropped.push(...out.dropped);
-    if (dropped.length)
-      postNotice({ code: "scale-dropped", details: dropped.map((d) => `${d.chan}: ${d.reason}`) });
+    return commit;
   }
   // A view's visual fields in place, by the codec's table: the settings one by one, the scale preferences
   // and descriptors as a whole when the view carries descriptors (`records`, even an empty list), else the
@@ -17973,7 +17997,8 @@
           S.diagonal = v.follow === "diagonal";
         } else if (!path.startsWith("scale.")) S[path] = v[path];
       }
-    if (Array.isArray(v.records)) adoptScales(v);
+    let commitScales = null;
+    if (Array.isArray(v.records)) commitScales = adoptScales(v);
     else {
       const next = E.policy.sanitize(v.scale),
         scale = { ...S.scale };
@@ -17981,6 +18006,7 @@
       S.scale = scale;
     }
     if (v.appearance) applyAppearance(v.appearance);
+    return commitScales;
   }
 
   // ---- storage: the last persist, the cache ----
@@ -19998,7 +20024,8 @@
   let activeDrawingId = null, trendTool = false, drawingKeep = false, drawingEntryTool = "pan",
     drawingAnchorTime = null, drawingDraft = null, drawingDrag = null, drawingEditorPreview = null,
     drawingKeyContext = false, drawingLastCreate = 0, drawingLastColor = null, drawingTipRevision = -1,
-    drawingUnsaved = false, drawingStorageReason = "", drawingRecoveries = [];
+    drawingUnsaved = false, drawingStorageReason = "", drawingRecoveries = [],
+    drawingStorageNoticeId = null, drawingStorageNoticeRun = 0;
   const drawingCancelledPointers = new Set();
   const drawingCollection = () => drawingStore.state;
   const drawingById = (id) => drawingCollection().objects.find((o) => o.id === id);
@@ -20010,23 +20037,31 @@
   function drawingNotice(text) {
     linesStatus(text); el("copy-status").textContent = text;
     if (!el("drawing-toolbar").hidden) el("drawing-toolbar-status").textContent = text;
-    if (/Unsaved|need recovery|View not opened/.test(text)) postNotice({ code: "storage-failed", key: "drawing-storage", text: text + " Open Lines for Export, Retry save or Recover drawings." });
+    if (/Unsaved|need recovery|View not opened/.test(text)) {
+      const key = drawingStorageNoticeId ? `drawing-storage:${drawingStorageNoticeRun}` : `drawing-storage:${++drawingStorageNoticeRun}`;
+      drawingStorageNoticeId = postNotice({ code: "storage-failed", key, text: text + " Open Lines for Export, Retry save or Recover drawings." }).id;
+    }
   }
   function drawingPersist() {
+    const wasUnsaved = drawingUnsaved;
     const result = window.explorerState?.drawings?.save(drawingCollection(), drawingStore.revision);
     drawingUnsaved = !result?.ok;
     drawingStorageReason = result?.reason || (result?.ok ? "" : "Browser storage is unavailable");
     if (drawingUnsaved) drawingNotice(`Unsaved drawings: ${drawingStorageReason}. Export a complete view code or retry.`);
+    else if (wasUnsaved) {
+      if (drawingStorageNoticeId) noticeHide(drawingStorageNoticeId);
+      drawingStorageNoticeId = null; drawingNotice("Drawings saved.");
+    }
     drawingSyncUI();
     if (result?.ok) {
       const latest = window.explorerState.drawings.load();
-      drawingRecoveries = (latest.recoveries || []).map((r) => ({ ...r, count: r.collection.objects.length, label: `${r.pinned ? "Preserved" : "Saved"} revision ${r.revision} · ${r.collection.objects.length} drawings` }));
+      drawingRecoveries = (latest.recoveries || []).map(({ collection, ...record }) => ({ ...record, count: collection.objects.length, label: `${record.pinned ? "Preserved" : "Saved"} revision ${record.revision} · ${collection.objects.length} drawings` }));
     }
     return Boolean(result?.ok);
   }
   function drawingLoad() {
     const result = window.explorerState?.drawings?.load();
-    drawingRecoveries = (result?.recoveries || []).map((r) => ({ ...r, count: r.collection.objects.length, label: `${r.pinned ? "Preserved" : "Saved"} revision ${r.revision} · ${r.collection.objects.length} drawings` }));
+    drawingRecoveries = (result?.recoveries || []).map(({ collection, ...record }) => ({ ...record, count: collection.objects.length, label: `${record.pinned ? "Preserved" : "Saved"} revision ${record.revision} · ${collection.objects.length} drawings` }));
     if (result?.status === "ok") drawingStore = E.drawings.createStore(result.collection);
     else if (result && result.status !== "absent") {
       drawingUnsaved = true;
@@ -20136,9 +20171,15 @@
       return;
     }
     if (action === "undo" || action === "redo") {
-      if (drawingDrag || drawingDraft || drawingEditorPreview || drawingEditorOpen()) { drawingCancelOperation(); return; }
+      let editor = null;
+      if (drawingEditorOpen()) {
+        const pending = drawingEditorPending(); editor = drawingEditorState; drawingCloseEditor(true);
+        if (pending) return;
+      }
+      if (drawingDrag || drawingDraft || drawingEditorPreview) { drawingCancelOperation(); return; }
       if (drawingStore[action]()) {
         activeDrawingId = null; drawingKeyContext = true; drawingPersist(); update();
+        if (editor) drawingRestoreFocus(editor.origin, editor.id, editor.origin.index);
       }
       return;
     }
@@ -20342,9 +20383,9 @@
     if (e.key === "Enter" && activeDrawingId && tool() === "pan") { if (!held) drawingEdit(activeDrawingId, "chart"); return true; }
     return false;
   }
-  async function drawingReplace(incoming) {
+  async function drawingReplace(incoming, apply = null) {
     const collection = E.drawings.normalizeCollection(incoming), previous = drawingCollection();
-    if (JSON.stringify(collection) === JSON.stringify(previous)) return true;
+    if (JSON.stringify(collection) === JSON.stringify(previous)) { apply?.(); return true; }
     drawingCancelOperation();
     let answer = "replace";
     if (previous.objects.length) {
@@ -20363,12 +20404,13 @@
       });
     }
     if (answer === "cancel") return false;
-    if (answer === "keep") return true;
+    if (answer === "keep") { apply?.(); return true; }
     if (previous.objects.length) {
       const preserved = window.explorerState?.drawings?.preserve(previous);
-      if (preserved?.ok) drawingRecoveries = [...drawingRecoveries, { id: preserved.id, pinned: true, count: previous.objects.length, collection: previous, label: `Preserved prior workspace · ${previous.objects.length} drawings` }];
+      if (preserved?.ok) drawingRecoveries = [...drawingRecoveries, { id: preserved.id, pinned: true, count: previous.objects.length, label: `Preserved prior workspace · ${previous.objects.length} drawings` }];
       if (!preserved?.ok) { drawingUnsaved = true; drawingStorageReason = preserved?.reason || "The prior drawings could not be preserved"; drawingNotice(`View not opened: ${drawingStorageReason}. Export your drawings or retry.`); drawingSyncUI(); return false; }
     }
+    apply?.();
     drawingCommit("Replace drawings", collection); activeDrawingId = null; return true;
   }
 
@@ -20387,6 +20429,15 @@
   function drawingUIOwns(target = document.activeElement) { return Boolean(target?.closest?.("[data-drawing-ui]")); }
   function drawingDialogOpen() { return Boolean(root.querySelector("dialog[data-drawing-ui][open]")); }
   function drawingEditorOpen() { return Boolean(drawingEditorState && el("drawing-editor").open); }
+  function drawingEditorPending() {
+    return Boolean(drawingEditorState && (drawingEditorState.isNew || drawingFieldIds.some((key, i) => el(`drawing-${key}`).value !== drawingEditorState.fields[i])));
+  }
+  function drawingSyncEditorUndo() {
+    const pending = drawingEditorPending(), button = el("drawing-editor-undo");
+    button.disabled = !pending && !drawingStore.canUndo;
+    drawingWrite(button, pending ? "Cancel draft" : "Undo drawing");
+    button.title = pending ? "Discard unapplied drawing edits" : drawingStore.undoLabel ? `Undo: ${drawingStore.undoLabel}` : "No drawing changes to undo";
+  }
   function drawingChooserOpen() { return el("drawing-chooser").open; }
   function drawingUICmd(action, id, value) {
     try {
@@ -20456,7 +20507,7 @@
   function drawingEditPreview() {
     const result = drawingReadEdit(); drawingPreviewObject(result?.object || null);
     if (result && el("drawing-color-picker").value !== result.patch.color) el("drawing-color-picker").value = result.patch.color;
-    drawingWrite(el("drawing-editor-error"), "");
+    drawingWrite(el("drawing-editor-error"), ""); drawingSyncEditorUndo();
   }
   function drawingNewExact(origin = "lines") {
     try { drawingEdit(null, origin, drawingNewDefaults()); }
@@ -20479,6 +20530,8 @@
     for (const key of drawingFieldIds) drawingFieldError(key, "");
     drawingWrite(el("drawing-editor-error"), "");
     drawingWrite(el("drawing-editor-note"), object.locked ? "Drawing locked. Name and color remain editable; unlock in Lines to move its points." : "Free coordinates · UTC time and USDT price. Apply saves all fields together.");
+    drawingEditorState.fields = drawingFieldIds.map((key) => el(`drawing-${key}`).value);
+    drawingSyncEditorUndo();
     el("drawing-editor").showModal();
     if (draft) drawingPreviewObject(draft);
     el("drawing-name").focus({ preventScroll: true }); el("drawing-name").select();
@@ -20528,7 +20581,7 @@
     let section = el("drawing-section");
     if (!section) {
       section = document.createElement("section"); section.id = "ol-drawing-section"; section.className = "ol-drawing-section"; section.dataset.drawingUi = ""; section.setAttribute("aria-labelledby", "ol-drawing-section-title");
-      section.innerHTML = '<div class="ol-drawing-section-head"><h3 id="ol-drawing-section-title">Your drawings</h3></div><div class="ol-drawing-section-tools"></div><p id="ol-drawing-summary" class="ol-drawing-summary" role="status"></p><p id="ol-drawing-menu-replay" class="ol-drawing-summary"></p><div id="ol-drawing-list" class="ol-drawing-list"></div><p id="ol-drawing-storage-status" class="ol-drawing-summary" role="status"></p><div id="ol-drawing-storage-actions" class="ol-drawing-section-tools"></div><details id="ol-drawing-recover"><summary>Recover drawings</summary><div id="ol-drawing-recover-list" class="ol-drawing-choices"></div></details>';
+      section.innerHTML = '<div class="ol-drawing-section-head"><h3 id="ol-drawing-section-title">Your drawings</h3></div><div class="ol-drawing-section-tools"></div><p id="ol-drawing-summary" class="ol-drawing-summary" role="status"></p><p id="ol-drawing-menu-replay" class="ol-drawing-summary"></p><div id="ol-drawing-list" class="ol-drawing-list"></div><p id="ol-drawing-storage-status" class="ol-drawing-summary" role="status"></p><div id="ol-drawing-storage-actions" class="ol-drawing-section-tools"></div><details id="ol-drawing-recover"><summary>Recover drawings</summary><p class="ol-drawing-summary">Rolling history: up to 24 recent saves and 8 prior replacements. Older recoveries expire; this tab’s drawings stay intact. Save a View or export a complete code to keep a snapshot.</p><div id="ol-drawing-recover-list" class="ol-drawing-choices"></div></details>';
       const head = section.querySelector(".ol-drawing-section-head"), tools = section.querySelector(".ol-drawing-section-tools"), create = drawingUIButton("New", "new");
       create.id = "ol-drawing-new"; create.setAttribute("aria-label", "New trend line"); create.addEventListener("click", () => { closePop(); setSheet(false); canvas.focus({ preventScroll: true }); }); head.append(create);
       const exact = drawingUIButton("Coordinates", "new-exact"); exact.id = "ol-drawing-new-exact";
@@ -20657,11 +20710,11 @@
       } catch (error) { drawingWrite(el("drawing-editor-error"), error.message || String(error)); }
     });
     for (const id of ["drawing-cancel", "drawing-editor-close"]) el(id).addEventListener("click", () => drawingCloseEditor(true));
-    el("drawing-editor-undo").addEventListener("click", () => { drawingUICmd("undo"); if (drawingEditorOpen()) drawingCloseEditor(true); }); el("drawing-chooser-close").addEventListener("click", drawingCloseChooser); el("drawing-confirm-cancel").addEventListener("click", drawingCloseConfirm);
+    el("drawing-editor-undo").addEventListener("click", () => drawingUICmd("undo")); el("drawing-chooser-close").addEventListener("click", drawingCloseChooser); el("drawing-confirm-cancel").addEventListener("click", drawingCloseConfirm);
     el("drawing-confirm-delete").addEventListener("click", () => { if (el("drawing-confirm").dataset.ids !== drawingCollection().objects.map((o) => o.id).join(",")) { drawingConfirmDelete(drawingDeleteOrigin); return; } drawingCloseConfirm(); drawingUICmd("delete-all"); });
     for (const [id, close] of [["drawing-editor", drawingCloseEditor], ["drawing-chooser", drawingCloseChooser], ["drawing-confirm", drawingCloseConfirm]]) {
       const dialog = el(id); dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(true); }); dialog.addEventListener("keydown", (event) => { event.stopPropagation();
-      if (id === "drawing-editor" && (event.ctrlKey || event.metaKey) && ["z", "y"].includes(event.key.toLowerCase()) && !event.target.closest('input,select,textarea,[contenteditable]')) { event.preventDefault(); drawingCloseEditor(true); return; }
+      if (id === "drawing-editor" && (event.ctrlKey || event.metaKey) && ["z", "y"].includes(event.key.toLowerCase()) && !event.target.closest('input,select,textarea,[contenteditable]')) { event.preventDefault(); if (!event.repeat && !event.isComposing) drawingUICmd(event.key.toLowerCase() === "y" || event.shiftKey ? "redo" : "undo"); return; }
       if (event.key === "Escape") { event.preventDefault(); close(true); } }); dialog.addEventListener("click", (event) => { if (event.target === dialog) close(true); });
     }
     el("drawing-choices").addEventListener("keydown", (event) => {

@@ -4,7 +4,7 @@
 const { test, expect } = require("./fixtures.js");
 const S = require("./persistence-support.js");
 const PREFIX = "market-state-cube-explorer:";
-const POINTER = "drawing-views:v1:pointer";
+const PUBLICATION = "drawing-views:v2:record:";
 const legacyViews = ["A", "B"].map((name) => ({
   name, live: false, span: 10, lead: 0, auto: true, mode: "volume", pane: "cells",
   rows: "off", period: "90d", hash: "#w=24h&vis=2&ap=" + S.AP,
@@ -76,18 +76,18 @@ test("quota during named Delete Undo keeps the authoritative deletion and allows
   await page.getByRole("button", { name: "Delete “A”", exact: true }).click();
   await expect.poll(async () => (await S.namedEntries(page)).map((x) => x.name)).toEqual(["B"]);
   await expect(rowNames(page)).toHaveText(["B"]);
-  const deletedPointer = (await S.storage(page)).local[POINTER];
+  const deletedStorage = await S.namedStorage(page);
   await page.evaluate((key) => {
     window.__namedOriginalSetItem = Storage.prototype.setItem;
     Storage.prototype.setItem = function (name, value) {
-      if (name === key) throw new DOMException("Named pointer quota fixture", "QuotaExceededError");
+      if (name.startsWith(key)) throw new DOMException("Named publication quota fixture", "QuotaExceededError");
       return window.__namedOriginalSetItem.call(this, name, value);
     };
-  }, PREFIX + POINTER);
+  }, PREFIX + PUBLICATION);
   await page.locator("#ol-views-status").getByRole("button", { name: "Undo", exact: true }).click();
   await expect(page.locator("#ol-views-status")).toContainText("Retry Undo");
   await expect(rowNames(page)).toHaveText(["B"]);
-  expect((await S.storage(page)).local[POINTER]).toBe(deletedPointer);
+  expect(await S.namedStorage(page)).toEqual(deletedStorage);
   expect((await S.namedEntries(page)).map((x) => x.name)).toEqual(["B"]);
   expect(await S.noticeCodes(page)).toContain("storage-failed");
   await page.evaluate(() => { Storage.prototype.setItem = window.__namedOriginalSetItem; });

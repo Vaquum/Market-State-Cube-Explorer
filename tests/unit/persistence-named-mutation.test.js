@@ -30,8 +30,9 @@ function seeded() {
   return { state, localStorage };
 }
 function authoritative(local) {
-  const pointer = JSON.parse(local.getItem(PREFIX + "drawing-views:v1:pointer"));
-  return JSON.parse(local.getItem(PREFIX + "drawing-views:v1:record:" + pointer.id)).entries;
+  const records = [...local.map.entries()].filter(([key]) => key.startsWith(PREFIX + "drawing-views:v2:record:")) .map(([, value]) => JSON.parse(value));
+  const newest = records.sort((a, b) => b.clock - a.clock)[0];
+  return newest.cells.filter((cell) => cell.value !== null).sort((a, b) => a.position - b.position).map((cell) => cell.value);
 }
 
 test("splicing the returned named list deletes the name rather than resurrecting it", () => {

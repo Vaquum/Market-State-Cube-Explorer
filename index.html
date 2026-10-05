@@ -4944,12 +4944,16 @@
   // Authored data has a protected namespace. Legacy view writers never touch these keys.
   // A document forks its writer even when duplicate-tab sessionStorage inherited its pointer.
   const drawingRoot = "drawings:v1:", drawingSessionKey = drawingRoot + "session", drawingIndexKey = drawingRoot + "index";
-  const namedRoot = "drawing-views:v1:", namedPointerKey = namedRoot + "pointer";
-  let drawingWriter = null, drawingSequence = 0, namedSequence = 0, namedBaseline = null;
+  const namedRoot = "drawing-views:v1:", namedPointerKey = namedRoot + "pointer", namedMergedRoot = "drawing-views:v2:";
+  let drawingWriter = null, drawingSequence = 0, namedBaseline = null;
+  const protectedUuid = (value) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
   const protectedId = () => {
     const crypto = window.crypto || globalThis.crypto;
-    if (!crypto || typeof crypto.randomUUID !== "function") throw new Error("secure drawing storage identities are unavailable");
-    return crypto.randomUUID();
+    if (typeof crypto?.randomUUID === "function") return crypto.randomUUID();
+    if (typeof crypto?.getRandomValues !== "function") throw new Error("secure drawing storage identities are unavailable");
+    const bytes = crypto.getRandomValues(new Uint8Array(16)); bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+    const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+    return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-" + hex.slice(12, 16) + "-" + hex.slice(16, 20) + "-" + hex.slice(20);
   };
   const writerId = () => drawingWriter || (drawingWriter = protectedId());
   const protectedRead = (area, key) => {
@@ -4968,13 +4972,23 @@
     for (let i = 0; i < area.length; i++) { const key = area.key(i); if (typeof key === "string" && key.startsWith(prefix + root + "record:")) keys.push(key.slice(prefix.length)); }
     return keys;
   };
+  const drawingRecordCache = new Map();
+  const freezeProtected = (value) => { if (value && typeof value === "object" && !Object.isFrozen(value)) { for (const member of Object.values(value)) freezeProtected(member); Object.freeze(value); } return value; };
   const drawingRecord = (id) => {
-    const got = protectedRead("localStorage", drawingRoot + "record:" + id);
+    const key = drawingRoot + "record:" + id, text = fetchText("localStorage", key), cached = drawingRecordCache.get(id);
+    if (text.ok && cached?.raw === text.text) return cached;
+    drawingRecordCache.delete(id);
+    const got = protectedRead("localStorage", key);
     if (got.status !== "ok") return { ...got, collection: null };
     const r = got.value;
     if (!isObject(r) || r.storageVersion !== 1) return { ...got, status: "unknown-version", value: null, collection: null, reason: "unsupported authored recovery version" };
-    if (r.id !== id || typeof r.writer !== "string" || !Number.isSafeInteger(r.sequence) || r.sequence < 0 || !Number.isSafeInteger(r.revision) || r.revision < 0 || typeof r.pinned !== "boolean") return { ...got, status: "unreadable", value: null, collection: null, reason: "invalid authored recovery record" };
-    try { return { ...got, collection: window.explorerEncoding.drawings.normalizeCollection(r.collection) }; }
+    if (!protectedUuid(id) || r.id !== id || !protectedUuid(r.writer) || !Number.isSafeInteger(r.sequence) || r.sequence < 0 || !Number.isSafeInteger(r.revision) || r.revision < 0 || typeof r.pinned !== "boolean" || (r.createdAt !== undefined && (!Number.isSafeInteger(r.createdAt) || r.createdAt < 0))) return { ...got, status: "unreadable", value: null, collection: null, reason: "invalid authored recovery record" };
+    try {
+      const collection = freezeProtected(window.explorerEncoding.drawings.normalizeCollection(r.collection)), validated = freezeProtected({ ...got, value: { ...r, collection }, collection });
+      drawingRecordCache.set(id, validated);
+      if (drawingRecordCache.size > 64) drawingRecordCache.delete(drawingRecordCache.keys().next().value);
+      return validated;
+    }
     catch (error) { return { ...got, status: /unsupported drawing schema/.test(error.message) ? "unknown-version" : "unreadable", value: null, collection: null, reason: error.message }; }
   };
   const drawingRecoveries = () => {
@@ -4982,37 +4996,62 @@
       const recoveries = [];
       for (const key of protectedKeys(drawingRoot)) {
         const got = drawingRecord(key.slice((drawingRoot + "record:").length));
-        if (got.status === "ok") recoveries.push({ id: got.value.id, writer: got.value.writer, revision: got.value.revision, sequence: got.value.sequence, pinned: got.value.pinned, collection: got.collection });
+        if (got.status === "ok") recoveries.push({ id: got.value.id, writer: got.value.writer, revision: got.value.revision, sequence: got.value.sequence, pinned: got.value.pinned, createdAt: got.value.createdAt ?? 0, collection: got.collection });
       }
-      return recoveries.sort((a, b) => b.sequence - a.sequence || a.id.localeCompare(b.id));
+      return recoveries.sort((a, b) => b.createdAt - a.createdAt || b.sequence - a.sequence || a.id.localeCompare(b.id));
     } catch { return []; }
   };
-  const drawingLoad = () => {
-    const session = protectedRead("sessionStorage", drawingSessionKey), recoveries = drawingRecoveries();
+  const drawingLoad = (recoveries = drawingRecoveries()) => {
+    const session = protectedRead("sessionStorage", drawingSessionKey);
     if (session.status !== "ok") return { ...session, collection: null, recoveries };
-    if (!isObject(session.value) || session.value.storageVersion !== 1 || typeof session.value.id !== "string") return { status: "unknown-version", collection: null, raw: session.raw, reason: "unsupported or invalid drawing session", recoveries };
-    const got = drawingRecord(session.value.id);
+    const value = session.value;
+    if (!isObject(value) || ![1, 2].includes(value.storageVersion)) return { status: "unknown-version", collection: null, raw: session.raw, reason: "unsupported or invalid drawing session", recoveries };
+    if (value.storageVersion === 2) {
+      try {
+        if (!protectedUuid(value.id) || !protectedUuid(value.writer) || !Number.isSafeInteger(value.revision) || value.revision < 0) throw new Error("invalid complete drawing session");
+        return { ...session, collection: window.explorerEncoding.drawings.normalizeCollection(value.collection), recoveries };
+      } catch (error) { return { status: /unsupported drawing schema/.test(error.message) ? "unknown-version" : "unreadable", collection: null, raw: session.raw, reason: error.message, recoveries }; }
+    }
+    if (!protectedUuid(value.id)) return { status: "unreadable", collection: null, raw: session.raw, reason: "invalid drawing session identity", recoveries };
+    const got = drawingRecord(value.id);
     if (got.status === "absent") return { status: "unreadable", collection: null, raw: session.raw, reason: "this tab's saved drawing revision is missing; choose a recovery", recoveries };
+    if (got.status === "ok") {
+      // Migrate the pointer once so another tab's subsequent history pruning cannot erase this tab.
+      try { verifiedWrite("sessionStorage", drawingSessionKey, { storageVersion: 2, id: value.id, writer: got.value.writer, revision: got.value.revision, collection: got.collection }); }
+      catch (error) { return { status: "unreadable", collection: null, raw: session.raw, reason: "the tab's drawing snapshot could not be protected (" + describe(error) + "); choose recovery or export", recoveries }; }
+    }
     return { ...got, recoveries };
   };
   const drawingWrite = (collection, revision, pinned) => {
     try {
       const normalized = window.explorerEncoding.drawings.normalizeCollection(collection);
       if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("invalid drawing revision");
-      const writer = writerId(), id = protectedId(), sequence = ++drawingSequence;
-      const record = { storageVersion: 1, id, writer, sequence, revision, pinned, collection: normalized };
-      verifiedWrite("localStorage", drawingRoot + "record:" + id, record);
-      // Reconcile from records, not a possibly raced/lost index. A pointer race loses no record.
-      const records = drawingRecoveries();
-      const own = records.filter((r) => r.writer === writer && !r.pinned).sort((a, b) => b.sequence - a.sequence);
-      const retained = new Set(own.slice(0, 2).map((r) => r.id));
-      verifiedWrite("localStorage", drawingIndexKey, { storageVersion: 1, ids: records.filter((r) => r.writer !== writer || r.pinned || retained.has(r.id)).map((r) => r.id) });
-      if (!pinned) verifiedWrite("sessionStorage", drawingSessionKey, { storageVersion: 1, writer, id });
-      // Only this document's own obsolete, unpinned revisions may be removed after verified pointers.
-      for (const r of own.slice(2)) {
-        if (!retained.has(r.id)) try { window.localStorage.removeItem(prefix + drawingRoot + "record:" + r.id); } catch { /* retaining extra recovery is safe */ }
+      if (!pinned) {
+        const previous = drawingLoad([]);
+        if (!["ok", "absent"].includes(previous.status)) {
+          if (previous.raw === null) throw new Error(previous.reason);
+          // Deduplicate a verified byte-for-byte copy before replacing an unreadable tab snapshot.
+          const digest = window.explorerEncoding.hash.hex(window.explorerEncoding.hash.sha256(window.explorerEncoding.hash.utf8(previous.raw)));
+          verifiedWrite("localStorage", drawingRoot + "unreadable-session:" + digest, { storageVersion: 1, raw: previous.raw });
+        }
       }
-      return { ok: true, id };
+      const before = drawingRecoveries(), writer = writerId(), id = protectedId(), sequence = ++drawingSequence,
+        createdAt = Math.max(Date.now(), ...before.map((record) => record.createdAt + 1));
+      if (!Number.isSafeInteger(createdAt)) throw new Error("drawing recovery timestamp exhausted");
+      const record = { storageVersion: 1, id, writer, sequence, revision, pinned, createdAt, collection: normalized };
+      verifiedWrite("localStorage", drawingRoot + "record:" + id, record);
+      // Recovery history is rolling; each tab's complete session snapshot remains its own authority.
+      const records = drawingRecoveries(), ordinary = records.filter((r) => !r.pinned), pins = records.filter((r) => r.pinned);
+      const retained = new Set(ordinary.filter((r) => r.writer === writer).slice(0, 2).map((r) => r.id));
+      for (const r of ordinary) if (retained.size < 24) retained.add(r.id);
+      for (const r of pins.slice(0, 8)) retained.add(r.id);
+      verifiedWrite("localStorage", drawingIndexKey, { storageVersion: 1, ids: [...retained] });
+      if (!pinned) verifiedWrite("sessionStorage", drawingSessionKey, { storageVersion: 2, writer, id, revision, collection: normalized });
+      let expired = 0;
+      for (const r of records) if (!retained.has(r.id)) {
+        try { window.localStorage.removeItem(prefix + drawingRoot + "record:" + r.id); expired++; } catch { /* an extra recovery is safe */ }
+      }
+      return { ok: true, id, expired };
     } catch (error) { return { ok: false, reason: describe(error) }; }
   };
   const drawingRecover = (id) => { const got = drawingRecord(id); return { ...got, recoveries: drawingRecoveries() }; };
@@ -5056,15 +5095,68 @@
     }
     return entries;
   };
-  const protectedNamedRead = () => {
+  const legacyProtectedNamedRead = () => {
     const pointer = protectedRead("localStorage", namedPointerKey);
     if (pointer.status !== "ok") return { ...pointer, entries: [] };
-    if (!isObject(pointer.value) || pointer.value.storageVersion !== 1 || typeof pointer.value.id !== "string") return { status: "unknown-version", entries: [], raw: pointer.raw, reason: "unsupported protected named-view pointer" };
+    if (!isObject(pointer.value) || pointer.value.storageVersion !== 1) return { status: "unknown-version", entries: [], raw: pointer.raw, reason: "unsupported protected named-view pointer" };
+    if (!protectedUuid(pointer.value.id)) return { status: "unreadable", entries: [], raw: pointer.raw, reason: "invalid protected named-view pointer identity" };
     const got = protectedRead("localStorage", namedRoot + "record:" + pointer.value.id);
     if (got.status !== "ok") return { ...got, status: got.status === "absent" ? "unreadable" : got.status, entries: [], reason: got.reason || "protected named payload is missing" };
     if (!isObject(got.value) || got.value.storageVersion !== 1) return { ...got, status: "unknown-version", value: null, entries: [], reason: "unsupported protected named-view version" };
-    try { return { ...got, entries: validateNamedList(got.value.entries) }; }
+    try { if (got.value.id !== pointer.value.id) throw new Error("protected named-view record identity mismatch"); return { ...got, entries: validateNamedList(got.value.entries) }; }
     catch (error) { return { ...got, status: "unreadable", value: null, entries: [], reason: error.message }; }
+  };
+  const stampCompare = (a, b) => a[0] - b[0] || (a[1] === b[1] ? 0 : a[1] < b[1] ? -1 : 1);
+  const validStamp = (stamp) => Array.isArray(stamp) && stamp.length === 2 && Number.isSafeInteger(stamp[0]) && stamp[0] >= 0 && (stamp[0] === 0 ? stamp[1] === "" : protectedUuid(stamp[1]));
+  const namedCells = (entries) => entries.map((value, position) => ({ name: value.name, value, valueStamp: [0, ""], position, orderStamp: [0, ""] }));
+  const validateNamedRecord = (raw, id) => {
+    if (!isObject(raw) || raw.storageVersion !== 2) throw new Error("unsupported merged named-view version");
+    if (!protectedUuid(id) || raw.id !== id || !protectedUuid(raw.writer) || !Number.isSafeInteger(raw.clock) || raw.clock < 1 || !Array.isArray(raw.cells)) throw new Error("invalid merged named-view record");
+    const names = new Set();
+    for (const cell of raw.cells) {
+      if (!isObject(cell) || typeof cell.name !== "string" || !cell.name.trim() || names.has(cell.name) || !validStamp(cell.valueStamp) || !validStamp(cell.orderStamp) || !Number.isSafeInteger(cell.position) || cell.position < 0 || cell.valueStamp[0] > raw.clock || cell.orderStamp[0] > raw.clock) throw new Error("invalid merged named-view cell");
+      if (cell.value !== null && validateNamedEntry(cell.value).name !== cell.name) throw new Error("named-view cell name does not match its payload");
+      names.add(cell.name);
+    }
+    return raw;
+  };
+  const mergeNamedCells = (records) => {
+    const merged = new Map();
+    for (const record of records) for (const cell of record.cells) {
+      const old = merged.get(cell.name);
+      if (!old) merged.set(cell.name, { ...cell });
+      else {
+        if (stampCompare(cell.valueStamp, old.valueStamp) > 0) { old.value = cell.value; old.valueStamp = cell.valueStamp; }
+        if (stampCompare(cell.orderStamp, old.orderStamp) > 0) { old.position = cell.position; old.orderStamp = cell.orderStamp; }
+      }
+    }
+    return [...merged.values()];
+  };
+  const cellsToEntries = (cells) => cells.filter((cell) => cell.value !== null).sort((a, b) => a.position - b.position || stampCompare(a.orderStamp, b.orderStamp) || a.name.localeCompare(b.name)).map((cell) => cell.value);
+  const protectedNamedRead = () => {
+    try {
+      let keys = protectedKeys(namedMergedRoot), records = [];
+      // A compactor may remove a key after enumeration. Re-enumerate once before returning a view.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        records = []; let disappeared = false;
+        for (const key of keys) {
+          const got = protectedRead("localStorage", key);
+          if (got.status === "absent") { disappeared = true; continue; }
+          if (got.status !== "ok") return { ...got, entries: [], cells: [], records: [] };
+          try { records.push(validateNamedRecord(got.value, key.slice((namedMergedRoot + "record:").length))); }
+          catch (error) { return { status: /unsupported/.test(error.message) ? "unknown-version" : "unreadable", entries: [], cells: [], records: [], raw: got.raw, reason: error.message }; }
+        }
+        if (!disappeared) break;
+        if (attempt === 1) return { status: "unreadable", entries: [], cells: [], records: [], raw: null, reason: "named views changed while reading; retry" };
+        keys = protectedKeys(namedMergedRoot);
+      }
+      if (!records.length) {
+        const legacy = legacyProtectedNamedRead();
+        return { ...legacy, cells: namedCells(legacy.status === "ok" ? legacy.entries : legacyNamedBaseline()), records: [], clock: 0 };
+      }
+      const cells = mergeNamedCells(records), entries = cellsToEntries(cells);
+      return { status: "ok", value: null, raw: null, reason: null, entries, cells, records, clock: Math.max(...records.map((record) => record.clock)) };
+    } catch (error) { return { status: "unreadable", entries: [], cells: [], records: [], raw: null, reason: describe(error) }; }
   };
   const protectedNamedViews = () => {
     const got = protectedNamedRead();
@@ -5072,23 +5164,55 @@
     else if (got.status === "absent") namedBaseline = legacyNamedBaseline();
     return got.entries;
   };
+  const pruneNamedRecords = () => {
+    const got = protectedNamedRead(); if (got.status !== "ok") return;
+    const records = got.records.slice().sort((a, b) => b.clock - a.clock || b.id.localeCompare(a.id)), keep = new Set(records.slice(0, 2).map((r) => r.id));
+    // Immutable IDs are safe to remove only when a retained full snapshot dominates every cell.
+    for (const record of records) {
+      if (keep.has(record.id)) continue;
+      const covered = records.some((other) => {
+        if (!keep.has(other.id) || other.id === record.id) return false;
+        const cells = new Map(other.cells.map((cell) => [cell.name, cell]));
+        return record.cells.every((cell) => {
+          const next = cells.get(cell.name);
+          return next && stampCompare(next.valueStamp, cell.valueStamp) >= 0 && stampCompare(next.orderStamp, cell.orderStamp) >= 0;
+        });
+      });
+      if (!covered) { keep.add(record.id); continue; }
+      try { window.localStorage.removeItem(prefix + namedMergedRoot + "record:" + record.id); } catch { /* retaining an extra registry snapshot is safe */ }
+    }
+    const legacy = legacyProtectedNamedRead();
+    if (legacy.status === "ok") for (const key of protectedKeys(namedRoot)) {
+      const old = protectedRead("localStorage", key);
+      if (old.status !== "ok" || old.value?.storageVersion !== 1 || old.value?.id === legacy.value.id) continue;
+      try { validateNamedList(old.value.entries); window.localStorage.removeItem(prefix + key); } catch { /* unsupported or unreadable originals remain preserved */ }
+    }
+  };
   const protectedSaveNamedViews = (list) => {
     try {
       const incoming = validateNamedList(list), current = protectedNamedRead();
       if (current.status !== "ok" && current.status !== "absent") throw new Error(current.reason);
-      const baseline = namedBaseline || (current.status === "absent" ? legacyNamedBaseline() : current.entries);
-      const before = new Map(baseline.map((e) => [e.name, JSON.stringify(e)])), next = new Map(incoming.map((e) => [e.name, e]));
-      const merged = new Map(current.entries.map((e) => [e.name, e]));
-      for (const name of before.keys()) if (!next.has(name)) merged.delete(name);
-      for (const entry of incoming) if (current.status === "absent" || !before.has(entry.name) || before.get(entry.name) !== JSON.stringify(entry)) merged.set(entry.name, entry);
-      const entries = [...incoming.filter((e) => merged.has(e.name)).map((e) => merged.get(e.name)), ...[...merged.values()].filter((e) => !next.has(e.name))];
-      const id = protectedId(), record = { storageVersion: 1, id, writer: writerId(), sequence: ++namedSequence, entries };
-      verifiedWrite("localStorage", namedRoot + "record:" + id, record);
-      verifiedWrite("localStorage", namedPointerKey, { storageVersion: 1, id });
-      namedBaseline = entries; return { ok: true, id };
+      const baseline = namedBaseline || (current.status === "absent" ? legacyNamedBaseline() : current.entries),
+        before = new Map(baseline.map((entry) => [entry.name, JSON.stringify(entry)])), next = new Map(incoming.map((entry) => [entry.name, entry])),
+        cells = new Map(current.cells.map((cell) => [cell.name, { ...cell }])), writer = writerId(), clock = current.clock + 1, stamp = [clock, writer];
+      if (!Number.isSafeInteger(clock)) throw new Error("named-view version clock exhausted");
+      for (const name of before.keys()) if (!next.has(name)) {
+        const old = cells.get(name); cells.set(name, { name, value: null, valueStamp: stamp, position: old?.position || 0, orderStamp: old?.orderStamp || stamp });
+      }
+      incoming.forEach((entry, position) => {
+        const old = cells.get(entry.name), changed = !before.has(entry.name) || before.get(entry.name) !== JSON.stringify(entry);
+        // Unchanged stale entries cannot resurrect a concurrent deletion or downgrade an upgrade.
+        if (!old && !changed) return;
+        cells.set(entry.name, { name: entry.name, value: changed ? entry : old.value, valueStamp: changed ? stamp : old.valueStamp, position, orderStamp: stamp });
+      });
+      const id = protectedId(), record = { storageVersion: 2, id, writer, clock, cells: [...cells.values()] };
+      // This one immutable atomic write publishes the whole transaction; there is no raced pointer.
+      verifiedWrite("localStorage", namedMergedRoot + "record:" + id, record);
+      namedBaseline = JSON.parse(JSON.stringify(incoming));
+      pruneNamedRecords(); return { ok: true, id };
     } catch (error) { return { ok: false, reason: describe(error) }; }
   };
-  const protectedDrawings = Object.freeze({ load: drawingLoad, save: (collection, revision = 0) => drawingWrite(collection, revision, false), preserve: (collection) => drawingWrite(collection, 0, true), recover: drawingRecover });
+  const protectedDrawings = Object.freeze({ load: () => drawingLoad(), save: (collection, revision = 0) => drawingWrite(collection, revision, false), preserve: (collection) => drawingWrite(collection, 0, true), recover: drawingRecover });
 
   window.explorerState = {
     drawings: protectedDrawings,
@@ -20075,24 +20199,37 @@
   // written here; how it is shown is one loop over the codec's table (applyVisual), so a setting added to
   // the table is applied, written and read back by the same entry.
   function applyView(v) {
-    drawingCancelOperation(); activeDrawingId = null; drawingKeyContext = false;
-    scaleRt.carried = null;
-    if (v.window) setWindow(v.window);
-    else {
-      [S.tA, S.tB, S.pA, S.pB] = [v.tA, v.tB, v.pA, v.pB];
-      S.window = "";
+    const previous = { state: structuredClone(S), carried: scaleRt.carried, local: scaleRt.local,
+      appearance: scaleRt.appearance, hover, transition, activeDrawingId, drawingKeyContext,
+      tipHidden: el("tip").hidden };
+    try {
+      drawingCancelOperation(); activeDrawingId = null; drawingKeyContext = false;
+      scaleRt.carried = null;
+      if (v.window) setWindow(v.window);
+      else {
+        [S.tA, S.tB, S.pA, S.pB] = [v.tA, v.tB, v.pA, v.pB];
+        S.window = "";
+      }
+      S.auto = v.auto;
+      if (!v.auto) { S.n = v.n; S.m = v.m; }
+      for (const k of ["selection", "anchor", "replay"]) S[k] = v[k];
+      // Descriptor-store/axis mutations wait until the checked camera and UI apply successfully.
+      const commitScales = applyVisual(v);
+      hover = null;
+      el("tip").hidden = true;
+      confine();
+      if (S.auto) autoLevel();
+      commitScales?.();
+    } catch (error) {
+      Object.assign(S, previous.state);
+      scaleRt.carried = previous.carried; scaleRt.local = previous.local;
+      if (scaleRt.appearance !== previous.appearance) { scaleRt.appearance = previous.appearance; themeChanged(); }
+      hover = previous.hover; transition = previous.transition;
+      activeDrawingId = previous.activeDrawingId; drawingKeyContext = previous.drawingKeyContext;
+      el("tip").hidden = previous.tipHidden;
+      drawingSyncUI(); requestDraw();
+      throw error;
     }
-    S.auto = v.auto;
-    if (!v.auto) {
-      S.n = v.n;
-      S.m = v.m;
-    }
-    for (const k of ["selection", "anchor", "replay"]) S[k] = v[k];
-    applyVisual(v);
-    hover = null;
-    el("tip").hidden = true;
-    confine();
-    if (S.auto) autoLevel();
   }
   // The Query tab: the six parameters of the rectangle, and what the numbers
   // shown are for them.
@@ -20215,11 +20352,13 @@
   // A version-2 code's validated pieces, in place at once: the view as the codec checked it (its own
   // window or rectangle, level, selection and replay), then the descriptors and the appearance.
   async function applyPortable(value, dropped) {
-    if (value.drawings && !await drawingReplace(value.drawings)) return;
     try {
-      applyView(portableView(value, value.id));
+      const view = portableView(value, value.id);
+      if (value.drawings) { if (!await drawingReplace(value.drawings, () => applyView(view))) return; }
+      else applyView(view);
     } catch (error) {
-      el("copy-status").textContent = error.message;
+      el("copy-status").textContent = `The view code was not applied: ${error.reason || error.message}`;
+      postNotice({ code: "import-rejected", params: { reason: error.reason || error.message } });
       return;
     }
     recordView("Restored query");
@@ -34396,11 +34535,17 @@
         postNotice({ code: "import-rejected", params: { reason: "Invalid saved live-view camera" } }); return;
       }
     }
-    if (view.drawings && !await drawingReplace(view.drawings)) return;
-    transition = reduce
-      ? null
-      : { n: renderN(), m: renderM(), start: performance.now() };
-    applyView(view);
+    try {
+      const apply = () => {
+        const priorTransition = transition;
+        transition = reduce ? null : { n: renderN(), m: renderM(), start: performance.now() };
+        try { applyView(view); } catch (error) { transition = priorTransition; throw error; }
+      };
+      if (view.drawings) { if (!await drawingReplace(view.drawings, apply)) return; }
+      else apply();
+    } catch (error) {
+      postNotice({ code: "import-rejected", params: { reason: error.reason || error.message } }); return;
+    }
     reportView(view);
     if (x.live) {
       fit();
@@ -34784,8 +34929,8 @@
       themeChanged();
     } else postNotice({ code: "appearance-mismatch", params: { ap, current: running } });
   }
-  // The mapping records of a view in place: the preferences and the descriptors are replaced TOGETHER by
-  // what the view carries, so a link without a lock does not keep this tab's lock. A record that is only an
+  // Prepare a view's mapping records; publish store/axis changes after its camera applies successfully.
+  // Preferences and descriptors come from the view, so a link without a lock does not keep this tab's lock. A record that is only an
   // id is found in the live cache or left out; what cannot be placed is listed and the rest is applied.
   // Nothing is refitted: a context with no record fits afresh once the view settles.
   function adoptScales(v) {
@@ -34828,24 +34973,27 @@
     // What is protected from eviction while these are committed: the context in view and every held one.
     const cells = cellsContext(),
       keep = () => [...(cells ? [E.context.keyString(cells)] : []), ...Object.values(out.scale.held).map((r) => r.key)];
-    for (const { workspace, record } of out.commits) {
-      // The mapping the view carries is the active one, not a newer fit this tab made for the same context.
-      store.remove(workspace, record.key);
-      store.commit(workspace, record, keep);
-    }
-    for (const axis of scaleRt.axes.list(ws))
-      if (axis.policy === "frozen") scaleRt.axes.unfreeze(axis.id, { workspace: ws });
-    for (const axis of out.frozen) {
-      try {
-        scaleRt.axes.freeze(axis.id, { workspace: ws, domain: axis.domain, through: axis.through });
-      } catch (error) {
-        dropped.push({ chan: "a." + axis.id, reason: error.message });
+    const commit = () => {
+      for (const { workspace, record } of out.commits) {
+        // The mapping the view carries is the active one, not a newer fit this tab made for the same context.
+        store.remove(workspace, record.key);
+        store.commit(workspace, record, keep);
       }
-    }
+      for (const axis of scaleRt.axes.list(ws))
+        if (axis.policy === "frozen") scaleRt.axes.unfreeze(axis.id, { workspace: ws });
+      for (const axis of out.frozen) {
+        try {
+          scaleRt.axes.freeze(axis.id, { workspace: ws, domain: axis.domain, through: axis.through });
+        } catch (error) {
+          dropped.push({ chan: "a." + axis.id, reason: error.message });
+        }
+      }
+      dropped.push(...out.dropped);
+      if (dropped.length)
+        postNotice({ code: "scale-dropped", details: dropped.map((d) => `${d.chan}: ${d.reason}`) });
+    };
     scaleRt.local = out.lens;
-    dropped.push(...out.dropped);
-    if (dropped.length)
-      postNotice({ code: "scale-dropped", details: dropped.map((d) => `${d.chan}: ${d.reason}`) });
+    return commit;
   }
   // A view's visual fields in place, by the codec's table: the settings one by one, the scale preferences
   // and descriptors as a whole when the view carries descriptors (`records`, even an empty list), else the
@@ -34861,7 +35009,8 @@
           S.diagonal = v.follow === "diagonal";
         } else if (!path.startsWith("scale.")) S[path] = v[path];
       }
-    if (Array.isArray(v.records)) adoptScales(v);
+    let commitScales = null;
+    if (Array.isArray(v.records)) commitScales = adoptScales(v);
     else {
       const next = E.policy.sanitize(v.scale),
         scale = { ...S.scale };
@@ -34869,6 +35018,7 @@
       S.scale = scale;
     }
     if (v.appearance) applyAppearance(v.appearance);
+    return commitScales;
   }
 
   // ---- storage: the last persist, the cache ----
@@ -36886,7 +37036,8 @@
   let activeDrawingId = null, trendTool = false, drawingKeep = false, drawingEntryTool = "pan",
     drawingAnchorTime = null, drawingDraft = null, drawingDrag = null, drawingEditorPreview = null,
     drawingKeyContext = false, drawingLastCreate = 0, drawingLastColor = null, drawingTipRevision = -1,
-    drawingUnsaved = false, drawingStorageReason = "", drawingRecoveries = [];
+    drawingUnsaved = false, drawingStorageReason = "", drawingRecoveries = [],
+    drawingStorageNoticeId = null, drawingStorageNoticeRun = 0;
   const drawingCancelledPointers = new Set();
   const drawingCollection = () => drawingStore.state;
   const drawingById = (id) => drawingCollection().objects.find((o) => o.id === id);
@@ -36898,23 +37049,31 @@
   function drawingNotice(text) {
     linesStatus(text); el("copy-status").textContent = text;
     if (!el("drawing-toolbar").hidden) el("drawing-toolbar-status").textContent = text;
-    if (/Unsaved|need recovery|View not opened/.test(text)) postNotice({ code: "storage-failed", key: "drawing-storage", text: text + " Open Lines for Export, Retry save or Recover drawings." });
+    if (/Unsaved|need recovery|View not opened/.test(text)) {
+      const key = drawingStorageNoticeId ? `drawing-storage:${drawingStorageNoticeRun}` : `drawing-storage:${++drawingStorageNoticeRun}`;
+      drawingStorageNoticeId = postNotice({ code: "storage-failed", key, text: text + " Open Lines for Export, Retry save or Recover drawings." }).id;
+    }
   }
   function drawingPersist() {
+    const wasUnsaved = drawingUnsaved;
     const result = window.explorerState?.drawings?.save(drawingCollection(), drawingStore.revision);
     drawingUnsaved = !result?.ok;
     drawingStorageReason = result?.reason || (result?.ok ? "" : "Browser storage is unavailable");
     if (drawingUnsaved) drawingNotice(`Unsaved drawings: ${drawingStorageReason}. Export a complete view code or retry.`);
+    else if (wasUnsaved) {
+      if (drawingStorageNoticeId) noticeHide(drawingStorageNoticeId);
+      drawingStorageNoticeId = null; drawingNotice("Drawings saved.");
+    }
     drawingSyncUI();
     if (result?.ok) {
       const latest = window.explorerState.drawings.load();
-      drawingRecoveries = (latest.recoveries || []).map((r) => ({ ...r, count: r.collection.objects.length, label: `${r.pinned ? "Preserved" : "Saved"} revision ${r.revision} · ${r.collection.objects.length} drawings` }));
+      drawingRecoveries = (latest.recoveries || []).map(({ collection, ...record }) => ({ ...record, count: collection.objects.length, label: `${record.pinned ? "Preserved" : "Saved"} revision ${record.revision} · ${collection.objects.length} drawings` }));
     }
     return Boolean(result?.ok);
   }
   function drawingLoad() {
     const result = window.explorerState?.drawings?.load();
-    drawingRecoveries = (result?.recoveries || []).map((r) => ({ ...r, count: r.collection.objects.length, label: `${r.pinned ? "Preserved" : "Saved"} revision ${r.revision} · ${r.collection.objects.length} drawings` }));
+    drawingRecoveries = (result?.recoveries || []).map(({ collection, ...record }) => ({ ...record, count: collection.objects.length, label: `${record.pinned ? "Preserved" : "Saved"} revision ${record.revision} · ${collection.objects.length} drawings` }));
     if (result?.status === "ok") drawingStore = E.drawings.createStore(result.collection);
     else if (result && result.status !== "absent") {
       drawingUnsaved = true;
@@ -37024,9 +37183,15 @@
       return;
     }
     if (action === "undo" || action === "redo") {
-      if (drawingDrag || drawingDraft || drawingEditorPreview || drawingEditorOpen()) { drawingCancelOperation(); return; }
+      let editor = null;
+      if (drawingEditorOpen()) {
+        const pending = drawingEditorPending(); editor = drawingEditorState; drawingCloseEditor(true);
+        if (pending) return;
+      }
+      if (drawingDrag || drawingDraft || drawingEditorPreview) { drawingCancelOperation(); return; }
       if (drawingStore[action]()) {
         activeDrawingId = null; drawingKeyContext = true; drawingPersist(); update();
+        if (editor) drawingRestoreFocus(editor.origin, editor.id, editor.origin.index);
       }
       return;
     }
@@ -37230,9 +37395,9 @@
     if (e.key === "Enter" && activeDrawingId && tool() === "pan") { if (!held) drawingEdit(activeDrawingId, "chart"); return true; }
     return false;
   }
-  async function drawingReplace(incoming) {
+  async function drawingReplace(incoming, apply = null) {
     const collection = E.drawings.normalizeCollection(incoming), previous = drawingCollection();
-    if (JSON.stringify(collection) === JSON.stringify(previous)) return true;
+    if (JSON.stringify(collection) === JSON.stringify(previous)) { apply?.(); return true; }
     drawingCancelOperation();
     let answer = "replace";
     if (previous.objects.length) {
@@ -37251,12 +37416,13 @@
       });
     }
     if (answer === "cancel") return false;
-    if (answer === "keep") return true;
+    if (answer === "keep") { apply?.(); return true; }
     if (previous.objects.length) {
       const preserved = window.explorerState?.drawings?.preserve(previous);
-      if (preserved?.ok) drawingRecoveries = [...drawingRecoveries, { id: preserved.id, pinned: true, count: previous.objects.length, collection: previous, label: `Preserved prior workspace · ${previous.objects.length} drawings` }];
+      if (preserved?.ok) drawingRecoveries = [...drawingRecoveries, { id: preserved.id, pinned: true, count: previous.objects.length, label: `Preserved prior workspace · ${previous.objects.length} drawings` }];
       if (!preserved?.ok) { drawingUnsaved = true; drawingStorageReason = preserved?.reason || "The prior drawings could not be preserved"; drawingNotice(`View not opened: ${drawingStorageReason}. Export your drawings or retry.`); drawingSyncUI(); return false; }
     }
+    apply?.();
     drawingCommit("Replace drawings", collection); activeDrawingId = null; return true;
   }
 
@@ -37275,6 +37441,15 @@
   function drawingUIOwns(target = document.activeElement) { return Boolean(target?.closest?.("[data-drawing-ui]")); }
   function drawingDialogOpen() { return Boolean(root.querySelector("dialog[data-drawing-ui][open]")); }
   function drawingEditorOpen() { return Boolean(drawingEditorState && el("drawing-editor").open); }
+  function drawingEditorPending() {
+    return Boolean(drawingEditorState && (drawingEditorState.isNew || drawingFieldIds.some((key, i) => el(`drawing-${key}`).value !== drawingEditorState.fields[i])));
+  }
+  function drawingSyncEditorUndo() {
+    const pending = drawingEditorPending(), button = el("drawing-editor-undo");
+    button.disabled = !pending && !drawingStore.canUndo;
+    drawingWrite(button, pending ? "Cancel draft" : "Undo drawing");
+    button.title = pending ? "Discard unapplied drawing edits" : drawingStore.undoLabel ? `Undo: ${drawingStore.undoLabel}` : "No drawing changes to undo";
+  }
   function drawingChooserOpen() { return el("drawing-chooser").open; }
   function drawingUICmd(action, id, value) {
     try {
@@ -37344,7 +37519,7 @@
   function drawingEditPreview() {
     const result = drawingReadEdit(); drawingPreviewObject(result?.object || null);
     if (result && el("drawing-color-picker").value !== result.patch.color) el("drawing-color-picker").value = result.patch.color;
-    drawingWrite(el("drawing-editor-error"), "");
+    drawingWrite(el("drawing-editor-error"), ""); drawingSyncEditorUndo();
   }
   function drawingNewExact(origin = "lines") {
     try { drawingEdit(null, origin, drawingNewDefaults()); }
@@ -37367,6 +37542,8 @@
     for (const key of drawingFieldIds) drawingFieldError(key, "");
     drawingWrite(el("drawing-editor-error"), "");
     drawingWrite(el("drawing-editor-note"), object.locked ? "Drawing locked. Name and color remain editable; unlock in Lines to move its points." : "Free coordinates · UTC time and USDT price. Apply saves all fields together.");
+    drawingEditorState.fields = drawingFieldIds.map((key) => el(`drawing-${key}`).value);
+    drawingSyncEditorUndo();
     el("drawing-editor").showModal();
     if (draft) drawingPreviewObject(draft);
     el("drawing-name").focus({ preventScroll: true }); el("drawing-name").select();
@@ -37416,7 +37593,7 @@
     let section = el("drawing-section");
     if (!section) {
       section = document.createElement("section"); section.id = "ol-drawing-section"; section.className = "ol-drawing-section"; section.dataset.drawingUi = ""; section.setAttribute("aria-labelledby", "ol-drawing-section-title");
-      section.innerHTML = '<div class="ol-drawing-section-head"><h3 id="ol-drawing-section-title">Your drawings</h3></div><div class="ol-drawing-section-tools"></div><p id="ol-drawing-summary" class="ol-drawing-summary" role="status"></p><p id="ol-drawing-menu-replay" class="ol-drawing-summary"></p><div id="ol-drawing-list" class="ol-drawing-list"></div><p id="ol-drawing-storage-status" class="ol-drawing-summary" role="status"></p><div id="ol-drawing-storage-actions" class="ol-drawing-section-tools"></div><details id="ol-drawing-recover"><summary>Recover drawings</summary><div id="ol-drawing-recover-list" class="ol-drawing-choices"></div></details>';
+      section.innerHTML = '<div class="ol-drawing-section-head"><h3 id="ol-drawing-section-title">Your drawings</h3></div><div class="ol-drawing-section-tools"></div><p id="ol-drawing-summary" class="ol-drawing-summary" role="status"></p><p id="ol-drawing-menu-replay" class="ol-drawing-summary"></p><div id="ol-drawing-list" class="ol-drawing-list"></div><p id="ol-drawing-storage-status" class="ol-drawing-summary" role="status"></p><div id="ol-drawing-storage-actions" class="ol-drawing-section-tools"></div><details id="ol-drawing-recover"><summary>Recover drawings</summary><p class="ol-drawing-summary">Rolling history: up to 24 recent saves and 8 prior replacements. Older recoveries expire; this tab’s drawings stay intact. Save a View or export a complete code to keep a snapshot.</p><div id="ol-drawing-recover-list" class="ol-drawing-choices"></div></details>';
       const head = section.querySelector(".ol-drawing-section-head"), tools = section.querySelector(".ol-drawing-section-tools"), create = drawingUIButton("New", "new");
       create.id = "ol-drawing-new"; create.setAttribute("aria-label", "New trend line"); create.addEventListener("click", () => { closePop(); setSheet(false); canvas.focus({ preventScroll: true }); }); head.append(create);
       const exact = drawingUIButton("Coordinates", "new-exact"); exact.id = "ol-drawing-new-exact";
@@ -37545,11 +37722,11 @@
       } catch (error) { drawingWrite(el("drawing-editor-error"), error.message || String(error)); }
     });
     for (const id of ["drawing-cancel", "drawing-editor-close"]) el(id).addEventListener("click", () => drawingCloseEditor(true));
-    el("drawing-editor-undo").addEventListener("click", () => { drawingUICmd("undo"); if (drawingEditorOpen()) drawingCloseEditor(true); }); el("drawing-chooser-close").addEventListener("click", drawingCloseChooser); el("drawing-confirm-cancel").addEventListener("click", drawingCloseConfirm);
+    el("drawing-editor-undo").addEventListener("click", () => drawingUICmd("undo")); el("drawing-chooser-close").addEventListener("click", drawingCloseChooser); el("drawing-confirm-cancel").addEventListener("click", drawingCloseConfirm);
     el("drawing-confirm-delete").addEventListener("click", () => { if (el("drawing-confirm").dataset.ids !== drawingCollection().objects.map((o) => o.id).join(",")) { drawingConfirmDelete(drawingDeleteOrigin); return; } drawingCloseConfirm(); drawingUICmd("delete-all"); });
     for (const [id, close] of [["drawing-editor", drawingCloseEditor], ["drawing-chooser", drawingCloseChooser], ["drawing-confirm", drawingCloseConfirm]]) {
       const dialog = el(id); dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(true); }); dialog.addEventListener("keydown", (event) => { event.stopPropagation();
-      if (id === "drawing-editor" && (event.ctrlKey || event.metaKey) && ["z", "y"].includes(event.key.toLowerCase()) && !event.target.closest('input,select,textarea,[contenteditable]')) { event.preventDefault(); drawingCloseEditor(true); return; }
+      if (id === "drawing-editor" && (event.ctrlKey || event.metaKey) && ["z", "y"].includes(event.key.toLowerCase()) && !event.target.closest('input,select,textarea,[contenteditable]')) { event.preventDefault(); if (!event.repeat && !event.isComposing) drawingUICmd(event.key.toLowerCase() === "y" || event.shiftKey ? "redo" : "undo"); return; }
       if (event.key === "Escape") { event.preventDefault(); close(true); } }); dialog.addEventListener("click", (event) => { if (event.target === dialog) close(true); });
     }
     el("drawing-choices").addEventListener("keydown", (event) => {

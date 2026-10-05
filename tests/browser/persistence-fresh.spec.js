@@ -475,7 +475,7 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     await expect(old.locator("#ol-saved")).toContainText("Legacy kept");
     // Old readers do not offer v3 snapshots, but leave their protected records intact.
     await expect(old.locator("#ol-saved")).not.toContainText("Kept");
-    expect(await S.namedStorage(old)).toEqual(Object.fromEntries(Object.entries(strip(written.local)).filter(([k]) => k.startsWith("drawing-views:v1:")).map(([k, v]) => ["market-state-cube-explorer:" + k, v])));
+    expect(await S.namedStorage(old)).toEqual(Object.fromEntries(Object.entries(strip(written.local)).filter(([k]) => /^drawing-views:v[12]:/.test(k)).map(([k, v]) => ["market-state-cube-explorer:" + k, v])));
     const { page: linked } = await baselinePage({ mode: "live", url: "/" + descriptor.hash });
     await linked.locator("#ol-canvas").waitFor();
     await expect.poll(async () => (await S.where(linked)).hash).toBe("#w=24h&mode=delta");

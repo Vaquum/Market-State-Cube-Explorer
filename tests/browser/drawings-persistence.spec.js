@@ -7,7 +7,7 @@ const PREFIX = "market-state-cube-explorer:";
 const collectionOf = (payload) => payload.drawings;
 const drawingStorage = (page) => page.evaluate((prefix) => ({
   session: Object.fromEntries(Object.keys(sessionStorage).filter((k) => k.startsWith(prefix + "drawings:")).map((k) => [k, sessionStorage.getItem(k)])),
-  local: Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith(prefix + "drawings:") || k.startsWith(prefix + "drawing-views:v1:")).map((k) => [k, localStorage.getItem(k)])),
+  local: Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith(prefix + "drawings:") || k.startsWith(prefix + "drawing-views:")).map((k) => [k, localStorage.getItem(k)])),
 }), PREFIX);
 
 test("tab reload and same-tab history keep drawings; fresh chart links and another tab start empty", async ({ page, context, freshContext, fakeFor }) => {
@@ -74,7 +74,7 @@ test("drawing-bearing named View carries full payload and preserves hidden flags
   const before = await D.row(page, id); await D.closeManager(page); await D.persistence.openViews(page);
   await page.locator("#ol-view-name").fill("Authored fixture"); await page.locator("#ol-view-form button[type=submit]").click();
   await expect.poll(async () => Object.values((await drawingStorage(page)).local).join("\n")).toContain("Authored fixture");
-  const state = await drawingStorage(page), records = Object.entries(state.local).filter(([k]) => k.includes("drawing-views:v1:record:"));
+  const state = await drawingStorage(page), records = Object.entries(state.local).filter(([k]) => k.includes("drawing-views:v2:record:"));
   expect(records.length, "protected immutable named records exist").toBeGreaterThan(0);
   expect(records.some(([, raw]) => raw.includes(id) && raw.includes(String(before.a.timeMs)) && raw.includes('"visible":false')), "complete committed object is in a protected named record").toBe(true);
   await page.keyboard.press("Escape"); await D.action(page, id, "delete"); await D.closeManager(page); await D.persistence.openViews(page);

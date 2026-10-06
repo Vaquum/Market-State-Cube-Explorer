@@ -328,7 +328,7 @@ test.describe("B25 the adjacent profile tracks", () => {
     expect(restored, "the domains the address carried").toEqual(before);
   });
 
-  test("control for the lock: without it the same pan moves the Auto domains", async ({ page, probe, fakeFor, pane }) => {
+  test("without lock the current domain follows the pan and the reference keeps its period domain", async ({ page, probe, fakeFor, pane }) => {
     const sc = scenario();
     const fake = await fakeFor("standard");
     await open(page, fake, probe, pane, addressOf(sc));
@@ -339,11 +339,12 @@ test.describe("B25 the adjacent profile tracks", () => {
     }
     await S.atRest(page, fake, probe);
     await expect
-      .poll(async () => (await page.locator("#ol-profile-chip").evaluate((e) => e.dataset.referenceDomain)) !== before.ref, { message: "the reference domain follows the rows in view", timeout: 8000 })
+      .poll(async () => (await page.locator("#ol-profile-chip").evaluate((e) => e.dataset.currentDomain)) !== before.cur, { message: "the current domain follows the rows in view", timeout: 8000 })
       .toBe(true);
+    expect(await page.locator("#ol-profile-chip").getAttribute("data-reference-domain")).toBe(before.ref);
   });
 
-  test("during a drag the Auto domains stay where they were; once the drag settles they follow the rows", async ({ page, probe, fakeFor, pane }) => {
+  test("a drag holds both domains; after settling only the current domain follows the viewport", async ({ page, probe, fakeFor, pane }) => {
     const sc = scenario();
     const fake = await fakeFor("standard");
     await open(page, fake, probe, pane, addressOf(sc));
@@ -361,7 +362,8 @@ test.describe("B25 the adjacent profile tracks", () => {
     expect(await domains(), "held through the gesture").toEqual(before);
     await page.mouse.up();
     await S.atRest(page, fake, probe);
-    await expect.poll(async () => (await domains()).ref !== before.ref, { message: "settled: the reference domain follows the rows now in view", timeout: 8000 }).toBe(true);
+    await expect.poll(async () => (await domains()).cur !== before.cur, { message: "settled: the current domain follows the rows now in view", timeout: 8000 }).toBe(true);
+    expect((await domains()).ref).toBe(before.ref);
   });
 
   test("a view with no trades has no domain: No data, no bars, never a maximum of 1", async ({ page, probe, fakeFor, pane }) => {

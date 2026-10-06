@@ -4304,7 +4304,7 @@
   // through the same frame), and a relative volume that is not a number says
   // which case it is: outside the comparison range, no current volume, no
   // reference volume, or neither traded.
-  function rowSection(r, money, share, exact, withRow = true) {
+  function rowSection(r, money, share, exact, withRow = true, atPrice = hover?.p ?? r * 2 ** renderM()) {
     const out = [],
       q = last.query,
       where = S.selection ? "selection" : "view";
@@ -4327,7 +4327,8 @@
     if (!u.bands) return [...out, [label, underlayWhy(u.res)]];
     if (from) out.push(["Period's rows", from]);
     const frame = last.sc?.rows ?? null,
-      band = u.bands.map.get(Math.floor(r / 2 ** (u.bands.m - renderM()))),
+      baseRow = atPrice,
+      band = u.bands.map.get(Math.floor(baseRow / 2 ** u.bands.m)),
       readout = frame && band && u.kind !== "relvol" ? frame.readout(band) : null,
       // The observed amount of the band: the readout's, or (the scale display is off) the band's own.
       observed = readout ? readout.observed?.value : u.kind === "volume" ? band?.v : u.kind === "delta" ? (band ? 2 * band.bv - band.v : undefined) : band?.w;
@@ -4365,16 +4366,16 @@
     // Relative volume: the underlay's own value under Relative volume.
     const vb = u.volBands;
     if (vb) {
-      const rv = relvolFor(vb, u.vol, u.rect),
-        bin = Math.floor(r / 2 ** (vb.m - renderM())),
+      const rv = u.kind === "relvol" ? (u.relvol ?? periodRelvolFor(vb, u.vol)) : relvolFor(vb, u.vol, u.rect),
+        bin = Math.floor(baseRow / 2 ** rv.support.bm),
         typed = rv.at(bin),
-        period = vb.map.get(bin);
+        period = vb.map.get(Math.floor(baseRow / 2 ** vb.m));
       // The ratio compares shares; the period's own amount at the row stays in the inspection beside it.
       if (u.kind === "relvol" && period?.v > 0)
         out.push(["Period's USDT", `${approx}${money(period.v)} · ${share(vb.v > 0 ? period.v / vb.v : 0)} of the period`]);
       out.push([
-        u.kind === "relvol" ? label : "Relative volume",
-        u.rect.state === "pending" || u.rect.state === "failed"
+        u.kind === "relvol" ? label : "View vs period",
+        u.kind !== "relvol" && (u.rect.state === "pending" || u.rect.state === "failed")
           ? "measuring the rectangle…"
           : typed.tag === "finite"
             ? // A ratio that rounds to 0 at the digits shown is 0, not a signed zero (equal distributions differ in the last bit).
@@ -4384,9 +4385,10 @@
         "relvol",
         typed.tag === "finite" ? typed.value : typed.tag,
       ]);
-      // The comparison support W the ratios are taken over: the rows both the rectangle and the period have, in USDT, never redefined by the ratio.
-      if (u.kind === "relvol" && rv.support.first !== null)
-        out.push(["Comparison support W", `${price(rv.support.first * 2 ** vb.m * PR)}–${price((rv.support.last + 1) * 2 ** vb.m * PR)} USDT`, "support", [rv.support.first, rv.support.last]]);
+      if (u.kind === "relvol" && rv.support.first !== null) {
+        out.push(["Average traded row", money(rv.meanVolume)]);
+        out.push(["Period price range", `${price(rv.support.first * 2 ** vb.m * PR)}–${price((rv.support.last + 1) * 2 ** vb.m * PR)} USDT`, "support", [rv.support.first, rv.support.last]]);
+      }
     }
     return out;
   }
@@ -4409,8 +4411,7 @@
   function underlayMarks(r) {
     const vb = last.under?.volBands;
     if (!vb) return "";
-    const k = 2 ** (vb.m - renderM()),
-      br = Math.floor(r / k);
+    const br = Math.floor((hover?.p ?? r * 2 ** renderM()) / 2 ** vb.m);
     return br === vb.poc
       ? "The period's point of control"
       : vb.va && br >= vb.va.r0 && br < vb.va.r1
@@ -5353,7 +5354,7 @@
     }
     if (["cells", "lens"].includes(inspect.surface) && S.mode !== "candles") {
       comparisonCellButtons(body, () => {
-        const w=inspectWhere(); return w.inside ? {c:w.c,r:w.r,n:Math.round(Math.log2(w.sp.ts)),m:Math.round(Math.log2(w.sp.ps)),surface:inspect.surface} : null;
+        const w=inspectWhere(); return w.inside ? {c:w.c,r:w.r,n:Math.round(Math.log2(w.sp.ts)),m:Math.round(Math.log2(w.sp.ps)),surface:inspect.surface,periodPrice:inspect.p} : null;
       });
     }
     el("inspect-detail-title").textContent = el("inspect-position").textContent;
@@ -6103,7 +6104,7 @@
   // they sit after Cells in the chart header, the Rows legend after them.
   const PHONE = matchMedia("(max-width: 760px)");
   function placeMenus() {
-    const groups = ["pane", "rows", "period"].map((id) => el(id).parentElement),
+    const groups = [el("pane").parentElement, el("background-controls")],
       sheet = el("controls");
     if (PHONE.matches === (groups[0].parentElement === sheet)) return;
     closePop();
@@ -6427,6 +6428,8 @@
       if (info.time.cubeSeconds !== null) add("rowTimeCube", "Seconds the cube reports", dur(info.time.cubeSeconds), info.time.cubeSeconds);
     }
     if (info.relvol) {
+      add("rowRelvolBasis", "Relative to", "Average traded price row in this period", "period-mean");
+      add("rowRelvolMean", "Average traded row", compact(info.relvol.meanVolume) + " USDT", info.relvol.meanVolume);
       const c = info.relvol.counts ?? {},
         // TEXT(S1): the counts as words, each case that occurs, finite first
         names = { finite: "finite", zero: "zero", negativeInfinite: "no current volume", noReference: "no reference", emptyBoth: "empty in both", underflow: "below the axis", overflow: "above the axis" },
@@ -6435,9 +6438,9 @@
           .map(([key, name]) => `${c[key] ?? 0} ${name}`)
           .join(" · "),
         sup = info.relvol.support;
-      add("rowRelvolCounts", "Rows compared", counted, c);
+      add("rowRelvolCounts", "Period rows", counted, c);
       if (sup?.w)
-        add("rowRelvolSupport", "Comparison support", `${price(PR * sup.w[0])}–${price(PR * sup.w[1])} USDT, ${sup.kind ? String(sup.kind).replace(/-/g, " ") : sup.exact ? "exact rows" : "common rows"}`, sup);
+        add("rowRelvolSupport", "Period price range", `${price(PR * sup.w[0])}–${price(PR * sup.w[1])} USDT, ${sup.kind ? String(sup.kind).replace(/-/g, " ") : sup.exact ? "exact rows" : "common rows"}`, sup);
       if (info.relvol.restriction) {
         const r = info.relvol.restriction;
         add(
@@ -9139,7 +9142,7 @@
         : null;
     return E.axis.profile({ mode: S.profileCmp, cur, ref, view: { lo: b[2], hi: b[3] } });
   }
-  // The axis of the reference track in independent mode: the exact maximum of the rows in view, or the fixed -2 to +2 of Relative volume.
+  // The reference track uses every row of its period for its axis; Relative volume uses fixed -2 to +2.
   const referenceRead = (kind) => (kind === "volume" ? rowsV : kind === "delta" ? rowsDelta : rowsW);
   function referenceAxis(u) {
     const b = u.bands,
@@ -9147,9 +9150,7 @@
       id = "profile.reference." + kind;
     if (!b) return null;
     const rows = b.rows,
-      ps = 2 ** b.m,
-      read = referenceRead(kind),
-      [first, hi] = rowsInView(rows, ps);
+      read = referenceRead(kind);
     return axisFrame(
       id,
       kind === "relvol"
@@ -9157,8 +9158,8 @@
         : {
             sign: kind === "delta" ? "signed-symmetric" : "unsigned",
             eligible: u.res.state === "ready" && !u.stale,
-            sig: [scaleWorkspace(), id, objId(rows), b.m, first, hi].join("|"),
-            summary: () => rowsScan(rows, first, hi, read),
+            sig: [scaleWorkspace(), id, objId(rows), b.m].join("|"),
+            summary: () => rowsScan(rows, 0, Infinity, read),
           },
     );
   }
@@ -9867,6 +9868,7 @@
   // calendar periods are named by what they are now: the month, the year; a
   // day's by the day it runs since.
   function lineName(key) {
+    if (key === "visible") return "Visible range";
     if (key === "all") return "All history";
     if (isVwapDay(key)) return `VWAP from ${day(vwapDayStart(key))}`;
     return isDay(key) ? `Since ${day(dayStart(key))}` : TOGGLES[key]?.name || lineInfo(key).name;
@@ -12124,11 +12126,9 @@
       off: { name: "Off", desc: "No backdrop behind the cells" },
       volume: { name: "Volume", desc: "USDT traded at each price row over the period" },
       delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT at each price row over the period" },
-      // Version 2: both shares are taken over the same price range (the selection's, else the view's), so a
-      // rectangle that trades like its period reads 0 on every row; rows outside that range are not compared.
       relvol: {
         name: "Relative volume",
-        desc: "Each row's share of the view's USDT against its share of the period's over the same price range, log₂",
+        desc: "Each price row's USDT against the average traded row in the selected period, log₂; independent of canvas zoom",
       },
       time: { name: "Time at price", desc: "How long the price spent in each row over the period" },
     },
@@ -12138,13 +12138,14 @@
       ["Time", ["time"]],
     ],
     // The periods: the POC lines' and all history, or since a chosen day.
-    PERIODS = [...LINE_KEYS.filter((key) => key !== "visible"), "all"],
+    PERIODS = ["visible", ...LINE_KEYS.filter((key) => key !== "visible"), "all"],
     // Time at price needs the live cube's dwell.
     rowsChoices = () => (PACK.live ? ROWS : ROWS.filter((k) => k !== "time")),
     validPeriod = (key) => PERIODS.includes(key) || (isDay(key) && dayStart(key) < CUT),
     periodName = (key) => lineName(key),
     // The period in a sentence: "over the last 90 days", "over this month", "since 3 Mar 2024".
     periodPhrase = (key) => {
+      if (key === "visible") return "over the visible time range";
       if (key === "all") return "over all history";
       if (isDay(key)) return `since ${day(dayStart(key))}`;
       const info = lineInfo(key);
@@ -12197,8 +12198,8 @@
       },
     };
   }
-  // The underlay's rows at the drawn row size, or at their own where the drawn
-  // rows are finer (the recorded snapshot's 1,000 USDT rows): each band's USDT,
+  // The underlay's rows at its period's own resolution (125 USDT live,
+  // or the recorded snapshot's 1,000 USDT rows): each band's USDT,
   // taker-buy USDT and dwell, the peaks each is scaled to, and the period's POC
   // and 70% value area. Kept with the rows, per row size.
   const bandsMemo = new WeakMap();
@@ -12237,8 +12238,8 @@
     return bands;
   }
   // What the underlay shows this frame, or null while it is off: its rows (the
-  // lines' for the period, or Time at price's dwell), their bands at the drawn
-  // row size, and the volume bands its POC, value area and relative volume
+  // lines' for the period, or Time at price's dwell), their bands at the period's
+  // own row size, and the volume bands its POC, value area and relative volume
   // come from. `rect` is the rectangle the view compares with its period (its
   // measure, bounds and read state: Relative volume says for itself when the
   // rectangle is not measured yet); the rest describes the period's rows: their
@@ -12249,7 +12250,7 @@
   function underlayFrame(meas) {
     if (S.rows === "off") return null;
     const kind = S.rows,
-      m = renderM(),
+      m = 0,
       vol = lineShown(S.period),
       res = kind === "time" ? dwellShown(S.period) : vol,
       volBands = vol.state === "ready" && vol.rows ? underlayBands(vol, m) : null,
@@ -12353,16 +12354,26 @@
   // change (a vertical pan moves W, so it does every pan step). Kept for the last call; the result lives
   // apart from the cached bands, which stay unrestricted (POC and value area keep their own periods).
   const relvolMemo = { key: "", value: null };
+  const periodRelvolMemo = new WeakMap();
+  function periodRelvolFor(bands, res) {
+    if (!bands || !res?.rows) return null;
+    const stale = Boolean(res.stale), hit = periodRelvolMemo.get(bands);
+    if (hit?.stale === stale) return hit.value;
+    const value = E.relvol.profile({ rows: bands.rows, m: bands.m, read: { res: { state: res.state }, stale } });
+    periodRelvolMemo.set(bands, { stale, value });
+    return value;
+  }
   function relvolFor(bands, res, rect) {
     if (!bands || !res?.rows || !rect) return null;
-    const key = [objId(res.rows), objId(rect.query), rect.b[2], rect.b[3], bands.m, rect.state, res.stale ? 1 : 0].join("|");
+    const bm = Math.max(bands.m, rect.query.m ?? renderM()),
+      key = [objId(res.rows), objId(rect.query), rect.b[2], rect.b[3], bm, rect.state, res.stale ? 1 : 0].join("|");
     if (relvolMemo.key === key) return relvolMemo.value;
     const value = E.relvol.compute({
       read: { meas: { state: rect.state }, res: { state: res.state }, stale: Boolean(res.stale) },
       W: [rect.b[2], rect.b[3]],
       period: { rows: res.rows, own: Math.round(Math.log2(res.rowPrice || 1)), exact: res.exact !== false },
       current: { rows: rect.query.rows, m: rect.query.m ?? renderM() },
-      bm: bands.m,
+      bm,
       hidden: false,
     });
     relvolMemo.key = key;
@@ -12388,10 +12399,10 @@
     return {
       period: under.period,
       periodLabel: periodLabel(under.period),
-      requestedM: renderM(),
-      effectiveM: bands ? bands.m : renderM(),
+      requestedM: under.own,
+      effectiveM: bands ? bands.m : under.own,
       ownM: under.own,
-      rowUsdt: PR * 2 ** (bands ? bands.m : renderM()),
+      rowUsdt: PR * 2 ** (bands ? bands.m : under.own),
       quality: under.quality,
       approximate: under.exact === false,
       trimmedFromBase: trimmed !== null && trimmed > res.span[0] ? trimmed : null,
@@ -12408,7 +12419,7 @@
               attributedSeconds: bands.w,
             }
           : null,
-      relvol: relvol && relvol.state === "ok" ? { counts: relvol.counts, support: relvol.support, restriction: relvol.restriction } : null,
+      relvol: relvol && relvol.state === "ok" ? { counts: relvol.counts, support: relvol.support, restriction: relvol.restriction, meanVolume: relvol.meanVolume, tradedRows: relvol.tradedRows } : null,
     };
   }
   // The observation a frame states: what was read, to when, at which generation and cutoff.
@@ -12483,10 +12494,10 @@
   function rowsFrameOf(under, cutMs, lut, surface = null, resolve = false) {
     const ctx = rowsContext(under),
       mapping = resolve ? rowsResolve(under, ctx, cutMs) : rowsMapping(under, ctx, cutMs),
-      relvol = under.kind === "relvol" ? relvolFor(under.bands, under.vol, under.rect) : null;
+      relvol = under.kind === "relvol" ? periodRelvolFor(under.bands, under.vol) : null;
     const frame = E.readout.rowsFrame({
       kind: under.kind,
-      rowSize: under.bands ? under.bands.m : renderM(),
+      rowSize: under.bands ? under.bands.m : under.own,
       mapping,
       lut,
       relvol,
@@ -21088,7 +21099,7 @@
     const lp = last.comparisonLens;
     const lens = lensShown() && lp && p.x >= lp.box.x && p.x < lp.box.x+lp.box.w && p.y>=lp.box.y && p.y<lp.box.y+lp.box.h;
     const n=lens?lp.n:last.n,m=lens?lp.m:last.m;
-    return {c:Math.floor(p.t / 2**n),r:Math.floor(p.p / 2**m),n,m,surface:lens?"lens":"cells"};
+    return {c:Math.floor(p.t / 2**n),r:Math.floor(p.p / 2**m),n,m,surface:lens?"lens":"cells",periodPrice:p.p};
   }
   function comparisonCapture(target) {
     if (!target || !last || S.mode === "candles") return null;
@@ -21139,25 +21150,30 @@
       addDetail("Dwell seconds",mz.w,"seconds",comparisonMs(motionEnd));
     }
     if(!lens) {
+      const periodPrice=Number.isFinite(target.periodPrice)&&target.periodPrice>=low&&target.periodPrice<high?target.periodPrice:low;
       const contextEnd=comparisonMs(last.meas.end??last.meas.b[1]), row=last.query.rows.find(x=>x.r===r);
       if(["exact","cube","recorded"].includes(last.meas.state) && row) {
         addDetail("Row volume · captured view",row.v,"usdt",contextEnd);
         if(last.query.v>0)addDetail("Row share · captured view",row.v/last.query.v,"share",contextEnd);
       }
       if(["exact","cube","recorded"].includes(last.meas.state))addDetail("Captured view bounds",JSON.stringify(last.meas.b.slice(0,2).map(comparisonMs))+" UTC; "+last.meas.b.slice(2).map(x=>x*PR).join("–")+" USDT","",contextEnd);
-      const under=last.under, band=under?.bands?.map.get(Math.floor(r/2**(under.bands.m-m))), periodEnd=comparisonMs(under?.through);
+      const under=last.under, bandIndex=under?.bands?Math.floor(periodPrice/2**under.bands.m):null,
+        band=under?.bands?.map.get(bandIndex), periodEnd=comparisonMs(under?.through);
       if(under?.res.state==="ready"&&band) {
         addDetail("Period · captured context",under.period+" · "+JSON.stringify(under.res.span?.map(comparisonMs))+" UTC","",periodEnd);
-        addDetail("Period row band",[Math.floor(r/2**(under.bands.m-m))*2**under.bands.m*PR,(Math.floor(r/2**(under.bands.m-m))+1)*2**under.bands.m*PR].join("–"),"usdt",periodEnd);
+        addDetail("Period row band",[bandIndex*2**under.bands.m*PR,(bandIndex+1)*2**under.bands.m*PR].join("–"),"usdt",periodEnd);
         if(under.kind==="volume")addDetail("Period row volume",band.v,"usdt",periodEnd);
         if(under.kind==="delta")addDetail("Period net taker volume",2*band.bv-band.v,"usdt",periodEnd);
       }
       const volumePeriodEnd=under?.vol.state==="ready"?comparisonMs(under.vol.end??under.vol.span?.[1]):null,
-        relativeSupport=Number.isFinite(contextEnd)&&Number.isFinite(volumePeriodEnd)&&["exact","cube","recorded"].includes(last.meas.state)?Math.max(contextEnd,volumePeriodEnd):null;
-      for(const row of rowSection(r,(x)=>String(x),(x)=>String(x),true,false)) {
+        relativeSupport=under?.kind==="relvol"?volumePeriodEnd:
+          Number.isFinite(contextEnd)&&Number.isFinite(volumePeriodEnd)&&["exact","cube","recorded"].includes(last.meas.state)?Math.max(contextEnd,volumePeriodEnd):null;
+      for(const row of rowSection(r,(x)=>String(x),(x)=>String(x),true,false,periodPrice)) {
         if(Number.isFinite(row[3]))addDetail(row[0]+" · captured context",row[3],"",relativeSupport);
       }
-      if(under?.volBands) {
+      if(under?.kind==="relvol"&&under.volBands) {
+        addDetail("Relative volume period through",Number.isFinite(volumePeriodEnd)?new Date(volumePeriodEnd).toISOString():"Unknown","",relativeSupport);
+      } else if(under?.volBands) {
         addDetail("Relative volume rectangle through",Number.isFinite(contextEnd)?new Date(contextEnd).toISOString():"Unknown","",relativeSupport);
         addDetail("Relative volume reference through",Number.isFinite(volumePeriodEnd)?new Date(volumePeriodEnd).toISOString():"Unknown","",relativeSupport);
       }

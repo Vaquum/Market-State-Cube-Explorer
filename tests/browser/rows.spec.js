@@ -103,7 +103,7 @@ test.describe("Rows Explore mapping is period-wide", () => {
 });
 
 test.describe("Rows context: no resolution level, the effective row size and the quality", () => {
-  test("the column level is not part of it; the row size is, and a change of it is disclosed", async ({ page, probe, fakeFor, surface }, testInfo) => {
+  test("canvas time and price resolution leave the period context unchanged", async ({ page, probe, fakeFor, surface }, testInfo) => {
     const fake = await fakeFor("standard");
     await page.goto(`${fake.url}/#w=24h&rows=volume&period=7d`);
     await S.atRest(page, fake, probe);
@@ -121,18 +121,14 @@ test.describe("Rows context: no resolution level, the effective row size and the
     expect(stepped.mappingId).toBe(base.mappingId);
     expect(stepped.fitSeq).toBe(base.fitSeq);
 
-    // `}` steps the row level (m): the effective row size changes, so the context and the mapping do.
+    // Canvas price resolution changes independently of the period's price rows.
     await page.keyboard.press("}");
     await S.atRest(page, fake, probe);
-    await expect.poll(async () => (await reading(surface)).rowSize).not.toBe(base.rowSize);
-    await expect.poll(async () => (await surface.chip("rows")).data.state).toBe("ready");
     const coarser = await reading(surface);
-    expect(coarser.context).not.toBe(base.context);
-    expect(Number(coarser.rowSize), "one level coarser").toBe(Number(base.rowSize) + 1);
-    expect(coarser.mappingId).not.toBe(base.mappingId);
-    expect(coarser.cause, "disclosed as a scale change and named").toMatch(/resolution/);
-    expect(coarser.from).toBe(base.mappingId);
-    expect(coarser.to).toBe(coarser.mappingId);
+    expect(coarser.rowSize).toBe(base.rowSize);
+    expect(coarser.context).toBe(base.context);
+    expect(coarser.mappingId).toBe(base.mappingId);
+    expect(coarser.fitSeq).toBe(base.fitSeq);
   });
 });
 

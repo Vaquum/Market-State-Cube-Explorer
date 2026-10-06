@@ -756,7 +756,7 @@ test("T-readout: Relative volume bands come from the typed per-bin result: finit
   const r = f.readout({ r: 3 });
   assert.equal(r.typed.tag, "negative-infinite");
   assert.equal(r.coordinate, null);
-  assert.equal(r.measure.formula, "rows.relvol@2");
+  assert.equal(r.measure.formula, "rows.relvol@3");
   // With no result yet the band is pending (reading), never a value.
   const none = E.readout.rowsFrame({ kind: "relvol", rowSize: 0, mapping: LOG2, lut: LUTS.light, relvol: null });
   none.encode({ r: 1 }, out);

@@ -181,6 +181,26 @@ test("a covered known-zero cell is numeric while its empty ratios retain typed r
   expect(capture.metrics.path.tag).toBe("pending"); await expect(page.locator(`${WORK} .ol-comparison-focus [data-metric="volume"]`)).toHaveAttribute("data-canonical", "0");
 });
 
+test("a background capture retains its clicked period price band across coarser cells and menu pointer movement", async ({ page, fakeFor, probe }) => {
+  const fake = await fakeFor("micro:mixed"), hash = VIEW + "&rows=relvol&period=all";
+  await ready(page, fake, probe, hash);
+  await addMenu(page, await point(page, 28125, 25187.5));
+  const native = (await saved(page)).captures[0],
+    band = (capture) => capture.detail.find((detail) => detail.label === "Period row band"),
+    relative = (capture) => capture.detail.find((detail) => detail.label.startsWith("Relative volume · ") && detail.label.endsWith(" · captured context"));
+  expect(band(native).value).toBe("25125–25250");
+  expect(relative(native).tag).toBe("finite");
+  await page.evaluate((next) => { location.hash = next; }, hash.replace("r=0,0", "r=0,2"));
+  await atRest(page, fake, probe);
+  await addMenu(page, await point(page, 28125, 25187.5), 2);
+  const coarse = (await saved(page)).captures[1];
+  expect(coarse.level.m).toBe(2);
+  expect(band(coarse)).toEqual(band(native));
+  expect(relative(coarse)).toEqual(relative(native));
+  await clipboard(page);
+  expect(await copyFocused(page)).toContain("Period row band: 25125–25250 usdt");
+});
+
 test("a pending rectangle keeps loaded cell facts, independently summed from its trade stream", async ({ page, fakeFor, probe }) => {
   const fake = await fakeFor("standard"); await ready(page, fake, probe, "#w=30d&vis=2&marks=none&lines=");
   const gate = fake.on({ route: "/cube/query" }).gate();
@@ -242,14 +262,14 @@ test("price-only clipping retains the full temporal known-at boundary", async ({
 });
 
 
-test("Relative volume with a stale period and newer rectangle hides both display and Copy between their source ends", async ({ page, fakeFor, probe }) => {
+for (const rows of ["volume", "relvol"]) test(`${rows === "relvol" ? "Period relative volume stays available" : "View vs period hides display and Copy"} between a stale period and newer rectangle's source ends`, async ({ page, fakeFor, probe }) => {
   const ms = (iso) => Date.parse(iso) - EPOCH;
   const fake = await fakeFor({ name: "comparison-relative-mixed-support", cutoffIso: "2026-09-24T12:02:00Z", trades: [
     { t_ms: ms("2026-07-01T00:00:00Z"), price: 2500000, qty: 800000, takerBuy: true },
     { t_ms: ms("2026-09-24T11:00:00Z"), price: 2500000, qty: 400000, takerBuy: true },
     { t_ms: ms("2026-09-24T11:01:00Z"), price: 2512500, qty: 400000, takerBuy: false },
   ] });
-  const hash = "#t=2026-09-24T10:00Z~2026-09-24T13:10Z&p=24875~25375&r=4,0&auto=0&vis=2&marks=none&lines=&rows=volume&period=90d";
+  const hash = `#t=2026-09-24T10:00Z~2026-09-24T13:10Z&p=24875~25375&r=4,0&auto=0&vis=2&marks=none&lines=&rows=${rows}&period=90d`;
   await ready(page, fake, probe, hash);
   // Period requests have no price bounds. The current rectangle finishes before this held read.
   const gate = fake.on({ route: "/cube/query", when: (query) => !("r0" in query) }).gate();
@@ -260,25 +280,38 @@ test("Relative volume with a stale period and newer rectangle hides both display
   await row.getByRole("button", { name: "Add to comparison" }).click();
   await expect.poll(async () => (await saved(page))?.captures.length).toBe(1);
   const capture = (await saved(page)).captures[0];
-  const relative = capture.detail.find((detail) => detail.label === "Relative volume · captured context");
+  const relative = capture.detail.find((detail) => rows === "relvol"
+    ? detail.label.startsWith("Relative volume · ") && detail.label.endsWith(" · captured context")
+    : detail.label === "View vs period · captured context");
   const rectangle = capture.detail.find((detail) => detail.label === "Relative volume rectangle through");
-  const period = capture.detail.find((detail) => detail.label === "Relative volume reference through");
+  const period = capture.detail.find((detail) => detail.label === (rows === "relvol" ? "Relative volume period through" : "Relative volume reference through"));
   expect(relative, "the real row comparison remains finite while the next period read is held").toBeTruthy();
   expect(relative.tag).toBe("finite"); expect(Number.isFinite(relative.value)).toBe(true);
   const rewind = Date.parse("2026-09-24T12:30:00Z");
-  expect(Date.parse(period.value)).toBeLessThan(rewind); expect(Date.parse(rectangle.value)).toBeGreaterThan(rewind);
+  expect(Date.parse(period.value)).toBeLessThan(rewind);
+  if (rows === "relvol") {
+    expect(rectangle).toBeUndefined();
+    expect(relative.supportEnd).toBe(Date.parse(period.value));
+  } else {
+    expect(Date.parse(rectangle.value)).toBeGreaterThan(rewind);
+    expect(relative.supportEnd).toBe(Date.parse(rectangle.value));
+  }
   await clipboard(page);
-  expect(await copyFocused(page)).toContain(`Relative volume · captured context: ${relative.value}`);
+  expect(await copyFocused(page)).toContain(`${relative.label}: ${relative.value}`);
   gate.open(); await atRest(page, fake, probe);
   await page.evaluate((next) => { location.hash = next; }, hash + "&replay=1&at=2026-09-24T12:30:00Z");
   await expect(page.locator("#ol-replay-at")).toHaveText("24 Sep 12:30");
   const details = page.locator(`${WORK} .ol-comparison-details`);
   await details.locator("summary").click();
-  const relativeRow = details.locator("dl > div").filter({ has: page.locator("dt", { hasText: /^Relative volume · captured context$/ }) });
-  await expect(relativeRow.locator("dd")).toHaveText("Unavailable in replay");
+  const relativeRow = details.locator("dl > div").filter({ has: page.getByText(relative.label, { exact: true }) });
+  if (rows === "relvol") await expect(relativeRow.locator("dd")).not.toHaveText("Unavailable in replay");
+  else await expect(relativeRow.locator("dd")).toHaveText("Unavailable in replay");
   const copied = await copyFocused(page);
-  expect(copied).toContain("Relative volume · captured context: Unavailable in replay");
-  expect(copied).not.toContain(`Relative volume · captured context: ${relative.value}`);
+  if (rows === "relvol") expect(copied).toContain(`${relative.label}: ${relative.value}`);
+  else {
+    expect(copied).toContain(`${relative.label}: Unavailable in replay`);
+    expect(copied).not.toContain(`${relative.label}: ${relative.value}`);
+  }
   expect((await saved(page)).captures).toEqual([capture]);
 });
 

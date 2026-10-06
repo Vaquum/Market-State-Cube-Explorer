@@ -54,7 +54,7 @@ test.describe("B02 the recorded snapshot through Explore contexts, Rows and the 
     expect(Object.keys(details.fields)).toContain("rowTrimmed");
   });
 
-  test("Relative volume over a year at coarse rows names its support and what it dropped", async ({ page, fakeFor, surface, probe }) => {
+  test("Relative volume over a year uses the whole coarse period and names its mean", async ({ page, fakeFor, surface, probe }) => {
     const fake = await fakeFor("recorded");
     await page.goto(`${fake.url}/#vis=2&w=all&rows=relvol&period=1y`);
     await ready(page, fake, probe);
@@ -63,6 +63,8 @@ test.describe("B02 the recorded snapshot through Explore contexts, Rows and the 
     expect(details.fields.rowRelvolRestriction.text).toMatch(/Only bins wholly inside the support on both sides count; \d+ dropped/);
     expect(details.fields.rowRelvolSupport.text).toMatch(/USDT, coarse common bins/);
     expect(details.fields.rowRelvolCounts.text).toMatch(/\d+ finite/);
+    expect(details.fields.rowRelvolBasis.value).toBe("period-mean");
+    expect(Number(details.fields.rowRelvolMean.value)).toBeGreaterThan(0);
   });
 
   test("Efficiency's model reads timing unverified at the snapshot's own cutoff", async ({ page, fakeFor, surface, probe }) => {

@@ -154,7 +154,7 @@ test("Rows key: measure, transform, quality, period identity and effective row s
   // Relative volume follows the fixed rule (its own log2 domain), never the unbounded Rows rule.
   const rv = rows({ measure: "relvol", transform: "rank" });
   assert.equal(rv.transform, "fixed");
-  assert.equal(rv.formula, "rows.relvol@2");
+  assert.equal(rv.formula, "rows.relvol@3");
   assert.equal(rv.basis, "log2-ratio");
   // Quality grammar (DR-08): exact | approx-rows:<rowPrice> | approx-start.
   for (const q of ["exact", "approx-start", "approx-rows:2", "approx-rows:8", "approx-rows:1024"]) assert.equal(rows({ quality: q }).quality, q);

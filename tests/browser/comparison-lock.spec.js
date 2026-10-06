@@ -100,7 +100,9 @@ test("a change of basis under the lock falls back to Explore with a visible reas
 
   // Amount -> Intensity: the held mapping is of another basis, so this channel is Explore, and says why.
   await page.locator("#ol-mode").click();
+  await page.locator('#ol-mode-menu [data-mode-step="basis"]').click();
   await page.getByRole("menuitemradio", { name: /Intensity/ }).click();
+  await page.keyboard.press("Escape");
   const fallback = await calm(ctx);
   expect(fallback.policy, "no held mapping for the new basis: Explore").toBe("explore");
   const opened = await surface.openLegendDetails("cells");
@@ -109,7 +111,9 @@ test("a change of basis under the lock falls back to Explore with a visible reas
 
   // Back to Amount: the held mapping is found again.
   await page.locator("#ol-mode").click();
+  await page.locator('#ol-mode-menu [data-mode-step="basis"]').click();
   await page.getByRole("menuitemradio", { name: /^Amount/ }).click();
+  await page.keyboard.press("Escape");
   const back = await calm(ctx);
   expect(back.policy).toBe("comparison");
   expect(back.mappingId).toBe(locked.mappingId);

@@ -3135,13 +3135,6 @@
       dwell: { name: "Dwell", desc: "Each cell's share of the covered time of its column: seconds the price rested in its rows over the column's covered seconds" },
       geometry: { name: "Geometry", desc: "The grid's occupied cells, outlined, with no magnitude" },
     },
-    MODE_GROUPS = [
-      ["USDT", ["volume", "flow", "delta", "cascade"]],
-      ["Trades", ["trades", "flowtrades", "size"]],
-      ["Movement", ["path", "dwell"]],
-      ["Price", ["candles"]],
-      ["Grid", ["geometry"]],
-    ],
     MODE_NAMES = Object.fromEntries(MODES.map((k) => [k, MODE_INFO[k].name])),
     // The pane under the prices (the Columns menu, B): one value per column, in
     // the order B steps through them. Same as cells follows the encoding.
@@ -3161,14 +3154,7 @@
       rsi1d: { name: "RSI 14 · 1D", desc: "Wilder's RSI of the daily closes, with 70 and 30 guides and divergences between daily swings" },
       rsi4h: { name: "RSI 14 · 4h", desc: "The same on 4-hour bars, with divergences between 4-hour swings" },
       macd1d: { name: "MACD · 1D", desc: "EMA(12) − EMA(26) of the daily closes in USDT, its signal EMA(9) and their histogram, on one axis symmetric about zero, with crosses" },
-    },
-    PANE_GROUPS = [
-      ["Follow", ["cells"]],
-      ["USDT", ["volume", "delta"]],
-      ["Trades", ["trades", "size"]],
-      ["Movement", ["efficiency", "choppiness", "perpath"]],
-      ["Oscillators", ["rsi1d", "rsi4h", "macd1d"]],
-    ];
+    };
   function svgIcon(name, className = "ol-icon") {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", className);
@@ -5670,7 +5656,7 @@
       el("pane-text").textContent = paneName;
       el("pane").setAttribute("aria-label", `Columns: ${paneName}`);
       qsa("#ol-pane-menu [data-pane]").forEach((b) =>
-        b.setAttribute("aria-checked", String(b.dataset.pane === S.pane)),
+        b.setAttribute("aria-checked", String(b.dataset.pane === (S.pane.startsWith("rsi") ? "rsi" : S.pane))),
       );
     }
     renderRows();
@@ -6070,6 +6056,7 @@
 
   // Popovers: one open at a time; outside clicks and Escape close them.
   const pop = { open: null };
+  const menuFlows = { mode: { step: "dataset" }, pane: { step: "dataset", rsi: "rsi1d" }, rows: { step: "dataset" } };
   function closePop(restoreFocus = false) {
     if (!pop.open) return false;
     const { button, panel } = pop.open;
@@ -6120,17 +6107,17 @@
     items[((i % items.length) + items.length) % items.length]?.focus();
   }
   function checkedItem(menu) {
-    return Math.max(
-      0,
-      menuItems(menu).findIndex((b) => b.getAttribute("aria-checked") === "true"),
-    );
+    const choices = menuItems(menu.querySelector(".ol-flow-body") ?? menu),
+      chosen = choices.find(b => b.getAttribute("aria-checked") === "true") ?? choices[0];
+    return Math.max(0, menuItems(menu).indexOf(chosen));
   }
-  function bindMenu(buttonId, menuId, build) {
+  function bindMenu(buttonId, menuId, build, onOpen) {
     const button = el(buttonId),
       menu = el(menuId);
     build();
     bindPop(buttonId, menuId, () => {
       hideHint();
+      if (onOpen) onOpen();
       build();
       focusMenuItem(menu, checkedItem(menu));
     });
@@ -6141,6 +6128,8 @@
       focusMenuItem(menu, e.key === "ArrowUp" ? -1 : checkedItem(menu));
     });
     menu.addEventListener("keydown", (e) => {
+      // The custom period's native date field and form keep their editing and Tab keys.
+      if (e.key !== "Escape" && e.target.closest("form")) return;
       const i = menuItems(menu).indexOf(document.activeElement);
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -7444,13 +7433,9 @@
   // description (why it is not offered, what an approximation is). A disabled item stays in the list and
   // says why, so nothing is explained by a hover.
   function uiScaleItem(spec) {
-    const b = menuItem(
-      spec.role,
-      [svgIcon("check", "ol-icon ol-check"), itemText(spec.id, spec.name, spec.desc ?? "")],
-      () => {
-        if (!spec.disabled) uiScaleChoose(spec.channel, spec.key);
-      },
-    );
+    const children = [svgIcon("check", "ol-icon ol-check"), itemText(spec.id, spec.name, spec.desc ?? "")],
+      choose = () => { if (!spec.disabled) uiScaleChoose(spec.channel, spec.key); },
+      b = flowChoiceItem(spec.channel === "cells" ? "mode" : "rows", spec.role, children, choose, spec.disabled);
     b.setAttribute("aria-labelledby", `ol-${spec.id}-name`);
     if (spec.desc) b.setAttribute("aria-describedby", `ol-${spec.id}-desc`);
     b.setAttribute("aria-checked", String(Boolean(spec.checked)));
@@ -7565,7 +7550,7 @@
   // hangs on one key of the preferences, so a pointer move that changes none of them does a string join.
   function renderScaleUi() {
     const s = S.scale,
-      key = [S.mode, S.rows, PACK.live ? 1 : 0, S.lens ? 1 : 0, s.basis, s.pathBasis, s.transform, s.curve, s.rowsTransform, s.cells, s.rows, s.local ? 1 : 0, s.lock ? 1 : 0, s.window?.join("~")].join("|");
+      key = [S.mode, S.pane, S.rows, S.period, PACK.live ? 1 : 0, S.lens ? 1 : 0, s.basis, s.pathBasis, s.transform, s.curve, s.rowsTransform, s.cells, s.rows, s.local ? 1 : 0, s.lock ? 1 : 0, s.window?.join("~")].join("|");
     if (key === scaleUi.menuKey) return;
     scaleUi.menuKey = key;
     // Local contrast is the lens's: offered, and shown, only where the measure has a scale to fit
@@ -7579,12 +7564,18 @@
     if (pop.open) {
       const panel = pop.open.panel;
       // A menu that is open while its measure changes (a shortcut) is rebuilt, the focused item kept
-      if (panel === el("mode-menu") || panel === el("rows-menu")) {
+      const flow = ["mode", "pane", "rows"].find(id => panel === el(`${id}-menu`));
+      if (flow) {
         const at = document.activeElement,
-          item = at?.dataset?.scaleItem;
-        (panel === el("mode-menu") ? buildModeMenu : buildRowsMenu)();
-        if (panel.contains(at) && !at.isConnected)
-          (item && panel.querySelector(`[data-scale-item="${item}"]`))?.focus() ?? focusMenuItem(panel, checkedItem(panel));
+          inside = panel.contains(at),
+          attribute = ["data-scale-item", `data-${flow}-step`, `data-${flow}`, "data-timeframe", "data-period", `data-${flow}-nav`].find(name => at?.hasAttribute?.(name)),
+          value = attribute ? at.getAttribute(attribute) : null;
+        buildFlowMenu(flow);
+        if (inside && !at.isConnected) {
+          const replacement = attribute ? panel.querySelector(`[${attribute}="${value}"]`) : null;
+          if (replacement) replacement.focus({ preventScroll: true });
+          else focusMenuItem(panel, checkedItem(panel));
+        }
       } else if (panel === el("legend-pop")) legendPop("cells");
       else if (panel === el("rows-legend-pop")) legendPop("rows");
       else if (panel === el("axis-pop")) axisPop();
@@ -7708,14 +7699,14 @@
     });
     noticeShow();
   }
-  function menuItem(role, children, onChoose) {
+  function menuItem(role, children, onChoose, close = true) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "ol-item cursor-interaction";
     b.setAttribute("role", role);
     b.append(...children);
     b.addEventListener("click", () => {
-      closePop(true);
+      if (close) closePop(true);
       onChoose();
     });
     return b;
@@ -7815,115 +7806,218 @@
     el("follow-menu").replaceChildren(...parts);
   }
 
-  // The encodings, grouped by the measure they read, each with what it shows.
-  function buildModeMenu() {
-    const parts = [];
-    for (const [cap, keys] of MODE_GROUPS) {
-      const group = document.createElement("div"),
-        head = document.createElement("div");
-      group.setAttribute("role", "group");
-      head.className = "ol-menu-cap";
-      head.id = `ol-mode-cap-${parts.length}`;
-      head.textContent = cap;
-      group.setAttribute("aria-labelledby", head.id);
-      group.append(head);
-      for (const key of keys) {
-        const info = MODE_INFO[key],
-          // Path and dwell need the live cube: the recorded page lists them, off.
-          off = !modes().includes(key),
-          b = menuItem(
-            "menuitemradio",
-            [
-              svgIcon("check", "ol-icon ol-check"),
-              itemText(`mode-${key}`, info.name, off ? "Live cube only" : info.desc),
-            ],
-            () => setMode(key),
-          );
-        if (off) b.setAttribute("aria-disabled", "true");
-        b.setAttribute("aria-labelledby", `ol-mode-${key}-name`);
-        b.setAttribute("aria-describedby", `ol-mode-${key}-desc`);
-        b.dataset.mode = key;
-        b.setAttribute("aria-checked", String(key === S.mode));
-        group.append(b);
-      }
-      parts.push(group);
-    }
-    // The Scale section: basis, transform, policy, lock, Local contrast and Fit, from what the measure offers
-    if (S.mode !== "candles") parts.push(...uiScaleSection("cells"));
-    el("mode-menu").replaceChildren(...parts);
+  // The three choosers share navigation; available settings still come from the measure's offers.
+  function scaleSteps(channel) {
+    const groups = channel === "cells" && S.mode === "candles" ? [] : uiScaleSection(channel).filter(node => node.getAttribute("role") === "group"),
+      take = prefix => groups.find(node => node.querySelector(`[data-scale-item^="${prefix}"]`));
+    return [
+      { id: "transform", name: "Transform", title: "Choose a transform", desc: "How values map to colour.", group: take("transform:") },
+      { id: "basis", name: "Basis", title: "Choose a basis", desc: "How the dataset is measured.", group: take("basis:") ?? take("path:") },
+      { id: "policy", name: "Scale", title: "Choose a scale policy", desc: "When the colour scale is fitted.", group: take("policy:") },
+      { id: "options", name: "Options", title: "Scale options", desc: "Choose an option to finish, or keep your current settings.", group: take("lock") },
+    ].filter(step => step.group);
   }
-  // The pane's measures, grouped as the encodings are, each with what it shows.
-  function buildPaneMenu() {
-    const parts = [];
-    for (const [cap, keys] of PANE_GROUPS) {
-      const group = document.createElement("div"),
-        head = document.createElement("div");
-      group.setAttribute("role", "group");
-      head.className = "ol-menu-cap";
-      head.id = `ol-pane-cap-${parts.length}`;
-      head.textContent = cap;
-      group.setAttribute("aria-labelledby", head.id);
-      group.append(head);
-      for (const key of keys) {
-        const info = PANE_INFO[key],
-          // Choppiness and volume per path need the live cube: the recorded page lists them, off.
-          off = !panes().includes(key),
-          b = menuItem(
-            "menuitemradio",
-            [
-              svgIcon("check", "ol-icon ol-check"),
-              itemText(`pane-${key}`, info.name, off ? "Live cube only" : info.desc),
-            ],
-            () => setPane(key),
-          );
-        if (off) b.setAttribute("aria-disabled", "true");
-        b.setAttribute("aria-labelledby", `ol-pane-${key}-name`);
-        b.setAttribute("aria-describedby", `ol-pane-${key}-desc`);
-        b.dataset.pane = key;
-        b.setAttribute("aria-checked", String(key === S.pane));
-        group.append(b);
-      }
-      parts.push(group);
-    }
-    el("pane-menu").replaceChildren(...parts);
+  function flowSteps(id) {
+    const dataset = { id: "dataset", name: "Dataset", title: "Choose a dataset", desc: {
+      mode: "What the cells show.", pane: "What each column shows below the prices.", rows: "What each price row shows behind the cells.",
+    }[id] };
+    if (id === "mode") return [dataset, ...scaleSteps("cells")];
+    if (id === "pane") return [dataset, ...(S.pane.startsWith("rsi") ? [{
+      id: "timeframe", name: "Timeframe", title: "Choose a timeframe", desc: "The bars used to calculate RSI 14.", group: paneTimeframes(),
+    }] : [])];
+    if (S.rows === "off") return [dataset];
+    const scale = scaleSteps("rows");
+    return [dataset, ...scale.filter(step => step.id === "transform"),
+      { id: "period", name: "Period", title: "Choose a period", desc: "Sum the rows over this period, up to the latest data or the replay's edge.", group: rowsPeriodChoices() },
+      ...scale.filter(step => step.id !== "transform")];
   }
-  // The underlay's choices, grouped as the encodings are.
-  function buildRowsMenu() {
-    const parts = [];
-    for (const [cap, keys] of ROWS_GROUPS) {
-      const group = document.createElement("div"),
-        head = document.createElement("div");
-      group.setAttribute("role", "group");
-      head.className = "ol-menu-cap";
-      head.id = `ol-rows-cap-${parts.length}`;
-      head.textContent = cap;
-      group.setAttribute("aria-labelledby", head.id);
-      group.append(head);
-      for (const key of keys) {
-        const info = ROWS_INFO[key],
-          // Time at price needs the live cube: the recorded page lists it, off.
-          off = !rowsChoices().includes(key),
-          b = menuItem(
-            "menuitemradio",
-            [
-              svgIcon("check", "ol-icon ol-check"),
-              itemText(`rows-${key}`, info.name, off ? "Live cube only" : info.desc),
-            ],
-            () => setRows(key),
-          );
-        if (off) b.setAttribute("aria-disabled", "true");
-        b.setAttribute("aria-labelledby", `ol-rows-${key}-name`);
-        b.setAttribute("aria-describedby", `ol-rows-${key}-desc`);
-        b.dataset.rows = key;
-        b.setAttribute("aria-checked", String(key === S.rows));
-        group.append(b);
-      }
-      parts.push(group);
-    }
-    // The matching Transform and policy groups of the Rows measure
-    parts.push(...uiScaleSection("rows"));
-    el("rows-menu").replaceChildren(...parts);
+  function flowShowStep(id, step) {
+    menuFlows[id].step = step;
+    buildFlowMenu(id);
+    focusMenuItem(el(`${id}-menu`), checkedItem(el(`${id}-menu`)));
   }
+  function flowAdvance(id) {
+    const steps = flowSteps(id), at = steps.findIndex(step => step.id === menuFlows[id].step);
+    if (at >= 0 && at < steps.length - 1) flowShowStep(id, steps[at + 1].id);
+    else closePop(true);
+  }
+  function flowChoiceItem(id, role, children, onChoose, disabled = false) {
+    const choose = finish => {
+      if (disabled || onChoose() === false) return;
+      if (finish) closePop(true);
+      else flowAdvance(id);
+    }, b = menuItem(role, children, () => choose(false), false);
+    b.addEventListener("contextmenu", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      choose(true);
+    });
+    return b;
+  }
+  function flowDatasetItem(id, key, info, selected, available, onChoose) {
+    const off = !available,
+      b = flowChoiceItem(id, "menuitemradio", [svgIcon("check", "ol-icon ol-check"),
+        itemText(`${id}-${key}`, info.name, off ? "Live cube only" : info.desc)], () => {
+          menuFlows[id].step = "dataset";
+          onChoose();
+        }, off);
+    if (off) b.setAttribute("aria-disabled", "true");
+    b.setAttribute("aria-labelledby", `ol-${id}-${key}-name`);
+    b.setAttribute("aria-describedby", `ol-${id}-${key}-desc`);
+    b.dataset[id] = key;
+    b.setAttribute("aria-checked", String(selected));
+    return b;
+  }
+  function modeDatasetItems() {
+    const descriptions = {
+      volume: "USDT traded in each cell", flow: "Share of USDT bought by takers",
+      delta: "Taker-buy minus taker-sell USDT", cascade: "Cell volume relative to its parent",
+      trades: "Number of trades in each cell", flowtrades: "Share of trades that were taker buys",
+      size: "Average USDT per trade", path: "Price travel inside each cell",
+      dwell: "Share of time spent at each price", candles: "Exact open, high, low and close prices",
+      geometry: "Occupied cells on the grid",
+    };
+    // Amounts and trade size, taker flow and relative measures, then movement and geometry.
+    // Candles is a distinct price view, separated at the end of the same list.
+    return ["volume", "trades", "size", "flow", "flowtrades", "delta", "cascade", "path", "dwell", "geometry", "candles"].flatMap(key => {
+      const b = flowDatasetItem("mode", key, { name: MODE_INFO[key].name, desc: descriptions[key] }, key === S.mode, modes().includes(key), () => setMode(key));
+      if (key !== "candles") return [b];
+      const divider = uiEl("div", "ol-menu-rule ol-flow-candles-rule");
+      divider.setAttribute("role", "separator");
+      return [divider, b];
+    });
+  }
+  function paneDatasetItems() {
+    if (S.pane.startsWith("rsi")) menuFlows.pane.rsi = S.pane;
+    return ["cells", "volume", "trades", "size", "delta", "efficiency", "choppiness", "perpath", "rsi", "macd1d"].map(key => {
+      const rsi = key === "rsi", value = rsi ? menuFlows.pane.rsi : key,
+        info = rsi ? { name: "RSI 14", desc: "Wilder's RSI of closes, with 70 and 30 guides and swing divergences" } : PANE_INFO[key];
+      return flowDatasetItem("pane", key, info, rsi ? S.pane.startsWith("rsi") : S.pane === key, panes().includes(value), () => setPane(value));
+    });
+  }
+  function paneTimeframes() {
+    const group = uiEl("div");
+    group.setAttribute("role", "group");
+    for (const [key, name, desc] of [["rsi1d", "1 day", "RSI 14 from daily bars"], ["rsi4h", "4 hours", "RSI 14 from 4-hour bars"]]) {
+      const b = flowChoiceItem("pane", "menuitemradio", [svgIcon("check", "ol-icon ol-check"), itemText(`pane-${key}`, name, desc)], () => {
+        menuFlows.pane.rsi = key;
+        setPane(key);
+      });
+      b.dataset.timeframe = key;
+      b.setAttribute("aria-labelledby", `ol-pane-${key}-name`);
+      b.setAttribute("aria-describedby", `ol-pane-${key}-desc`);
+      b.setAttribute("aria-checked", String(S.pane === key));
+      group.append(b);
+    }
+    return group;
+  }
+  function rowsDatasetItems() {
+    return ROWS.map(key => flowDatasetItem("rows", key, ROWS_INFO[key], S.rows === key, rowsChoices().includes(key), () => setRows(key)));
+  }
+  function rowsPeriodChoices() {
+    const group = uiEl("div"), keys = [...PERIODS, ...(isDay(S.period) ? [S.period] : [])];
+    group.setAttribute("role", "group");
+    for (const key of keys) {
+      const b = flowChoiceItem("rows", "menuitemradio", [svgIcon("check", "ol-icon ol-check"),
+        itemText(`rows-period-${key}`, periodLabel(key), periodPhrase(key))], () => setPeriod(key));
+      b.dataset.period = key;
+      b.setAttribute("aria-labelledby", `ol-rows-period-${key}-name`);
+      b.setAttribute("aria-describedby", `ol-rows-period-${key}-desc`);
+      b.setAttribute("aria-checked", String(S.period === key));
+      group.append(b);
+    }
+    const form = uiEl("form", "ol-lines-add ol-flow-date"), label = uiEl("label", "", "Since a UTC day"),
+      input = uiEl("input"), error = uiEl("p", "ol-lines-status");
+    form.noValidate = true;
+    input.type = "date";
+    input.id = "ol-rows-period-date";
+    input.min = "2021-01-01";
+    input.max = date(Math.max(0, activeCutoff() - 1e-6)).toISOString().slice(0, 10);
+    input.value = menuFlows.rows.day ?? (isDay(S.period) ? S.period : "");
+    label.htmlFor = input.id;
+    error.id = "ol-rows-period-error";
+    error.setAttribute("role", "status");
+    error.hidden = true;
+    const apply = flowChoiceItem("rows", "menuitem", ["Since this day"], () => {
+      const key = input.value, start = dayStart(key);
+      if (!isDay(key) || start < 0 || start >= activeCutoff()) {
+        error.textContent = `Choose a day from 1 Jan 2021 to ${day(Math.max(0, activeCutoff() - 1e-6))}.`;
+        error.hidden = false;
+        input.setAttribute("aria-invalid", "true");
+        input.setAttribute("aria-describedby", error.id);
+        input.focus();
+        return false;
+      }
+      menuFlows.rows.day = key;
+      setPeriod(key);
+    });
+    apply.className = "ol-action cursor-interaction";
+    input.addEventListener("input", () => {
+      menuFlows.rows.day = input.value;
+      input.removeAttribute("aria-invalid");
+      input.removeAttribute("aria-describedby");
+      error.hidden = true;
+    });
+    form.addEventListener("submit", event => { event.preventDefault(); apply.click(); });
+    form.append(label, input, apply, error);
+    group.append(form);
+    return group;
+  }
+  function buildFlowMenu(id) {
+    const panel = el(`${id}-menu`), steps = flowSteps(id), state = menuFlows[id],
+      name = { mode: "Cells", pane: "Columns", rows: "Rows" }[id];
+    let at = steps.findIndex(step => step.id === state.step);
+    if (at < 0) { at = 0; state.step = "dataset"; }
+    const step = steps[at], header = uiEl("div", "ol-flow-head"),
+      progress = uiEl("div", "ol-flow-progress"), body = uiEl("div", "ol-flow-body"),
+      footer = uiEl("div", "ol-flow-footer");
+    panel.dataset.step = step.id;
+    panel.setAttribute("aria-label", `${name}: ${step.name}, step ${at + 1} of ${steps.length}`);
+    progress.setAttribute("role", "group");
+    progress.setAttribute("aria-label", "Configuration steps");
+    for (const [i, entry] of steps.entries()) {
+      const b = menuItem("menuitem", [uiEl("span", "ol-flow-number", String(i + 1)),
+        uiEl("span", "", entry.name)], () => flowShowStep(id, entry.id), false);
+      b.className = "ol-flow-step cursor-interaction";
+      b.dataset[`${id}Step`] = entry.id;
+      b.setAttribute("aria-label", `Step ${i + 1}: ${entry.name}`);
+      if (i === at) b.setAttribute("aria-current", "step");
+      progress.append(b);
+    }
+    const selected = steps.slice(1).flatMap(entry => [...entry.group.querySelectorAll('[aria-checked="true"]')])
+      .map(b => b.querySelector(".ol-item-text > span")?.textContent).filter(Boolean),
+      datasetName = id === "mode" ? MODE_NAMES[S.mode] : id === "pane" ? (S.pane.startsWith("rsi") ? "RSI 14" : PANE_INFO[S.pane].name) : ROWS_INFO[S.rows].name;
+    header.append(uiEl("div", "ol-flow-caption", `${name} · Step ${at + 1} of ${steps.length}`), progress,
+      uiEl("div", "ol-flow-summary", [datasetName, ...selected].join(" · ")));
+    const heading = uiEl("div", "ol-flow-title", step.title);
+    heading.id = `ol-${id}-step-title`;
+    body.setAttribute("role", "group");
+    body.setAttribute("aria-labelledby", heading.id);
+    body.append(heading, uiEl("p", "ol-flow-desc", step.desc));
+    if (step.id === "dataset") body.append(...{ mode: modeDatasetItems, pane: paneDatasetItems, rows: rowsDatasetItems }[id]());
+    else {
+      // The step title names this group; omit the duplicated old section caption.
+      step.group.querySelector(".ol-menu-cap")?.remove();
+      step.group.removeAttribute("aria-labelledby");
+      step.group.setAttribute("aria-label", step.name);
+      body.append(step.group);
+    }
+    if (at > 0) {
+      const back = menuItem("menuitem", ["← Back"], () => flowShowStep(id, steps[at - 1].id), false);
+      back.className = "ol-action cursor-interaction";
+      back.dataset[`${id}Nav`] = "back";
+      footer.append(back);
+    }
+    const next = menuItem("menuitem", [at === steps.length - 1 ? "Done" : "Continue →"], () => flowAdvance(id), false);
+    next.className = "ol-action ol-flow-next cursor-interaction";
+    next.dataset[`${id}Nav`] = "next";
+    footer.append(next);
+    panel.replaceChildren(header, body, footer);
+    uiPopPlace(panel, el(id), "start");
+  }
+  const buildModeMenu = () => buildFlowMenu("mode"),
+    buildPaneMenu = () => buildFlowMenu("pane"),
+    buildRowsMenu = () => buildFlowMenu("rows");
   // The Rows menu's button, and its period's, written only when they change:
   // update() runs on every input. The period shows while the underlay does.
   function renderRows() {
@@ -8206,9 +8300,11 @@
     el("reset-confirm").addEventListener("cancel", (event) => { event.preventDefault(); closeCanvasReset(); });
     bindMenu("window", "window-menu", buildWindowMenu);
     bindMenu("follow", "follow-menu", buildFollowMenu);
-    bindMenu("mode", "mode-menu", buildModeMenu);
-    bindMenu("pane", "pane-menu", buildPaneMenu);
-    bindMenu("rows", "rows-menu", buildRowsMenu);
+    for (const [id, build] of [["mode", buildModeMenu], ["pane", buildPaneMenu], ["rows", buildRowsMenu]])
+      bindMenu(id, `${id}-menu`, build, () => { menuFlows[id].step = "dataset"; });
+    addEventListener("resize", () => {
+      for (const id of ["mode", "pane", "rows"]) uiPopPlace(el(`${id}-menu`), el(id), "start");
+    });
     bindPeriods();
     bindLines();
     bindInspect();
@@ -12132,11 +12228,6 @@
       },
       time: { name: "Time at price", desc: "How long the price spent in each row over the period" },
     },
-    ROWS_GROUPS = [
-      ["Off", ["off"]],
-      ["USDT", ["volume", "delta", "relvol"]],
-      ["Time", ["time"]],
-    ],
     // The periods: the POC lines' and all history, or since a chosen day.
     PERIODS = ["visible", ...LINE_KEYS.filter((key) => key !== "visible"), "all"],
     // Time at price needs the live cube's dwell.

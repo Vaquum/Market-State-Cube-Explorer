@@ -2412,12 +2412,120 @@
   max-height: min(78vh, 640px);
   overflow-y: auto;
 }
+/* The choosers keep their steps and navigation visible while their choices scroll. */
+#origo-lens .ol-flow-menu {
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(78vh, 640px);
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+#origo-lens .ol-flow-head {
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--ol-line);
+}
+#origo-lens .ol-flow-caption {
+  color: var(--ol-muted);
+  margin-bottom: var(--sp-2);
+}
+#origo-lens .ol-flow-progress {
+  display: flex;
+  gap: var(--sp-1);
+}
+#origo-lens button.ol-flow-step {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 2px;
+  font-size: var(--fs-s);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-flow-number {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--ol-border);
+  border-radius: 50%;
+  font-size: var(--fs-s);
+}
+#origo-lens .ol-flow-step[aria-current="step"] {
+  color: var(--ol-ink);
+  background: var(--ol-on);
+}
+#origo-lens .ol-flow-step[aria-current="step"] .ol-flow-number {
+  color: var(--ol-surface);
+  background: var(--ol-ink);
+  border-color: var(--ol-ink);
+}
+#origo-lens .ol-flow-summary {
+  margin-top: var(--sp-3);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+#origo-lens .ol-flow-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-3);
+}
+#origo-lens .ol-flow-title {
+  font-size: var(--fs-m);
+  font-weight: 500;
+}
+#origo-lens .ol-flow-desc {
+  margin: 4px 0 var(--sp-3);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-flow-candles-rule {
+  margin: var(--sp-3) 0;
+}
+#origo-lens .ol-flow-menu button.ol-item {
+  min-height: 44px;
+  align-items: center;
+}
+#origo-lens .ol-flow-menu .ol-item > .ol-icon {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+#origo-lens .ol-flow-footer {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--ol-line);
+}
+#origo-lens .ol-flow-date {
+  flex-wrap: wrap;
+}
+#origo-lens .ol-flow-date label,
+#origo-lens .ol-flow-date .ol-lines-status {
+  flex-basis: 100%;
+}
+#origo-lens .ol-flow-date input,
+#origo-lens .ol-flow-date button {
+  min-height: 44px;
+}
+#origo-lens .ol-flow-footer button {
+  min-height: 36px;
+}
+#origo-lens button.ol-flow-next {
+  margin-left: auto;
+  color: var(--ol-surface);
+  background: var(--ol-ink);
+}
+@media (any-pointer: coarse), (max-width: 760px) {
+  #origo-lens .ol-flow-footer button { min-height: 44px; }
+}
 #origo-lens .ol-item-desc:empty {
   display: none;
 }
-/* A reason or a note under a checked or hovered Scale item is ink: the muted token is below 4.5:1 on those grounds */
-#origo-lens [data-scale-item][aria-checked="true"] .ol-item-desc,
-#origo-lens [data-scale-item]:hover .ol-item-desc {
+/* Descriptions on selected or hovered choices use ink to keep their contrast on the highlight. */
+#origo-lens .ol-flow-menu .ol-item[aria-checked="true"] .ol-item-desc,
+#origo-lens .ol-flow-menu .ol-item:hover .ol-item-desc {
   color: var(--ol-ink);
 }
 /* The notice banner, modelled on the update banner: a border on the side says it is more than information. */

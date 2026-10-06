@@ -3,7 +3,7 @@ const { test, expect } = require("./fixtures.js");
 
 async function open(page, fakeFor, probe, extra = "") {
   const fake = await fakeFor("standard");
-  await page.goto(`${fake.url}/#w=24h&vis=2&n=4&m=0${extra}`);
+  await page.goto(`${fake.url}/#w=24h&vis=2&r=4,0${extra}`);
   await probe.waitForReady();
   await page.locator("#ol-reference-toggle").click();
   await expect(page.locator("#ol-reference")).toBeVisible();

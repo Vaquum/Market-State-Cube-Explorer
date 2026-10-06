@@ -138,7 +138,6 @@ async function openQuery(page) {
   const panel = page.locator("#ol-panel-query");
   // a click on the tab that is already showing closes the drawer, so look before clicking
   if (await panel.isVisible()) return;
-  if ((await page.locator("#ol-drawer").getAttribute("data-open")) !== "true") await page.locator("#ol-drawer-toggle").click();
   if (!(await panel.isVisible())) await page.locator("#ol-tab-query").click();
   await panel.waitFor({ state: "visible" });
 }

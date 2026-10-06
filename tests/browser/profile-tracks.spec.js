@@ -105,7 +105,12 @@ async function open(page, fake, probe, pane, hash) {
   return { frame, colours, tracks: tracksOf(frame, colours, muted), y: priceAxis(frame) };
 }
 
+async function settings(page, topic) {
+  if (!(await page.locator("#ol-reference").isVisible())) await page.locator("#ol-reference-toggle").click();
+  await page.locator("#ol-reference-topic").selectOption(topic);
+}
 async function popover(page) {
+  await settings(page, "profiles");
   await page.locator("#ol-profile-chip").click();
   await expect(page.locator("#ol-profile-pop")).toBeVisible();
   return page.locator("#ol-profile-pop");
@@ -296,7 +301,7 @@ test.describe("B25 the adjacent profile tracks", () => {
     await expect(page.locator("#ol-profile-chip")).toHaveAttribute("data-comparison", "share");
     await expect(page.locator("#ol-profile-chip")).toHaveAttribute("data-asked", "share");
     // independent is the default and is not written
-    await page.locator("#ol-profile-chip").click();
+    await popover(page);
     await page.locator("#ol-profile-pop button[data-value='independent']").click();
     await expect.poll(() => page.evaluate(() => location.hash)).not.toContain("pc=");
   });
@@ -307,9 +312,11 @@ test.describe("B25 the adjacent profile tracks", () => {
     await open(page, fake, probe, pane, addressOf(sc));
     const before = await page.locator("#ol-profile-chip").evaluate((e) => ({ cur: e.dataset.currentDomain, ref: e.dataset.referenceDomain }));
     // engage the lock from the axis popover
+    await settings(page, "columns");
     await page.locator("#ol-axis-chip").click();
     await page.locator('#ol-axis-pop button[data-action="lock"]').click();
     await expect.poll(() => page.evaluate(() => location.hash), { message: "the lock is in the address" }).toContain("lk=1");
+    await page.locator("#ol-reference-close").click();
     for (let i = 0; i < 8; i++) {
       await page.keyboard.press("ArrowUp");
       await probe.waitForQuiet({ quietMs: 200 });
@@ -420,6 +427,7 @@ test.describe("B25 the adjacent profile tracks", () => {
     await expect(show).toHaveAttribute("aria-pressed", "false");
     await show.click();
     await expect(chip).toHaveAttribute("data-collapsed", "false");
+    await page.locator("#ol-reference-close").click();
     await S.atRest(page, fake, probe);
     const frame = await pane.last(),
       colours = await pane.colours();

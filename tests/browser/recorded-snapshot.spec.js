@@ -71,8 +71,7 @@ test.describe("B02 the recorded snapshot through Explore contexts, Rows and the 
     const fake = await fakeFor("recorded");
     await page.goto(`${fake.url}/#vis=2&w=7d&pane=efficiency`);
     await ready(page, fake, probe);
-    await page.locator("#ol-axis-chip").focus();
-    await page.keyboard.press("Enter");
+    await surface.openLegendDetails("axis");
     await expect(page.locator("#ol-axis-pop")).toBeVisible();
     const status = await page.locator('#ol-axis-pop [data-field="modelStatus"]').getAttribute("data-value");
     expect(status).toBe("timing-unverified");

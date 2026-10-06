@@ -20,7 +20,7 @@ async function payload(page) {
 }
 const chart = (value) => ({ query: value.query, view: value.view, appearance: value.appearance, scales: value.scales, axes: value.axes });
 async function closeDrawer(page) {
-  if (await page.locator("#ol-drawer").getAttribute("data-open") === "true") await page.locator("#ol-drawer-toggle").click();
+  if (await page.locator("#ol-drawer").getAttribute("data-open") === "true") await page.locator("[data-drawer][aria-expanded=true]").click();
 }
 async function editName(page, id, name, color = "#00ff00") {
   await D.edit(page, id);

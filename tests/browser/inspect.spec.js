@@ -262,6 +262,8 @@ test.describe("B44 Inspect: its own cursor, moved by the keys of each surface", 
     const readout = await page.locator("#ol-tip").getAttribute("data-readout");
     expect(readout, "the record has a name").toBeTruthy();
     await expect(page.locator("#ol-legend-marker"), "the legend marks it without the pointer anywhere").toHaveAttribute("data-readout", readout);
+    await page.locator("#ol-reference-toggle").click();
+    await page.locator("#ol-reference-topic").selectOption("scales");
     await expect(page.locator("#ol-legend-marker")).toBeVisible();
     // announcements: a deliberate move says it; a redraw from the page's own business does not
     const live = () => page.locator("#ol-inspect-live").evaluate((n) => ({ text: n.textContent, at: n.dataset.at }));

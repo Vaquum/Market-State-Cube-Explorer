@@ -29,9 +29,15 @@ test.describe("B53 the view summary", () => {
   test("every item the PRD names is in the Query tab's summary, and it says what the popovers say", async ({ page, probe, fakeFor, context }) => {
     const fake = await fakeFor("standard");
     await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: fake.url });
-    await page.setViewportSize({ width: 1500, height: 950 });
+    // Preserve the original chart width while the 460px reference panel is docked alongside it.
+    await page.setViewportSize({ width: 1960, height: 950 });
     const surface = observe(page);
     await page.goto(`${fake.url}/${ADDRESS}`);
+    await S.atRest(page, fake, probe);
+    // Establish the final panel layout before recording the scale: opening reference changes the canvas resolution.
+    await page.locator("#ol-tab-cells").click();
+    await page.locator("#ol-reference-toggle").click();
+    await page.locator("#ol-reference-topic").selectOption("scales");
     await S.atRest(page, fake, probe);
     await probe.waitForQuiet({ quietMs: 800, timeout: 60000 });
     // the scale is held (one action), so a policy, a cohort and a fit cutoff are all on the page
@@ -43,9 +49,7 @@ test.describe("B53 the view summary", () => {
     // the page's own pack poll (the liveness check on its timer, slot "poll") is not a read the summary asked for: a read of the measurement or the tiles would be
     const reads = () => fake.log().filter((entry) => entry.slot !== "poll").length;
     const requests = reads();
-    // open the drawer and its Query tab (the drawer's own preference is saved by that, as it always was)
-    await page.locator("#ol-canvas").focus();
-    await page.keyboard.press("t");
+    // Switch the already-open bottom panel to Query without changing the canvas geometry.
     await page.locator("#ol-tab-query").click();
     await page.waitForTimeout(400);
     const storedBefore = await page.evaluate(() => JSON.stringify({ ...localStorage }));

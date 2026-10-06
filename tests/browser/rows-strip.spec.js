@@ -118,8 +118,9 @@ test.describe("B28 the Rows strip", () => {
     await page.goto(`${fake.url}/${addressOf(sc)}`);
     await S.atRest(page, fake, probe);
     await expect.poll(async () => (await surface.chip("rows")).data.state).toMatch(/^(ready|fixed)$/);
-    const details = await surface.details("rows"),
-      U = Number(details.fields.U.value),
+    const details = await surface.details("rows");
+    await S.atRest(page, fake, probe);
+    const U = Number(details.fields.U.value),
       k = Number(details.fields.k.value),
       frame = await pane.last(),
       colours = await palette(page),
@@ -147,12 +148,13 @@ test.describe("B28 the Rows strip", () => {
     expect(blocksOf(again, relayout[4], relayout[3]), "and so are the blocks").toEqual(blocks);
   });
 
-  test("the Rows legend has a bar for the strip at full strength and one for the backdrop at 16%", async ({ page, probe, fakeFor }) => {
+  test("the Rows legend has a bar for the strip at full strength and one for the backdrop at 16%", async ({ page, probe, fakeFor, surface }) => {
     const sc = scenario();
     const fake = await fakeFor("standard");
     await page.goto(`${fake.url}/${addressOf(sc)}`);
     await S.atRest(page, fake, probe);
-    await page.locator("#ol-rows-legend").click();
+    await surface.openLegendDetails("rows");
+    await S.atRest(page, fake, probe);
     const pop = page.locator("#ol-rows-legend-pop");
     await expect(pop).toBeVisible();
     await expect(pop).toContainText("Strip: each row's value at full strength");
@@ -256,8 +258,9 @@ test.describe("B28 the strip under Delta and Time at price", () => {
     await page.goto(`${fake.url}/${S.address({ cols: sc.day, rows: sc.view, rowsKind: "delta", period: "7d", extra: "&vis=2" })}`);
     await S.atRest(page, fake, probe);
     await expect.poll(async () => (await surface.chip("rows")).data.state).toMatch(/^(ready|fixed)$/);
-    const details = await surface.details("rows"),
-      U = Number(details.fields.U.value),
+    const details = await surface.details("rows");
+    await S.atRest(page, fake, probe);
+    const U = Number(details.fields.U.value),
       k = Number(details.fields.k.value),
       frame = await pane.last(),
       layout = await layoutOf(page),

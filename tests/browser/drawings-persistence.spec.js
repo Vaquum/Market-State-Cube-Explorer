@@ -53,7 +53,7 @@ test("complete code includes hidden/locked objects; invalid input rejects camera
 
 test("opening differing and explicitly empty complete snapshots offers Cancel/Keep/Replace; replacement is undoable", async ({ page, fakeFor }) => {
   const fake = await fakeFor("mini"); await D.open(page, fake); const first = await D.drawing(page), code = await D.copyCode(page), payload = D.decodeCode(code);
-  await page.locator("#ol-drawer-toggle").click();
+  await page.locator("#ol-canvas").press("t");
   const second = await D.drawing(page, [.2, .2], [.6, .5]), before = await D.rows(page);
   await D.persistence.importCode(page, code);
   const dialog = page.locator("#ol-drawing-replace"); await expect(dialog).toBeVisible();
@@ -62,7 +62,7 @@ test("opening differing and explicitly empty complete snapshots offers Cancel/Ke
   await D.persistence.importCode(page, code); await dialog.locator('[data-drawing-replace="replace"]').click();
   await expect.poll(() => D.count(page)).toBe(1); expect((await D.rows(page)).map((r) => r.id)).toEqual([first.id]);
   expect(Object.values((await drawingStorage(page)).local).join("\n"), "pre-replacement collection has durable recovery").toContain(second.id);
-  await page.locator("#ol-drawer-toggle").click(); await D.manager(page);
+  await page.locator("#ol-canvas").press("t"); await D.manager(page);
   await D.command(page, "undo"); await expect.poll(() => D.rows(page)).toEqual(before);
   await D.closeManager(page); payload.drawings = fixture.empty;
   await D.persistence.importCode(page, D.plainCode(payload)); await expect(dialog).toBeVisible(); await dialog.locator('[data-drawing-replace="replace"]').click();

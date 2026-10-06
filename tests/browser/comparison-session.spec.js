@@ -132,7 +132,7 @@ for (const [name, count, initialPage] of [["empty", 0, 0], ["first-page", 32, 0]
     await fake.idle({ quietMs: 300, timeoutMs: 20000 });
     const previous = action(page, "page").filter({ hasText: "Previous" }), next = action(page, "page").filter({ hasText: "Next" });
     async function assertAvailability() {
-      await expect(page.locator("#ol-tab-compare")).toHaveAttribute("aria-selected", "true");
+      await expect(page.locator("#ol-tab-compare")).toHaveAttribute("aria-expanded", "true");
       await expect(entries(page)).toHaveCount(Math.min(24, count - initialPage * 24));
       await expect(previous).toHaveJSProperty("disabled", initialPage === 0);
       await expect(next).toHaveJSProperty("disabled", count === 0 || initialPage === 1);

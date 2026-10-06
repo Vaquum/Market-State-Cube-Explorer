@@ -4,6 +4,7 @@
     el = (id) => root.querySelector("#ol-" + id),
     qsa = (s) => root.querySelectorAll(s),
     PACK = JSON.parse(document.getElementById("origo-lens-data").textContent);
+  let referenceGuide = null;
   // The measurement module (src/encoding.js), inlined before this script. Everything the chart says about
   // a value comes from it, so a page that lacks it says so in its own loading line and stops, where a
   // missing module would otherwise surface as an error nobody sees. `E.text` cannot be used here: E is
@@ -819,6 +820,7 @@
       raf = requestAnimationFrame(() => {
         raf = 0;
         draw();
+        referenceGuide?.refresh();
       });
   }
   // The layout for this size from the state: the lanes of the event strip that are on, the Rows strip while Rows is on, and the profile's
@@ -5936,17 +5938,13 @@
     if (!(S.drawerOpen && S.drawer === "cells")) tableHover = null;
     for (const tab of qsa("[data-drawer]")) {
       const on = tab.dataset.drawer === S.drawer;
-      tab.setAttribute("aria-selected", String(on));
-      tab.tabIndex = on ? 0 : -1;
+      const expanded = on && S.drawerOpen;
+      tab.setAttribute("aria-expanded", String(expanded));
+      tab.setAttribute("aria-pressed", String(expanded));
+      tab.tabIndex = 0;
       el("panel-" + tab.dataset.drawer).hidden = !on;
     }
-    el("drawer-toggle").setAttribute("aria-expanded", String(S.drawerOpen));
-    el("drawer-toggle").setAttribute(
-      "aria-label",
-      S.drawerOpen ? "Close the drawer" : "Open the drawer",
-    );
-    el("drawer-toggle").title =
-      (S.drawerOpen ? "Close the drawer" : "Open the drawer") + " (T)";
+
   }
   function openDrawer(tab, open = true) {
     if (comparisonModel.expanded && (tab !== "compare" || !open)) comparisonExpand(false);
@@ -6026,12 +6024,9 @@
       applyPanels();
       save();
     });
-    el("drawer-toggle").addEventListener("click", () =>
-      openDrawer(S.drawer, !S.drawerOpen),
-    );
     const tabs = [...qsa("[data-drawer]")];
     for (const tab of tabs) {
-      // A tab opens its panel; the open tab, clicked again, closes the drawer.
+      // Each icon toggles its bottom panel; the active icon closes it.
       tab.addEventListener("click", () =>
         openDrawer(
           tab.dataset.drawer,
@@ -6095,8 +6090,10 @@
       sheet = el("controls");
     if (PHONE.matches === (groups[0].parentElement === sheet)) return;
     closePop();
-    const before = PHONE.matches ? sheet.querySelector(":scope > .ol-lines-group") : el("rows-legend");
-    for (const group of groups) before.parentElement.insertBefore(group, before);
+    if (PHONE.matches) {
+      const before = sheet.querySelector(":scope > .ol-lines-group");
+      for (const group of groups) sheet.insertBefore(group, before);
+    } else for (const group of groups) root.querySelector(".ol-surfaces").append(group);
   }
   // Menus: a button's list of choices. The arrows move through them, Home and
   // End jump to the ends, Tab leaves, Escape closes back to the button, and a
@@ -6941,6 +6938,7 @@
   // sits at the bottom of the plot), within the host it is positioned in, kept inside the viewport, and no
   // taller than the room it has.
   function uiPopPlace(panel, chip, align) {
+    if (panel.closest("#ol-reference")) return;
     // a popover that is not open is not placed (it has no offset parent, and asking for it makes the browser lay out the page first)
     if (panel.hidden) return;
     const host = panel.offsetParent;
@@ -7076,8 +7074,10 @@
     // Two string compares per draw: the chip sits inside the pane's top right corner
     const top = Math.round(G.ay + 2) + "px",
       right = Math.round(G.width - (G.x + G.w) + 4) + "px";
-    if (chip.style.top !== top) chip.style.top = top;
-    if (chip.style.right !== right) chip.style.right = right;
+    if (!chip.closest("#ol-reference")) {
+      if (chip.style.top !== top) chip.style.top = top;
+      if (chip.style.right !== right) chip.style.right = right;
+    }
     const counts = shown?.counts ?? {},
       key =
         records
@@ -7415,7 +7415,8 @@
       open.setAttribute("aria-pressed", String(S.profileOpen));
       parts.push(open);
     }
-    panel.replaceChildren(uiEl("div", "ol-pop-head", "Profile tracks"), ...parts);
+    const heading = uiEl("div", "ol-pop-head", "Profile tracks");
+    panel.replaceChildren(heading, ...parts);
     // the control that had the focus gets it back: by its action, and by its value where it has one (the comparison buttons do; "Show the tracks on the chart" does not)
     if (focused?.dataset?.action)
       panel.querySelector(`[data-action="${focused.dataset.action}"]${focused.dataset.value !== undefined ? `[data-value="${focused.dataset.value}"]` : ""}`)?.focus();
@@ -8148,7 +8149,7 @@
       keys = target.dataset.keys,
       desc = target.dataset.hint;
     head.className = "ol-hint-head";
-    head.append(target.getAttribute("aria-label") || target.textContent.trim());
+    head.append(target.dataset.hintLabel || target.getAttribute("aria-label") || target.textContent.trim());
     if (keys) head.append(keyCap(keys));
     if (desc) {
       const line = document.createElement("div");
@@ -8371,6 +8372,7 @@
     });
   }
   function openKeys() {
+    referenceGuide?.clearSpotlight();
     closePop();
     if (!el("keys").open) el("keys").showModal();
   }
@@ -21319,7 +21321,9 @@
     comparisonAnalysis={...comparisonAnalysis,ordered:C.sort?C.sort(comparisonModel.captures,comparisonModel.sort,comparisonAnalysis.metrics):C.analyze(comparisonModel.captures,{...comparisonModel,edge}).ordered};
     comparisonRenderKey=renderKey;comparisonCounters.renders++;
     comparisonUI.render(comparisonModel,comparisonAnalysis,{edge,pocOptions:pocs,status:comparisonMessage,unsaved:comparisonUnsaved,storageRejected:comparisonRejected});
-    el("tab-compare").textContent=`Compare${comparisonModel.captures.length?` · ${comparisonModel.captures.length}`:""}`;
+    const comparisonLabel = `Compare${comparisonModel.captures.length ? ` · ${comparisonModel.captures.length}` : ""}`;
+    el("comparison-count").textContent = comparisonLabel;
+    el("tab-compare").setAttribute("aria-label", comparisonLabel);
     comparisonCounterPublish();
     root.dispatchEvent(new CustomEvent("comparison-render",{detail:{revision:comparisonRevision}}));
   }
@@ -21470,6 +21474,32 @@
 
   comparisonInit();
   drawingInitUI();
+  referenceGuide = window.explorerReference.create({
+    root,
+    beforeOpen: () => { closePop(); hideHint(); setSheet(false); },
+    beforeChange: closePop,
+    closeTransient: () => closePop(true),
+    openKeys,
+    hasTransient: () => Boolean(pop.open || root.dataset.sheet === "open" || root.querySelector("dialog[open]")),
+    region: (name) => {
+      if (!G || comparisonModel.expanded || !canvas.getClientRects().length) return null;
+      const rect = canvas.getBoundingClientRect();
+      let box;
+      if (name === "cells") box = [G.x, G.y, G.w, G.h];
+      else if (name === "rows" && G.sw > 0) box = [G.sx, G.y, G.sw, G.h];
+      else if (name === "profiles" && G.tracks > 0) box = [G.sx + G.sw, G.y, G.profile, G.h];
+      else if (name === "columns") box = [G.x, G.ay, G.w, G.ah];
+      else if (name === "events" && G.eh > 0) box = [G.x, G.ey, G.w, G.eh];
+      else if (name === "selection" && S.selection) {
+        const b = S.selection, left = Math.max(G.x, G.X(b[0])), right = Math.min(G.x + G.w, G.X(b[1])),
+          top = Math.max(G.y, G.Y(b[3])), bottom = Math.min(G.y + G.h, G.Y(b[2]));
+        box = [left, top, right - left, bottom - top];
+      }
+      if (!box || box[2] <= 0 || box[3] <= 0 || rect.width <= 0 || rect.height <= 0) return null;
+      const left = rect.left + box[0], top = rect.top + box[1];
+      return { left, top, width: box[2], height: box[3], right: left + box[2], bottom: top + box[3] };
+    },
+  });
   document.addEventListener("click", (event) => {
     if (event.target instanceof Element && event.target !== canvas && !event.target.closest("[data-drawing-ui]") && event.target.closest("button,input,select,a,[role=tab]")) drawingKeyContext = false;
   }, true);

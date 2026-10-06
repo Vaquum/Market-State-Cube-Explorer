@@ -307,7 +307,7 @@ test("labels share their line budget and focus restores both ink and text withou
     await D.persistence.importCode(page, D.plainCode(value));
     if (await page.locator("#ol-drawing-replace").isVisible()) await page.locator('[data-drawing-replace="replace"]').click();
     await expect(page.locator("#ol-copy-status")).toHaveText("View restored"); await expect.poll(() => D.count(page)).toBe(200);
-    await page.locator("#ol-drawer-toggle").click(); await D.lines(page); await D.plot(page);
+    await page.locator("#ol-canvas").press("t"); await D.lines(page); await D.plot(page);
   }
   await restore(); const unlabeled = (await D.rows(page)).filter((row) => row.state === "Shown").length;
   objects.forEach((object, i) => { object.label = TAG + "budget" + i.toString().padStart(3, "0") + " Breakout retest support zone"; });

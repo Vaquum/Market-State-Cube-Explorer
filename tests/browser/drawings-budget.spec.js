@@ -16,7 +16,7 @@ test("max-count budget paint and inventory retain the same IDs; Focus recovers a
   });
   payload.drawings = { schemaVersion: 1, instrument: "binance:spot:BTCUSDT", visible: true, objects };
   await D.persistence.importCode(page, D.plainCode(payload)); await expect(page.locator("#ol-copy-status")).toHaveText("View restored"); await expect.poll(() => D.count(page)).toBe(200);
-  await page.locator("#ol-drawer-toggle").click(); await D.lines(page); await D.plot(page);
+  await page.locator("#ol-canvas").press("t"); await D.lines(page); await D.plot(page);
   await expect.poll(async () => (await D.rows(page)).filter((r) => r.state === "Shown").length).toBeGreaterThan(0);
   await expect.poll(async () => (await D.rows(page)).filter((r) => r.state === "Held back").length).toBeGreaterThan(0);
   const rows = await D.rows(page), shown = rows.filter((r) => r.state === "Shown"), held = rows.filter((r) => r.state === "Held back");

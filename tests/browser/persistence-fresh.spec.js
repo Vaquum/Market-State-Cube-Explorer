@@ -210,7 +210,7 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     // the import was made in the open drawer, and a browser with nothing stored shows the neutral version notice: both take room from
     // the chart, so with the drawer closed and the banner dismissed the chart is the source's
     await S.notices(pasted);
-    await pasted.locator("#ol-drawer-toggle").click();
+    await pasted.locator("#ol-canvas").press("t");
     await expect(pasted.locator("#ol-drawer")).toHaveAttribute("data-open", "false");
     await fake.idle({ quietMs: 400 });
     await pasted.waitForTimeout(600);

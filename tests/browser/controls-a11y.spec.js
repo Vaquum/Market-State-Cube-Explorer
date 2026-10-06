@@ -61,6 +61,17 @@ async function load(page, fake, probe, hash, script = null) {
   await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
 }
 
+// Scale details are reached through the single reference entry beside the drawer tabs.
+async function showSettings(page, selector = "#ol-legend") {
+  if (!(await page.locator("#ol-reference").isVisible())) await page.locator("#ol-reference-toggle").click();
+  const topic = selector === "#ol-axis-chip" ? "columns" : "scales";
+  if (await page.locator("#ol-reference-topic").inputValue() !== topic) await page.locator("#ol-reference-topic").selectOption(topic);
+}
+async function focusSetting(page, selector) {
+  await showSettings(page, selector);
+  await page.focus(selector);
+}
+
 // What a text element looks like to the eye: its colour composited over the backdrop it really sits on (the chain of
 // computed backgrounds up to the first opaque one), its border colour, its size and its numerals. Runs in the page.
 function COLLECT({ selectors, boundaries, ring = false }) {
@@ -201,13 +212,14 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
   test("the legend chip is reached with Tab, opened with Enter and Space, closed with Escape, and Escape returns the focus", async ({ page, fakeFor, probe }) => {
     const fake = await fakeFor("mini");
     await load(page, fake, probe, VIEW);
-    await page.focus("#ol-untested");
+    await showSettings(page);
+    await page.focus("#ol-reference-next");
     let reached = false;
     for (let i = 0; i < 8 && !reached; i++) {
       await page.keyboard.press("Tab");
       reached = await page.evaluate(() => document.activeElement?.id === "ol-legend");
     }
-    expect(reached, "Tab from the last overlay checkbox reaches the legend chip within a few presses").toBe(true);
+    expect(reached, "Tab through the reference reaches the scale settings").toBe(true);
     for (const key of ["Enter", "Space"]) {
       await page.keyboard.press(key);
       await expect(page.locator("#ol-legend-pop")).toBeVisible();
@@ -222,7 +234,7 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     await page.keyboard.press("Enter");
     await expect(page.locator("#ol-legend-pop")).toBeVisible();
     await page.keyboard.press("Escape");
-    await page.focus("#ol-rows-legend");
+    await focusSetting(page, "#ol-rows-legend");
     await page.keyboard.press("Enter");
     await expect(page.locator("#ol-rows-legend-pop")).toBeVisible();
     await page.keyboard.press("Escape");
@@ -234,7 +246,7 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     await load(page, fake, probe, VIEW);
     // A Value scale takes U and k: Escape from each of the two fields.
     for (const name of ["U", "k"]) {
-      await page.focus("#ol-legend");
+      await focusSetting(page, "#ol-legend");
       await page.keyboard.press("Enter");
       await expect(page.locator("#ol-legend-pop")).toBeVisible();
       const input = page.locator(`#ol-legend-pop form[data-part="manual"] input[name="${name}"]`);
@@ -322,7 +334,7 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     await load(page, fake, probe, VIEW);
     await page.keyboard.press("l");
     await expect(page.locator("#ol-lensbar")).toBeVisible();
-    await page.focus("#ol-legend");
+    await focusSetting(page, "#ol-legend");
     await page.keyboard.press("Enter");
     const report = await page.evaluate(() => {
       const named = (node) => {
@@ -366,8 +378,9 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     await expect(local).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#ol-lens-local")).toBeChecked();
     await expect(page.locator("#ol-lens-status")).toContainText("Local contrast");
+    await page.keyboard.press("Escape");
     await page.locator("#ol-lens-local").uncheck();
-    await page.focus("#ol-legend");
+    await focusSetting(page, "#ol-legend");
     await page.keyboard.press("Enter");
     await expect(page.locator('#ol-legend-pop [data-action="local"]')).toHaveAttribute("aria-pressed", "false");
     await expect(page.locator("#ol-lens-status")).toContainText("Shared scale");
@@ -379,7 +392,7 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     // a `warn-open-lens` action is what is tested here, and the markup a real warning carries is checked in legend.test.js.
     const fake = await fakeFor("mini");
     await load(page, fake, probe, VIEW);
-    await page.focus("#ol-legend");
+    await focusSetting(page, "#ol-legend");
     await page.keyboard.press("Enter");
     const before = await page.locator("#ol-legend").getAttribute("data-context");
     await page.evaluate(() => {
@@ -471,9 +484,11 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     // and the page's own computed colour of the occupancy token.
     const fake = await fakeFor("mini");
     await load(page, fake, probe, VIEW);
-    await page.focus("#ol-legend");
+    await focusSetting(page, "#ol-legend");
     await page.keyboard.press("Enter");
     await expect(page.locator("#ol-legend-pop")).toBeVisible();
+    await fake.idle({ quietMs: 600, timeoutMs: 20000 });
+    await probe.waitForQuiet({ quietMs: 400, timeout: 20000 });
     const read = () =>
       page.evaluate(() => {
         const E = window.explorerEncoding;
@@ -537,10 +552,11 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
       await load(page, fake, probe, VIEW);
       const problems = [];
       const seen = [];
+      await showSettings(page);
       const floors = { selectors: ["#ol-legend", "#ol-rows-legend"], boundaries: ["#ol-legend", "#ol-rows-legend"] };
       checkContrast(await page.evaluate(COLLECT, floors), `${scheme} chips`, problems, seen);
       // The focus ring of a chip reached with the keyboard: its outline colour against what it sits on.
-      await page.focus("#ol-untested");
+      await page.focus("#ol-reference-next");
       await page.keyboard.press("Tab");
       const ring = await page.evaluate(COLLECT, { selectors: [], boundaries: [], ring: true });
       expect(ring.ring.id).toBe("ol-legend");
@@ -548,7 +564,7 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
       expect(reference.contrast(ring.ring.colour, ring.ring.bg), "the focus ring against its backdrop").toBeGreaterThanOrEqual(3);
       // Popovers: the Cells chip's, then the Rows chip's.
       for (const [chip, pop] of [["#ol-legend", "#ol-legend-pop"], ["#ol-rows-legend", "#ol-rows-legend-pop"]]) {
-        await page.focus(chip);
+        await focusSetting(page, chip);
         await page.keyboard.press("Enter");
         await expect(page.locator(pop)).toBeVisible();
         checkContrast(await page.evaluate(COLLECT, { selectors: [pop], boundaries: [`${pop} .ol-action`, `${pop} .ol-legend-field input`, `${pop} .ol-legend-warning`, pop] }), `${scheme} ${pop}`, problems, seen);
@@ -611,9 +627,10 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
       await load(page, fake, probeTools.forPage(page), AXIS_VIEW);
       const problems = [];
       const seen = [];
+      await showSettings(page, "#ol-axis-chip");
       await expect(page.locator("#ol-axis-chip")).toBeVisible();
       checkContrast(await page.evaluate(COLLECT, { selectors: ["#ol-axis-chip", "#ol-keys-scale"], boundaries: ["#ol-axis-chip"] }), `${scheme} axis chip`, problems, seen);
-      await page.focus("#ol-axis-chip");
+      await focusSetting(page, "#ol-axis-chip");
       await page.keyboard.press("Enter");
       await expect(page.locator("#ol-axis-pop")).toBeVisible();
       checkContrast(await page.evaluate(COLLECT, { selectors: ["#ol-axis-pop"], boundaries: ["#ol-axis-pop .ol-action", "#ol-axis-pop"] }), `${scheme} axis popover`, problems, seen);
@@ -632,11 +649,11 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
       const context = await freshContext({ viewport: { width, height } });
       const page = await context.newPage();
       await load(page, fake, probeTools.forPage(page), AXIS_VIEW);
-      await page.focus("#ol-axis-chip");
+      await focusSetting(page, "#ol-axis-chip");
       await page.keyboard.press("Enter");
       await expect(page.locator("#ol-axis-pop")).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
-      const box = await page.locator("#ol-axis-pop").boundingBox();
+      const box = await page.locator("#ol-reference-body").boundingBox();
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(width);
       expect(box.y).toBeGreaterThanOrEqual(0);
@@ -653,7 +670,7 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
       const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
       expect(await overflow(), "the closed chips").toBeLessThanOrEqual(0);
       for (const [chip, pop] of [["#ol-legend", "#ol-legend-pop"], ["#ol-rows-legend", "#ol-rows-legend-pop"]]) {
-        await page.focus(chip);
+        await focusSetting(page, chip);
         await page.keyboard.press("Enter");
         await expect(page.locator(pop)).toBeVisible();
         expect(await overflow(), `${pop} open`).toBeLessThanOrEqual(0);
@@ -684,7 +701,7 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
   test("B09c, the manual domain: a bad pair is refused beside the field with the module's reason", async ({ page, fakeFor, probe }) => {
     const fake = await fakeFor("mini");
     await load(page, fake, probe, VIEW);
-    await page.focus("#ol-legend");
+    await focusSetting(page, "#ol-legend");
     await page.keyboard.press("Enter");
     const form = page.locator('#ol-legend-pop form[data-part="manual"]');
     // k above U is refused with the module's text; the field is marked invalid and described by the message.
@@ -716,7 +733,7 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
   test("B09c, the share window: an asymmetric Taker flow window is refused with the window's reason, a symmetric one is not", async ({ page, fakeFor, probe }) => {
     const fake = await fakeFor("mini");
     await load(page, fake, probe, "#w=24h&mode=flow");
-    await page.focus("#ol-legend");
+    await focusSetting(page, "#ol-legend");
     await page.keyboard.press("Enter");
     const form = page.locator('#ol-legend-pop form[data-part="manual"]');
     await expect(form.locator('input[name="lo"]')).toBeVisible();

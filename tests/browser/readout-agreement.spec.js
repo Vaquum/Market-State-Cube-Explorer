@@ -296,9 +296,11 @@ test.describe("B03 readout agreement", () => {
     await page.goto(`${fake.url}/${VIEW}`);
     await atRest(page, fake, probe);
     await page.locator("#ol-mode").click();
+    await page.locator('#ol-mode-menu [data-mode-step="basis"]').click();
     const item = page.getByRole("menuitemradio", { name: /Intensity/ });
-    test.skip((await item.count()) === 0, "Intensity cannot be chosen from outside yet: the Scale section of the Cells menu (DOM package) and the address form of the basis (persistence) are not on this page");
+    await expect(item).toBeVisible();
     await item.click();
+    await page.keyboard.press("Escape");
     await page.locator('[data-drawer="cells"]').click();
     const canvas = await page.locator("#ol-canvas").boundingBox();
     const box = await fixtureBoxOf(page, canvas, KEY);

@@ -247,61 +247,58 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     }
   });
 
-  test("the Scale section of the Cells menu: reached with the arrows, named, no shortcuts, a choice closes the menu and is remembered", async ({ page, fakeFor, probe }) => {
+  test("the Cells steps are walked with arrows, named, and remember scale choices", async ({ page, fakeFor, probe }) => {
     const fake = await fakeFor("mini");
     await load(page, fake, probe, VIEW);
     await page.focus("#ol-mode");
     await page.keyboard.press("Enter");
-    await expect(page.locator("#ol-mode-menu")).toBeVisible();
-    // Walk every item with ArrowDown and record what the focused item is called.
-    const names = [];
-    const count = await page.locator('#ol-mode-menu [role^="menuitem"]').count();
-    for (let i = 0; i < count; i++) {
-      names.push(await page.evaluate(() => {
-        const item = document.activeElement;
-        const named = item.getAttribute("aria-labelledby");
-        return { name: named ? document.getElementById(named).textContent.trim() : item.textContent.trim(), role: item.getAttribute("role"), scale: item.dataset.scaleItem ?? null, keys: item.getAttribute("aria-keyshortcuts") };
-      }));
-      await page.keyboard.press("ArrowDown");
+    const menu = page.locator("#ol-mode-menu"), names = [];
+    await expect(menu).toHaveAttribute("data-step", "dataset");
+    for (const step of ["transform", "basis", "policy", "options"]) {
+      await menu.locator(`[data-mode-step="${step}"]`).click();
+      const count = await menu.locator('[role^="menuitem"]').count();
+      for (let i = 0; i < count; i++) {
+        names.push(await page.evaluate(() => {
+          const item = document.activeElement, named = item.getAttribute("aria-labelledby");
+          return { name: named ? document.getElementById(named).textContent.trim() : item.textContent.trim(), role: item.getAttribute("role"), scale: item.dataset.scaleItem ?? null, keys: item.getAttribute("aria-keyshortcuts") };
+        }));
+        await page.keyboard.press("ArrowDown");
+      }
     }
-    const scale = names.filter((n) => n.scale);
-    expect(scale.map((n) => n.name), "the Scale section, in order").toEqual(["Amount", "Intensity", "Value (log)", "Value (linear)", "Relative rank", "Explore", "Auto color", "Comparison lock", "Local contrast (lens)", "Fit scale"]);
-    expect(scale.map((n) => n.role)).toEqual(["menuitemradio", "menuitemradio", "menuitemradio", "menuitemradio", "menuitemradio", "menuitemradio", "menuitemradio", "menuitemcheckbox", "menuitemcheckbox", "menuitem"]);
-    expect(scale.filter((n) => n.keys), "no item of the Scale section has a shortcut of its own (DR-05)").toEqual([]);
-    expect(await page.locator("#ol-mode-menu [data-scale-item] kbd").count()).toBe(0);
-    // Choose Relative rank with the keyboard.
-    await page.focus('#ol-mode-menu [data-scale-item="transform:rank"]');
+    const scale = names.filter(n => n.scale);
+    expect(scale.map(n => n.name)).toEqual(["Value (log)", "Value (linear)", "Relative rank", "Amount", "Intensity", "Explore", "Auto color", "Comparison lock", "Local contrast (lens)", "Fit scale"]);
+    expect(scale.map(n => n.role)).toEqual(["menuitemradio", "menuitemradio", "menuitemradio", "menuitemradio", "menuitemradio", "menuitemradio", "menuitemradio", "menuitemcheckbox", "menuitemcheckbox", "menuitem"]);
+    expect(scale.filter(n => n.keys)).toEqual([]);
+    await menu.locator('[data-mode-step="transform"]').click();
     const before = await page.locator("#ol-legend").getAttribute("data-context");
+    await page.focus('#ol-mode-menu [data-scale-item="transform:rank"]');
     await page.keyboard.press("Enter");
-    await expect(page.locator("#ol-mode-menu")).toBeHidden();
-    expect(await page.evaluate(() => document.activeElement?.id), "a choice returns the focus to the menu's button").toBe("ol-mode");
+    await expect(menu).toHaveAttribute("data-step", "basis");
     await expect.poll(() => page.locator("#ol-legend").getAttribute("data-context")).not.toBe(before);
     expect(await page.locator("#ol-legend").getAttribute("data-context")).toContain("rank");
-    // Reopened, it is the checked one and Value (log) is not.
-    await page.keyboard.press("Enter");
-    await expect(page.locator('#ol-mode-menu [data-scale-item="transform:rank"]')).toHaveAttribute("aria-checked", "true");
-    await expect(page.locator('#ol-mode-menu [data-scale-item="transform:log"]')).toHaveAttribute("aria-checked", "false");
-    // Linear is offered only for Value: with Relative rank on it is disabled and says so.
-    const linear = page.locator('#ol-mode-menu [data-scale-item="transform:linear"]');
+    await menu.locator('[data-mode-nav="back"]').click();
+    await expect(menu.locator('[data-scale-item="transform:rank"]')).toHaveAttribute("aria-checked", "true");
+    await expect(menu.locator('[data-scale-item="transform:log"]')).toHaveAttribute("aria-checked", "false");
+    const linear = menu.locator('[data-scale-item="transform:linear"]');
     await expect(linear).toHaveAttribute("aria-disabled", "true");
-    const why = await linear.evaluate((item) => document.getElementById(item.getAttribute("aria-describedby")).textContent.trim());
-    expect(why).toBe("Linear is offered only for Value");
-    // And back to Value (log).
+    expect(await linear.evaluate(item => document.getElementById(item.getAttribute("aria-describedby")).textContent.trim())).toBe("Linear is offered only for Value");
     await page.focus('#ol-mode-menu [data-scale-item="transform:log"]');
     await page.keyboard.press("Enter");
     await expect.poll(() => page.locator("#ol-legend").getAttribute("data-context")).toBe(before);
-    await page.focus("#ol-mode");
-    await page.keyboard.press("Enter");
     await page.keyboard.press("Escape");
-    await expect(page.locator("#ol-mode-menu")).toBeHidden();
-    expect(await page.evaluate(() => document.activeElement?.id), "Escape returns the focus to the button").toBe("ol-mode");
+    await expect(menu).toBeHidden();
+    await expect(page.locator("#ol-mode")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(menu).toHaveAttribute("data-step", "dataset");
+    await page.keyboard.press("Escape");
   });
 
-  test("a measure that offers no scale choice shows disabled items that say why, and the Rows menu has its own section", async ({ page, fakeFor, probe }) => {
+  test("a measure that offers no scale choice says why, and Rows separates its scale steps", async ({ page, fakeFor, probe }) => {
     const fake = await fakeFor("mini");
     await load(page, fake, probe, "#w=24h&mode=flow&rows=delta");
     await page.focus("#ol-mode");
     await page.keyboard.press("Enter");
+    await page.locator('#ol-mode-menu [data-mode-step="options"]').click();
     const fit = page.locator('#ol-mode-menu [data-scale-item="fit"]');
     await expect(fit).toHaveAttribute("aria-disabled", "true");
     expect(await fit.evaluate((item) => document.getElementById(item.getAttribute("aria-describedby")).textContent.trim())).toBe("Not offered for Taker flow");
@@ -310,7 +307,11 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
     await page.keyboard.press("Escape");
     await page.focus("#ol-rows");
     await page.keyboard.press("Enter");
-    const names = await page.locator('#ol-rows-menu [data-scale-item]').evaluateAll((items) => items.map((item) => item.dataset.scaleItem));
+    const names = [];
+    for (const step of ["transform", "policy", "options"]) {
+      await page.locator(`#ol-rows-menu [data-rows-step="${step}"]`).click();
+      names.push(...await page.locator('#ol-rows-menu [data-scale-item]').evaluateAll((items) => items.map((item) => item.dataset.scaleItem)));
+    }
     // Rows Delta: Values only (no Relative rank for a signed measure), the policies, the lock and Fit; no Local contrast.
     expect(names).toEqual(["transform:log", "transform:linear", "policy:explore", "policy:auto", "lock", "fit"]);
     await page.keyboard.press("Escape");    await fake.idle({ quietMs: 400, timeoutMs: 20000 });
@@ -557,9 +558,23 @@ test.describe("B23 controls of the scale display: keys, names, contrast, size", 
       // The Cells menu's Scale section, open, with an item under the keyboard's focus.
       await page.focus("#ol-mode");
       await page.keyboard.press("Enter");
-      checkContrast(await page.evaluate(COLLECT, { selectors: ['#ol-mode-menu [data-scale-item]', '#ol-mode-menu .ol-menu-cap'], boundaries: [] }), `${scheme} Scale section`, problems, seen);
-      expect(await smallControls(page.locator("#ol-mode-menu")), "Scale items under 24 css px").toEqual([]);
+      for (const step of ["dataset", "transform", "basis", "policy", "options"]) {
+        await page.locator(`#ol-mode-menu [data-mode-step="${step}"]`).click();
+        checkContrast(await page.evaluate(COLLECT, { selectors: ['#ol-mode-menu'], boundaries: [] }), `${scheme} Cells ${step}`, problems, seen);
+        expect(await smallControls(page.locator("#ol-mode-menu")), "Cells controls under 24 css px").toEqual([]);
+      }
       await page.keyboard.press("Escape");
+      for (const [id, steps] of [["rows", ["dataset", "transform", "period", "policy", "options"]], ["pane", ["dataset", "timeframe"]]]) {
+        await page.locator(`#ol-${id}`).click();
+        if (id === "pane") await page.locator('#ol-pane-menu [data-pane="rsi"]').click();
+        for (const step of steps) {
+          const menu = `#ol-${id}-menu`;
+          await page.locator(`${menu} [data-${id}-step="${step}"]`).click();
+          checkContrast(await page.evaluate(COLLECT, { selectors: [menu], boundaries: [`${menu} input`] }), `${scheme} ${id} ${step}`, problems, seen);
+          expect(await smallControls(page.locator(menu)), `${id} controls under 24 css px`).toEqual([]);
+        }
+        await page.keyboard.press("Escape");
+      }
       // The lens bar's toggle.
       await page.keyboard.press("l");
       await expect(page.locator("#ol-lensbar")).toBeVisible();

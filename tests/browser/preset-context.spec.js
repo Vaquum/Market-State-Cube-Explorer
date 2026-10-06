@@ -105,7 +105,9 @@ test("Value (linear) is another context than Value (log), and log comes back wit
 
   const choose = async (name) => {
     await page.locator("#ol-mode").click();
+    await page.locator('#ol-mode-menu [data-mode-step="transform"]').click();
     await page.getByRole("menuitemradio", { name }).click();
+    await page.keyboard.press("Escape");
     return calm(ctx);
   };
   const linear = await choose(/Value \(linear\)/);

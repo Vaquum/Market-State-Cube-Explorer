@@ -79,6 +79,8 @@ test.describe("B39 the profile tracks at a phone's width", () => {
     await ready(page, fake, probe);
     const L = await layoutOf(page);
     expect(stripOf(await pane.last(), L).length, "the strip stays at a phone's width").toBeGreaterThan(3);
+    await page.locator("#ol-reference-toggle").click();
+    await page.locator("#ol-reference-topic").selectOption("profiles");
     const chip = page.locator("#ol-profile-chip");
     await expect(chip, "the disclosure's chip with the summary of the active measures and domains").toBeVisible();
     await expect(chip).toContainText(/Current|Volume/);

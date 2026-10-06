@@ -100,7 +100,7 @@ test("scrubbing back never paints a mapping fitted after the edge; leaving repla
 test("a live Comparison lock entering replay is an external comparison override, labelled when it reaches past the edge", async ({ page, fakeFor, probe, surface }) => {
   const fake = await fakeFor("standard");
   const ctx = { page, fake, probe, surface };
-  await page.goto(`${fake.url}/#w=24h`);
+  await page.goto(`${fake.url}/#w=24h&r=4,0`);
   const live = await calm(ctx);
   await popoverAction(page, surface, "cells", "Comparison lock");
   await calm(ctx);

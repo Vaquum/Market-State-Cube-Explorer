@@ -151,7 +151,7 @@ test("Cells and Rows hold their own mappings: a Cells manual domain leaves Rows 
 test("the lock freezes every displayed Auto axis at its domain (Columns)", async ({ page, fakeFor, probe, surface }) => {
   const fake = await fakeFor("standard");
   const ctx = { page, fake, probe, surface };
-  await page.goto(`${fake.url}/#w=7d`);
+  await page.goto(`${fake.url}/#w=7d&r=7,0`);
   await calm(ctx);
   await expect.poll(async () => (await surface.chip("axis")).data.axisState, { message: "the Columns axis is Auto" }).toBe("auto");
   const before = (await surface.chip("axis")).data;
@@ -171,7 +171,7 @@ test("the lock freezes every displayed Auto axis at its domain (Columns)", async
 test("a locked address restores the lock, the held mapping and the frozen domains in a fresh browser", async ({ page, fakeFor, probe, surface, openLink }) => {
   const fake = await fakeFor("standard");
   const ctx = { page, fake, probe, surface };
-  await page.goto(`${fake.url}/#w=7d`);
+  await page.goto(`${fake.url}/#w=7d&r=7,0`);
   const before = await calm(ctx);
   await popoverAction(page, surface, "cells", "Comparison lock");
   const locked = await calm(ctx);

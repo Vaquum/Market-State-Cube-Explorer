@@ -31,6 +31,8 @@ async function calm({ fake, probe, surface }, { channel = "cells", quietMs = 450
 
 // Choose a window by its real key and wait until the page is calm.
 async function gotoWindow(ctx, name) {
+  // Chart shortcuts belong to the canvas; settings in the reference own their editing keys.
+  await ctx.page.locator("#ol-canvas").focus();
   await ctx.surface.pressPreset(KEY_OF[name]);
   return calm(ctx);
 }

@@ -122,7 +122,7 @@ test.describe("B52 portable state after the final changes", () => {
     const fake = await fakeFor("standard");
     await context.grantPermissions(CLIPBOARD, { origin: fake.url });
     const ctx = { page, fake, probe, surface };
-    await page.goto(`${fake.url}/#w=24h&vis=2&ap=${P.AP}&pane=efficiency`);
+    await page.goto(`${fake.url}/#w=24h&r=4,0&vis=2&ap=${P.AP}&pane=efficiency`);
     const live = await H.calm(ctx);
     await P.popoverAction(page, surface, "Comparison lock");
     await H.calm(ctx);
@@ -172,7 +172,7 @@ test.describe("B52 portable state after the final changes", () => {
     const first = await fakeFor("standard");
     await context.grantPermissions(CLIPBOARD, { origin: first.url });
     const ctx = { page, fake: first, probe, surface };
-    await page.goto(`${first.url}/#w=7d&vis=2&ap=${P.AP}&mode=delta`);
+    await page.goto(`${first.url}/#w=7d&r=7,0&vis=2&ap=${P.AP}&mode=delta`);
     await H.calm(ctx);
     await P.popoverAction(page, surface, "Comparison lock");
     const before = await H.calm(ctx);

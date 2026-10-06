@@ -170,7 +170,7 @@ test("the open column is left out of the cohort", async ({ page, fakeFor, probe,
 // Last-bit different sums (a delta-carried cell against a re-read one) must not mint a new mapping under Auto (DD-19).
 test("equivalent reads keep the same mapping id under Auto colour", async ({ page, fakeFor, probe, surface }) => {
   const fake = await fakeFor("standard");
-  await page.goto(`${fake.url}/#w=24h`);
+  await page.goto(`${fake.url}/#w=24h&r=4,0`);
   await calm({ page, fake, probe, surface });
   const opened = await surface.openLegendDetails("cells");
   await opened.popover.getByRole("button", { name: /^Auto color/ }).focus();

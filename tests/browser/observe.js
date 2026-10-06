@@ -98,9 +98,10 @@ function observe(page, { locate = null, timeout = 3000 } = {}) {
     const selector = chipSelector(channel);
     const popoverSelector = SURFACE.popovers[channel];
     const guide = page.locator("#ol-reference"), topic = channel === "axis" ? "columns" : "scales";
-    const openedGuide = !(await guide.isVisible());
+    const hasGuide = await guide.count() > 0;
+    const openedGuide = hasGuide && !(await guide.isVisible());
     if (openedGuide) await page.locator("#ol-reference-toggle").click();
-    if (await page.locator("#ol-reference-topic").inputValue() !== topic) await page.locator("#ol-reference-topic").selectOption(topic);
+    if (hasGuide && await page.locator("#ol-reference-topic").inputValue() !== topic) await page.locator("#ol-reference-topic").selectOption(topic);
     const trigger = await need(selector, `chip ${channel}`);
     await trigger.focus();
     await page.keyboard.press("Enter");

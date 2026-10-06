@@ -1126,6 +1126,14 @@
   padding: var(--sp-1) var(--gutter);
   border-bottom: 1px solid var(--ol-line);
 }
+#origo-lens .ol-reset-canvas {
+  margin-left: auto;
+  flex: none;
+}
+#origo-lens .ol-chart-head > #ol-legend {
+  /* Let the scale label shorten before the reset icon takes another row. */
+  flex: 1 1 120px;
+}
 #origo-lens .ol-marks {
   display: flex;
   flex-wrap: wrap;
@@ -3846,6 +3854,19 @@
           tabindex="-1"
           hidden
         ></div>
+        <button
+          type="button"
+          id="ol-reset-canvas"
+          class="ol-icon-button ol-reset-canvas cursor-interaction"
+          aria-label="Reset canvas"
+          aria-haspopup="dialog"
+          aria-controls="ol-reset-confirm"
+          data-hint="Start over with the default chart; clear drawings, references, selection, replay and comparison cells"
+        >
+          <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 6a5 5 0 1 1 0 4M3 2.5V6h3.5" />
+          </svg>
+        </button>
       </div>
       <div id="ol-drawing-toolbar" class="ol-drawing-toolbar" data-drawing-ui role="group" aria-label="Active drawing" hidden>
         <i id="ol-drawing-toolbar-swatch" class="ol-drawing-swatch" aria-hidden="true"></i>
@@ -4731,6 +4752,16 @@
   </dialog>
   <dialog id="ol-drawing-confirm" class="ol-keys ol-drawing-dialog ol-drawing-choice-dialog" data-temporary="modal" data-drawing-ui role="alertdialog" aria-labelledby="ol-drawing-confirm-title" aria-describedby="ol-drawing-confirm-note">
     <div class="ol-keys-body"><h2 id="ol-drawing-confirm-title">Delete drawings?</h2><p id="ol-drawing-confirm-note" class="ol-keys-note">This includes locked drawings. Undo restores the complete collection.</p><div class="ol-drawing-dialog-actions"><button type="button" id="ol-drawing-confirm-cancel" class="ol-action cursor-interaction">Cancel</button><button type="button" id="ol-drawing-confirm-delete" class="ol-action cursor-interaction">Delete all</button></div></div>
+  </dialog>
+  <dialog id="ol-reset-confirm" class="ol-keys ol-drawing-dialog ol-drawing-choice-dialog" data-temporary="modal" role="alertdialog" aria-labelledby="ol-reset-confirm-title" aria-describedby="ol-reset-confirm-note">
+    <div class="ol-keys-body">
+      <h2 id="ol-reset-confirm-title">Reset canvas?</h2>
+      <p id="ol-reset-confirm-note" class="ol-keys-note"></p>
+      <div class="ol-drawing-dialog-actions">
+        <button type="button" id="ol-reset-cancel" class="ol-action cursor-interaction">Cancel</button>
+        <button type="button" id="ol-reset-apply" class="ol-action ol-solid cursor-interaction">Reset</button>
+      </div>
+    </div>
   </dialog>
   <dialog class="ol-keys" id="ol-keys" data-temporary="modal" aria-labelledby="ol-keys-title">
     <div class="ol-keys-body">
@@ -18145,6 +18176,7 @@
       // rewritten to fit the current measure; E.policy.effective says what they mean for it.
       scale: structuredClone(E.policy.DEFAULTS),
     };
+  const initialState = structuredClone(S);
   let sources = {},
     G = {},
     colors = {},
@@ -26135,6 +26167,10 @@
   }
   function bindTopBar() {
     bindHints();
+    el("reset-canvas").addEventListener("click", requestCanvasReset);
+    el("reset-cancel").addEventListener("click", closeCanvasReset);
+    el("reset-apply").addEventListener("click", () => { closeCanvasReset(); resetCanvas(); });
+    el("reset-confirm").addEventListener("cancel", (event) => { event.preventDefault(); closeCanvasReset(); });
     bindMenu("window", "window-menu", buildWindowMenu);
     bindMenu("follow", "follow-menu", buildFollowMenu);
     bindMenu("mode", "mode-menu", buildModeMenu);
@@ -37656,6 +37692,65 @@
   }
 
   // Commands shared by the controls and their keys.
+  function requestCanvasReset() {
+    closePop();
+    comparisonCloseMenu();
+    const drawings = drawingCollection().objects, captures = comparisonModel.captures.length;
+    if (!drawings.length && !captures && !drawingDraft) { resetCanvas(); return; }
+    const locked = drawings.filter((object) => object.locked).length,
+      items = [
+        drawings.length ? `${drawings.length} drawing${drawings.length === 1 ? "" : "s"}${locked ? ` (${locked} locked)` : ""}` : "",
+        drawingDraft ? "the unfinished drawing" : "",
+        captures ? `${captures} comparison cell${captures === 1 ? "" : "s"}` : "",
+      ].filter(Boolean);
+    el("reset-confirm-note").textContent = `Clear ${items.join(" and ")} and restore the default 24-hour chart? References, selection and replay will also clear. Saved views and appearance preferences stay. Drawing Undo can restore cleared drawings.`;
+    el("reset-confirm").showModal();
+    el("reset-cancel").focus({ preventScroll: true });
+  }
+  function closeCanvasReset() {
+    el("reset-confirm").close();
+    el("reset-canvas").focus({ preventScroll: true });
+  }
+  function resetCanvas() {
+    setPlaying(false);
+    if (inspect.on) { inspect.prev = "pan"; inspectExit(); }
+    if (comparisonModel.expanded) comparisonExpand(false);
+    drawingCancelOperation();
+    focusClear();
+    trendTool = false;
+    drawingEntryTool = "pan";
+    activeDrawingId = drawingAnchorTime = drawingLastColor = null;
+    nav.alt = nav.shift = nav.hold = false;
+    nav.touchTip = nav.zoomTime = nav.zoomPending = false;
+    nav.pinch = nav.wheel = nav.last = drag = null;
+    nav.zoomKeys.clear();
+    nav.pressed.clear();
+    nav.pointers.clear();
+    clearTimeout(nav.zoomTimer);
+    gestureAt = 0;
+    tableHover = hover = transition = null;
+    scaleRt.ctl.cancel();
+    clearTimeout(scaleRt.timer);
+    scaleRt.timer = 0;
+    scaleRt.store = E.store.create();
+    scaleRt.axes = E.axis.registry();
+    scaleRt.prev = { cells: null, rows: null, lens: null };
+    scaleRt.ask = { cells: null, rows: null, lens: null };
+    scaleRt.fitKey = { cells: "", rows: "", lens: "" };
+    scaleRt.noFit = { cells: "", rows: "", lens: "" };
+    scaleRt.fitMemo.clear();
+    Object.assign(S, structuredClone(initialState));
+    applyView(readView("#w=24h&vis=2"));
+    drawingCommit("Reset canvas", E.drawings.empty());
+    drawingKeyContext = false;
+    comparisonMessage = "";
+    comparisonCommit(comparisonEmpty(), true);
+    window.explorerState?.saveScales?.(scaleRt.store.toJSON("live"));
+    recordView("Reset canvas");
+    update();
+    save();
+    el("reset-canvas").focus({ preventScroll: true });
+  }
   function chooseWindow(w) {
     drawingCancelOperation(); drawingKeyContext = false;
     if (pop.open?.panel === el("window-menu")) closePop(true);
@@ -38608,7 +38703,7 @@
     const text = String(value); if (node.getAttribute(name) !== text) node.setAttribute(name, text);
   }
   function drawingUIOwns(target = document.activeElement) { return Boolean(target?.closest?.("[data-drawing-ui]")); }
-  function drawingDialogOpen() { return Boolean(root.querySelector("dialog[data-drawing-ui][open]")); }
+  function drawingDialogOpen() { return Boolean(root.querySelector("dialog[data-drawing-ui][open], #ol-reset-confirm[open]")); }
   function drawingEditorOpen() { return Boolean(drawingEditorState && el("drawing-editor").open); }
   function drawingEditorPending() {
     return Boolean(drawingEditorState && (drawingEditorState.isNew || drawingFieldIds.some((key, i) => el(`drawing-${key}`).value !== drawingEditorState.fields[i])));

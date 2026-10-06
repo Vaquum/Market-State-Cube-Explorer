@@ -206,6 +206,7 @@
       // rewritten to fit the current measure; E.policy.effective says what they mean for it.
       scale: structuredClone(E.policy.DEFAULTS),
     };
+  const initialState = structuredClone(S);
   let sources = {},
     G = {},
     colors = {},
@@ -8196,6 +8197,10 @@
   }
   function bindTopBar() {
     bindHints();
+    el("reset-canvas").addEventListener("click", requestCanvasReset);
+    el("reset-cancel").addEventListener("click", closeCanvasReset);
+    el("reset-apply").addEventListener("click", () => { closeCanvasReset(); resetCanvas(); });
+    el("reset-confirm").addEventListener("cancel", (event) => { event.preventDefault(); closeCanvasReset(); });
     bindMenu("window", "window-menu", buildWindowMenu);
     bindMenu("follow", "follow-menu", buildFollowMenu);
     bindMenu("mode", "mode-menu", buildModeMenu);
@@ -19717,6 +19722,65 @@
   }
 
   // Commands shared by the controls and their keys.
+  function requestCanvasReset() {
+    closePop();
+    comparisonCloseMenu();
+    const drawings = drawingCollection().objects, captures = comparisonModel.captures.length;
+    if (!drawings.length && !captures && !drawingDraft) { resetCanvas(); return; }
+    const locked = drawings.filter((object) => object.locked).length,
+      items = [
+        drawings.length ? `${drawings.length} drawing${drawings.length === 1 ? "" : "s"}${locked ? ` (${locked} locked)` : ""}` : "",
+        drawingDraft ? "the unfinished drawing" : "",
+        captures ? `${captures} comparison cell${captures === 1 ? "" : "s"}` : "",
+      ].filter(Boolean);
+    el("reset-confirm-note").textContent = `Clear ${items.join(" and ")} and restore the default 24-hour chart? References, selection and replay will also clear. Saved views and appearance preferences stay. Drawing Undo can restore cleared drawings.`;
+    el("reset-confirm").showModal();
+    el("reset-cancel").focus({ preventScroll: true });
+  }
+  function closeCanvasReset() {
+    el("reset-confirm").close();
+    el("reset-canvas").focus({ preventScroll: true });
+  }
+  function resetCanvas() {
+    setPlaying(false);
+    if (inspect.on) { inspect.prev = "pan"; inspectExit(); }
+    if (comparisonModel.expanded) comparisonExpand(false);
+    drawingCancelOperation();
+    focusClear();
+    trendTool = false;
+    drawingEntryTool = "pan";
+    activeDrawingId = drawingAnchorTime = drawingLastColor = null;
+    nav.alt = nav.shift = nav.hold = false;
+    nav.touchTip = nav.zoomTime = nav.zoomPending = false;
+    nav.pinch = nav.wheel = nav.last = drag = null;
+    nav.zoomKeys.clear();
+    nav.pressed.clear();
+    nav.pointers.clear();
+    clearTimeout(nav.zoomTimer);
+    gestureAt = 0;
+    tableHover = hover = transition = null;
+    scaleRt.ctl.cancel();
+    clearTimeout(scaleRt.timer);
+    scaleRt.timer = 0;
+    scaleRt.store = E.store.create();
+    scaleRt.axes = E.axis.registry();
+    scaleRt.prev = { cells: null, rows: null, lens: null };
+    scaleRt.ask = { cells: null, rows: null, lens: null };
+    scaleRt.fitKey = { cells: "", rows: "", lens: "" };
+    scaleRt.noFit = { cells: "", rows: "", lens: "" };
+    scaleRt.fitMemo.clear();
+    Object.assign(S, structuredClone(initialState));
+    applyView(readView("#w=24h&vis=2"));
+    drawingCommit("Reset canvas", E.drawings.empty());
+    drawingKeyContext = false;
+    comparisonMessage = "";
+    comparisonCommit(comparisonEmpty(), true);
+    window.explorerState?.saveScales?.(scaleRt.store.toJSON("live"));
+    recordView("Reset canvas");
+    update();
+    save();
+    el("reset-canvas").focus({ preventScroll: true });
+  }
   function chooseWindow(w) {
     drawingCancelOperation(); drawingKeyContext = false;
     if (pop.open?.panel === el("window-menu")) closePop(true);
@@ -20669,7 +20733,7 @@
     const text = String(value); if (node.getAttribute(name) !== text) node.setAttribute(name, text);
   }
   function drawingUIOwns(target = document.activeElement) { return Boolean(target?.closest?.("[data-drawing-ui]")); }
-  function drawingDialogOpen() { return Boolean(root.querySelector("dialog[data-drawing-ui][open]")); }
+  function drawingDialogOpen() { return Boolean(root.querySelector("dialog[data-drawing-ui][open], #ol-reset-confirm[open]")); }
   function drawingEditorOpen() { return Boolean(drawingEditorState && el("drawing-editor").open); }
   function drawingEditorPending() {
     return Boolean(drawingEditorState && (drawingEditorState.isNew || drawingFieldIds.some((key, i) => el(`drawing-${key}`).value !== drawingEditorState.fields[i])));

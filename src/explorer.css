@@ -1109,6 +1109,14 @@
   padding: var(--sp-1) var(--gutter);
   border-bottom: 1px solid var(--ol-line);
 }
+#origo-lens .ol-reset-canvas {
+  margin-left: auto;
+  flex: none;
+}
+#origo-lens .ol-chart-head > #ol-legend {
+  /* Let the scale label shorten before the reset icon takes another row. */
+  flex: 1 1 120px;
+}
 #origo-lens .ol-marks {
   display: flex;
   flex-wrap: wrap;

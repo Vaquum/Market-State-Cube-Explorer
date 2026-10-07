@@ -4050,13 +4050,14 @@
     const held = (moving ? cellMotionResults : cellContextResults).get(spec.key);
     const src = held ? null : moving ? motionExact([spec.a, spec.b, 0, 2 ** 32], n, m) : exactSource([spec.a, spec.b, 0, 2 ** 32], n, m);
     const query = held?.query ?? (src ? moving ? boundedMotion(src, n, m, [spec.a, Math.min(spec.b, src.end, cut), 0, Infinity]) : aggregate(src, n, m, [spec.a, spec.b, 0, Infinity]) : null);
+    const coverageStart = held?.start ?? (src ? sourceRange(src)[0] : Infinity);
     const end = held?.end ?? (src ? moving ? Math.min(src.end, cut) : Math.min(sourceRange(src)[1], cut) : -Infinity);
     const columns = query ? new Map(query.cols.map((col) => [col.c, col])) : null;
     const samples = Array.from({ length: 12 }, (_, i) => {
       const col = c - 11 + i, start = col * ts, stop = Math.min((col + 1) * ts, cut);
       if (col < 0 || start >= cut || (col !== c && (col + 1) * ts > cut)) return null;
       let q = query, through = end;
-      if (!q || start < spec.a || stop > through) {
+      if (!q || start < coverageStart || stop > through) {
         const own = moving ? motionExact([start, Math.ceil(stop), 0, 2 ** 32], n, m) : exactSource([start, Math.ceil(stop), 0, 2 ** 32], n, m);
         through = own ? moving ? Math.min(own.end, cut) : Math.min(sourceRange(own)[1], cut) : -Infinity;
         if (!own || through < stop) return null;
@@ -4068,7 +4069,7 @@
     });
     const complete = samples.every((sample, i) => c - 11 + i < 0 || sample !== null);
     const failed = (moving ? motion.failed : cube.failed).get(spec.key);
-    return { spec, samples, complete, state: failed ? "failed" : complete ? "ready" : PACK.live ? "pending" : "unsupported", error: failed };
+    return { spec, samples, complete, state: failed ? "failed" : complete ? "ready" : held ? "unsupported" : PACK.live ? "pending" : "unsupported", error: failed };
   }
   function inspectedCell() {
     if (!inspect.on || !["cells", "lens"].includes(inspect.surface) || S.mode === "candles") return null;
@@ -4093,7 +4094,7 @@
       loading: moving ? "Reading this cell's path and dwell…" : "Reading this price band's history…",
       decode: async (body) => ({ block: await unpack(body.block, s.key), body }),
       apply: ({ block, body }) => {
-        cache.set(s.key, { query: moving ? motionSummary(block.cells, s.n, s.m) : summarize(block.cells, s.n, s.m), end: moving ? Math.min(body.end, s.cut) : s.cut });
+        cache.set(s.key, { query: moving ? motionSummary(block.cells, s.n, s.m) : summarize(block.cells, s.n, s.m), start: block.b0, end: Math.min(moving ? body.end : block.b1, s.cut) });
         while (cache.size > 12) cache.delete(cache.keys().next().value);
       },
     };
@@ -4149,6 +4150,11 @@
   function cellPresentation(tip, { c, r, ts, ps, z, readout, frame = last?.sc?.cells, cells = last?.shown, motionCells = last?.mv?.shown, bounds = last?.b, detailed = false }) {
     const raw = tip.querySelector(".ol-tip-rows");
     if (!raw) return;
+    const hidden = readout?.typed?.tag === "hidden" || c * ts >= last.cut;
+    if (hidden) {
+      tipRows(tip, tip.querySelector(".ol-tip-head")?.textContent, tip.querySelector(".ol-tip-sub")?.textContent, [], S.replay ? "Hidden in replay" : "After the data cutoff");
+      return;
+    }
     const exact = nav.shift, atr = readingATR(c * ts), open = (c + 1) * ts > last.cut;
     const field = (name) => raw.querySelector(`dd[data-field="${name}"]`);
     const number = (v) => exact ? usdt(v) : compact(v), count = (v) => exact ? integer(v) : compact(v);
@@ -4164,7 +4170,7 @@
     const movementEnd = partial ? last.mv?.end : moving.samples.at(-1)?.end;
     const time = readout?.support?.time ?? [Math.max(c * ts, bounds[0]), Math.min((c + 1) * ts, bounds[1], last.cut)];
     const column = cellColumn(n, m, c, last.cut, time, rowHistory);
-    const composition = E.measure.cellComposition({ z: current, column });
+    const composition = E.measure.cellComposition({ z: current, column, hidden });
     const finite = (record) => record?.result.tag === "finite" ? record.result.value : null;
     const measure = (mode, value, basis = "amount", pathBasis = "spans", end = Infinity, area = null) => E.measure.cellMeasurement({
       mode, basis, pathBasis, z: value, geom: { BASE, PR }, level: { n, m },
@@ -4324,7 +4330,7 @@
     }
     if (detailed && rowHistory.state !== "ready") {
       const missing = document.createElement("div"); missing.className = "ol-history-note";
-      missing.textContent = rowHistory.state === "failed" ? `Earlier intervals unavailable: ${rowHistory.error}` : rowHistory.state === "unsupported" ? "Earlier intervals unavailable in this recorded snapshot" : "Reading earlier intervals from the cube…";
+      missing.textContent = rowHistory.state === "failed" ? `Earlier intervals unavailable: ${rowHistory.error}` : rowHistory.state === "unsupported" ? PACK.live ? "Earlier intervals unavailable: cube returned incomplete coverage" : "Earlier intervals unavailable in this recorded snapshot" : "Reading earlier intervals from the cube…";
       context.append(missing);
     }
     if (detailed) stats.insertBefore(context, stats.children[1]);

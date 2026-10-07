@@ -207,3 +207,38 @@ test("location names the preceding completed UTC session and uses the full price
   await expect(location).toHaveAttribute("data-poc", "25062.5");
   await expect(location).toHaveAttribute("data-through", "1536");
 });
+
+
+test("a short history response preserves uncovered intervals as unavailable, including their denominators", async ({ page, fakeFor, probe }) => {
+  await addRecorder(page);
+  const fake = await fakeFor({ trades, cutoffIso: "2021-01-15T00:00:00Z" });
+  await page.route("**/cube/query?**", async route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("n") === "0" && url.searchParams.get("b0") === "4" && url.searchParams.get("b1") === "16" && !url.searchParams.has("motion")) {
+      url.searchParams.set("b1", "8");
+      const response = await route.fetch({ url: url.toString() });
+      await route.fulfill({ response });
+    } else await route.continue();
+  });
+  await page.goto(fake.url + "/" + VIEW.replace(FROM, "2021-01-01T00:12Z"));
+  await probe.waitForReady(); await atCell(page, 15); await page.keyboard.press("e");
+  await expect(page.locator("#ol-inspect-readout")).toContainText("Earlier intervals unavailable: cube returned incomplete coverage");
+  const values = await samples(page);
+  expect(values.slice(0, 4)).toEqual(Array(4).fill(187.5));
+  expect(values.slice(4, 8)).toEqual(Array(4).fill(null));
+  expect(values.slice(8)).toEqual(Array(4).fill(187.5));
+  expect((await samples(page, "columnShare")).slice(4, 8)).toEqual(Array(4).fill(null));
+});
+
+test("rewinding past a previously measured cell hides every composition figure", async ({ page, fakeFor, probe }) => {
+  await addRecorder(page);
+  const fake = await fakeFor({ trades, cutoffIso: "2021-01-01T00:20:00Z" });
+  await page.goto(fake.url + "/" + VIEW); await probe.waitForReady(); await atCell(page, 15);
+  await expect(page.locator('#ol-tip dd[data-field="imbalance"]')).toHaveAttribute("data-canonical", "-0.2");
+  await page.evaluate(hash => { location.hash = hash; }, VIEW + "&replay=1&at=2021-01-01T00:12Z");
+  await probe.waitForReady(); await atCell(page, 15);
+  await expect(page.locator("#ol-tip")).toContainText("Hidden in replay");
+  await expect(page.locator("#ol-tip .ol-cell-stat")).toHaveCount(0);
+  await page.keyboard.press("e");
+  await expect(page.locator("#ol-inspect-readout .ol-cell-stat")).toHaveCount(0);
+});

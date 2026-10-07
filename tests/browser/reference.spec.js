@@ -148,6 +148,50 @@ test("reference preserves Escape in the expanded bottom Compare panel", async ({
   await expect(page.locator("#ol-reference")).toBeVisible();
 });
 
+for (const width of [1200, 1000, 760, 390]) {
+  for (const referenceFirst of [true, false]) {
+    test(`reference keeps docked Inspect accessible at ${width}px (${referenceFirst ? "reference" : "Inspect"} opened first)`, async ({ page, fakeFor, probe }) => {
+      await page.setViewportSize({ width, height: 950 });
+      const fake = await fakeFor("standard");
+      await page.goto(`${fake.url}/#w=24h&vis=2&r=4,0`);
+      await probe.waitForReady();
+      if (referenceFirst) await page.locator("#ol-reference-toggle").click();
+      await page.locator("#ol-canvas").focus();
+      await page.keyboard.press("e");
+      if (!referenceFirst) await page.locator("#ol-reference-toggle").click();
+      await expect(page.locator("#ol-reference")).toBeVisible();
+      await expect(page.locator("#ol-inspect")).toBeVisible();
+      await page.locator("#ol-inspect").scrollIntoViewIfNeeded();
+      await expect(page.locator("#ol-inspect")).toBeInViewport();
+      await expect(page.locator("#ol-inspect-readout")).toBeVisible();
+      await expect(page.locator("#ol-inspect-readout")).not.toBeEmpty();
+      await page.locator("#ol-inspect").focus();
+      const before = Number(await page.locator("#ol-inspect").getAttribute("data-c"));
+      await page.keyboard.press("ArrowRight");
+      await expect(page.locator("#ol-inspect")).toHaveAttribute("data-c", String(before + 1));
+      await page.locator("#ol-tab-compare").click();
+      const expand = page.locator('#ol-comparisonWorkspace [data-comparison-action="expand"]');
+      await expand.click();
+      await expect(page.locator("#ol-inspect")).toBeHidden();
+      await expect(page.locator("#ol-canvas")).toBeHidden();
+      await expect(page.locator("#ol-reference")).toBeVisible();
+      await expand.click();
+      await expect(page.locator("#ol-inspect")).toBeVisible();
+      await expect(page.locator("#ol-canvas")).toBeVisible();
+      await page.locator("#ol-inspect-exit").scrollIntoViewIfNeeded();
+      await expect(page.locator("#ol-inspect-exit")).toBeInViewport();
+      if (referenceFirst) await page.screenshot({ path: `reports/reference-inspect-${width}.png` });
+      await page.locator("#ol-inspect-exit").click();
+      await expect(page.locator("#ol-inspect")).toBeHidden();
+      await expect(page.locator("#ol-reference")).toBeVisible();
+      await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed", "true");
+      await page.locator("#ol-reference-close").click();
+      await expect(page.locator("#ol-reference")).toBeHidden();
+      await expect(page.locator("#ol-canvas")).toBeVisible();
+    });
+  }
+}
+
 test("spotlight identifies the exact control; dimmed clicks and Escape only dismiss guidance", async ({ page, fakeFor, probe }) => {
   await open(page, fakeFor, probe);
   await page.locator("#ol-reference-topic").selectOption("resolution");

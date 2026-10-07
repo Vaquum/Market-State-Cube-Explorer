@@ -46,7 +46,7 @@ test.describe("B54 screen reader and focus order", () => {
       'tab "Columns"',
       'tab "References"',
       'tab "Lens"',
-      'button "Exit"',
+      'button "Close inspector"',
       'group "Move the cursor"',
       'button "Previous time cell"',
       'button "Next time cell"',
@@ -76,8 +76,10 @@ test.describe("B54 screen reader and focus order", () => {
     await expect(page.locator("#ol-inspect")).toBeVisible();
     for (const surface of ["cells", "rows", "columns", "references"]) {
       await page.locator(`#ol-inspect [role=tab][data-surface="${surface}"]`).click();
-      await page.waitForTimeout(300);
-      const pairs = await page.locator("#ol-inspect-readout").evaluate((r) => [...r.querySelectorAll("dt")].map((dt) => [dt.textContent.trim(), dt.nextElementSibling?.textContent.trim() ?? ""]));
+      await probe.waitForReady({ timeout: 30000 });
+      // Background reads stay quiet. A deliberate repeat announces the now-settled record.
+      await page.locator(`#ol-inspect [role=tab][data-surface="${surface}"]`).click();
+      const pairs = await page.locator("#ol-inspect-readout").evaluate((r) => [...r.querySelectorAll("dt")].filter((dt) => !dt.closest('details:not([open]),[hidden]') && dt.getBoundingClientRect().width > 0).map((dt) => [dt.textContent.trim(), dt.nextElementSibling?.textContent.trim() ?? ""]));
       const live = await page.locator("#ol-inspect-live").textContent();
       expect(pairs.length, `${surface}: the readout has terms`).toBeGreaterThan(1);
       for (const [term, value] of pairs) expect(live, `${surface}: "${term}: ${value}" is announced as a term and its value`).toContain(`${term}: ${value}`);
@@ -119,8 +121,8 @@ test.describe("B54 screen reader and focus order", () => {
     await expect(page.locator("#ol-inspect")).toBeVisible();
     const stops = await tabbable(page, "#ol-inspect");
     expect(stops.length, "the navigator has controls to visit").toBeGreaterThan(6);
-    // the surfaces are one tab stop (a roving tablist), so the stops are: one tab, Exit, the four buttons, the chooser (document order)
-    await page.locator("#ol-inspect [role=tab][tabindex='0']").first().focus();
+    // Close, the roving tablist, the details disclosure, the four steppers and the chooser follow document order.
+    await page.locator("#ol-inspect-exit").focus();
     const forward = [await focused(page)];
     for (let i = 1; i < stops.length; i++) {
       await page.keyboard.press("Tab");

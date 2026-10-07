@@ -40,7 +40,7 @@ const SPEC = {
   hash: { sha256: F(1), canonical: F(1), id96: F(1), b64urlEncode: F(1), b64urlDecode: F(1), hex: F(1, 2), utf8: F(1), fromUtf8: F(1), f64ToB64: F(1), b64ToF64: F(2) },
   measure: {
     FORMULAS: "object", MODES: "object", ROWS: "object", close: "object", exposure: F(7, 8), usesOf: F(2), isShort: F(2), cellValue: F(2),
-    cellMeasurement: F(1), columnValue: F(3, 4), dwellCheck: F(2), dwellResidual: F(2), cellState: F(7),
+    cellMeasurement: F(1), cellComposition: F(1), bandLocation: F(1), columnValue: F(3, 4), dwellCheck: F(2), dwellResidual: F(2), cellState: F(7),
   },
   ratio: { cascade: F(1), efficiency: F(1), coordinate: F(3), TICKS: "array", ratioTicks: F(1), classify: F(1) },
   relvol: { compute: F(1), profile: F(1) },

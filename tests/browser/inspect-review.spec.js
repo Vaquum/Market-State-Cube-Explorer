@@ -387,7 +387,7 @@ test.describe("B55 Inspect: the review of PR #53", () => {
     expect(await position(page), "the cursor is on the row the line passes through").toContain("22,875–23,000 USDT");
     const readout = await page.locator("#ol-inspect-readout").textContent();
     expect(readout, "it reads the cell, a time and a price").toMatch(/UTC · /);
-    expect(readout, "and not the line").not.toMatch(/POC/);
+    expect(await page.locator("#ol-inspect-readout .ol-cell-headline").textContent(), "the selected cell measure remains primary above its separate profile location").not.toMatch(/POC/);
     expect(await page.locator("#ol-inspect").getAttribute("data-surface")).toBe("cells");
     expect(await page.locator("#ol-tip").getAttribute("data-readout") ?? "", "the tip is the cell's").not.toMatch(/poc/i);
   });

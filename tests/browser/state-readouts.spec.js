@@ -57,7 +57,7 @@ test.describe("B38 a cell in each state says what it is and is drawn as what it 
     const { page, draw, colours } = await open({ freshContext, fakeFor }, { profile: "micro:nonvalues", level: [0, 0], mode: "dwell", prepare: (fake) => fake.corrupt({ dwell: -1 }) });
     const { tip, ops } = await tipOf(page, draw, [0, 0], 0, 200);
     expect(ops[0].style, "the crosshatch of a failed value").toBe(colours.tiles["pattern-cross"]);
-    await expect(tip).toContainText(/Dwell\s*Invalid input: negative-dwell/);
+    await expect(tip.locator('[data-field="value"]')).toContainText("Invalid input: negative-dwell");
     await expect(tip).toContainText(/Dwell-1 s · Invalid input: negative-dwell/);
   });
 
@@ -128,7 +128,7 @@ test.describe("B38 the states of a standard live view: archive, provisional, ope
     await expect(tip).toBeVisible();
     await expect(tip).toContainText(/Column\s*Still open · portion/);
     await expect(tip).toContainText(/Source\s*provisional minutes/);
-    await expect(tip, "the value is kept: an amount, a count and its place on the scale").toContainText(/Volume · Amount[0-9.]+ [kM]? ?USDT/);
+    await expect(tip.locator(".ol-cell-stat").first(), "the amount is kept in the primary reading").toContainText(/Volume[0-9.]+ [kM]? ?USDT/);
     await expect(tip).toContainText(/Position on scale[0-9.]+%/);
   });
 
@@ -191,7 +191,7 @@ test.describe("B38 unsupported history and a coarser level than asked", () => {
     const tip = page.locator("#ol-tip");
     await expect(tip).toBeVisible();
     await expect(tip).toContainText(/Detail\s*coarser than requested/);
-    await expect(tip, "the value is kept: an amount and its place on the scale").toContainText(/Volume · Amount[0-9.]+ [kM] USDT/);
+    await expect(tip.locator(".ol-cell-stat").first(), "the amount is kept in the primary reading").toContainText(/Volume[0-9.]+ [kM] USDT/);
     await expect(page.locator("#ol-data-coarse"), "and the key says it").toBeVisible();
   });
 });

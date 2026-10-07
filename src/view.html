@@ -1208,50 +1208,6 @@
             Pin
           </button>
         </div>
-        <div
-          class="ol-inspect"
-          id="ol-inspect"
-          data-temporary="inspect"
-          role="group"
-          aria-label="Inspection"
-          aria-describedby="ol-inspect-position"
-          tabindex="0"
-          hidden
-        >
-          <div class="ol-inspect-head">
-            <div class="ol-seg" role="tablist" aria-label="What to inspect" id="ol-inspect-surfaces">
-              <button type="button" role="tab" data-surface="cells" aria-selected="true" class="cursor-interaction">Cells</button
-              ><button type="button" role="tab" data-surface="rows" aria-selected="false" tabindex="-1" class="cursor-interaction">Rows</button
-              ><button type="button" role="tab" data-surface="columns" aria-selected="false" tabindex="-1" class="cursor-interaction">Columns</button
-              ><button type="button" role="tab" data-surface="references" aria-selected="false" tabindex="-1" class="cursor-interaction">References</button
-              ><button type="button" role="tab" data-surface="lens" aria-selected="false" tabindex="-1" class="cursor-interaction">Lens</button>
-            </div>
-            <button type="button" id="ol-inspect-exit" class="ol-action ol-s cursor-interaction" title="Leave Inspect (Escape)">Exit</button>
-          </div>
-          <div class="ol-inspect-position" id="ol-inspect-position"></div>
-          <div class="ol-inspect-readout" id="ol-inspect-readout"></div>
-          <div class="ol-inspect-boundary" id="ol-inspect-boundary"></div>
-          <div class="ol-inspect-steps" role="group" aria-label="Move the cursor">
-            <button type="button" data-step="left" class="ol-icon-button cursor-interaction" aria-label="Previous time cell" title="Previous time cell (Left)">
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg></button
-            ><button type="button" data-step="right" class="ol-icon-button cursor-interaction" aria-label="Next time cell" title="Next time cell (Right)">
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg></button
-            ><button type="button" data-step="up" class="ol-icon-button cursor-interaction" aria-label="Next higher price row" title="Next higher price row (Up)">
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 10 5-5 5 5" /></svg></button
-            ><button type="button" data-step="down" class="ol-icon-button cursor-interaction" aria-label="Next lower price row" title="Next lower price row (Down)">
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 6 5 5 5-5" /></svg></button
-            ><select id="ol-inspect-reference" aria-label="Reference" title="Choose a reference"></select>
-          </div>
-          <span class="ol-sr" id="ol-inspect-live" role="status" aria-live="polite"></span>
-          <div class="ol-inspect-chooser" id="ol-inspect-chooser" role="dialog" aria-label="References at the tap" hidden></div>
-          <div class="ol-inspect-detail" id="ol-inspect-detail" role="dialog" aria-labelledby="ol-inspect-detail-title" hidden>
-            <div class="ol-pop-head">
-              <span id="ol-inspect-detail-title"></span
-              ><button type="button" id="ol-inspect-detail-close" class="ol-action ol-s cursor-interaction">Close</button>
-            </div>
-            <div id="ol-inspect-detail-body"></div>
-          </div>
-        </div>
         <button
           type="button"
           id="ol-latest"
@@ -1608,6 +1564,55 @@
       tabindex="0"
     ></div>
     <aside class="ol-side" id="ol-side" aria-label="Inspector">
+        <div
+          class="ol-inspect"
+          id="ol-inspect"
+          data-temporary="inspect"
+          role="group"
+          aria-label="Inspection"
+          aria-describedby="ol-inspect-position"
+          tabindex="0"
+          hidden
+        >
+          <div class="ol-inspect-head">
+            <span class="ol-inspect-title">Inspect</span>
+            <button type="button" id="ol-inspect-exit" class="ol-icon-button cursor-interaction" aria-label="Close inspector" title="Close inspector (Escape)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+            </button>
+          </div>
+          <div class="ol-inspect-navigation">
+            <div class="ol-seg" role="tablist" aria-label="What to inspect" id="ol-inspect-surfaces">
+              <button type="button" role="tab" data-surface="cells" aria-selected="true" class="cursor-interaction">Cells</button
+              ><button type="button" role="tab" data-surface="rows" aria-selected="false" tabindex="-1" class="cursor-interaction">Rows</button
+              ><button type="button" role="tab" data-surface="columns" aria-selected="false" tabindex="-1" class="cursor-interaction">Columns</button
+              ><button type="button" role="tab" data-surface="references" aria-selected="false" tabindex="-1" class="cursor-interaction">References</button
+              ><button type="button" role="tab" data-surface="lens" aria-selected="false" tabindex="-1" class="cursor-interaction">Lens</button>
+            </div>
+          </div>
+          <div class="ol-inspect-position" id="ol-inspect-position"></div>
+          <div class="ol-inspect-readout" id="ol-inspect-readout"></div>
+          <div class="ol-inspect-boundary" id="ol-inspect-boundary"></div>
+          <div class="ol-inspect-steps" role="group" aria-label="Move the cursor">
+            <button type="button" data-step="left" class="ol-icon-button cursor-interaction" aria-label="Previous time cell" title="Previous time cell (Left)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg></button
+            ><button type="button" data-step="right" class="ol-icon-button cursor-interaction" aria-label="Next time cell" title="Next time cell (Right)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg></button
+            ><button type="button" data-step="up" class="ol-icon-button cursor-interaction" aria-label="Next higher price row" title="Next higher price row (Up)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 10 5-5 5 5" /></svg></button
+            ><button type="button" data-step="down" class="ol-icon-button cursor-interaction" aria-label="Next lower price row" title="Next lower price row (Down)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 6 5 5 5-5" /></svg></button
+            ><select id="ol-inspect-reference" aria-label="Reference" title="Choose a reference"></select>
+          </div>
+          <span class="ol-sr" id="ol-inspect-live" role="status" aria-live="polite"></span>
+          <div class="ol-inspect-chooser" id="ol-inspect-chooser" role="dialog" aria-label="References at the tap" hidden></div>
+          <div class="ol-inspect-detail" id="ol-inspect-detail" role="dialog" aria-labelledby="ol-inspect-detail-title" hidden>
+            <div class="ol-pop-head">
+              <span id="ol-inspect-detail-title"></span
+              ><button type="button" id="ol-inspect-detail-close" class="ol-action ol-s cursor-interaction">Back</button>
+            </div>
+            <div id="ol-inspect-detail-body"></div>
+          </div>
+        </div>
       <div class="ol-side-tabs">
         <div class="ol-seg ol-side-seg">
           <button

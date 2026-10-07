@@ -163,6 +163,9 @@ test("a warning recolours nothing and its actions change state only when activat
   const ctx = { page, fake, probe, surface };
   const s = skew();
   await page.goto(`${fake.url}/${hashOf(s.boundary - 120, s.boundary - 2, s.rows)}`);
+  // Keep the docked chart geometry fixed while opening and closing scale details.
+  await page.locator("#ol-reference-toggle").click();
+  await page.locator("#ol-reference-topic").selectOption("scales");
   const init = await calm(ctx);
   await go(page, hashOf(s.boundary + 5, s.boundary + 100, s.rows));
   const warned = await calm(ctx);

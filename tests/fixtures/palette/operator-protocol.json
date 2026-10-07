@@ -131,7 +131,8 @@
               200
             ],
             "contains": [
-              "Still open: no trades yet"
+              "Still open",
+              "No trades in this cell"
             ]
           }
         ]
@@ -178,7 +179,7 @@
               200
             ],
             "contains": [
-              "Color step | Midpoint",
+              "Buy − sell | 0 USDT",
               "Trades | 2",
               "Buy − sell | 0 USDT"
             ]
@@ -476,7 +477,7 @@
               200
             ],
             "contains": [
-              "Taker flow | 47.1%"
+              "Taker buy share | 47.1 %"
             ]
           }
         ]
@@ -528,7 +529,7 @@
               100
             ],
             "contains": [
-              "Taker flow | 54.2%"
+              "Taker buy share | 54.2 %"
             ]
           }
         ]

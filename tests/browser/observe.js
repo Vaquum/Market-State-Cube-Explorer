@@ -97,6 +97,11 @@ function observe(page, { locate = null, timeout = 3000 } = {}) {
     if (channel === "lens") throw new RangeError("the lens has no popover of its own: its shares are in the Cells popover (D.18, DD-98); use openLegendDetails(\"cells\")");
     const selector = chipSelector(channel);
     const popoverSelector = SURFACE.popovers[channel];
+    const guide = page.locator("#ol-reference"), topic = channel === "axis" ? "columns" : "scales";
+    const hasGuide = await guide.count() > 0;
+    const openedGuide = hasGuide && !(await guide.isVisible());
+    if (openedGuide) await page.locator("#ol-reference-toggle").click();
+    if (hasGuide && await page.locator("#ol-reference-topic").inputValue() !== topic) await page.locator("#ol-reference-topic").selectOption(topic);
     const trigger = await need(selector, `chip ${channel}`);
     await trigger.focus();
     await page.keyboard.press("Enter");
@@ -108,6 +113,7 @@ function observe(page, { locate = null, timeout = 3000 } = {}) {
         await popover.waitFor({ state: "hidden", timeout });
         const back = await trigger.evaluate((el) => el === document.activeElement);
         if (!back) throw new Error(`Escape closed the ${channel} popover (${popoverSelector}) but focus did not return to the chip (${selector})`);
+        if (openedGuide) await page.locator("#ol-reference-close").click();
       },
     };
   }

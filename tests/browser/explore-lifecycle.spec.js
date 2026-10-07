@@ -49,6 +49,8 @@ test("a new context calibrates once, a visited one is restored, every change is 
   const fake = await fakeFor("standard");
   const ctx = { page, fake, probe, surface };
   await page.goto(`${fake.url}/#w=24h`);
+  await page.locator("#ol-reference-toggle").click();
+  await page.locator("#ol-reference-topic").selectOption("scales");
   let data = await calm(ctx);
   expect(data.mappingId, "the first context is calibrated").not.toBe("");
   let previous = data;
@@ -105,7 +107,7 @@ test("the recorded page calibrates like the live one: once per context, restored
 // The identity of the displayed descriptor is the mapping id of its numbers (a consistency check, TESTPLAN 3.1).
 test("the mapping id is the id of the displayed numbers", async ({ page, fakeFor, probe, surface }) => {
   const fake = await fakeFor("standard");
-  await page.goto(`${fake.url}/#w=24h`);
+  await page.goto(`${fake.url}/#w=24h&r=4,0`);
   const data = await calm({ page, fake, probe, surface });
   const details = await surface.details("cells");
   const U = Number(field(details, "U"));
@@ -163,6 +165,8 @@ test("an evicted context is initialised again and says so", async ({ page, fakeF
   // The 7d context of this viewport, found on a first, throw-away visit (its key string is what the cache is keyed by).
   const scout = await (await browser.newContext({ viewport: { width: 1500, height: 950 }, deviceScaleFactor: 1 })).newPage();
   await scout.goto(`${fake.url}/#w=7d`);
+  await scout.locator("#ol-reference-toggle").click();
+  await scout.locator("#ol-reference-topic").selectOption("scales");
   await fake.idle({ quietMs: 1500, timeoutMs: 30000 });
   const first = await scout.evaluate(() => document.getElementById("ol-legend").dataset.context);
   await scout.context().close();
@@ -196,6 +200,8 @@ test("an evicted context is initialised again and says so", async ({ page, fakeF
   // The page starts at 24h, a context the cache does not hold. Its calibration is the 65th context: the least recently used one
   // (the 7d context, which this tab has not used, and which an entry merged from storage is older than anything the tab used) goes.
   await page.goto(`${fake.url}/#w=24h`);
+  await page.locator("#ol-reference-toggle").click();
+  await page.locator("#ol-reference-topic").selectOption("scales");
   const ctx = { page, fake, probe, surface };
   let data = await calm(ctx);
   expect(data.fitSeq, "the 24h context was calibrated").toBe("1");

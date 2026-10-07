@@ -127,7 +127,7 @@ for (const width of [375, 600]) {
 test.describe("touch chart header", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 900, height: 820 } });
 
-  test("the icon has a 44px target and shares the scale legend row", async ({ page, fakeFor, probe }) => {
+  test("the icon has a 44px target inside the visible chart header", async ({ page, fakeFor, probe }) => {
     const fake = await fakeFor("standard");
     await page.goto(fake.url + "/#w=30d&vis=2&lines=cme");
     await probe.waitForReady();
@@ -135,10 +135,9 @@ test.describe("touch chart header", () => {
     await expect(button).toHaveText("");
     const box = await button.boundingBox();
     expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
-    await expect.poll(async () => {
-      const reset = await button.boundingBox(), legend = await page.locator("#ol-legend").boundingBox();
-      return Math.abs(reset.y - legend.y);
-    }).toBeLessThan(1);
+    const header = await page.locator(".ol-chart-head").boundingBox();
+    expect(box.y, "the reset stays in the chart header").toBeGreaterThanOrEqual(header.y);
+    expect(box.y + box.height).toBeLessThanOrEqual(header.y + header.height);
     await page.screenshot({ path: "reports/canvas-reset-touch.png" });
   });
 });

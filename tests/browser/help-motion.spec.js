@@ -72,8 +72,8 @@ test.describe("B48 help, commands and reduced motion", () => {
     await page.goto(`${fake.url}/#w=24h&vis=2`);
     await S.atRest(page, fake, probe);
     await probe.waitForQuiet({ quietMs: 600, timeout: 30000 });
-    // the drawer's and the inspector's toggles turn their icon over 0.15 s
-    const duration = () => page.evaluate(() => getComputedStyle(document.querySelector("#ol-drawer-toggle .ol-icon")).transitionDuration);
+    // the inspector toggle turns its icon over 0.15 s
+    const duration = () => page.evaluate(() => getComputedStyle(document.querySelector("#ol-side-toggle .ol-icon")).transitionDuration);
     expect(await duration(), "with motion allowed the toggle's icon turns over 0.15 s").toBe("0.15s");
     const frames = async (key) => {
       await page.evaluate(() => (window.__draws = 0));

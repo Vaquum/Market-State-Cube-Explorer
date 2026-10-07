@@ -51,7 +51,7 @@ function tokens(page) {
 const layoutOf = (page) => page.locator("#ol-canvas").evaluate((el) => el.dataset.layout.split(",").map(Number));
 
 test.describe("B30 the rows of the state table that have their tests here", () => {
-  test("row 9, parent not complete: Cascade's children of the open parent are the waiting pattern, keyed, and the open cap is over the column", async ({ page, probe, fakeFor, pane }) => {
+  test("row 9, parent not complete: Cascade's children of the open parent are the waiting pattern, keyed, and the open cap is over the column", async ({ page, probe, fakeFor, pane, surface }) => {
     const fake = await fakeFor("standard");
     await page.goto(`${fake.url}/#w=24h&vis=2&mode=cascade`);
     await S.atRest(page, fake, probe);
@@ -61,7 +61,7 @@ test.describe("B30 the rows of the state table that have their tests here", () =
     // the cap: a 1.5 px bar of the state ink across the open column at the top of the plot
     expect(frame.rects.filter((r) => r.h === 1.5 && r.fill === colours.state && Math.abs(r.y - layout[1]) < 1e-9).length, "the open cap").toBeGreaterThanOrEqual(1);
     // the pattern of a result that cannot be computed yet, in the state ink on the surface, keyed with its count: two marks, neither replacing the other
-    await page.locator("#ol-legend").click();
+    await surface.openLegendDetails("cells");
     const key = page.locator('#ol-legend-pop [data-key="waiting-for-complete-parent"]');
     await expect(key, "the key of the waiting parent").toBeVisible();
     expect(Number(await key.getAttribute("data-count")), "some children wait").toBeGreaterThan(0);

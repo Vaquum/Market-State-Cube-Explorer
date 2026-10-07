@@ -259,9 +259,11 @@ test.describe("B44 Inspect: its own cursor, moved by the keys of each surface", 
     expect(record, "a measured cell is under the cursor").not.toBeNull();
     expect(Number.isFinite(Number(record)), "its value is a number, signed (the taker-buy minus taker-sell amount)").toBe(true);
     await expect(page.locator("#ol-inspect-readout")).toContainText(/[+−-]\s?[\d,.]+/);
-    const readout = await page.locator("#ol-tip").getAttribute("data-readout");
+    const readout = await page.locator("#ol-inspect-readout").getAttribute("data-readout");
     expect(readout, "the record has a name").toBeTruthy();
     await expect(page.locator("#ol-legend-marker"), "the legend marks it without the pointer anywhere").toHaveAttribute("data-readout", readout);
+    await page.locator("#ol-reference-toggle").click();
+    await page.locator("#ol-reference-topic").selectOption("scales");
     await expect(page.locator("#ol-legend-marker")).toBeVisible();
     // announcements: a deliberate move says it; a redraw from the page's own business does not
     const live = () => page.locator("#ol-inspect-live").evaluate((n) => ({ text: n.textContent, at: n.dataset.at }));

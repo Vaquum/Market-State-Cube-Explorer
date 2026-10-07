@@ -1139,10 +1139,6 @@
   margin-left: auto;
   flex: none;
 }
-#origo-lens .ol-chart-head > #ol-legend {
-  /* Let the scale label shorten before the reset icon takes another row. */
-  flex: 1 1 120px;
-}
 #origo-lens .ol-marks {
   display: flex;
   flex-wrap: wrap;
@@ -1239,9 +1235,10 @@
 #origo-lens .ol-tip {
   position: absolute;
   z-index: 4;
-  max-width: 280px;
-  padding: var(--sp-2) var(--sp-3);
-  font-size: var(--fs-s);
+  width: 304px;
+  max-width: calc(100% - 8px);
+  padding: var(--sp-4);
+  font-size: var(--fs-l);
   font-variant-numeric: tabular-nums;
   color: var(--ol-ink);
   background: var(--ol-surface);
@@ -1251,7 +1248,9 @@
   pointer-events: none;
 }
 #origo-lens .ol-tip-head {
-  font-weight: 500;
+  font-size: var(--fs-l);
+  font-weight: 600;
+  line-height: 1.45;
 }
 #origo-lens .ol-tip-sub,
 #origo-lens .ol-tip-note {
@@ -1260,8 +1259,8 @@
 #origo-lens .ol-tip-rows {
   display: grid;
   grid-template-columns: auto auto;
-  gap: 2px var(--sp-3);
-  margin: var(--sp-1) 0 0;
+  gap: var(--sp-2) var(--sp-3);
+  margin: var(--sp-3) 0 0;
 }
 #origo-lens .ol-tip-rows dt {
   color: var(--ol-muted);
@@ -1273,25 +1272,23 @@
 #origo-lens .ol-tip-note {
   margin-top: var(--sp-1);
 }
-/* Inspect: the navigator of the cursor, over the plot's bottom left, with its readout, its edge messages, its steppers and the chooser that reach the same
-   record without a pointer or a precise one. */
+/* One inspector replaces the default right pane; changing cells replaces its record. */
 #origo-lens .ol-inspect {
-  position: absolute;
-  left: 64px;
-  bottom: 56px;
-  z-index: 4;
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-1);
-  width: min(440px, calc(100% - 80px));
-  padding: var(--sp-2);
-  font-size: var(--fs-s);
+  gap: var(--sp-2);
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: var(--sp-4);
+  overflow: auto;
+  font-size: var(--fs-l);
   font-variant-numeric: tabular-nums;
   color: var(--ol-ink);
   background: var(--ol-surface);
-  border: 1px solid var(--ol-border);
-  border-radius: var(--r-m);
-  box-shadow: 0 var(--sp-1) var(--sp-5) var(--ol-shadow);
+  outline-offset: -2px;
+  container: inspection / inline-size;
 }
 #origo-lens .ol-inspect[hidden],
 #origo-lens .ol-inspect-detail[hidden] {
@@ -1309,6 +1306,35 @@
   justify-content: space-between;
   gap: var(--sp-1);
 }
+#origo-lens .ol-inspect-title {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+#origo-lens .ol-inspect-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  background: var(--ol-surface);
+  box-shadow: 0 -16px 0 0 var(--ol-surface);
+}
+#origo-lens .ol-inspect-navigation .ol-seg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-1);
+  width: 100%;
+}
+#origo-lens .ol-inspect-navigation [role="tab"] {
+  min-width: 0;
+  font-size: var(--fs-m);
+}
+#origo-lens .ol-inspect-navigation [data-surface="references"] {
+  grid-column: span 2;
+}
+#origo-lens .ol-main[data-inspect="true"] .ol-side-tabs,
+#origo-lens .ol-main[data-inspect="true"] .ol-side-body {
+  display: none;
+}
 #origo-lens .ol-inspect-steps {
   justify-content: flex-start;
 }
@@ -1321,8 +1347,14 @@
   font-weight: 500;
 }
 #origo-lens .ol-inspect-readout {
-  max-height: 168px;
-  overflow: auto;
+  min-width: 0;
+}
+#origo-lens .ol-inspect[data-surface="cells"][data-state="ready"] .ol-inspect-position,
+#origo-lens .ol-inspect[data-surface="lens"][data-state="ready"] .ol-inspect-position {
+  display: none;
+}
+#origo-lens .ol-inspect[data-detail="true"] .ol-inspect-readout {
+  display: none;
 }
 #origo-lens .ol-inspect-boundary {
   color: var(--ol-muted);
@@ -1335,11 +1367,6 @@
   color: var(--ol-muted);
 }
 #origo-lens .ol-inspect-chooser {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  margin-bottom: var(--sp-1);
   display: flex;
   flex-direction: column;
   max-height: min(60vh, 420px);
@@ -1363,18 +1390,228 @@
   text-align: left;
 }
 #origo-lens .ol-inspect-detail {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  margin-bottom: var(--sp-1);
-  max-height: min(60vh, 420px);
-  overflow: auto;
-  padding: var(--sp-2);
+  padding: 0;
   background: var(--ol-surface);
-  border: 1px solid var(--ol-border);
-  border-radius: var(--r-m);
-  box-shadow: 0 var(--sp-1) var(--sp-5) var(--ol-shadow);
+}
+/* Read the selected measure first, then supporting figures; history occupies a fixed visual column. */
+#origo-lens .ol-cell-stats {
+  margin: var(--sp-4) 0 0;
+}
+#origo-lens .ol-cell-stat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  align-items: center;
+  column-gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--ol-line);
+}
+#origo-lens .ol-cell-stat dt {
+  color: var(--ol-muted);
+  font-size: var(--fs-l);
+  line-height: 1.5;
+}
+#origo-lens .ol-cell-stat dd {
+  grid-column: 1;
+  margin: 2px 0 0;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+#origo-lens .ol-cell-stat:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+#origo-lens .ol-cell-stat[data-primary="true"] dd,
+#origo-lens [data-presentation="candle"] .ol-cell-stat:first-child dd {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+#origo-lens .ol-reading-unit {
+  margin-left: 5px;
+  font-size: var(--fs-m);
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--ol-muted);
+}
+#origo-lens .ol-sparkline {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  width: 72px;
+  height: 30px;
+  color: var(--ol-ink);
+  overflow: visible;
+}
+#origo-lens [data-sign="positive"] { color: var(--ol-positive); }
+#origo-lens [data-sign="negative"] { color: var(--ol-negative); }
+#origo-lens .ol-cell-state {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-m);
+  color: var(--ol-muted);
+}
+#origo-lens .ol-cell-details {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--ol-line);
+  font-size: var(--fs-m);
+}
+#origo-lens .ol-cell-details summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+#origo-lens .ol-cell-details .ol-tip-rows {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  overflow-wrap: anywhere;
+}
+#origo-lens .ol-cell-context {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-m);
+  color: var(--ol-muted);
+  line-height: 1.55;
+}
+#origo-lens .ol-cell-headline,
+#origo-lens .ol-cell-group-stats {
+  margin: 0;
+}
+#origo-lens .ol-cell-group {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--ol-line);
+}
+#origo-lens .ol-cell-group h3 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-l);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ol-ink);
+}
+#origo-lens .ol-cell-group .ol-cell-stat {
+  padding: var(--sp-2) 0;
+  border: 0;
+}
+#origo-lens .ol-history-note {
+  grid-column: 1 / -1;
+  margin-top: 3px;
+  color: var(--ol-muted);
+  font-size: var(--fs-m);
+  line-height: 1.5;
+}
+#origo-lens .ol-flow-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+  font-size: var(--fs-m);
+  line-height: 1.5;
+}
+#origo-lens .ol-flow-labels span:last-child {
+  text-align: right;
+}
+#origo-lens .ol-band-relation {
+  margin: var(--sp-2) 0;
+  font-size: var(--fs-l);
+  font-weight: 500;
+  line-height: 1.55;
+}
+#origo-lens .ol-flow-balance {
+  display: flex;
+  height: 4px;
+  margin-top: var(--sp-3);
+  overflow: hidden;
+  border-radius: var(--r-s);
+  background: var(--ol-negative);
+}
+#origo-lens .ol-flow-balance > span {
+  background: var(--ol-positive);
+}
+/* Keep the hover card spacious; the persistent pane aligns supporting readings
+   in one row so label, value and history can be scanned down fixed columns. */
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-stats {
+  margin-top: var(--sp-2);
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-state,
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-context {
+  margin-top: var(--sp-1);
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-context {
+  line-height: 1.4;
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-tip-sub,
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-state {
+  display: inline;
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-state {
+  margin: 0 0 0 var(--sp-2);
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-headline .ol-cell-stat {
+  padding-bottom: var(--sp-1);
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group h3 {
+  margin-bottom: var(--sp-1);
+  line-height: 1.4;
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-cell-stat {
+  grid-template-columns: minmax(0, 1fr) 96px 56px;
+  column-gap: var(--sp-2);
+  padding: 2px 0;
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-cell-stat dt {
+  grid-column: 1;
+  grid-row: 1;
+  line-height: 1.3;
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-cell-stat dd {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+  line-height: 1.3;
+  text-align: right;
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-reading-unit {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 1.2;
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group :is(dd[data-field="buySize"], dd[data-field="sellSize"], dd[data-field="size"], dd[data-field="imbalance"]) .ol-reading-unit {
+  display: block;
+  margin-left: 0;
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-sparkline {
+  grid-column: 3;
+  grid-row: 1;
+  width: 56px;
+  height: 26px;
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-flow-balance,
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-details {
+  margin-top: var(--sp-2);
+}
+#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-details {
+  padding-top: var(--sp-2);
+}
+/* A resized narrow pane keeps the stacked labels instead of squeezing numbers. */
+@container inspection (width < 260px) {
+  #origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-cell-stat {
+    grid-template-columns: minmax(0, 1fr) 56px;
+  }
+  #origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-cell-stat dd {
+    grid-column: 1;
+    grid-row: 2;
+    text-align: left;
+  }
+  #origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-sparkline {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+}
+#origo-lens .ol-inspect-steps {
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--ol-line);
 }
 /* The replay transport, at the top of the plot on the replay line, and the
    lens's own controls at its top left while the lens is the tool; both placed
@@ -1446,26 +1683,16 @@
   gap: var(--sp-2);
   padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--gutter);
 }
-#origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-tabs button {
-  background: transparent;
-  color: inherit;
-  box-shadow: none;
-}
-#origo-lens .ol-drawer:not([data-open="true"]) .ol-drawer-tabs button:hover {
-  background: var(--ol-hover);
+#origo-lens .ol-drawer-tabs { display: flex; align-items: center; gap: var(--sp-1); }
+#origo-lens .ol-drawer-bar .ol-icon-button { width: var(--h-l); min-height: var(--h-l); }
+#origo-lens .ol-drawer-bar .ol-icon-button[aria-expanded="true"] { background: var(--ol-on); border-color: var(--ol-border); }
+#origo-lens .ol-drawer-divider { flex: none; width: 1px; height: 20px; margin: 0 var(--sp-1); background: var(--ol-line); }
+@media (any-pointer: coarse) {
+  #origo-lens .ol-drawer-bar .ol-icon-button { min-height: 44px; min-width: 44px; }
 }
 #origo-lens .ol-query-mini {
   margin-left: var(--sp-1);
   color: var(--ol-muted);
-}
-#origo-lens .ol-drawer-space {
-  flex: 1;
-}
-#origo-lens #ol-drawer-toggle .ol-icon {
-  transition: transform 0.15s;
-}
-#origo-lens .ol-drawer[data-open="true"] #ol-drawer-toggle .ol-icon {
-  transform: rotate(180deg);
 }
 #origo-lens .ol-drawer-body {
   height: var(--drawer-h);
@@ -2946,6 +3173,106 @@
   #origo-lens .ol-comparison-controls label { flex: 1 1 180px; }
   #origo-lens .ol-comparison-controls select { flex: 1; max-width: 100%; }
   #origo-lens .ol-comparison-details dl > div { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
+}
+
+/* One reference entry beside the drawer tabs; its pane participates in the workspace grid. */
+#origo-lens .ol-reference {
+  position: relative;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  padding: var(--sp-4);
+  gap: var(--sp-3);
+  overflow: hidden;
+  border-right: 1px solid var(--ol-line);
+  background: var(--ol-surface);
+  font-size: var(--fs-l);
+  line-height: 1.6;
+}
+#origo-lens .ol-reference[hidden] { display: none; }
+#origo-lens .ol-reference-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+#origo-lens .ol-reference-head h2 { font-size: var(--fs-xl); margin: 0; font-weight: 600; }
+#origo-lens .ol-reference-intro { color: var(--ol-muted); margin: 0; }
+#origo-lens .ol-reference-topic-label { color: var(--ol-muted); margin-bottom: calc(-1 * var(--sp-2)); }
+#origo-lens #ol-reference-topic { width: 100%; min-height: 44px; }
+#origo-lens .ol-reference-sequence { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); }
+#origo-lens .ol-reference-body { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; }
+#origo-lens .ol-reference-group { margin: var(--sp-2) 0; color: var(--ol-muted); font-size: var(--fs-s); }
+#origo-lens .ol-reference h3 { margin: 0 0 var(--sp-4); font-size: 20px; font-weight: 600; line-height: 1.4; }
+#origo-lens .ol-reference dl { margin: 0; }
+#origo-lens .ol-reference dt { font-weight: 600; margin: var(--sp-4) 0 var(--sp-1); }
+#origo-lens .ol-reference dd { margin: 0; }
+#origo-lens .ol-reference-targets { display: flex; flex: none; flex-wrap: wrap; gap: var(--sp-2); }
+#origo-lens .ol-reference-targets .ol-action { min-height: 44px; padding: var(--sp-2) var(--sp-3); white-space: normal; line-height: 1.4; text-align: left; }
+#origo-lens .ol-reference-targets [aria-pressed="true"] { background: var(--ol-panel); border-color: var(--ol-ink); }
+#origo-lens .ol-reference-settings { margin-top: var(--sp-5); overflow-wrap: anywhere; }
+#origo-lens .ol-reference-settings > .ol-legend-chip {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: none;
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-3);
+  min-height: 44px;
+  white-space: normal;
+  line-height: 1.5;
+  font-size: var(--fs-l);
+}
+#origo-lens .ol-reference-settings > .ol-legend-chip > strong { flex-basis: 100%; text-align: left; }
+#origo-lens .ol-reference-settings > .ol-legend-chip > span:last-child { flex: 1; text-align: left; overflow: visible; text-overflow: clip; white-space: normal; }
+#origo-lens .ol-reference-settings > .ol-pop {
+  position: static;
+  width: auto;
+  max-height: none;
+  margin-top: var(--sp-2);
+  overflow: visible;
+  box-shadow: none;
+}
+#origo-lens .ol-reference-settings .ol-legend-details { font-size: var(--fs-s); }
+#origo-lens .ol-reference-status:empty { display: none; }
+#origo-lens #ol-reference-toggle { flex: none; }
+#origo-lens .ol-reference-status { flex: none; min-height: 3.2em; margin: 0; font-size: var(--fs-s); color: var(--ol-muted); }
+#origo-lens #ol-reference-shortcuts { align-self: flex-start; }
+#origo-lens #ol-reference-spotlight { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 60; pointer-events: none; }
+#origo-lens .ol-reference-shade { fill: rgb(0 0 0 / 65%); pointer-events: auto; }
+#origo-lens .ol-reference-frame { fill: none; stroke: var(--ol-ink); stroke-width: 2; pointer-events: none; }
+#origo-lens .ol-main[data-reference="open"] {
+  --reference-w: clamp(320px, 38vw, 460px);
+  grid-template-columns: var(--reference-w) minmax(0, 1fr) 6px var(--side-w);
+}
+#origo-lens .ol-main[data-reference="open"][data-side="closed"] { grid-template-columns: var(--reference-w) minmax(0, 1fr) 0 44px; }
+#origo-lens[data-comparison-expanded="true"] .ol-main[data-reference="open"] { grid-template-columns: var(--reference-w) minmax(0, 1fr); }
+@media (max-width: 1200px) {
+  #origo-lens .ol-main[data-reference="open"],
+  #origo-lens .ol-main[data-reference="open"][data-side="closed"] { grid-template-columns: var(--reference-w) minmax(0, 1fr); }
+  #origo-lens .ol-main[data-reference="open"]:not([data-inspect="true"]) > :is(.ol-side, .ol-side-grip) { display: none; }
+  #origo-lens:not([data-comparison-expanded="true"]) .ol-main[data-reference="open"][data-inspect="true"] {
+    grid-template-columns: var(--reference-w) minmax(300px, 1fr) 6px var(--side-w);
+    overflow-x: auto;
+  }
+}
+@media (max-width: 760px) {
+  #origo-lens .ol-main[data-reference="open"],
+  #origo-lens .ol-main[data-reference="open"][data-side="closed"] {
+    --reference-w: min(460px, 90vw);
+    display: grid;
+    grid-template-columns: var(--reference-w) minmax(300px, 1fr);
+    overflow-x: auto;
+    align-items: start;
+  }
+  #origo-lens .ol-reference { height: calc(100dvh - 96px); box-sizing: border-box; }
+  #origo-lens .ol-reference-intro { display: none; }
+  #origo-lens:not([data-comparison-expanded="true"]) .ol-main[data-reference="open"][data-inspect="true"] {
+    grid-template-columns: var(--reference-w) minmax(300px, 1fr) var(--side-w);
+  }
+  #origo-lens .ol-main[data-reference="open"][data-inspect="true"] > .ol-side {
+    height: calc(100dvh - 96px);
+    box-sizing: border-box;
+  }
 }
 @media (max-width: 760px) {
   #origo-lens .ol-drawer-body:has(> .ol-comparison-panel:not([hidden])) { height: min(70vh, 640px); }

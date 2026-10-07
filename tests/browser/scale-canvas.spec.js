@@ -33,6 +33,8 @@ async function open({ freshContext, fakeFor }, hash) {
   const probe = probeTools.forPage(page);
   const surface = observe(page);
   await openView(page, fake, probe, hash);
+  await page.locator("#ol-reference-toggle").click();
+  await page.locator("#ol-reference-topic").selectOption("scales");
   const ctx = { page, fake, probe, surface };
   await calm(ctx);
   return ctx;

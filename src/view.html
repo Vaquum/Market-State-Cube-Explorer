@@ -739,6 +739,124 @@
     </div>
   </header>
   <div class="ol-main" id="ol-main">
+    <aside id="ol-reference" class="ol-reference" aria-labelledby="ol-reference-title" hidden>
+      <div class="ol-reference-head"><h2 id="ol-reference-title">System reference</h2><button type="button" id="ol-reference-close" class="ol-icon-button cursor-interaction" aria-label="Close reference"><svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button></div>
+      <p class="ol-reference-intro">Read the market, work with the view, then compare the evidence. Highlight any part to locate it.</p>
+      <label class="ol-reference-topic-label" for="ol-reference-topic">Topic</label>
+      <select id="ol-reference-topic" aria-label="Reference topic"></select>
+      <div class="ol-reference-sequence"><button type="button" id="ol-reference-prev" class="ol-action cursor-interaction">Previous</button><span id="ol-reference-position" class="ol-muted"></span><button type="button" id="ol-reference-next" class="ol-action cursor-interaction">Next</button></div>
+      <div id="ol-reference-body" class="ol-reference-body">
+        <div id="ol-reference-article"></div>
+        <section class="ol-reference-settings" data-reference-settings="scales" aria-label="Current colour scales" hidden>
+          <button
+          type="button"
+          class="ol-legend ol-legend-chip cursor-interaction"
+          id="ol-legend"
+          data-hint-label="Cell colour scale"
+          data-hint="Details, calibration and scale settings"
+          data-channel="cells"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="ol-legend-pop"
+          aria-describedby="ol-legend-marker-text"
+          aria-label="Scale"
+        >
+            <strong>Cell colour scale</strong>
+          <span class="ol-ramp-wrap"
+            ><canvas class="ol-ramp" id="ol-ramp" width="64" height="8" aria-hidden="true"></canvas
+            ><i class="ol-legend-marker" id="ol-legend-marker" data-coordinate="" data-readout="" aria-hidden="true" hidden></i
+          ></span>
+          <span id="ol-legend-text" class="ol-num"></span>
+        </button>
+<div data-temporary="popover"
+          class="ol-pop ol-pop-end ol-legend-pop"
+          id="ol-legend-pop"
+          role="dialog"
+          aria-label="Scale details"
+          tabindex="-1"
+          hidden
+        ></div>
+          <button
+            type="button"
+            class="ol-legend ol-legend-chip ol-rows-legend cursor-interaction"
+            id="ol-rows-legend"
+            data-hint-label="Rows colour scale"
+            data-hint="Details, calibration and scale settings"
+            data-channel="rows"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="ol-rows-legend-pop"
+            aria-label="Rows scale"
+            hidden
+          >
+            <strong>Rows colour scale</strong>
+            <canvas class="ol-ramp" id="ol-rows-ramp" width="36" height="8" aria-hidden="true"></canvas>
+            <span id="ol-rows-legend-text" class="ol-num"></span>
+          </button>
+<div data-temporary="popover"
+            class="ol-pop ol-legend-pop"
+            id="ol-rows-legend-pop"
+            role="dialog"
+            aria-label="Rows scale details"
+            tabindex="-1"
+            hidden
+          ></div>
+          <span id="ol-legend-marker-text" class="ol-sr" hidden></span>
+        </section>
+        <section class="ol-reference-settings" data-reference-settings="profiles" aria-label="Current profile comparison" hidden>
+          <button
+            type="button"
+            class="ol-legend ol-legend-chip ol-profile-chip cursor-interaction"
+            id="ol-profile-chip"
+            data-hint-label="Profile comparison"
+            data-hint="Compare tracks by amount or share of total"
+            data-channel="profile"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="ol-profile-pop"
+            aria-label="Profile tracks"
+          >
+            <strong>Profile comparison</strong>
+            <span id="ol-profile-chip-text" class="ol-num"></span>
+          </button>
+<div data-temporary="popover"
+            class="ol-pop ol-legend-pop"
+            id="ol-profile-pop"
+            role="dialog"
+            aria-label="Profile tracks"
+            tabindex="-1"
+            hidden
+          ></div>
+        </section>
+        <section class="ol-reference-settings" data-reference-settings="columns" aria-label="Current axes" hidden>
+          <button
+          type="button"
+          class="ol-legend ol-legend-chip ol-axis-chip cursor-interaction"
+          id="ol-axis-chip"
+          data-channel="axis"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="ol-axis-pop"
+          aria-label="Axis"
+          hidden
+        >
+            <strong>Column and profile axes</strong>
+          <span id="ol-axis-chip-text" class="ol-num"></span>
+        </button>
+<div data-temporary="popover"
+          class="ol-pop ol-pop-end ol-legend-pop ol-axis-pop"
+          id="ol-axis-pop"
+          role="dialog"
+          aria-label="Axis details"
+          tabindex="-1"
+          hidden
+        ></div>
+        </section>
+      </div>
+      <div id="ol-reference-targets" class="ol-reference-targets"></div>
+      <p id="ol-reference-status" class="ol-reference-status" role="status" aria-live="polite"></p>
+      <button type="button" id="ol-reference-shortcuts" class="ol-action cursor-interaction">Keyboard shortcuts</button>
+    </aside>
     <section class="ol-chart" aria-label="Market field and linked volume profile">
       <div id="ol-loading" class="ol-loading" role="status">
         Loading the last seven days…
@@ -913,48 +1031,10 @@
             </div>
           </div>
           </div>
-          <button
-            type="button"
-            class="ol-legend ol-legend-chip ol-rows-legend cursor-interaction"
-            id="ol-rows-legend"
-            data-channel="rows"
-            aria-haspopup="dialog"
-            aria-expanded="false"
-            aria-controls="ol-rows-legend-pop"
-            aria-label="Rows scale"
-            hidden
-          >
-            <canvas class="ol-ramp" id="ol-rows-ramp" width="36" height="8" aria-hidden="true"></canvas>
-            <span id="ol-rows-legend-text" class="ol-num"></span>
-          </button>
-          <div data-temporary="popover"
-            class="ol-pop ol-legend-pop"
-            id="ol-rows-legend-pop"
-            role="dialog"
-            aria-label="Rows scale details"
-            tabindex="-1"
-            hidden
-          ></div>
-          <button
-            type="button"
-            class="ol-legend ol-legend-chip ol-profile-chip cursor-interaction"
-            id="ol-profile-chip"
-            data-channel="profile"
-            aria-haspopup="dialog"
-            aria-expanded="false"
-            aria-controls="ol-profile-pop"
-            aria-label="Profile tracks"
-          >
-            <span id="ol-profile-chip-text" class="ol-num"></span>
-          </button>
-          <div data-temporary="popover"
-            class="ol-pop ol-legend-pop"
-            id="ol-profile-pop"
-            role="dialog"
-            aria-label="Profile tracks"
-            tabindex="-1"
-            hidden
-          ></div>
+
+
+
+
           <button
             type="button"
             class="ol-legend ol-legend-chip ol-focus-chip cursor-interaction"
@@ -975,33 +1055,9 @@
             ><input type="checkbox" id="ol-untested" />Untested</label
           >
         </div>
-        <button
-          type="button"
-          class="ol-legend ol-legend-chip cursor-interaction"
-          id="ol-legend"
-          data-channel="cells"
-          aria-haspopup="dialog"
-          aria-expanded="false"
-          aria-controls="ol-legend-pop"
-          aria-describedby="ol-legend-marker-text"
-          aria-label="Scale"
-        >
-          <span class="ol-ramp-wrap"
-            ><canvas class="ol-ramp" id="ol-ramp" width="64" height="8" aria-hidden="true"></canvas
-            ><i class="ol-legend-marker" id="ol-legend-marker" data-coordinate="" data-readout="" aria-hidden="true" hidden></i
-          ></span>
-          <span id="ol-legend-text" class="ol-num"></span>
-        </button>
         <span id="ol-candle-legend" class="ol-candle-legend" role="group" aria-label="Candle direction" hidden></span>
-        <span id="ol-legend-marker-text" class="ol-sr" hidden></span>
-        <div data-temporary="popover"
-          class="ol-pop ol-pop-end ol-legend-pop"
-          id="ol-legend-pop"
-          role="dialog"
-          aria-label="Scale details"
-          tabindex="-1"
-          hidden
-        ></div>
+
+
         <button
           type="button"
           id="ol-reset-canvas"
@@ -1035,27 +1091,8 @@
           aria-label="Time by price grid with real traded volume, point of control and linked volume profile"
         ></canvas>
         <div class="ol-tip" id="ol-tip" role="tooltip" data-temporary="tooltip" hidden></div>
-        <button
-          type="button"
-          class="ol-legend ol-legend-chip ol-axis-chip cursor-interaction"
-          id="ol-axis-chip"
-          data-channel="axis"
-          aria-haspopup="dialog"
-          aria-expanded="false"
-          aria-controls="ol-axis-pop"
-          aria-label="Axis"
-          hidden
-        >
-          <span id="ol-axis-chip-text" class="ol-num"></span>
-        </button>
-        <div data-temporary="popover"
-          class="ol-pop ol-pop-end ol-legend-pop ol-axis-pop"
-          id="ol-axis-pop"
-          role="dialog"
-          aria-label="Axis details"
-          tabindex="-1"
-          hidden
-        ></div>
+
+
         <div
           class="ol-transport"
           id="ol-transport"
@@ -1171,50 +1208,6 @@
             Pin
           </button>
         </div>
-        <div
-          class="ol-inspect"
-          id="ol-inspect"
-          data-temporary="inspect"
-          role="group"
-          aria-label="Inspection"
-          aria-describedby="ol-inspect-position"
-          tabindex="0"
-          hidden
-        >
-          <div class="ol-inspect-head">
-            <div class="ol-seg" role="tablist" aria-label="What to inspect" id="ol-inspect-surfaces">
-              <button type="button" role="tab" data-surface="cells" aria-selected="true" class="cursor-interaction">Cells</button
-              ><button type="button" role="tab" data-surface="rows" aria-selected="false" tabindex="-1" class="cursor-interaction">Rows</button
-              ><button type="button" role="tab" data-surface="columns" aria-selected="false" tabindex="-1" class="cursor-interaction">Columns</button
-              ><button type="button" role="tab" data-surface="references" aria-selected="false" tabindex="-1" class="cursor-interaction">References</button
-              ><button type="button" role="tab" data-surface="lens" aria-selected="false" tabindex="-1" class="cursor-interaction">Lens</button>
-            </div>
-            <button type="button" id="ol-inspect-exit" class="ol-action ol-s cursor-interaction" title="Leave Inspect (Escape)">Exit</button>
-          </div>
-          <div class="ol-inspect-position" id="ol-inspect-position"></div>
-          <div class="ol-inspect-readout" id="ol-inspect-readout"></div>
-          <div class="ol-inspect-boundary" id="ol-inspect-boundary"></div>
-          <div class="ol-inspect-steps" role="group" aria-label="Move the cursor">
-            <button type="button" data-step="left" class="ol-icon-button cursor-interaction" aria-label="Previous time cell" title="Previous time cell (Left)">
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg></button
-            ><button type="button" data-step="right" class="ol-icon-button cursor-interaction" aria-label="Next time cell" title="Next time cell (Right)">
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg></button
-            ><button type="button" data-step="up" class="ol-icon-button cursor-interaction" aria-label="Next higher price row" title="Next higher price row (Up)">
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 10 5-5 5 5" /></svg></button
-            ><button type="button" data-step="down" class="ol-icon-button cursor-interaction" aria-label="Next lower price row" title="Next lower price row (Down)">
-              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 6 5 5 5-5" /></svg></button
-            ><select id="ol-inspect-reference" aria-label="Reference" title="Choose a reference"></select>
-          </div>
-          <span class="ol-sr" id="ol-inspect-live" role="status" aria-live="polite"></span>
-          <div class="ol-inspect-chooser" id="ol-inspect-chooser" role="dialog" aria-label="References at the tap" hidden></div>
-          <div class="ol-inspect-detail" id="ol-inspect-detail" role="dialog" aria-labelledby="ol-inspect-detail-title" hidden>
-            <div class="ol-pop-head">
-              <span id="ol-inspect-detail-title"></span
-              ><button type="button" id="ol-inspect-detail-close" class="ol-action ol-s cursor-interaction">Close</button>
-            </div>
-            <div id="ol-inspect-detail-body"></div>
-          </div>
-        </div>
         <button
           type="button"
           id="ol-latest"
@@ -1238,74 +1231,30 @@
           tabindex="0"
         ></div>
         <div class="ol-drawer-bar">
-          <div class="ol-drawer-tabs ol-seg" role="tablist" aria-label="Details">
-            <button
-              type="button"
-              role="tab"
-              id="ol-tab-cells"
-              class="cursor-interaction"
-              data-drawer="cells"
-              aria-controls="ol-panel-cells"
-              aria-selected="true"
-              title="Every occupied cell in view (T opens and closes the drawer)"
-            >
-              Cells</button
-            ><button
-              type="button"
-              role="tab"
-              id="ol-tab-cases"
-              class="cursor-interaction"
-              data-drawer="cases"
-              aria-controls="ol-panel-cases"
-              aria-selected="false"
-              title="The historical cases behind the continuations"
-            >
-              Cases</button
-            ><button
-              type="button"
-              role="tab"
-              id="ol-tab-query"
-              class="cursor-interaction"
-              data-drawer="query"
-              aria-controls="ol-panel-query"
-              aria-selected="false"
-              title="The cube query for this view, and its view code"
-            >
-              Query<span id="ol-query-mini" class="ol-num ol-query-mini"></span>
+          <button type="button" id="ol-reference-toggle" class="ol-icon-button cursor-interaction" aria-label="System reference" aria-expanded="false" aria-pressed="false" aria-controls="ol-reference" data-hint="Documentation in the full-height left panel">
+            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" /><path d="M8 7v4M8 4.5v.5" /></svg><span class="ol-label">System reference</span>
+          </button>
+          <span class="ol-drawer-divider" aria-hidden="true"></span>
+          <div class="ol-drawer-tabs" role="group" aria-label="Bottom panels">
+            <button type="button" id="ol-tab-cells" class="ol-icon-button cursor-interaction" data-drawer="cells" aria-label="Cells" aria-controls="ol-panel-cells" aria-expanded="false" aria-pressed="false" data-hint="Measured cells in the bottom panel">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" /><path d="M2.5 8h11M8 2.5v11" /></svg><span id="ol-tab-cells-label" class="ol-label">Cells</span>
             </button>
-            <button
-              type="button"
-              role="tab"
-              id="ol-tab-compare"
-              class="cursor-interaction"
-              data-drawer="compare"
-              aria-controls="ol-panel-compare"
-              aria-selected="false"
-              title="Read captured cells and compare their measurements"
-            >
-              Compare <span id="ol-comparison-count" class="ol-num">0</span>
+            <button type="button" id="ol-tab-cases" class="ol-icon-button cursor-interaction" data-drawer="cases" aria-label="Cases" aria-controls="ol-panel-cases" aria-expanded="false" aria-pressed="false" data-hint="Historical cases in the bottom panel">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2" width="11" height="12" rx="1.5" /><path d="M5 5h.5M7.5 5H11M5 8h.5M7.5 8H11M5 11h.5M7.5 11H11" /></svg><span id="ol-tab-cases-label" class="ol-label">Cases</span>
+            </button>
+            <button type="button" id="ol-tab-query" class="ol-icon-button cursor-interaction" data-drawer="query" aria-label="Query" aria-controls="ol-panel-query" aria-expanded="false" aria-pressed="false" data-hint="Query, view code and provenance in the bottom panel">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m5 4-4 4 4 4M11 4l4 4-4 4M9.5 2l-3 12" /></svg><span id="ol-tab-query-label" class="ol-label">Query</span>
+            </button>
+            <button type="button" id="ol-tab-compare" class="ol-icon-button cursor-interaction" data-drawer="compare" aria-label="Compare" aria-controls="ol-panel-compare" aria-expanded="false" aria-pressed="false" data-hint="Captured cells and comparisons in the bottom panel">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3" width="5" height="10" rx="1" /><rect x="9.5" y="3" width="5" height="10" rx="1" /><path d="M3.5 6h1M11.5 6h1M3.5 9h1M11.5 9h1" /></svg><span id="ol-comparison-count" class="ol-label">Compare</span>
             </button>
           </div>
-          <span class="ol-drawer-space"></span>
-          <button
-            type="button"
-            id="ol-drawer-toggle"
-            class="ol-icon-button cursor-interaction"
-            aria-expanded="false"
-            aria-controls="ol-drawer-body"
-            aria-label="Open the drawer"
-            title="Open the drawer (T)"
-          >
-            <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="m4.5 9.5 3.5-3.5 3.5 3.5" />
-            </svg>
-          </button>
         </div>
         <div class="ol-drawer-body" id="ol-drawer-body">
           <div
             class="ol-panel ol-comparison-panel"
             id="ol-panel-compare"
-            role="tabpanel"
+            role="region"
             aria-labelledby="ol-tab-compare"
             hidden
           >
@@ -1314,7 +1263,7 @@
           <div
             class="ol-panel"
             id="ol-panel-cells"
-            role="tabpanel"
+            role="region"
             aria-labelledby="ol-tab-cells"
           >
             <div class="ol-panel-head">
@@ -1399,7 +1348,7 @@
           <div
             class="ol-panel"
             id="ol-panel-cases"
-            role="tabpanel"
+            role="region"
             aria-labelledby="ol-tab-cases"
             hidden
           >
@@ -1474,10 +1423,11 @@
           <div
             class="ol-panel ol-query-body"
             id="ol-panel-query"
-            role="tabpanel"
+            role="region"
             aria-labelledby="ol-tab-query"
             hidden
           >
+            <p class="ol-muted">Cell size<span id="ol-query-mini" class="ol-num ol-query-mini"></span></p>
             <label for="ol-query-text"
               >Six parameters · requested base-cell bounds</label
             ><textarea
@@ -1614,6 +1564,55 @@
       tabindex="0"
     ></div>
     <aside class="ol-side" id="ol-side" aria-label="Inspector">
+        <div
+          class="ol-inspect"
+          id="ol-inspect"
+          data-temporary="inspect"
+          role="group"
+          aria-label="Inspection"
+          aria-describedby="ol-inspect-position"
+          tabindex="0"
+          hidden
+        >
+          <div class="ol-inspect-head">
+            <span class="ol-inspect-title">Inspect</span>
+            <button type="button" id="ol-inspect-exit" class="ol-icon-button cursor-interaction" aria-label="Close inspector" title="Close inspector (Escape)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg>
+            </button>
+          </div>
+          <div class="ol-inspect-navigation">
+            <div class="ol-seg" role="tablist" aria-label="What to inspect" id="ol-inspect-surfaces">
+              <button type="button" role="tab" data-surface="cells" aria-selected="true" class="cursor-interaction">Cells</button
+              ><button type="button" role="tab" data-surface="rows" aria-selected="false" tabindex="-1" class="cursor-interaction">Rows</button
+              ><button type="button" role="tab" data-surface="columns" aria-selected="false" tabindex="-1" class="cursor-interaction">Columns</button
+              ><button type="button" role="tab" data-surface="references" aria-selected="false" tabindex="-1" class="cursor-interaction">References</button
+              ><button type="button" role="tab" data-surface="lens" aria-selected="false" tabindex="-1" class="cursor-interaction">Lens</button>
+            </div>
+          </div>
+          <div class="ol-inspect-position" id="ol-inspect-position"></div>
+          <div class="ol-inspect-readout" id="ol-inspect-readout"></div>
+          <div class="ol-inspect-boundary" id="ol-inspect-boundary"></div>
+          <div class="ol-inspect-steps" role="group" aria-label="Move the cursor">
+            <button type="button" data-step="left" class="ol-icon-button cursor-interaction" aria-label="Previous time cell" title="Previous time cell (Left)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m10 3-5 5 5 5" /></svg></button
+            ><button type="button" data-step="right" class="ol-icon-button cursor-interaction" aria-label="Next time cell" title="Next time cell (Right)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" /></svg></button
+            ><button type="button" data-step="up" class="ol-icon-button cursor-interaction" aria-label="Next higher price row" title="Next higher price row (Up)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 10 5-5 5 5" /></svg></button
+            ><button type="button" data-step="down" class="ol-icon-button cursor-interaction" aria-label="Next lower price row" title="Next lower price row (Down)">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 6 5 5 5-5" /></svg></button
+            ><select id="ol-inspect-reference" aria-label="Reference" title="Choose a reference"></select>
+          </div>
+          <span class="ol-sr" id="ol-inspect-live" role="status" aria-live="polite"></span>
+          <div class="ol-inspect-chooser" id="ol-inspect-chooser" role="dialog" aria-label="References at the tap" hidden></div>
+          <div class="ol-inspect-detail" id="ol-inspect-detail" role="dialog" aria-labelledby="ol-inspect-detail-title" hidden>
+            <div class="ol-pop-head">
+              <span id="ol-inspect-detail-title"></span
+              ><button type="button" id="ol-inspect-detail-close" class="ol-action ol-s cursor-interaction">Back</button>
+            </div>
+            <div id="ol-inspect-detail-body"></div>
+          </div>
+        </div>
       <div class="ol-side-tabs">
         <div class="ol-seg ol-side-seg">
           <button

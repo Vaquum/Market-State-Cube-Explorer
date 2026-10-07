@@ -145,7 +145,7 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     const fake = await fakeFor("mini");
     await context.grantPermissions(CLIPBOARD, { origin: fake.url });
     const surface = observe(page);
-    await page.goto(fake.url + "/#w=24h&vis=2&ap=" + S.AP + "&mode=path&pane=volume&bs=i");
+    await page.goto(fake.url + "/#w=24h&r=4,0&vis=2&ap=" + S.AP + "&mode=path&pane=volume&bs=i");
     await page.locator("#ol-canvas").waitFor();
     // the page fits the mapping by itself (Explore), then one action holds it and freezes the displayed Auto axis
     const calm = async (p, pr, su) => {
@@ -210,7 +210,7 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     // the import was made in the open drawer, and a browser with nothing stored shows the neutral version notice: both take room from
     // the chart, so with the drawer closed and the banner dismissed the chart is the source's
     await S.notices(pasted);
-    await pasted.locator("#ol-drawer-toggle").click();
+    await pasted.locator("#ol-canvas").press("t");
     await expect(pasted.locator("#ol-drawer")).toHaveAttribute("data-open", "false");
     await fake.idle({ quietMs: 400 });
     await pasted.waitForTimeout(600);

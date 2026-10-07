@@ -105,6 +105,7 @@ test("Inspect Add on a held Lens captures its finer level, bounds and exact cell
   await page.keyboard.press("l"); const p = await point(page); await page.mouse.move(p.x, p.y);
   await probe.waitForQuiet({ quietMs: 300, timeout: 30000 }); await page.keyboard.press("e");
   await expect(page.locator("#ol-inspect")).toHaveAttribute("data-surface", "lens");
+  await probe.waitForReady(); await probe.waitForQuiet({ quietMs: 300, timeout: 30000 });
   await page.locator("#ol-inspect").focus(); await page.keyboard.press("Enter");
   await page.locator("#ol-inspect-detail-body").getByRole("button", { name: "Add to comparison" }).click();
   await expect.poll(async () => (await saved(page))?.captures.length).toBe(1);

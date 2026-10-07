@@ -457,6 +457,14 @@ async function holdLens(page, probe, fakeFor, pane, lines = "") {
     const readout = page.locator("#ol-inspect-readout");
     // the finer cell the lens starts on has trades in an hour that is not over
     await expect(readout, "a measured finer cell").toContainText("Taker buys");
+    const finerId = await readout.getAttribute("data-readout");
+    expect(finerId, "the pinned lens profile retains its canonical readout identity").toMatch(/^\d+:\d+:\d+:\d+$/);
+    const [n, m, c, r] = finerId.split(":").map(Number);
+    await expect(page.locator("#ol-inspect")).toHaveAttribute("data-c", String(c));
+    await expect(page.locator("#ol-inspect")).toHaveAttribute("data-r", String(r));
+    await expect(page.locator("#ol-inspect")).toHaveAttribute("data-ts", String(2 ** n));
+    await expect(page.locator("#ol-inspect")).toHaveAttribute("data-ps", String(2 ** m));
+    await expect(page.locator("#ol-legend-marker")).toHaveAttribute("data-readout", ""); // the coarse legend rejects another level (DR-22)
     await expect(readout, "in the open column, and says so").toContainText(/Column\s*Still open/);
     // and the next cell down is empty: not a completed zero
     await page.keyboard.press("ArrowDown");

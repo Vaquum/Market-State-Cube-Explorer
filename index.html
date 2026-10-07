@@ -24250,6 +24250,7 @@
         scaleFault(error);
       }
     }
+    inspect.readout = readout;
     // an empty cell of the open column is not a completed zero: the same word as the Cells', for the lens's own column
     const open = !S.replay && w.c * w.sp.ts < CUT && (w.c + 1) * w.sp.ts > CUT;
     if (!z) tipRows(tip, head, sub, [["Lens", `${lp.fine ? "Finer" : "Finest loaded"} cells · ${dur(lp.ts * BASE)} × ${price(lp.ps * PR)} USDT`]], open ? "Still open: no trades yet" : "No trades in this finer cell");

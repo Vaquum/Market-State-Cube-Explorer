@@ -29,6 +29,8 @@ test("secondary menu/cancel/Copy leave the chart address, anchor and history unc
 for(const tool of ["pan","select","inspect","trend"])
   test(`right-click in ${tool} collects without its primary gesture`,async({page,fakeFor,probe})=>{
     const fake=await fakeFor("standard");await open(page,fake,probe);await page.locator(`[data-tool="${tool}"]`).click();
+    // Inspect starts context reads; capture a settled profile so the stale-menu guard remains meaningful.
+    await probe.waitForReady();await probe.waitForQuiet({quietMs:300,timeout:60000});
     const p=await point(page),before=await page.evaluate(()=>location.hash);await add(page,p);
     expect(await page.evaluate(()=>location.hash)).toBe(before);
     const record=await stored(page);expect(record.captures[0].metrics["volume.amount"].tag).toBe("finite");

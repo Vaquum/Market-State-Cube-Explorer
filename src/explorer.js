@@ -3997,6 +3997,7 @@
   // label and value for each measure. Numbers are compact; Shift shows them
   // exact. Over the price profile it reads out the row under the pointer.
   function tipRows(tip, head, sub, rows, note) {
+    delete tip.dataset.presentation;
     const part = (tag, className, textContent) => {
       const node = document.createElement(tag);
       if (className) node.className = className;
@@ -4022,6 +4023,337 @@
       // One note, or a few, each its own line.
       ...[note || []].flat().filter(Boolean).map((text) => part("div", "ol-tip-note", text)),
     );
+  }
+  // Presentation leaves the canonical readout intact. Price distances use the last completed day's
+  // Wilder ATR at this cell's time, never a later day's volatility or an estimate from price rows.
+  function readingATR(t) {
+    if (!PACK.live) return null;
+    const series = barSeries(9);
+    if (series.state !== "ready") return null;
+    const cal = barCalendar(series), day = Math.floor(t / DAYS) - 1;
+    const value = cal.atr.get(day);
+    return value > 0 && cal.days.by.get(day)?.whole ? value : null;
+  }
+  function readingDistance(value, atr, exact) {
+    return atr > 0
+      ? { text: (value / atr).toFixed(exact ? 4 : 2), unit: "daily ATR" }
+      : { text: exact ? usdt(value) : compact(value), unit: "USDT" };
+  }
+  const cellContextResults = new Map(), cellMotionResults = new Map();
+  function cellContextSpec(n, m, c, cut = activeCutoff(), moving = false) {
+    const ts = 2 ** n, a = Math.max(0, (c - 11) * ts), b = Math.min((c + 1) * ts, Math.ceil(cut));
+    return { n, m, c, a, b, cut, key: [moving ? "cell-motion" : "cell-context", live.generation, n, m, a, b, cut].join("|") };
+  }
+  // Query full price support. Camera bounds never define this history or its column denominator.
+  function cellHistory(n, m, c, r, cut = activeCutoff(), moving = false) {
+    const spec = cellContextSpec(n, m, c, cut, moving), ts = 2 ** n;
+    const held = (moving ? cellMotionResults : cellContextResults).get(spec.key);
+    const src = held ? null : moving ? motionExact([spec.a, spec.b, 0, 2 ** 32], n, m) : exactSource([spec.a, spec.b, 0, 2 ** 32], n, m);
+    const query = held?.query ?? (src ? moving ? boundedMotion(src, n, m, [spec.a, Math.min(spec.b, src.end, cut), 0, Infinity]) : aggregate(src, n, m, [spec.a, spec.b, 0, Infinity]) : null);
+    const coverageStart = held?.start ?? (src ? sourceRange(src)[0] : Infinity);
+    const end = held?.end ?? (src ? moving ? Math.min(src.end, cut) : Math.min(sourceRange(src)[1], cut) : -Infinity);
+    const columns = query ? new Map(query.cols.map((col) => [col.c, col])) : null;
+    const samples = Array.from({ length: 12 }, (_, i) => {
+      const col = c - 11 + i, start = col * ts, stop = Math.min((col + 1) * ts, cut);
+      if (col < 0 || start >= cut || (col !== c && (col + 1) * ts > cut)) return null;
+      let q = query, through = end;
+      if (!q || start < coverageStart || stop > through) {
+        const own = moving ? motionExact([start, Math.ceil(stop), 0, 2 ** 32], n, m) : exactSource([start, Math.ceil(stop), 0, 2 ** 32], n, m);
+        through = own ? moving ? Math.min(own.end, cut) : Math.min(sourceRange(own)[1], cut) : -Infinity;
+        if (!own || through < stop) return null;
+        q = moving ? boundedMotion(own, n, m, [start, stop, 0, Infinity]) : aggregate(own, n, m, [start, Math.ceil(stop), 0, Infinity]);
+      }
+      const z = q.map.get(moving ? cellKey(col, r) : `${col},${r}`) ?? { c: col, r, v: 0, bv: 0, ct: 0, bt: 0, p: 0, w: 0 };
+      const column = q === query ? columns.get(col) : q.cols.find((x) => x.c === col);
+      return { z, column: column ?? { c: col, v: 0, bv: 0, ct: 0, bt: 0 }, end: stop };
+    });
+    const complete = samples.every((sample, i) => c - 11 + i < 0 || sample !== null);
+    const failed = (moving ? motion.failed : cube.failed).get(spec.key);
+    return { spec, samples, complete, state: failed ? "failed" : complete ? "ready" : held ? "unsupported" : PACK.live ? "pending" : "unsupported", error: failed };
+  }
+  function inspectedCell() {
+    if (!inspect.on || !["cells", "lens"].includes(inspect.surface) || S.mode === "candles") return null;
+    const w = inspectWhere();
+    return w.inside ? { n: Math.round(Math.log2(w.sp.ts)), m: Math.round(Math.log2(w.sp.ps)), c: w.c, r: w.r } : null;
+  }
+  function cellColumn(n, m, c, cut, time, history = cellHistory(n, m, c, 0, cut)) {
+    const ts = 2 ** n;
+    if (time[0] === c * ts && time[1] === Math.min((c + 1) * ts, cut)) return history.samples.at(-1)?.column ?? null;
+    const src = exactSource([time[0], Math.ceil(time[1]), 0, 2 ** 32], n, m);
+    return src ? aggregate(src, n, m, [time[0], Math.ceil(time[1]), 0, Infinity]).cols.find((x) => x.c === c) ?? { v: 0 } : null;
+  }
+  function cellContextWant(moving = false) {
+    const target = inspectedCell();
+    if (!PACK.live || !target) return null;
+    const history = cellHistory(target.n, target.m, target.c, target.r, activeCutoff(), moving), s = history.spec;
+    const cache = moving ? cellMotionResults : cellContextResults;
+    if (history.complete || cache.has(s.key) || s.b <= s.a) return null;
+    return {
+      key: s.key,
+      path: `/cube/query?n=${s.n}&m=${s.m}&b0=${s.a}&b1=${s.b}${moving ? "&motion=1" : ""}`,
+      loading: moving ? "Reading this cell's path and dwell…" : "Reading this price band's history…",
+      decode: async (body) => ({ block: await unpack(body.block, s.key), body }),
+      apply: ({ block, body }) => {
+        cache.set(s.key, { query: moving ? motionSummary(block.cells, s.n, s.m) : summarize(block.cells, s.n, s.m), start: block.b0, end: Math.min(moving ? body.end : block.b1, s.cut) });
+        while (cache.size > 12) cache.delete(cache.keys().next().value);
+      },
+    };
+  }
+  function cellLocation(c, r, ts, ps) {
+    const d = Math.floor(c * ts / DAYS) - 1;
+    if (d < 0) return { state: "none", label: "No prior UTC session in cube history" };
+    const profile = dayProfile(d), label = `Prior UTC session · ${day(d * DAYS)} · final`;
+    if (profile.state !== "ready") return { ...profile, label };
+    if (!profile.whole || !profile.exact || profile.poc === null || !profile.va) return { state: "undefined", label, reason: "No complete session profile" };
+    const low = r * ps * PR, high = (r + 1) * ps * PR;
+    return { state: "ready", label, through: (d + 1) * DAYS, poc: (profile.poc + .5) * PR,
+      valueLow: profile.va.r0 * PR, valueHigh: profile.va.r1 * PR,
+      ...E.measure.bandLocation({ low, high, poc: (profile.poc + .5) * PR, valueLow: profile.va.r0 * PR, valueHigh: profile.va.r1 * PR }) };
+  }
+  // All miniatures share a time direction and a fixed 12-cell window. Missing coverage breaks the
+  // stroke; a lack of history is drawn as a dashed guide, never a fabricated flat trend.
+  function readingSparkline(values, label, { signed: bipolar = false, share = false, zero = true, provisional = false, fixed = null } = {}) {
+    const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+    svg.classList.add("ol-sparkline");
+    svg.setAttribute("viewBox", "0 0 72 30");
+    svg.setAttribute("role", "img");
+    const finite = values.filter(Number.isFinite), enough = finite.length >= 2;
+    const currentDefined = Number.isFinite(values.at(-1));
+    const direction = enough && currentDefined ? finite.at(-1) > finite[0] ? "rising" : finite.at(-1) < finite[0] ? "falling" : "unchanged" : "history unavailable";
+    svg.setAttribute("aria-label", `${label}: ${currentDefined ? direction : "current value unavailable; earlier defined history shown"}. Earlier cells on the left; current cell on the right.`);
+    svg.dataset.trend = enough && currentDefined ? direction : "unavailable";
+    svg.dataset.samples = JSON.stringify(values);
+    const make = (tag, attrs) => {
+      const node = document.createElementNS(ns, tag);
+      for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+      svg.append(node); return node;
+    };
+    let lo = fixed ? fixed[0] : share ? 0 : finite.length ? Math.min(...finite, ...(zero ? [0] : [])) : 0;
+    let hi = fixed ? fixed[1] : share ? 1 : finite.length ? Math.max(...finite, ...(zero ? [0] : [])) : 1;
+    if (bipolar && !fixed) { hi = Math.max(Math.abs(lo), Math.abs(hi)); lo = -hi; }
+    svg.dataset.domain = JSON.stringify([lo, hi]);
+    if (hi === lo) { lo -= bipolar ? 1 : zero ? 0 : 0.5; hi += bipolar || zero ? 1 : 0.5; }
+    const x = (i) => 3 + i * 66 / Math.max(1, values.length - 1), y = (v) => 26 - (v - lo) / (hi - lo) * 22;
+    make("path", { d: `M3 ${y(bipolar ? 0 : lo)} H69`, fill: "none", stroke: "currentColor", "stroke-opacity": 0.22, "stroke-width": 1, ...(!enough ? { "stroke-dasharray": "2 3" } : {}) });
+    if (enough) {
+      let path = "", connected = false;
+      values.forEach((v, i) => {
+        if (!Number.isFinite(v)) { connected = false; return; }
+        path += `${connected ? "L" : "M"}${x(i).toFixed(2)} ${y(v).toFixed(2)} `;
+        connected = true;
+      });
+      make("path", { d: path.trim(), fill: "none", stroke: "currentColor", "stroke-width": 1.8, "stroke-linecap": "round", "stroke-linejoin": "round" });
+    }
+    if (Number.isFinite(values.at(-1))) make("circle", { cx: 69, cy: y(values.at(-1)), r: 2.5, fill: provisional || !enough ? "var(--ol-surface)" : "currentColor", stroke: "currentColor", "stroke-width": 1.4 });
+    return svg;
+  }
+  function cellPresentation(tip, { c, r, ts, ps, z, readout, frame = last?.sc?.cells, cells = last?.shown, motionCells = last?.mv?.shown, bounds = last?.b, detailed = false }) {
+    const raw = tip.querySelector(".ol-tip-rows");
+    if (!raw) return;
+    const hidden = readout?.typed?.tag === "hidden" || c * ts >= last.cut;
+    if (hidden) {
+      tipRows(tip, tip.querySelector(".ol-tip-head")?.textContent, tip.querySelector(".ol-tip-sub")?.textContent, [], S.replay ? "Hidden in replay" : "After the data cutoff");
+      return;
+    }
+    const exact = nav.shift, atr = readingATR(c * ts), open = (c + 1) * ts > last.cut;
+    const field = (name) => raw.querySelector(`dd[data-field="${name}"]`);
+    const number = (v) => exact ? usdt(v) : compact(v), count = (v) => exact ? integer(v) : compact(v);
+    const share = (v) => ({ text: (v * 100).toFixed(exact ? 2 : 1), unit: "%" });
+    const money = (v, unit = "USDT") => ({ text: number(v), unit });
+    const delta = (v) => ({ text: signed(v, number), unit: "USDT" });
+    const current = z ?? { c, r, v: 0, bv: 0, ct: 0, bt: 0 };
+    const n = Math.round(Math.log2(ts)), m = Math.round(Math.log2(ps)), rowHistory = cellHistory(n, m, c, r, last.cut);
+    const history = rowHistory.samples.map((sample) => sample?.z ?? null);
+    const moving = cellHistory(n, m, c, r, last.cut, true);
+    const partial = Boolean(readout?.support?.portion);
+    const moved = partial ? motionCells?.map?.get(cellKey(c, r)) : moving.samples.at(-1)?.z;
+    const movementEnd = partial ? last.mv?.end : moving.samples.at(-1)?.end;
+    const time = readout?.support?.time ?? [Math.max(c * ts, bounds[0]), Math.min((c + 1) * ts, bounds[1], last.cut)];
+    const column = cellColumn(n, m, c, last.cut, time, rowHistory);
+    const composition = E.measure.cellComposition({ z: current, column, hidden });
+    const finite = (record) => record?.result.tag === "finite" ? record.result.value : null;
+    const measure = (mode, value, basis = "amount", pathBasis = "spans", end = Infinity, area = null) => E.measure.cellMeasurement({
+      mode, basis, pathBasis, z: value, geom: { BASE, PR }, level: { n, m },
+      bounds: area ?? [value.c * ts, (value.c + 1) * ts, r * ps, (r + 1) * ps], cut: last.cut, end, CUT, replay: S.replay,
+      read: null, measured: null, cascade: mode === "cascade" ? (v, out) => {
+        const entry = frame === last.sc?.lens ? null : last.full?.cascade && cascadeOf(last.full.cascade, v.c, v.r);
+        if (entry?.res?.tag === "finite") { out.tag = E.result.TAG.finite; out.value = entry.res.value; }
+        else out.tag = E.result.TAG.pending;
+      } : null,
+    });
+    const derived = (key) => finite(composition[key]);
+    const metrics = {
+      volume: { label: "Volume", value: current.v, format: money, field: "volume", pick: (v) => v.v },
+      trades: { label: "Trades", value: current.ct, format: (v) => ({ text: count(v), unit: "trades" }), field: "trades", pick: (v) => v.ct },
+      size: { label: "Mean reported trade", value: current.ct > 0 ? current.v / current.ct : null, format: (v) => money(v, "USDT / trade"), field: "size", pick: (v) => v.ct > 0 ? v.v / v.ct : null },
+      delta: { label: "Buy − sell", value: 2 * current.bv - current.v, format: delta, field: "delta", pick: (v) => 2 * v.bv - v.v, signed: true },
+      flow: { label: "Taker buy share", value: current.v > 0 ? current.bv / current.v : null, format: share, pick: (v) => v.v > 0 ? v.bv / v.v : null, share: true },
+      flowtrades: { label: "Buyer-initiated count share", value: current.ct > 0 ? current.bt / current.ct : null, format: share, field: "countShare", pick: (v) => v.ct > 0 ? v.bt / v.ct : null, share: true },
+      imbalance: { label: "Net taker imbalance", value: derived("imbalance"), format: (v) => ({ text: signed(v * 100, (x) => x.toFixed(exact ? 2 : 1)), unit: "% of cell volume" }), field: "imbalance", pick: (v) => finite(E.measure.cellComposition({ z: v }).imbalance), signed: true, fixed: [-1, 1] },
+      buySize: { label: "Buyer-initiated mean", value: derived("buySize"), format: (v) => money(v, "USDT / trade"), field: "buySize", pick: (v) => finite(E.measure.cellComposition({ z: v }).buySize) },
+      sellSize: { label: "Seller-initiated mean", value: derived("sellSize"), format: (v) => money(v, "USDT / trade"), field: "sellSize", pick: (v) => finite(E.measure.cellComposition({ z: v }).sellSize) },
+      sizeRatio: { label: "Seller / buyer mean", value: derived("sizeRatio"), format: (v) => ({ text: v.toFixed(exact ? 4 : 2), unit: "×" }), field: "sizeRatio", pick: (v) => finite(E.measure.cellComposition({ z: v }).sizeRatio) },
+      columnShare: { label: "Share of interval volume", value: derived("columnShare"), format: share, field: "columnShare", pick: (v, i) => finite(E.measure.cellComposition({ z: v, column: rowHistory.samples[i]?.column }).columnShare), share: true },
+      path: { label: "Path / price span", field: "pathSpans", movement: true, value: moved ? finite(measure("path", moved, "amount", "spans", movementEnd, partial ? bounds : null)) : null, format: (v) => ({ text: number(v), unit: "row spans" }), pick: (v, i) => {
+        const sample = moving.samples[i]; return sample ? finite(measure("path", sample.z, "amount", "spans", sample.end)) : null;
+      } },
+      dwell: { label: "Time at price", field: "dwellShare", movement: true, value: moved ? finite(measure("dwell", moved, "share", "spans", movementEnd, partial ? bounds : null)) : null, format: share, pick: (v, i) => {
+        const sample = moving.samples[i]; return sample ? finite(measure("dwell", sample.z, "share", "spans", sample.end)) : null;
+      }, share: true },
+    };
+    for (const [key, record] of Object.entries(composition)) {
+      const term = document.createElement("dt"), value = document.createElement("dd");
+      term.textContent = metrics[key]?.label ?? "Seller / buyer mean";
+      value.dataset.field = key; value.dataset.formula = record.formula;
+      value.dataset.canonical = String(record.result.tag === "finite" ? record.result.value : record.result.tag);
+      value.textContent = record.result.tag === "finite" ? String(record.result.value) : E.result.describe(record.result).short;
+      raw.append(term, value);
+    }
+    const selected = S.mode === "geometry" ? "volume" : readout?.measure?.measure ?? S.mode, basis = readout?.measure?.basis;
+    const chosen = metrics[selected];
+    let primary = chosen ? { ...chosen, field: "value" } : { label: MODE_NAMES[selected] ?? selected, value: null, format: number, field: "value", pick: () => null };
+    // Preserve the analytical basis. Cumulative path is row traversals, price travel or a rate;
+    // volatility-normalised displacement belongs to a candle's net move and range instead.
+    if (readout?.typed?.tag === "finite") {
+      primary.value = readout.typed.value;
+      primary.format = (v) => {
+        if (readout.measure.unit === "share") return share(v);
+        if (readout.measure.unit === "log2-ratio") return { text: (2 ** v).toFixed(exact ? 4 : 2), unit: "× parent share" };
+        if (readout.measure.unit === "usdt-per-trade") return money(v, "USDT / trade");
+        if (readout.measure.unit === "trades") return { text: count(v), unit: "trades" };
+        if (readout.measure.unit === "usdt") return primary.signed ? delta(v) : money(v);
+        if (readout.measure.unit === "row-spans") return { text: exact ? v.toFixed(3) : compact(v), unit: "row spans" };
+        if (readout.measure.unit === "row-spans-per-min") return { text: exact ? v.toFixed(3) : compact(v), unit: "row spans / min" };
+        return { text: unitText(readout.measure.unit, v, Boolean(E.measure.FORMULAS[readout.measure.formula]?.signed), { money: number, count, share: (x) => share(x).text + "%", exact }), unit: "" };
+      };
+      if (basis === "intensity") primary.label += " intensity";
+    }
+    if (readout?.typed && readout.typed.tag !== "finite") primary.value = null;
+    primary.pick = (v, i) => {
+      const sample = ["path", "dwell"].includes(selected) ? moving.samples[i] : rowHistory.samples[i];
+      if (!sample) return null;
+      return finite(measure(selected, sample.z, basis, readout?.measure?.basis === "perMinute" ? "perMinute" : readout?.measure?.basis === "usdt" ? "usdt" : "spans", sample.end));
+    };
+    const stats = document.createElement(detailed ? "div" : "dl"); stats.className = "ol-cell-stats";
+    const appendMetric = (parent, metric, main = false) => {
+      const row = document.createElement("div"); row.className = "ol-cell-stat";
+      row.dataset.primary = String(main);
+      const term = document.createElement("dt"); term.textContent = metric.label;
+      const old = metric.field ? field(metric.field) : null;
+      const value = old ?? document.createElement("dd");
+      if (old) old.previousElementSibling?.remove();
+      const present = Number.isFinite(metric.value) ? metric.format(metric.value) : { text: "—", unit: "" };
+      if (main && old && !Number.isFinite(metric.value)) present.text = old.textContent;
+      if (!old && metric.field) { value.dataset.field = metric.field; value.dataset.canonical = String(metric.value ?? "undefined"); }
+      if (Number.isFinite(metric.value)) value.dataset.canonical = String(metric.value);
+      value.replaceChildren(document.createTextNode(present.text + (present.unit ? " " : "")));
+      if (present.unit) {
+        const unit = document.createElement("span"); unit.className = "ol-reading-unit"; unit.textContent = present.unit;
+        value.append(unit);
+      }
+      if (metric.signed && Number.isFinite(metric.value)) value.dataset.sign = metric.value > 0 ? "positive" : metric.value < 0 ? "negative" : "zero";
+      const values = history.map((v, i) => v || metric.movement ? metric.pick(v, i) : null);
+      // The selected point describes the current readout, including an explicitly labelled portion.
+      values[11] = Number.isFinite(metric.value) ? metric.value : null;
+      const spark = readingSparkline(values, metric.label, { signed: metric.signed, share: metric.share, fixed: metric.fixed, provisional: open });
+      row.append(term, value, spark);
+      if (detailed && values.slice(0, -1).every((v) => !Number.isFinite(v))) {
+        const note = document.createElement("small"); note.className = "ol-history-note";
+        note.textContent = rowHistory.samples.slice(0, -1).some(Boolean) ? "No earlier defined values" : "Earlier intervals unavailable";
+        row.append(note);
+      }
+      if (detailed && metric.field && composition[metric.field]?.result.tag !== "finite" && composition[metric.field]) {
+        const note = document.createElement("small"); note.className = "ol-history-note";
+        note.textContent = E.result.describe(composition[metric.field].result).short;
+        row.append(note);
+      }
+      parent.append(row);
+    };
+    const section = (name, keys) => {
+      const group = document.createElement("section"); group.className = "ol-cell-group";
+      group.dataset.group = name.toLowerCase().replaceAll(" ", "-");
+      const title = document.createElement("h3"); title.textContent = name;
+      const list = document.createElement("dl"); list.className = "ol-cell-group-stats";
+      for (const key of keys.filter((key) => key !== selected)) appendMetric(list, metrics[key]);
+      group.append(title, list); stats.append(group); return group;
+    };
+    const headline = detailed ? document.createElement("dl") : stats;
+    if (detailed) { headline.className = "ol-cell-headline"; stats.append(headline); }
+    appendMetric(headline, primary, true);
+    let aggression;
+    if (!detailed) {
+      const support = ["volume", "trades", ["flow", "delta"].includes(selected) ? "size" : "imbalance", "size"].filter((key) => key !== selected).slice(0, 3);
+      support.forEach((key) => appendMetric(stats, metrics[key]));
+    } else {
+      const activity = section("Activity", ["volume", "trades", "columnShare"]);
+      const scope = document.createElement("div"); scope.className = "ol-cell-context";
+      scope.textContent = column ? "Interval denominator: all price bands · same measured time" : "Interval share unavailable: complete all-price denominator not loaded for this time support";
+      activity.append(scope);
+      aggression = section("Aggression", ["delta", "imbalance"]);
+      section("Reported trade size", ["buySize", "sellSize", "size", "flowtrades", "sizeRatio"]);
+      const movement = section("Movement", moved ? ["path", "dwell"] : []);
+      const movementNote = document.createElement("div"); movementNote.className = "ol-cell-context";
+      movementNote.textContent = moved ? "Accumulated travel and attributed time in this band" : !PACK.live ? "Path and dwell unavailable in recorded snapshot; live cube required" : moving.state === "failed" ? `Path and dwell unavailable: ${moving.error}` : open ? "Path and dwell measured when this interval completes" : partial ? "Path and dwell unavailable for this partial cell support" : "Path and dwell not measured here yet";
+      movement.append(movementNote);
+      const location = section("Location", []), reference = cellLocation(c, r, ts, ps);
+      location.dataset.state = reference.state;
+      const referenceName = document.createElement("div"); referenceName.className = "ol-cell-context"; referenceName.textContent = reference.label;
+      const relation = document.createElement("p"); relation.className = "ol-band-relation";
+      relation.textContent = reference.state === "ready" ? `${reference.valueRelation} · ${reference.pocRelation}` : reference.reason ?? (reference.state === "pending" ? "Reading the session profile…" : reference.state === "failed" ? `Profile unavailable: ${reference.error}` : "Session profile unavailable");
+      location.append(referenceName, relation);
+      if (reference.state === "ready") {
+        location.dataset.poc = String(reference.poc); location.dataset.through = String(reference.through);
+        const levels = document.createElement("div"); levels.className = "ol-cell-context";
+        const distance = readingDistance(Math.abs(reference.distance), atr, exact);
+        levels.textContent = `POC ${price(reference.poc)} · Value ${price(reference.valueLow)}–${price(reference.valueHigh)} USDT` + (reference.distance ? ` · Nearest band edge ${reference.distance > 0 ? "+" : "−"}${distance.text} ${distance.unit} from POC` : "");
+        location.append(levels);
+      }
+    }
+    const head = tip.querySelector(".ol-tip-head"), sub = tip.querySelector(".ol-tip-sub");
+    if (sub) sub.textContent = `${price(r * ps * PR)}–${price((r + 1) * ps * PR)} USDT`;
+    const originalNotes = [...tip.querySelectorAll(".ol-tip-note")];
+    const state = document.createElement("div"); state.className = "ol-cell-state";
+    state.textContent = [open ? "Still open" : "Complete", readout?.support?.portion ? "Partial cell" : "", CANON !== null && (c + 1) * ts > CANON ? "Provisional" : "", !z ? "No trades in this cell" : "", readout?.exposure?.short ? "Short exposure" : ""].filter(Boolean).join(" · ");
+    const details = document.createElement("details"); details.className = "ol-cell-details";
+    const summary = document.createElement("summary"); summary.textContent = "Measurement details";
+    details.append(summary, raw, ...originalNotes);
+    details.hidden = !detailed;
+    const context = document.createElement("div"); context.className = "ol-cell-context";
+    const historyWindow = `Same price band · previous 11 intervals and this interval · ${range((c - 11) * ts, Math.min((c + 1) * ts, last.cut))} UTC`;
+    context.textContent = detailed ? "Same price band · 12 intervals" : historyWindow;
+    context.dataset.historyFrom = String((c - 11) * ts); context.dataset.historyTo = String(Math.min((c + 1) * ts, last.cut));
+    context.title = `${historyWindow}. Fully measured intervals without trades are zero activity; undefined ratios and missing coverage break the line. Amount miniatures have independent vertical scales.`;
+    if (detailed) {
+      const historyDetail = document.createElement("div"); historyDetail.className = "ol-cell-context";
+      historyDetail.textContent = historyWindow;
+      details.append(historyDetail);
+    }
+    if (detailed && rowHistory.state !== "ready") {
+      const missing = document.createElement("div"); missing.className = "ol-history-note";
+      missing.textContent = rowHistory.state === "failed" ? `Earlier intervals unavailable: ${rowHistory.error}` : rowHistory.state === "unsupported" ? PACK.live ? "Earlier intervals unavailable: cube returned incomplete coverage" : "Earlier intervals unavailable in this recorded snapshot" : "Reading earlier intervals from the cube…";
+      context.append(missing);
+    }
+    if (detailed) stats.insertBefore(context, stats.children[1]);
+    const balance = document.createElement("div"); balance.className = "ol-flow-balance";
+    balance.setAttribute("role", "img");
+    balance.setAttribute("aria-label", current.v > 0 ? `Buyer-initiated ${share(current.bv / current.v).text} percent; seller-initiated ${share(1 - current.bv / current.v).text} percent of cell volume` : "No traded volume");
+    const buy = document.createElement("span"); buy.style.width = current.v > 0 ? `${100 * current.bv / current.v}%` : "0%";
+    balance.append(buy); balance.hidden = !(current.v > 0);
+    if (detailed && current.v > 0) {
+      const labels = document.createElement("div"); labels.className = "ol-flow-labels";
+      const buyLabel = document.createElement("span"), sellLabel = document.createElement("span");
+      buyLabel.textContent = `Buyer-initiated ${share(current.bv / current.v).text}%`;
+      sellLabel.textContent = `Seller-initiated ${share(1 - current.bv / current.v).text}%`;
+      labels.append(buyLabel, sellLabel); aggression.append(balance, labels);
+    }
+    if (detailed && atr) {
+      const volatility = document.createElement("div"); volatility.className = "ol-cell-context";
+      volatility.textContent = `Location distances: daily ATR(14) ${price(atr)} USDT · completed days before this cell`;
+      details.append(volatility);
+    }
+    tip.replaceChildren(...[head, sub, state, stats, ...(!detailed ? [balance, context] : []), details].filter(Boolean));
+    tip.dataset.presentation = "cell";
+    tip.dataset.atr = atr === null ? "unavailable" : String(atr);
   }
   // A drawn cell's path and dwell for the tooltip, or why it has none yet. Path is shown in the three ways
   // the measure has (path over the measured price span in row spans, the USDT moved, and row spans per
@@ -4660,7 +4992,7 @@
   // shows, else the table row's. It follows the tip and the row, so it is cleared whenever either goes,
   // whatever hid it; the hook writes only on change.
   function markerNow() {
-    legendMarker(hover && !el("tip").hidden ? scaleRt.tipReadout : tableHover ? scaleRt.rowReadout : null);
+    legendMarker(hover && !el("tip").hidden ? scaleRt.tipReadout : tableHover ? scaleRt.rowReadout : inspect.on ? inspect.readout : null);
   }
   // The tooltip's readout, stored and shown on the legend (null clears both).
   function tipMarker(readout) {
@@ -4790,7 +5122,7 @@
       if (redraw) requestDraw();
       return;
     } else if (S.mode === "candles") {
-      candleTip(tip, renderN(), p.t);
+      candleTip(tip, renderN(), p.t, Boolean(p.inspect));
       syncRowHover(null);
     } else {
       const ts = stepT(),
@@ -4871,6 +5203,7 @@
           ],
           [cas?.note, note],
         );
+      if (!unavailable) cellPresentation(tip, { c, r, ts, ps, z, readout, detailed: Boolean(p.inspect) });
       syncRowHover(z ? cellKey(c, r) : null);
     }
     // After a tap, the row section's control for the level line.
@@ -4912,7 +5245,7 @@
     { id: "references", name: "References" },
     { id: "lens", name: "Lens" },
   ];
-  const inspect = { on: false, surface: "cells", t: null, p: null, ref: null, prev: "pan", detail: false, boundary: "", sig: "", lens: null, forced: null, listKey: "", list: [] };
+  const inspect = { on: false, surface: "cells", t: null, p: null, ref: null, prev: "pan", detail: false, boundary: "", sig: "", lens: null, readout: null, forced: null, listKey: "", list: [] };
   const inspectSurfaceOn = (id) =>
     id === "cells" ||
     (id === "rows" && Boolean(G.tracks)) ||
@@ -5048,11 +5381,32 @@
   // ("Row: 7.52 M USDT"), then the notes, each ended by a full stop, so that nothing runs into the next (a node's textContent joined a term to its value).
   function inspectSpoken(root) {
     const parts = [];
-    for (const node of root.children) {
-      if (node.tagName === "DL") for (const term of node.querySelectorAll("dt")) parts.push(`${term.textContent.trim()}: ${term.nextElementSibling?.textContent.trim() ?? ""}`);
-      else parts.push(node.textContent.trim());
-    }
+    const visit = (node) => {
+      if (node.hidden || (node.tagName === "DETAILS" && !node.open)) return;
+      if (node.tagName === "DL") {
+        for (const term of node.querySelectorAll("dt")) {
+          parts.push(`${term.textContent.trim()}: ${term.nextElementSibling?.textContent.trim() ?? ""}`);
+          if (term.parentElement.classList.contains("ol-cell-stat"))
+            for (const note of term.parentElement.querySelectorAll(".ol-history-note")) parts.push(note.textContent.trim());
+        }
+      } else if (node.querySelector("dl") || node.classList.contains("ol-flow-labels")) {
+        for (const child of node.children) visit(child);
+      } else parts.push(node.textContent.trim());
+    };
+    for (const node of root.children) visit(node);
     return parts.filter(Boolean).join(". ");
+  }
+  function inspectCopy(target, source) {
+    const expanded = target.querySelector(".ol-cell-details")?.open ?? false;
+    const disclosureFocused = target.querySelector(".ol-cell-details > summary") === document.activeElement;
+    target.replaceChildren(...[...source.childNodes].map((node) => node.cloneNode(true)));
+    if (source.dataset.presentation) target.dataset.presentation = source.dataset.presentation;
+    else delete target.dataset.presentation;
+    const details = target.querySelector(".ol-cell-details");
+    if (details) {
+      details.open = expanded;
+      if (disclosureFocused) details.querySelector("summary").focus({ preventScroll: true });
+    }
   }
   // The tooltip's own builders write the readout of the cursor into the tip, and the navigator shows a copy of what they wrote.
   function inspectRender(announce, redraw = true) {
@@ -5107,6 +5461,7 @@
     if (el("inspect-boundary").textContent !== boundary) el("inspect-boundary").textContent = boundary;
     // the readout: the tooltip's builders, so the cell, the row, the column and the reference say what the hover says
     const readout = el("inspect-readout");
+    inspect.readout = null;
     let summary = "";
     if (state === "ready" && s !== "lens") {
       hover = inspectPointer();
@@ -5119,18 +5474,23 @@
         tip.hidden = false;
       } else tooltip(hover, { redraw: false });
       inspect.forced = was;
-      readout.replaceChildren(...[...tip.childNodes].map((n) => n.cloneNode(true)));
+      inspect.readout = scaleRt.tipReadout;
+      inspectCopy(readout, tip);
       summary = `${position}. ${inspectSpoken(tip)}`;
     } else if (state === "ready" && s === "lens") {
       const shown = inspectLensTip(tip, w);
-      readout.replaceChildren(...[...tip.childNodes].map((n) => n.cloneNode(true)));
+      inspectCopy(readout, tip);
       summary = `${position}. ${shown}`;
     } else {
       tip.hidden = true;
       const note = state === "outside" ? "The cursor is outside the view. Home brings it back; the view is not moved." : "Nothing to read here.";
       readout.replaceChildren(Object.assign(document.createElement("div"), { className: "ol-tip-note", textContent: note }));
+      delete readout.dataset.presentation;
       summary = `${position}. ${note}`;
     }
+    readout.dataset.readout = readoutId(inspect.readout);
+    // The pinned record lives in the pane. A later pointer hover can show its own compact card.
+    tip.hidden = true;
     if (announce) {
       el("inspect-live").textContent = boundary ? `${boundary}. ${summary}` : summary;
       el("inspect-live").dataset.at = String((Number(el("inspect-live").dataset.at) || 0) + 1);
@@ -5140,7 +5500,7 @@
   }
   // The lens's finer record under the cursor, from the frame the lens drew: its cell at the lens's own level, with the readout the Cells have.
   function inspectLensTip(tip, w) {
-    if (S.mode === "candles") { candleTip(tip, Math.round(Math.log2(w.sp.ts)), w.c * w.sp.ts); tip.hidden = false; return tip.textContent; }
+    if (S.mode === "candles") { candleTip(tip, Math.round(Math.log2(w.sp.ts)), w.c * w.sp.ts, true); tip.hidden = false; return tip.textContent; }
     const lp = w.sp.lens,
       q = lp?.q,
       z = q?.cells.find((x) => x.c === w.c && x.r === w.r) ?? null,
@@ -5162,10 +5522,12 @@
         scaleFault(error);
       }
     }
+    inspect.readout = readout;
     // an empty cell of the open column is not a completed zero: the same word as the Cells', for the lens's own column
     const open = !S.replay && w.c * w.sp.ts < CUT && (w.c + 1) * w.sp.ts > CUT;
     if (!z) tipRows(tip, head, sub, [["Lens", `${lp.fine ? "Finer" : "Finest loaded"} cells · ${dur(lp.ts * BASE)} × ${price(lp.ps * PR)} USDT`]], open ? "Still open: no trades yet" : "No trades in this finer cell");
     else tipRows(tip, head, sub, [...readoutRows(readout, f), ...cellFacts(z, f), ["Column", open ? "Still open" : "Complete"], ["Lens", `${lp.fine ? "Finer" : "Finest loaded"} cells · ${dur(lp.ts * BASE)} × ${price(lp.ps * PR)} USDT`]], "The finer record, not the coarse cell under the lens");
+    if (z) cellPresentation(tip, { c: w.c, r: w.r, ts: w.sp.ts, ps: w.sp.ps, z, readout, frame, cells: q, motionCells: null, bounds: lp.lensBounds, detailed: true });
     tip.hidden = false;
     return tip.textContent;
   }
@@ -5188,6 +5550,7 @@
     inspect.detail = false;
     inspect.lens = null;
     el("inspect").hidden = false;
+    applyPanels();
     // a lens that is on the plot (the tool, or a peek) is held still where it is, and the cursor starts in it: the lens's finer record is what it reads
     if (lensWas) {
       const f = lensFrame();
@@ -5210,9 +5573,11 @@
     if (!inspect.on) return;
     if (inspect.detail) inspectDetail(false, false);
     inspect.on = false;
+    inspect.readout = null;
     inspect.lens = null;
     inspect.forced = null;
     el("inspect").hidden = true;
+    applyPanels();
     el("tip").hidden = true;
     hover = null;
     trendTool = inspect.prev === "trend";
@@ -5316,6 +5681,7 @@
     if (!inspect.on) return;
     if (open === inspect.detail) return;
     inspect.detail = open;
+    el("inspect").dataset.detail = String(open);
     const panel = el("inspect-detail");
     panel.hidden = !open;
     if (open) {
@@ -5334,7 +5700,7 @@
   function renderInspectDetail() {
     const body = el("inspect-detail-body"),
       readout = el("inspect-readout");
-    body.replaceChildren(...[...readout.childNodes].map((n) => n.cloneNode(true)));
+    inspectCopy(body, readout);
     const entry = inspect.surface === "references" ? inspectEntry() : null;
     if (entry?.kind === "drawing") {
       const button = document.createElement("button"); button.type = "button"; button.textContent = "Edit drawing";
@@ -5386,7 +5752,7 @@
   // A draw that changed what the cursor stands on (the view, the level, the data) reads it again, so a pan or a refresh never leaves a stale readout.
   function inspectSync() {
     if (!inspect.on) return;
-    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", S.mode === "candles" ? [candleVersion, motion.failed.size, candleEdge(), PACK.state_token].join(":") : "", inspectReferences().length, drawingStore.revision, nav.shift].join("|");
+    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", comparisonSourceRevision, cube.failed.size, motion.failed.size, barsVersion, S.mode === "candles" ? [candleVersion, candleEdge(), PACK.state_token].join(":") : "", inspectReferences().length, drawingStore.revision, nav.shift].join("|");
     if (sig === inspect.sig) return;
     inspect.sig = sig;
     inspectRender(false, false);
@@ -5918,7 +6284,8 @@
     el("drawer-grip").hidden = comparisonModel.expanded;
     const sideWidth = clamp(S.sideWidth, 260, sideMax()),
       drawerHeight = clamp(S.drawerHeight, 120, drawerMax());
-    main.dataset.side = S.sideOpen ? "open" : "closed";
+    main.dataset.side = S.sideOpen || inspect.on ? "open" : "closed";
+    main.dataset.inspect = String(inspect.on);
     main.style.setProperty("--side-w", sideWidth + "px");
     // Focusable separators state their size and its range to assistive tech.
     for (const [grip, now, min, max] of [
@@ -10305,12 +10672,51 @@
     node.setAttribute("aria-label", `Candles: blue hollow up, clay filled down, neutral unchanged. ${text.textContent}`);
     node.dataset.state = r.state;
   }
-  function candleTip(tip, n, t) {
+  function candleTip(tip, n, t, detailed = false) {
     const step = 2 ** n, c = Math.floor(t / step), r = candleRange(n, c * step, (c + 1) * step), bar = r.bars.find((x) => x.c === c);
     tip.dataset.candle = bar ? String(c) : "";
     const head = `Candle · ${range(c * step, (c + 1) * step)} UTC · ${dur(step * BASE)}`;
     const rows = bar ? [["Open", price(bar.open)], ["High", price(bar.high)], ["Low", price(bar.low)], ["Close", price(bar.close)], ["Direction", bar.direction === "up" ? "Up" : bar.direction === "down" ? "Down" : "Unchanged"], ["Status", bar.state === "so-far" ? "So far" : "Complete"], ["Measured through", when(bar.through) + " UTC"], ["Source", CANON !== null && bar.stop > CANON ? "Live cube · provisional minutes" : "Live cube"]] : [];
     tipRows(tip, head, "Exact prices · USDT", rows, !bar ? t >= candleEdge() ? "After cutoff" : candleStatus(r) : "The forming base interval is excluded; replay uses currently available history.");
+    if (bar) {
+      const atr = readingATR(c * step), exact = nav.shift;
+      const history = candleRange(n, Math.max(0, (c - 11) * step), (c + 1) * step).bars;
+      const by = new Map(history.map((v) => [v.c, v]));
+      const metrics = [
+        { label: "Close", pick: (v) => v.close, format: (v) => ({ text: price(v), unit: "USDT" }) },
+        { label: "Net move", pick: (v) => v.close - v.open, signed: true, format: (v) => {
+          const d = readingDistance(Math.abs(v), atr, exact); return { ...d, text: (v < 0 ? "−" : v > 0 ? "+" : "") + d.text };
+        } },
+        { label: "High − low", pick: (v) => v.high - v.low, format: (v) => readingDistance(v, atr, exact) },
+        ...(detailed ? ["Open", "High", "Low"].map((label) => ({ label, pick: (v) => v[label.toLowerCase()], format: (v) => ({ text: price(v), unit: "USDT" }) })) : []),
+      ];
+      const stats = document.createElement("dl"); stats.className = "ol-cell-stats";
+      for (const metric of metrics) {
+        const row = document.createElement("div"); row.className = "ol-cell-stat";
+        const term = document.createElement("dt"); term.textContent = metric.label;
+        const value = document.createElement("dd"), v = metric.pick(bar), formatted = metric.format(v);
+        value.textContent = formatted.text + " ";
+        const unit = document.createElement("span"); unit.className = "ol-reading-unit"; unit.textContent = formatted.unit; value.append(unit);
+        if (metric.signed) value.dataset.sign = v > 0 ? "positive" : v < 0 ? "negative" : "zero";
+        row.append(term, value, readingSparkline(Array.from({ length: 12 }, (_, i) => {
+          const previous = by.get(c - 11 + i);
+          return previous && (previous.c === c || previous.stop <= candleEdge()) ? metric.pick(previous) : null;
+        }), metric.label, { signed: metric.signed, zero: !["Open", "High", "Low", "Close"].includes(metric.label), provisional: bar.state === "so-far" }));
+        stats.append(row);
+      }
+      const detail = document.createElement("details"); detail.className = "ol-cell-details"; detail.hidden = !detailed;
+      const summary = document.createElement("summary"); summary.textContent = "Measurement details";
+      detail.append(summary, tip.querySelector(".ol-tip-rows"), ...tip.querySelectorAll(".ol-tip-note"));
+      if (atr) {
+        const basis = document.createElement("div"); basis.className = "ol-cell-context";
+        basis.textContent = `Daily ATR: ${price(atr)} USDT · Wilder, 14 completed days before this candle`;
+        detail.append(basis);
+      }
+      const state = document.createElement("div"); state.className = "ol-cell-state";
+      state.textContent = bar.state === "so-far" ? "Still open · measured so far" : "Complete";
+      tip.replaceChildren(tip.querySelector(".ol-tip-head"), state, stats, detail);
+      tip.dataset.presentation = "candle";
+    }
     for (const field of ["open", "high", "low", "close"]) if (bar) tip.dataset[field] = String(bar[field]); else delete tip.dataset[field];
     scaleRt.tipReadout = null;
   }
@@ -10392,7 +10798,7 @@
       on([...EIGHT_HOUR_LINES, ...STRUCTURE_LINES, ...FOUR_HOUR_LINES, ...averageTf("1d"), ...averageTf("1w")]) ||
       S.lines.some(isVwapDay) ||
       S.pane === "rsi1d" ||
-      S.pane === "macd1d"
+      S.pane === "macd1d" || inspect.on || S.mode === "candles"
     )
       out.push(9);
     if (on([...FOUR_HOUR_LINES, ...averageTf("4h")]) || S.pane === "rsi4h") out.push(8);
@@ -10708,6 +11114,11 @@
     const out = [],
       edge = cutEdge(),
       last = Math.ceil(edge / DAYS);
+    const cell = inspectedCell();
+    if (cell) {
+      const prior = Math.floor(cell.c * 2 ** cell.n / DAYS) - 1;
+      if (prior >= 0) out.push(prior);
+    }
     if (S.lines.includes("dpoc") && spaced(DAYS))
       for (let d = Math.max(0, Math.floor(S.tA / DAYS)); d < Math.min(last, Math.ceil(S.tB / DAYS)); d++) out.push(d);
     if (!PACK.live) return out;
@@ -16600,7 +17011,7 @@
   // is read once it settles. A read for a pack the page has since replaced is
   // dropped. One the cube refuses as changed waits for the page to take the
   // cube's new data; one that fails is not asked again until new data arrives.
-  const CUBE_KINDS = ["measure", "tile", "lens", "touched", "lines", "days", "history"],
+  const CUBE_KINDS = ["measure", "tile", "lens", "cellContext", "touched", "lines", "days", "history"],
     cube = { busy: null, stale: false, timer: 0, failed: new Map() };
   // ---- The loading line (PRD-0002 S2, #29) ----
   // One line under the toolbar says what the page is waiting for or which read it could not make. What it says is DERIVED from state each time,
@@ -16654,6 +17065,7 @@
       measure: measureWant,
       tile: tileWant,
       lens: lensWant,
+      cellContext: cellContextWant,
       touched: touchedWant,
       lines: linesWant,
       days: daysWant,
@@ -17025,6 +17437,7 @@
         viewing ? motionSourceWant(displaySource()) : null,
         viewing ? motionMeasureWant() : null,
         lens ? motionSourceWant(lens) : null,
+        cellContextWant(true),
         candleWant(),
         underlayDwellWant(),
         visibleVwapWant(),
@@ -21214,15 +21627,17 @@
       factSupport=comparisonMs(factEnd),
       motionFrame=lens?lp.motion:last.mv,
       motionQuery=lens?motionFrame?.mq:motionFrame?.shown,
-      motionReady=Boolean(lens?motionFrame?.msrc:motionFrame?.src) && c*ts < motionFrame.end,
-      mz=motionQuery?.map.get(cellKey(c,r)) ?? {c,r,v:0,bv:0,ct:0,bt:0,p:0,w:0},
-      motionEnd=motionReady?Math.min((c+1)*ts,(!lens && motionQuery===motionFrame.rect?.query)?motionFrame.rect.end:motionFrame.src?.end??motionFrame.msrc?.end):null,
+      cachedMotion=t0===c*ts && t1===Math.min((c+1)*ts,cut) && low===r*ps && high===(r+1)*ps ? cellHistory(n,m,c,r,cut,true).samples.at(-1) : null,
+      frameMotionReady=Boolean(lens?motionFrame?.msrc:motionFrame?.src) && c*ts < motionFrame.end,
+      motionReady=frameMotionReady || Boolean(cachedMotion),
+      mz=frameMotionReady ? motionQuery?.map.get(cellKey(c,r)) ?? {c,r,v:0,bv:0,ct:0,bt:0,p:0,w:0} : cachedMotion?.z ?? {c,r,v:0,bv:0,ct:0,bt:0,p:0,w:0},
+      motionEnd=frameMotionReady?Math.min((c+1)*ts,(!lens && motionQuery===motionFrame.rect?.query)?motionFrame.rect.end:motionFrame.src?.end??motionFrame.msrc?.end):cachedMotion?.end??null,
       metrics={},detail=[], nominal={t0:comparisonMs(c*ts),t1:comparisonMs((c+1)*ts),low:r*ps*PR,high:(r+1)*ps*PR};
     let shortExposure=false;
     const measure=(key,mode,basis="amount",pathBasis="spans",movement=false) => {
       const readyValue=!movement||motionReady;
       const measuredValue=E.measure.cellMeasurement({mode,basis,pathBasis,z:movement?mz:z,geom:{BASE,PR},level:{n,m},
-        bounds:b,cut,end:movement?motionFrame?.end??-Infinity:Infinity,CUT:last.dataCut,replay:S.replay,
+        bounds:b,cut,end:movement?motionEnd??-Infinity:Infinity,CUT:last.dataCut,replay:S.replay,
         read:readyValue?null:{state:"pending",reason:"Motion not measured"},measured:null,cascade:null});
       const result=measuredValue.result,end=movement?comparisonMs(motionEnd):factSupport;
       if(key)metrics[key]={tag:result.tag,value:result.tag==="finite"?result.value:null,formula:measuredValue.formula,
@@ -21236,6 +21651,20 @@
     measure("path","path","amount","spans",true);measure("dwell","dwell","share","spans",true);
     const addDetail=(label,value,unit,supportEnd=factSupport,knownThrough=supportEnd,tag="finite")=>detail.push({label,value:Number.isFinite(value)||typeof value==="string"?value:null,unit,tag,supportEnd,knownThrough});
     addDetail("Taker buys",z.bv,"usdt");addDetail("Taker sells",z.v-z.bv,"usdt");addDetail("Taker-buy trades",z.bt,"trades");
+    const composition=E.measure.cellComposition({z,column:cellColumn(n,m,c,cut,[t0,t1])});
+    for(const [key,label] of [["imbalance","Net taker imbalance · cell volume"],["buySize","Buyer-initiated mean reported trade"],["sellSize","Seller-initiated mean reported trade"],["sizeRatio","Seller / buyer mean reported trade"],["columnShare","Cell share of interval volume · all prices"]]) {
+      const record=composition[key];addDetail(label,record.result.value??null,record.unit,factSupport,factSupport,record.result.tag);
+      if(record.result.tag!=="finite")detail.at(-1).reason=E.result.describe(record.result).short;
+    }
+    const location=cellLocation(c,r,ts,ps);
+    if(location.state==="ready") {
+      const through=comparisonMs(location.through);
+      addDetail("Band location · "+location.label,location.valueRelation+"; "+location.pocRelation,"",through);
+      addDetail("Band distance from prior-session POC",location.distance,"usdt",through);
+    } else {
+      addDetail("Band location · "+location.label,null,"",factSupport,factSupport,["pending","failed","undefined"].includes(location.state)?location.state:"unsupported");
+      detail.at(-1).reason=location.reason??location.error??"Complete prior-session profile unavailable";
+    }
     if(motionReady) {
       addDetail("USDT moved",mz.p,"usdt",comparisonMs(motionEnd));
       const perMinute=measure(null,"path","amount","perMinute",true);

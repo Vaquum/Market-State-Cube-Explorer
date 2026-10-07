@@ -1709,6 +1709,51 @@
     return msrToTyped(msrColumnInto(key, col, ctx, { tag: 0, value: NaN, reason: null, denominator: null }));
   }
 
+  // Cell composition is derived from the original counters, before display rounding.
+  // These are related descriptions of one population, not independent signals.
+  function msrCellComposition({ z, column = null, read = null, hidden = false }) {
+    const refusal = { tag: 0, reason: null, denominator: null };
+    msrReadStatus(read, refusal);
+    const invalid = !z || ![z.v, z.bv, z.ct, z.bt].every(Number.isFinite) ||
+      z.v < 0 || z.bv < 0 || z.bv > z.v || z.ct < 0 || z.bt < 0 || z.bt > z.ct;
+    const ratio = (key, numerator, denominator, unit, denominatorName) => {
+      const result = hidden ? API.result.make("hidden", { reason: "replay" })
+        : refusal.tag ? msrToTyped(refusal)
+        : invalid ? API.result.make("invalid-input", { reason: "invalid cell counters" })
+        : denominator === null ? API.result.make("pending", { reason: "Column total unavailable" })
+        : !Number.isFinite(denominator) || denominator < 0 ? API.result.make("invalid-input", { reason: "invalid denominator" })
+        : denominator === 0 ? API.result.make("undefined", { denominator: denominatorName })
+        : API.result.finite(numerator / denominator);
+      return { formula: "cells." + key + "@1", unit, numerator: msrNumber(numerator), denominator: msrNumber(denominator), result };
+    };
+    const v = z?.v, bv = z?.bv, ct = z?.ct, bt = z?.bt;
+    const buy = ratio("buy-size.mean", bv, bt, "usdt-per-trade", "buyer-initiated trades");
+    const sell = ratio("sell-size.mean", v - bv, ct - bt, "usdt-per-trade", "seller-initiated trades");
+    const out = {
+      imbalance: ratio("delta.share", 2 * bv - v, v, "signed-share", "cell volume"),
+      buySize: buy,
+      sellSize: sell,
+      columnShare: ratio("column-volume.share", v, column?.v ?? null, "share", "column volume"),
+    };
+    const sizeRatio = ratio("sell-buy-size.ratio", sell.result.value ?? 0, buy.result.value ?? 0, "ratio", "buyer-initiated mean");
+    if (buy.result.tag !== "finite" || sell.result.tag !== "finite") sizeRatio.result = buy.result.tag !== "finite" ? buy.result : sell.result;
+    out.sizeRatio = sizeRatio;
+    return out;
+  }
+
+  // Price bands are intervals: their center cannot establish containment or overlap.
+  function msrBandLocation({ low, high, poc, valueLow, valueHigh }) {
+    if (![low, high, poc, valueLow, valueHigh].every(Number.isFinite) || high <= low || valueHigh <= valueLow) return null;
+    const pocRelation = low <= poc && poc < high ? "Contains POC" : poc === high ? "Touches POC" : low > poc ? "Above POC" : "Below POC";
+    const valueRelation = low >= valueHigh ? "Entirely above value"
+      : high <= valueLow ? "Entirely below value"
+      : low < valueLow && high > valueHigh ? "Spans value area"
+      : low < valueLow ? "Overlaps value-area low"
+      : high > valueHigh ? "Overlaps value-area high" : "Inside value area";
+    const distance = low > poc ? low - poc : high < poc ? high - poc : 0;
+    return { pocRelation, valueRelation, distance };
+  }
+
   API.measure = Object.freeze({
     FORMULAS: msrFormulas,
     MODES: msrModes,
@@ -1718,6 +1763,8 @@
     isShort: msrIsShort,
     cellValue: msrCellValue,
     cellMeasurement: msrCellMeasurement,
+    cellComposition: msrCellComposition,
+    bandLocation: msrBandLocation,
     columnValue: msrColumnValue,
     dwellCheck: msrDwellCheck,
     dwellResidual: msrDwellResidual,

@@ -1,16 +1,18 @@
 "use strict";
 // P4-S1 oracles: request bounds, declared cache rules, hand-authored OHLC cutoff vectors.
 const {test,expect}=require("./fixtures.js");
-const bars = fake => fake.log().filter(r=>r.path==="/cube/bars");
+const barRequests = fake => fake.log().filter(r=>r.path==="/cube/bars");
+// The visible candle cache and the 8-hour support for daily ATR are separate reads.
+const bars = fake => barRequests(fake).filter(r=>+r.query.n!==9);
 const view="#t=2021-01-01T00:00Z~2021-01-01T00:20Z&p=24800~25400&r=2,0&mode=candles";
 test("visible candles are bounded, suppress cell tiles, and price/theme changes reuse them",async({page,fakeFor})=>{
  const fake=await fakeFor("micro:bars");await page.goto(fake.url+"/"+view);
  await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");await fake.idle();
- expect(bars(fake).length).toBe(1);for(const r of bars(fake)){expect((+r.query.b1-+r.query.b0)/2**+r.query.n).toBeLessThanOrEqual(4096);}
+ expect(bars(fake).length).toBe(1);expect(barRequests(fake).filter(r=>+r.query.n===9)).toHaveLength(1);for(const r of barRequests(fake)){expect((+r.query.b1-+r.query.b0)/2**+r.query.n).toBeLessThanOrEqual(4096);}
  expect(fake.log().filter(r=>r.path==="/cube/tile")).toHaveLength(0);
  fake.clearLog();await page.emulateMedia({colorScheme:"dark"});await page.keyboard.press("Shift+]");await fake.idle();
- expect(bars(fake)).toHaveLength(0);
- await page.keyboard.press("k");await fake.idle();fake.clearLog();await page.emulateMedia({colorScheme:"light"});await fake.idle();expect(bars(fake)).toHaveLength(0);
+ expect(barRequests(fake)).toHaveLength(0);
+ await page.keyboard.press("k");await fake.idle();fake.clearLog();await page.emulateMedia({colorScheme:"light"});await fake.idle();expect(barRequests(fake)).toHaveLength(0);
 });
 test("rewind and advance inside a cached candle cannot expose a future trade",async({page,fakeFor})=>{
  const fake=await fakeFor("micro:bars");await page.goto(fake.url+"/"+view);await expect(page.locator("#ol-candle-legend")).toHaveAttribute("data-state","ready");

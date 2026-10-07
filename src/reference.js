@@ -224,6 +224,8 @@
     });
     document.addEventListener("keydown", event => {
       if (pane.hidden || event.key !== "Escape" || hasTransient()) return;
+      // A spotlight owns Escape globally; the docked pane only owns keys from its contents.
+      if (!active && !pane.contains(event.target)) return;
       event.preventDefault(); event.stopImmediatePropagation();
       if (active) clearSpotlight(); else close();
     }, true);

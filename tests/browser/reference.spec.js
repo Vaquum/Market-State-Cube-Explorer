@@ -79,6 +79,75 @@ test("five named icon toggles keep the left reference independent of the bottom 
   await page.screenshot({ path: "reports/panel-icon-toggles.png" });
 });
 
+for (const target of ["#ol-canvas", "#ol-inspect"]) {
+  test(`reference preserves Escape dismissal order from ${target}`, async ({ page, fakeFor, probe }) => {
+    await open(page, fakeFor, probe);
+    await page.locator("#ol-reference-topic").selectOption("selection");
+    await page.locator("#ol-canvas").focus();
+    await page.keyboard.press("s");
+    const box = await page.locator("#ol-canvas").boundingBox();
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.press("v");
+    await probe.waitForQuiet({ quietMs: 400 });
+    const withSelection = await page.evaluate(() => location.hash);
+    expect(withSelection).toMatch(/sel=/);
+    await page.keyboard.press("e");
+    await expect(page.locator("#ol-inspect")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#ol-inspect-detail")).toBeVisible();
+    await page.locator(target).focus();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#ol-inspect-detail")).toBeHidden();
+    await expect(page.locator("#ol-inspect")).toBeVisible();
+    await expect(page.locator("#ol-reference")).toBeVisible();
+    expect(await page.evaluate(() => location.hash)).toBe(withSelection);
+    await page.locator(target).focus();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#ol-inspect")).toBeHidden();
+    await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#ol-reference")).toBeVisible();
+    expect(await page.evaluate(() => location.hash)).toBe(withSelection);
+
+    // Active guidance takes one Escape, even from the chart; the next belongs to the chart.
+    await page.getByRole("button", { name: "Show selection", exact: true }).click();
+    await expect(page.locator("#ol-reference-spotlight")).toBeVisible();
+    await page.locator("#ol-canvas").focus();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#ol-reference-spotlight")).toBeHidden();
+    expect(await page.evaluate(() => location.hash)).toBe(withSelection);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => page.evaluate(() => location.hash)).not.toMatch(/sel=/);
+    await expect(page.locator("#ol-reference")).toBeVisible();
+    await page.keyboard.press("s");
+    await expect(page.locator('[data-tool="select"]')).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#ol-reference")).toBeVisible();
+
+    await page.locator("#ol-reference-topic").focus();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#ol-reference")).toBeHidden();
+    await expect(page.locator("#ol-reference-toggle")).toBeFocused();
+  });
+}
+
+test("reference preserves Escape in the expanded bottom Compare panel", async ({ page, fakeFor, probe }) => {
+  await open(page, fakeFor, probe);
+  await page.locator("#ol-tab-compare").click();
+  const expand = page.locator('#ol-comparisonWorkspace [data-comparison-action="expand"]');
+  await expand.click();
+  await expect(page.locator("#ol-canvas")).toBeHidden();
+  await expect(expand).toHaveText("Restore chart");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#ol-canvas")).toBeVisible();
+  await expect(expand).toHaveText("Expand");
+  await expect(page.locator("#ol-panel-compare")).toBeVisible();
+  await expect(page.locator("#ol-reference")).toBeVisible();
+});
+
 test("spotlight identifies the exact control; dimmed clicks and Escape only dismiss guidance", async ({ page, fakeFor, probe }) => {
   await open(page, fakeFor, probe);
   await page.locator("#ol-reference-topic").selectOption("resolution");

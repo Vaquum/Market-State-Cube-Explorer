@@ -47,4 +47,5 @@ for(const days of [1800,420]) test(`${days} days: shared calendar intervals qual
   await expect(page.locator('#ol-evidence')).toHaveAttribute('aria-busy','false',{timeout:60000});
   await expect.poll(()=>host.getAttribute('data-bootstrap'),{timeout:60000}).not.toBeNull();
   const after=JSON.parse(await host.getAttribute('data-bootstrap'));expect(after.key[8]).toBeLessThan(data.key[8]);
+  if(days===1800) await page.screenshot({path:'reports/p7-s3-evidence-replay.png'});
 });

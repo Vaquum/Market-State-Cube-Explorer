@@ -175,6 +175,9 @@ test("a covered known-zero cell is numeric while its empty ratios retain typed r
   const fake = await fakeFor("micro:mixed"); await ready(page, fake, probe);
   await addMenu(page, await point(page, 28125, 25312.5)); const capture = (await saved(page)).captures[0];
   expect([capture.c, capture.r]).toEqual([0, 202]);
+  expect(Buffer.byteLength(JSON.stringify(capture.context))).toBeLessThanOrEqual(16384);
+  expect(Object.keys(capture.context.supports).length).toBeLessThanOrEqual(14);
+  expect(capture.context.histories.length).toBeLessThanOrEqual(4);
   for (const key of ["volume.amount", "volume.intensity", "trades.amount", "delta.amount"]) {
     expect(capture.metrics[key].tag).toBe("finite"); expect(capture.metrics[key].value).toBe(0);
   }

@@ -464,4 +464,5 @@ test("selected metric shares four-figure cards while original reading and captur
   const stored=await page.evaluate(key=>JSON.parse(sessionStorage.getItem(key)),KEY);
   expect(stored.captures[0].originatingObservation).toEqual(original);
   expect(stored.captures[0].context).toEqual(capture.context);
+  await page.screenshot({path:'reports/p7-s3-comparison-frozen.png'});
 });

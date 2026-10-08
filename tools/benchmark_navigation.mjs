@@ -295,12 +295,21 @@ async function runEvidenceDiagnostics({config,args,build,browser,out}) {
     try {
       const page=await context.newPage(), errors=[]; page.on("pageerror",e=>errors.push(String(e)));
       const begin=performance.now();
-      await page.goto(`${fake.url}/#w=30d&r=${config.evidence.n},${config.evidence.m}&auto=0&vis=2&tab=evidence`,{timeout:config.trial.loadTimeoutMs});
+      await page.goto(`${fake.url}/#w=30d&r=${config.evidence.n},${config.evidence.m}&auto=0&vis=2&tab=continuations`,{timeout:config.trial.loadTimeoutMs});
       await page.locator('#ol-evidence-tab').click();
       await page.waitForFunction(()=>!!document.getElementById('ol-evidence-intervals')?.dataset.bootstrap,null,{timeout:config.trial.idleTimeoutMs});
       const result=await page.locator('#ol-evidence-intervals').evaluate(node=>JSON.parse(node.dataset.bootstrap)), reads=readsOf(fake);
       const qualified=Object.values(result.intervals).some(parts=>Object.values(parts).some(x=>x.result.tag==="finite"));
-      samples.push({days,elapsedMs:performance.now()-begin,qualified,...result,readBytes:reads.bytes,reads:reads.reads,errors});
+      const coldMs=performance.now()-begin, timings={};
+      for(const horizon of [4,1,4]) {
+        const at=performance.now(); await page.locator('#ol-horizon').selectOption(String(horizon));
+        await page.waitForFunction(h=>{const raw=document.getElementById('ol-evidence-intervals')?.dataset.bootstrap;return raw && JSON.parse(raw).key[15]===h;},horizon,{timeout:config.trial.idleTimeoutMs});
+        timings[`horizon-${horizon}-${Object.keys(timings).length}`]=performance.now()-at;
+      }
+      const rewindAt=performance.now();await page.evaluate(()=>{location.hash='#w=30d&r=9,0&vis=2&tab=continuations&replay=1&at=2026-09-20T08:00Z';});
+      await page.waitForFunction(old=>{const raw=document.getElementById('ol-evidence-intervals')?.dataset.bootstrap;return raw && JSON.parse(raw).key[8]<old;},result.key[8],{timeout:config.trial.idleTimeoutMs});
+      timings.rewindMs=performance.now()-rewindAt;
+      samples.push({days,coldMs,timings,qualified,...result,readBytes:reads.bytes,reads:reads.reads,afterRewindReads:readsOf(fake),errors});
       if(errors.length || days===config.evidence.longDays && (!qualified || result.fullMatched<20) || days===config.evidence.withheldDays && qualified) throw new Error(`Evidence fixture qualification mismatch for ${days} days`);
     } finally {await context.close();await fake.close();}
   }

@@ -41609,9 +41609,12 @@
     const atr = observation?.denominators?.find((d) => d.formula === "context.daily-atr@1"), available = Number.isFinite(atr?.denominator);
     supports.atr = { formula: "context.daily-atr@1", unit: "usdt", result: available ? E.result.finite(atr.denominator) : E.result.make("unsupported", { reason: "Context ATR unavailable at capture" }),
       supportEnd: available ? comparisonMs(atr.time[1]) : null, knownThrough: available ? comparisonMs(atr.time[1]) : null, time: atr?.time ?? null, source: atr?.source ?? "Context not held at capture" };
+    const historySupportIds = new Map();
     for (const series of displayed) {
-      const slots = series.slots.map((slot, i) => {
-        const id = `${series.id}:${i}`; supports[id] = { time: slot.time, supportEnd: comparisonMs(slot.time[1]), knownThrough: comparisonMs(slot.time[1]), source: supports.observation.source, pack: last.token, precision: supports.observation.precision };
+      const slots = series.slots.map((slot) => {
+        const support = { time: slot.time, supportEnd: comparisonMs(slot.time[1]), knownThrough: comparisonMs(slot.time[1]), source: supports.observation.source, pack: last.token, precision: supports.observation.precision };
+        const key = JSON.stringify(support); let id = historySupportIds.get(key);
+        if (!id) { id = `history:${historySupportIds.size}`; historySupportIds.set(key,id); supports[id]=support; }
         return { result: slot.result, supportId: id, denominatorIds: [] };
       });
       histories.push({ id: series.id, formula: series.formula, unit: series.unit, slots });
@@ -41623,7 +41626,7 @@
   }
   function comparisonCapture(target) {
     if (!target || !last || S.mode === "candles") return null;
-    if (last.sourceRevision !== comparisonSourceRevision || last.dataCut !== CUT ||
+    if (last.sourceRevision !== comparisonSourceRevision || last.dataCut !== CUT || last.contextBarsVersion !== barsVersion ||
       last.camera.some((value,i)=>value !== [S.tA,S.tB,S.pA,S.pB,S.n,S.m,S.replay,S.anchor][i])) return null;
     const lens=target.surface === "lens", lp=lens?last.comparisonLens:null,
       frame=lens?lp:last, n=target.n,m=target.m,ts=2**n,ps=2**m,c=target.c,r=target.r;

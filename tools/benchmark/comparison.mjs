@@ -26,6 +26,13 @@ export function comparisonFixture(count, targetBytes = 0) {
       }, detail: [{ label: "Taker buys", value: amount * .75, unit: "usdt", tag: "finite", supportEnd: end, knownThrough: end }],
     };
   });
+  for (const capture of captures) {
+    const end=capture.measuredThrough, supports={observation:{supportEnd:end,knownThrough:end},atr:{supportEnd:end-86400000,knownThrough:end-86400000,result:{tag:"finite",value:125}}};
+    for(let slot=0;slot<12;slot++) supports["h"+slot]={supportEnd:end-(11-slot)*56250,knownThrough:end-(11-slot)*56250};
+    const histories=["volume","trades","flow","delta"].map(id=>{const metric=capture.metrics[id==="volume"||id==="trades"||id==="delta"?id+".amount":id];return {id,formula:metric.formula,unit:metric.unit,slots:Array.from({length:12},(_,slot)=>({result:{tag:"finite",value:metric.value*(slot+1)/12},supportId:"h"+slot,denominatorIds:[]}))};});
+    const originatingObservation={formula:"cells.volume.amount@1",unit:"usdt",basis:"amount",result:{tag:"finite",value:capture.metrics["volume.amount"].value},comparisonMetric:"volume",supportId:"observation",historyIds:["volume"]};
+    capture.contextOrigin="frame-v2";capture.originatingObservation=originatingObservation;capture.context={supports,histories,originatingObservation};
+  }
   const record = { comparisonVersion: 2, selectedMetric: "volume", instrument: "BTC/USDT", captures, focus: count ? captures[0].id : null, reference: null,
     basis: "auto", sort: { key: "time", direction: "asc" }, view: "grid", page: 0, poc: null, expanded: false, restoreLayout: null };
   if (targetBytes) {

@@ -206,14 +206,18 @@ test("failed seasonal and column-context reads keep their actual failure reason"
   const localTrades = Array.from({ length: 20 }, (_, c) => ({ t_ms: c * 56250 + 1000, price: 2500000, qty: 400000, takerBuy: true }));
   const fake = await fakeFor({ trades: localTrades, cutoffIso: "2021-01-15T00:00:00Z" });
   fake.on({ route: "/cube/columns" }).fail({ status: 503, body: { error: "seasonal source rejected" } });
-  fake.on({ route: "/cube/query", when: (q) => q.n === "0" && q.b0 === "4" && q.b1 === "16" && !q.motion && !("r0" in q) }).fail({ status: 503, body: { error: "column context rejected" } });
+  fake.on({ route: "/cube/query", when: (q) => q.n === "0" && Number(q.b1) - Number(q.b0) === 12 && !q.motion && !("r0" in q) }).fail({ status: 503, body: { error: "column context rejected" } });
   await page.goto(`${fake.url}/#t=2021-01-01T00:12Z~2021-01-01T00:20Z&p=24875~25250&r=0,0&auto=0&vis=2&pane=volume`); await probe.waitForReady();
   await page.keyboard.press("e"); await page.locator('[data-surface="columns"]').click(); await page.locator("#ol-inspect").focus(); await page.keyboard.press("Home");
-  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
+  for (let i = 0; i < 3; i++) {
+    const c = Number(await page.locator("#ol-inspect").getAttribute("data-c"));
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#ol-inspect")).toHaveAttribute("data-c", String(c + 1));
+  }
   const card = page.locator("#ol-inspect-readout");
   await expect(card.locator('dd[data-field="seasonal"]')).toHaveAttribute("data-canonical", "failed");
   await expect(card.locator('dd[data-field="seasonal"]')).toContainText("seasonal source rejected");
-  await expect.poll(() => fake.log().some((x) => x.path === "/cube/query" && x.query.b0 === "4" && x.status === 503)).toBe(true);
+  await expect.poll(() => fake.log().some((x) => x.path === "/cube/query" && Number(x.query.b1) - Number(x.query.b0) === 12 && x.status === 503)).toBe(true);
   await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).history.filter((x) => x.result.tag === "failed").map((x) => x.result.reason)).not.toEqual([]);
   const record = JSON.parse(await card.getAttribute("data-observation"));
   expect(record.history.filter((x) => x.result.tag === "failed").every((x) => x.result.reason === "column context rejected")).toBe(true);

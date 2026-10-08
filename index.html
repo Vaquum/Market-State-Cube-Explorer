@@ -3393,6 +3393,17 @@
   #origo-lens .ol-cell-compare-action { min-height: 44px; }
 }
 
+/* Reference figures retain the core card type and neutral ink, with declared axes. */
+#origo-lens :is(.ol-reference-track, .ol-related-plot) {
+  display: block;
+  width: 100%;
+  height: 72px;
+  margin: var(--sp-2) 0;
+  color: var(--ol-ink);
+}
+#origo-lens .ol-event-inventory { font-size: 14px; overflow-wrap: anywhere; }
+#origo-lens .ol-event-inventory dd { font-size: 18px; margin-bottom: var(--sp-2); }
+
     </style>
   </head>
   <body>
@@ -8119,6 +8130,35 @@
     return { result, sigma, approximation: "quote volume / bin centre", rowWidth, bins: bins.length };
   }
 
+  // Context for P7-S2 references. These helpers qualify delivered facts; detector inputs stay unchanged.
+  function msrReferenceLocation({ close, reference, atr, observedAt, knownAt = null, candidate = false }) {
+    const normalized = msrNormalized(close === null || reference === null ? null : close - reference, atr);
+    if (candidate || knownAt !== null && observedAt < knownAt) normalized.result = API.result.make("unsupported", { reason: "Retrospective comparison before reference confirmation" });
+    return normalized;
+  }
+  function msrReferenceSlope({ value, previous, adjacent, complete, atr, native = false }) {
+    if (!adjacent || !complete || !Number.isFinite(value) || !Number.isFinite(previous)) return { result: API.result.make("unsupported", { reason: "Slope needs adjacent completed native bars" }), numerator: null, denominator: msrNumber(atr) };
+    return native ? { result: API.result.finite(value - previous), numerator: value - previous, denominator: 1 } : msrNormalized(value - previous, atr);
+  }
+  function msrFibDepth({ earlier, later, close }) {
+    return ![earlier, later, close].every(Number.isFinite) ? API.result.make("unsupported", { reason: "Fibonacci anchors or completed close unavailable" })
+      : later === earlier ? API.result.make("undefined", { denominator: "Fibonacci impulse" }) : API.result.finite((later - close) / (later - earlier));
+  }
+  function msrWeekend({ friday, sunday, stale = false }) {
+    return stale || ![friday, sunday].every(Number.isFinite) || friday <= 0 ? API.result.make("unsupported", { reason: "Missing or stale boundary spot price" }) : API.result.finite(100 * (sunday - friday) / friday);
+  }
+  // Identity is only recognized after a completed deep-low input AND a later completed exceedance.
+  function msrPriorCycleKnown({ bars, price, lowStart, step, edge }) {
+    let lowEnd = null;
+    for (const bar of bars) {
+      const start = bar.c * step, end = (bar.c + 1) * step;
+      if (start < lowStart || end > edge) continue;
+      if (lowEnd === null && bar.low < price * .5) lowEnd = end;
+      else if (lowEnd !== null && start >= lowEnd && bar.high > price) return end;
+    }
+    return null;
+  }
+
   // Price bands are intervals: their center cannot establish containment or overlap.
   function msrBandLocation({ low, high, poc, valueLow, valueHigh }) {
     if (![low, high, poc, valueLow, valueHigh].every(Number.isFinite) || high <= low || valueHigh <= valueLow) return null;
@@ -8148,6 +8188,11 @@
     seasonalIndex: msrSeasonalIndex,
     seasonalActivity: msrSeasonalActivity,
     weightedBins: msrWeightedBins,
+    referenceLocation: msrReferenceLocation,
+    referenceSlope: msrReferenceSlope,
+    fibonacciDepth: msrFibDepth,
+    weekendPercent: msrWeekend,
+    priorCycleKnown: msrPriorCycleKnown,
     columnValue: msrColumnValue,
     dwellCheck: msrDwellCheck,
     dwellResidual: msrDwellResidual,
@@ -14643,11 +14688,20 @@
     ["rsiDivergence", "RSI divergence", "The compared swings' locations", "The later swing's confirmation; the RSI extrema were known earlier and do not date it"],
     ["cross", "Moving-average or MACD crossing", "The crossing bar's end", "That complete bar's end; a crossing seen on a bar still forming is a candidate, labelled so far, not confirmed"],
     ["squeeze", "Bollinger squeeze", "The interval of the qualifying bars", "Each bar's available close, final at the bar's completion; a fill drawn from the preceding point is keyed as retrospective interpolation"],
-    ["cmeGap", "CME spot gap", "The reopen and the spot prices at the boundaries", "The gap at the reopen, given the available closes; its fill no earlier than the end of the source bar that establishes the crossing"],
+    ["cmeGap", "Binance spot weekend proxy", "The reopen and the spot prices at the boundaries", "The gap at the reopen, given the available closes; its fill no earlier than the end of the source bar that establishes the crossing"],
     ["period", "Period POC and value area", "The stated period's span", "A retrospective summary as of its measurement cutoff, not known when the period started"],
     ["untested", "Untested level", "The original POC's period", "A status as of the current or replay edge; a later test cannot rewrite an earlier replay status"],
     ["continuation", "Historical continuation range", "The anchor and the horizon", "An empirical sample summary available at the anchor under the existing sample rules, not a forecast later observed"],
     ["clock", "Clock", "The scheduled calendar time", "A calendar definition, not a measured trade event"],
+    ["ath", "Source-limited all-time high", "The extreme's supported 8-hour bar", "Highest so far at the effective edge; a completed extreme is known at its input bar's end"],
+    ["priorCycle", "Prior cycle high", "The old peak's supported bar", "Retrospective identity recognized only after the qualifying deep low and later exceedance, at the last required completed input"],
+    ["fibonacci", "Fibonacci reference", "The earlier and later anchors", "Swing confirmation for swing anchors; rolling extremes develop as of the cutoff"],
+    ["vwap", "Anchored VWAP", "The anchor and measured interval", "As of its quote/base sums' cutoff; swing-anchor identity is retrospective before confirmation"],
+    ["session", "Session reference", "The named UTC session", "Open from the first observed trade's available bar bound; prior-day OHLC only after session completion"],
+    ["drawing", "Authored drawing", "Authored A and B or level coordinates", "Authorship time not recorded; user drawings may include later analysis"],
+    ["fundingClock", "Assumed funding schedule", "00:00, 08:00 and 16:00 UTC", "An assumed schedule, not measured funding rates or flow"],
+    ["weekendClock", "Spot weekend proxy boundaries", "Fixed Friday/Sunday Chicago calendar boundaries", "Historical closure convention; after 2026-05-29 not a current CME closure model"],
+    ["usOpenClock", "US equity opening schedule", "Weekdays 09:30 New York time", "Calendar schedule without a holiday model, not observed opening flow"],
   ];
   const rdoEvTable = Object.freeze(rdoEvRows.map(([kind, name, location, knownAt]) => Object.freeze({ kind, name, location, knownAt })));
   const rdoEvByKind = Object.freeze(Object.fromEntries(rdoEvTable.map((r) => [r.kind, r])));
@@ -14892,9 +14946,22 @@
       knownAtReason: "a summary of the period as of the cutoff it was measured at, not known when the period started",
     };
   }
+  // Existing reference adapters share the event table, including unknown authored timing.
+  function rdoEvReference({ kind, start, end = start, knownAt = null, edge, candidate = false, final = false, granularity = "existing cube inputs" }) {
+    if (!rdoEvByKind[kind] || ![start, end, edge].every(Number.isFinite) || end < start) return null;
+    const authored = kind === "drawing", calendar = ["clock", "fundingClock", "weekendClock", "usOpenClock"].includes(kind);
+    const available = knownAt !== null && knownAt <= edge && !candidate;
+    return rdoEvRecord(kind, { eventStart: start, eventEnd: end, knownAt: authored || calendar || !available ? null : knownAt,
+      candidate: !authored && !calendar && !available, final: available && final, measured: !authored && !calendar,
+      retrospective: authored || knownAt !== null && start < knownAt,
+      label: authored ? "authored" : calendar ? "calendar" : available ? final ? "confirmed" : "as of" : "so far",
+      reason: rdoEvByKind[kind].knownAt, source: rdoEvSource(granularity, null, edge) });
+  }
+
   // E.readout.events: the table, the records of each annotation and the readout's `when` for a measured interval.
   const rdoEvents = Object.freeze({
     TABLE: rdoEvTable,
+    reference: rdoEvReference,
     swing: rdoEvSwing,
     equalSwings: rdoEvEqual,
     rsiDivergence: rdoEvDivergence,
@@ -23228,6 +23295,8 @@
     return { result, paired: support[0] === c * step && support[1] === stop, time: [c * step, Number.isFinite(stop) ? stop : Math.min((c + 1) * step, activeCutoff())], atr: contextATR(c * step) };
   }
   function cardValue(value, unit, exact = nav.shift) {
+    if (unit === "base-time") return { text: when(value), unit: "UTC" };
+    if (unit === "daily-atr/bar") return { text: Number(value.toPrecision(3)).toString(), unit: "daily ATR / native bar" };
     if (unit === "share" || unit === "signed-share") return { text: unit === "signed-share" ? signed(value * 100, (x) => x.toFixed(exact ? 2 : 1)) : (value * 100).toFixed(exact ? 2 : 1), unit: "%" };
     if (unit === "daily-atr") return { text: value === 0 ? "0" : Number(value.toPrecision(exact ? 6 : 3)).toString(), unit: "daily ATR" };
     if (unit === "log2-ratio") return { text: signed(value, (x) => x.toFixed(exact ? 4 : 2)), unit: "log₂ ratio" };
@@ -23249,8 +23318,9 @@
       value.hidden = false;
       value.dataset.field = metric.field ?? metric.label;
       value.dataset.canonical = String(result.tag === "finite" ? result.value : result.tag);
+      if (metric.text !== undefined) value.dataset.fact = metric.text;
       value.dataset.formula = metric.formula ?? observation.formula;
-      const shown = result.tag === "finite" ? cardValue(result.value, metric.unit) : { text: E.result.describe(result).short, unit: metric.unit === "daily-atr" ? "daily ATR" : "" };
+      const shown = metric.text !== undefined ? { text: metric.text, unit: "" } : result.tag === "finite" ? cardValue(result.value, metric.unit) : { text: E.result.describe(result).short, unit: metric.unit === "daily-atr" ? "daily ATR" : "" };
       if (result.tag === "finite" && metric.signed && result.value > 0) shown.text = "+" + shown.text;
       if (result.tag === "finite" && metric.signed) value.dataset.sign = result.value > 0 ? "positive" : result.value < 0 ? "negative" : "zero";
       value.replaceChildren(document.createTextNode(shown.text));
@@ -23280,6 +23350,248 @@
     details.append(raw, ...notes, Object.assign(document.createElement("pre"), { className: "ol-card-provenance", textContent: JSON.stringify(observation, null, 2) }));
     tip.replaceChildren(...[head, sub, stats, context, details].filter(Boolean));
     tip.dataset.presentation = "core"; tip.dataset.observation = JSON.stringify(observation);
+  }
+  // P7-S2 adapters use the same typed observation and four-figure renderer as core cards.
+  // Reference location is observation minus reference, against the latest completed loaded 8h close.
+  function referenceClose(t) {
+    const series = barSeries(9), edge = Math.min(t, series.end ?? 0, activeCutoff());
+    if (series.state !== "ready") return { result: E.result.make("unsupported", { reason: PACK.live ? "Completed 8-hour close unavailable" : "Recorded source has no OHLC" }), time: [Math.max(0, t), Math.max(0, t)], close: null };
+    const i = bisectColumn(series.bars, Math.floor(edge / series.step)) - 1, bar = series.bars[i];
+    if (!bar) return { result: E.result.make("unsupported", { reason: "No completed loaded 8-hour close before this instant" }), time: [Math.max(0, t), Math.max(0, t)], close: null };
+    return { result: E.result.finite(bar.close), close: bar.close, time: [bar.c * series.step, (bar.c + 1) * series.step], age: (t - (bar.c + 1) * series.step) * BASE };
+  }
+  function referenceLocation(value, t, knownAt = null, candidate = false) {
+    const close = referenceClose(t), atr = contextATR(close.time[0]);
+    const result = !Number.isFinite(value) ? referenceMissing("Reference price unavailable") : close.close === null ? close.result : E.measure.referenceLocation({ close: close.close, reference: value, atr, observedAt: t, knownAt, candidate }).result;
+    return { ...close, result, atr, reference: value, numerator: close.close === null || !Number.isFinite(value) ? null : close.close - value, knownAt };
+  }
+  function referenceTrack(value, location) {
+    const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+    svg.classList.add("ol-reference-track"); svg.setAttribute("viewBox", "0 0 160 40"); svg.setAttribute("role", "img");
+    const summary = `Reference ${Number.isFinite(value) ? price(value) + " USDT" : "unavailable"}; ${location.close === null ? "completed close unavailable" : "completed 8-hour close " + price(location.close) + " USDT, " + when(location.time[1]) + " UTC"}; signed location ${location.result.tag === "finite" ? cardValue(location.result.value, "daily-atr").text + " daily ATR" : E.result.describe(location.result).long}`;
+    svg.setAttribute("aria-label", summary);
+    if (!Number.isFinite(value) || location.close === null) return svg;
+    const low = Math.min(value, location.close), span = Math.max(1, Math.abs(location.close - value)), x = (v) => 12 + (v - low) / span * 136;
+    const path = document.createElementNS(ns, "path"); path.setAttribute("d", `M12 20 H148 M${x(value)} 9 V31`); path.setAttribute("stroke", "currentColor"); path.setAttribute("fill", "none"); svg.append(path);
+    const dot = document.createElementNS(ns, "circle"); dot.setAttribute("cx", x(location.close)); dot.setAttribute("cy", "20"); dot.setAttribute("r", "4"); dot.setAttribute("fill", "currentColor"); svg.append(dot);
+    return svg;
+  }
+  function referenceTimeline(points) {
+    const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg"), present = points.filter((x) => Number.isFinite(x.time));
+    svg.classList.add("ol-reference-track"); svg.setAttribute("viewBox", "0 0 160 40"); svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", points.map((x) => `${x.label}: ${Number.isFinite(x.time) ? when(x.time) + " UTC" : "not recorded or not confirmed"}`).join("; "));
+    if (!present.length) return svg;
+    const low = Math.min(...present.map((x) => x.time)), high = Math.max(...present.map((x) => x.time)), width = Math.max(1, high - low);
+    const path = document.createElementNS(ns, "path"); path.setAttribute("d", "M12 20 H148"); path.setAttribute("stroke", "currentColor"); svg.append(path);
+    for (const point of present) { const circle = document.createElementNS(ns, "circle"); circle.setAttribute("cx", 12 + (point.time - low) / width * 136); circle.setAttribute("cy", "20"); circle.setAttribute("r", "3"); circle.setAttribute("fill", "currentColor"); const title = document.createElementNS(ns, "title"); title.textContent = `${point.label}: ${when(point.time)} UTC`; circle.append(title); svg.append(circle); }
+    return svg;
+  }
+  const referenceMissing = (reason) => E.result.make("unsupported", { reason });
+  const referenceMetric = (label, value, unit = "usdt", field = null) => ({ label, unit, field, result: Number.isFinite(value) ? E.result.finite(value) : referenceMissing(label + " unavailable") });
+  function referenceEmptyLocation(t, reason) { return { result: referenceMissing(reason), close: null, reference: null, numerator: null, atr: null, time: [t, t] }; }
+  function referenceCard(tip, { primary, companions, groups = [], time, knownAt = null, candidate = false, status = "As of effective edge", profile = null, timeline = null, construction = "", family = "reference", location = null, eventKind = null }) {
+    const t = Math.min(hover?.t ?? activeCutoff(), activeCutoff()), loc = location ?? (["calendar", "squeeze"].includes(family) ? referenceEmptyLocation(t, "Calendar or duration has no price location") : referenceLocation(primary.result.value, t, knownAt, candidate));
+    const support = time ?? [Math.max(0, knownAt ?? t), Math.max(0, t, knownAt ?? 0)];
+    const locationHistory = referenceLocationHistory(loc.reference, t, knownAt, candidate);
+    const observation = cardObservation(primary.result, primary.formula ?? `reference.${family}@1`, primary.unit, support, null, { source: family === "drawing" ? "Authored coordinates; placement time unrecorded" : family === "calendar" ? "Calendar definition" : PACK.live ? "cube" : "recorded", completeness: status, visibility: "visible", history: locationHistory, denominators: [{ formula: "context.daily-atr@1", numerator: loc.numerator ?? null, denominator: loc.atr ?? null, time: loc.time, knownAt, candidate, status, construction, close: loc.close, closeAgeSeconds: loc.age ?? null }] });
+    const compact = companions ?? [{ label: "Close − reference / prior daily ATR", unit: "daily-atr", field: "location", result: loc.result, signed: true, history: locationHistory }, referenceMetric("Completed 8-hour close", loc.close, "usdt", "close"), { label: "Reference status", unit: "", text: status, result: referenceMissing("Textual reference status"), field: "referenceStatus" }];
+    coreCardPresentation(tip, { primary, companions: compact, groups, observation, profile: profile ?? timeline ?? referenceTrack(loc.reference, loc), detailed: inspect.on && inspect.surface === "references" });
+    const context = tip.querySelector(".ol-cell-context");
+    context.textContent += ` · ${status} · ${construction}${loc.close === null ? "" : " · Close at " + when(loc.time[1]) + " UTC; age " + dur(loc.age)}`;
+    tip.dataset.referenceKnownAt = String(knownAt); tip.dataset.referenceFamily = family;
+    eventKind ??= ({ ath: "ath", priorCycle: "priorCycle", fibonacci: "fibonacci", vwap: "vwap", open: "session", prev: "session", drawing: "drawing" })[family];
+    if (eventKind) {
+      const rec = E.readout.events.reference({ kind: eventKind, start: support[0], end: support[1], knownAt, edge: activeCutoff(), candidate, final: status.startsWith("Confirmed") || status.startsWith("Prior completed"), granularity: construction });
+      if (rec) {
+        tip.dataset.event = `${rec.kind}|${rec.label}`;
+        const list = document.createElement("dl"); list.className = "ol-event-inventory";
+        for (const [label, value, field, canonical] of knownRows(rec)) { list.append(Object.assign(document.createElement("dt"), { textContent: label })); const dd = Object.assign(document.createElement("dd"), { textContent: value }); if (field) { dd.dataset.field = field; dd.dataset.canonical = String(canonical); } list.append(dd); }
+        tip.querySelector(".ol-cell-details").append(list);
+      }
+    }
+  }
+  function horizontalReferencePresentation(tip, h) {
+    if (h.drawing || h.key === "level") return drawingReferencePresentation(tip, h);
+    const l = h.item, t = Math.min(hover?.t ?? activeCutoff(), activeCutoff());
+    if (!l) return;
+    if (l.kind === "average" || l.kind === "cross") return averageReferencePresentation(tip, l);
+    let value = Number.isFinite(l.at) ? l.at * PR : null, knownAt = null, candidate = false, status = "As of effective edge", time = null, profile = null, construction = "";
+    if (l.kind === "poc" || l.kind === "va") {
+      const r = l.r, end = Math.min(r.span[1], activeCutoff()); value = l.at * PR; time = [r.span[0], end];
+      knownAt = end; status = ["wk", "mo", "yr"].includes(l.key ?? l.period) ? "Developing calendar period" : ["1d", "7d", "30d", "90d", "1y", "3y"].includes(l.key ?? l.period) ? "Rolling as of measured edge" : "As of measured period end";
+      construction = `${r.rowPrice * PR} USDT bins${r.exact ? "" : "; approximate recorded support"}; lower-row POC ties; contiguous whole-bin value area targets 70% and may exceed it. Independent amount scale.`;
+      profile = readingProfile({ rows: r.rows, v: r.total, poc: r.row }, r.rowPrice * PR);
+    } else if (l.kind === "dpoc") {
+      knownAt = Math.min((l.d + 1) * DAYS, activeCutoff()); time = [l.d * DAYS, knownAt]; status = l.p.whole ? "Final completed UTC session" : "Developing UTC session";
+      construction = `125 USDT rows; lower-row ties; contiguous whole-bin 70% area; actual ${l.p.va ? (l.p.va.share * 100).toPrecision(4) + "%" : "unavailable"}`;
+      profile = readingProfile(l.p, PR);
+    } else if (l.kind === "open") {
+      const first = l.g.parts?.[0]; knownAt = first ? first.c * 512 : l.g.t; time = [l.g.t, Math.min(l.g.z, activeCutoff())]; status = l.g.whole ? "Completed session" : "Developing session"; construction = "First observed trade; source bar start is the available occurrence bound";
+    } else if (l.kind === "prev") {
+      knownAt = l.prev.z; time = [l.prev.t, l.prev.z]; status = "Prior completed UTC day"; construction = "Exact prior-day OHLC, known at its completion";
+    } else if (l.kind === "peak") {
+      value = l.x.price; knownAt = l.key === "ath" ? l.x.t + 512 <= activeCutoff() ? l.x.t + 512 : null : l.x.knownAt ?? null; status = l.key === "ath" ? "Highest observed so far" : "Retrospectively recognized prior cycle"; construction = l.key === "ath" ? "Source-limited extremum as of effective edge" : "Prior peak followed by a fall over half and later exceedance; identity known only after both qualifying completed inputs";
+      candidate = knownAt === null;
+    } else if (l.kind === "swing" || l.kind === "equal") {
+      value = l.s.price; const rec = l.kind === "equal" ? E.readout.events.equalSwings(swingRecord(l.s.equal, l.frame === "1D"), swingRecord(l.s, l.frame === "1D")) : swingRecord(l.s, l.frame === "1D");
+      knownAt = rec?.knownAt ?? null; candidate = !rec?.final; time = [l.s.t, Math.max(l.s.t, Math.min(activeCutoff(), knownAt ?? activeCutoff()))]; status = candidate ? "Candidate; not confirmed" : "Confirmed swing";
+      construction = `Occurrence ${when(l.s.t)} UTC; confirmation ${knownAt === null ? "pending" : when(knownAt) + " UTC"}; construction uses 3 native-timeframe Wilder ATR(14); equal tolerance 125 USDT; ${l.s.broken === null ? "not traded through" : "traded through " + when(l.s.broken) + " UTC"}`;
+    } else if (l.kind === "untested") {
+      value = l.u.price; knownAt = l.u.to; time = [l.u.from, Math.min(l.list.end, activeCutoff())]; status = `Untested as of edge; ${l.u.age} ${l.u.kind === "day" ? "sessions" : "weeks"}`;
+      construction = `Last ${l.u.kind === "day" ? "30 completed days" : "26 completed weeks"}; no later 8-hour high/low interval intersects inclusive ±125 USDT; visible only within 5 daily ATR. Absence of revisit is not attraction. Age and location use the declared source.`;
+    } else if (l.kind === "fib") {
+      const move = l.m, loc = referenceClose(t), width = move.to.price - move.from.price, depth = loc.close === null ? loc.result : E.measure.fibonacciDepth({ earlier: move.from.price, later: move.to.price, close: loc.close }), impulse = E.measure.normalized(Math.abs(width), contextATR(t));
+      knownAt = move.swing ? swingRecord(move.swing, true)?.knownAt ?? null : t; candidate = Boolean(move.swing && !swingRecord(move.swing, true)?.final); status = move.swing ? candidate ? "Candidate swing anchor" : "Confirmed swing anchor" : "Developing rolling extremes";
+      return referenceCard(tip, { primary: { label: "Continuous retracement depth", unit: "ratio", result: candidate || t < knownAt ? referenceMissing("Retrospective comparison before swing confirmation") : depth, formula: "reference.fibonacci.depth@1" }, companions: [referenceMetric("Named retracement level", l.at * PR), { label: "Impulse / prior daily ATR", unit: "daily-atr", result: impulse.result }, { label: "Anchor status", text: status, result: referenceMissing("Textual anchor status") }], knownAt, candidate, status, family: "fibonacci", location: referenceLocation(l.at * PR, t, knownAt, candidate), timeline: referenceTimeline([{ label: "Earlier anchor", time: move.from.t }, { label: "Later anchor", time: move.to.t }, { label: "Confirmation", time: move.swing ? swingRecord(move.swing, true)?.knownAt ?? null : null }]), construction: `A ${price(move.from.price)} USDT; B ${price(move.to.price)} USDT; unclamped depth. Conventional 0.382/0.5/0.618 levels remain references.` });
+    } else if (l.kind === "range-vwap" || h.curve) {
+      return vwapReferencePresentation(tip, h);
+    }
+    if (value !== null) referenceCard(tip, { primary: referenceMetric(l.kind === "va" ? "Value boundary" : "Reference price", value), knownAt, candidate, status, time, profile, construction, family: l.kind === "peak" ? l.key === "ath" ? "ath" : "priorCycle" : l.kind });
+  }
+  function referenceLocationHistory(value, t, knownAt, candidate) {
+    const close = referenceClose(t), step = 512, end = close.close === null ? Math.floor(t / step) * step : close.time[1];
+    return Array.from({ length: 12 }, (_, j) => {
+      const edge = end - (11 - j) * step, start = edge - step, point = referenceClose(edge);
+      const result = start < 0 || !Number.isFinite(value) || point.close === null || point.time[1] !== edge ? referenceMissing("No completed loaded 8-hour close at this interval")
+        : E.measure.referenceLocation({ close: point.close, reference: value, atr: contextATR(start), observedAt: edge, knownAt, candidate }).result;
+      return { time: [Math.max(0, start), Math.max(0, edge)], result };
+    });
+  }
+  function nativeHistory(frame, values, i, transform = (value) => Number.isFinite(value) ? E.result.finite(value) : referenceMissing("Native warmup or missing input")) {
+    return Array.from({ length: 12 }, (_, j) => {
+      const k = i - 11 + j;
+      return { time: k < 0 ? [0, 0] : [frame.starts[k], Math.min(frame.raws[k], frame.end)], result: k < 0 ? referenceMissing("Before loaded native history") : frame.raws[k] > frame.end ? referenceMissing("Native bar still forming") : transform(values[k], k) };
+    });
+  }
+  function relatedIndicatorPlot(series) {
+    const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+    svg.classList.add("ol-related-plot"); svg.setAttribute("viewBox", "0 0 160 64"); svg.setAttribute("role", "img");
+    const finite = series.flatMap((s) => s.history.filter((p) => p.result.tag === "finite").map((p) => p.result.value));
+    svg.setAttribute("aria-label", series.map((s) => s.label + ": " + s.history.map((p) => p.result.tag === "finite" ? String(p.result.value) : E.result.describe(p.result).long).join(", ")).join("; "));
+    if (!finite.length) return svg;
+    const lo = Math.min(...finite), hi = Math.max(...finite), span = hi - lo || 1;
+    for (const [index, s] of series.entries()) {
+      let path = "", pen = false;
+      for (const [i, point] of s.history.entries()) {
+        if (point.result.tag !== "finite") { pen = false; continue; }
+        path += `${pen ? " L" : " M"}${4 + i * 152 / 11} ${60 - (point.result.value - lo) * 56 / span}`; pen = true;
+      }
+      const mark = document.createElementNS(ns, "path"); mark.setAttribute("d", path); mark.setAttribute("fill", "none"); mark.setAttribute("stroke", "currentColor"); mark.setAttribute("stroke-width", index === 0 ? "2" : "1.4"); mark.setAttribute("stroke-dasharray", index === 1 ? "4 2" : index === 2 ? "1 2" : "none"); svg.append(mark);
+    }
+    return svg;
+  }
+  function frameContext(frame, i) {
+    const complete = frame.raws[i] <= frame.end, time = [frame.starts[i], Math.min(frame.raws[i], frame.end)], atr = contextATR(frame.starts[i]);
+    const adjacent = i > 0 && frame.raws[i - 1] === frame.starts[i] && frame.raws[i - 1] <= frame.end;
+    return { complete, time, atr, adjacent, status: complete ? "Completed native bar" : "So far; native bar still forming" };
+  }
+  function averageReferencePresentation(tip, l) {
+    const frame = l.kind === "cross" ? l.c.frame : l.frame, i = l.kind === "cross" ? l.c.x.i : barNear(frame, hover?.t ?? frame.end);
+    if (i < 0) return;
+    const c = frameContext(frame, i), normal = (x) => E.measure.normalized(x, c.atr).result;
+    const slope = (values) => E.measure.referenceSlope({ value: values[i], previous: values[i - 1], adjacent: c.adjacent, complete: c.complete, atr: c.atr }).result;
+    const metric = (label, value, unit, history = null, result = null) => ({ ...referenceMetric(label, value, unit), ...(history ? { history } : {}), ...(result ? { result } : {}) });
+    let primary, companions, groups = [], plot, construction, knownAt = c.complete ? frame.raws[i] : null;
+    if (l.kind === "cross") {
+      const fast = indicator(frame, "sma", 50), slow = indicator(frame, "sma", 200), separation = fast.map((v, k) => v - slow[k]);
+      primary = metric(l.c.golden ? "50 SMA above 200 SMA" : "50 SMA below 200 SMA", separation[i], "usdt", nativeHistory(frame, separation, i));
+      companions = [metric("50 SMA slope / daily ATR per native bar", null, "daily-atr/bar", null, slope(fast)), metric("200 SMA slope / daily ATR per native bar", null, "daily-atr/bar", null, slope(slow)), metric("Separation / prior daily ATR", null, "daily-atr", null, normal(separation[i]))];
+      plot = relatedIndicatorPlot([{ label: "50 SMA", history: nativeHistory(frame, fast, i) }, { label: "200 SMA", history: nativeHistory(frame, slow, i) }]);
+      construction = "Daily SMA(50)/SMA(200); completed-bar relation, not independent confirmations. A touch returning to its prior side is no cross.";
+    } else if (l.what === "bb") {
+      const bb = l.bb, width = bb.upper[i] - bb.lower[i], percentB = width === 0 ? E.result.make("undefined", { denominator: "Bollinger envelope width" }) : E.result.finite((frame.closes[i] - bb.lower[i]) / width);
+      primary = metric("Bollinger bandwidth", bb.width[i], "share", nativeHistory(frame, bb.width, i));
+      companions = [metric("Price in envelope · unclamped %B", null, "share", null, percentB), metric("Close − middle / prior daily ATR", null, "daily-atr", null, normal(frame.closes[i] - bb.mid[i])), metric("Envelope width / prior daily ATR", null, "daily-atr", null, normal(width))];
+      plot = relatedIndicatorPlot(["upper", "mid", "lower"].map((key) => ({ label: key + " band", history: nativeHistory(frame, bb[key], i) })));
+      construction = `SMA(20) ± 2 population standard deviations on ${TF_NAMES[frame.tf]}; ` + (frame.tf === "4h" ? "compression below trailing 500-bar Type-7 10th percentile" : frame.tf === "1d" ? "compression at trailing 182-day minimum; not a percentile" : "no compression cohort for this timeframe") + "; compression assigns no expansion direction.";
+      groups = [{ name: "Envelope", metrics: [metric("Upper", bb.upper[i], "usdt"), metric("Middle", bb.mid[i], "usdt"), metric("Lower", bb.lower[i], "usdt")] }];
+    } else {
+      const values = l.values;
+      primary = metric(l.name, values[i], "usdt", nativeHistory(frame, values, i));
+      companions = [metric("Close − average / prior daily ATR", null, "daily-atr", null, normal(frame.closes[i] - values[i])), metric("Average slope / daily ATR per native bar", null, "daily-atr/bar", null, slope(values)), metric("Native close", frame.closes[i], "usdt")];
+      plot = relatedIndicatorPlot([{ label: l.name, history: nativeHistory(frame, values, i) }, { label: "Native close", history: nativeHistory(frame, frame.closes, i) }]);
+      construction = `${l.what.toUpperCase()}(${l.n}) on ${TF_NAMES[frame.tf]}; ` + (frame.tf === "3m" ? "12/28 EMA on 3.75-minute bars is the existing 5-minute 9/21 proxy; " : "") + (l.key === "support" ? "Bull market support band is the conventional weekly SMA(20)/EMA(21) name, not a regime claim; " : "") + "one-bar slope requires adjacent completed native bars; daily ATR uses the prior completed UTC day.";
+    }
+    const observation = cardObservation(primary.result, "reference.indicator@1", primary.unit, c.time, null, { source: "cube native bars", completeness: c.status, history: primary.history, denominators: [{ formula: "context.daily-atr@1", denominator: c.atr, time: c.time, nativeTimeframe: frame.tf, knownAt }] });
+    coreCardPresentation(tip, { primary, companions, groups, observation, profile: plot, detailed: inspect.on && inspect.surface === "references" });
+    tip.querySelector(".ol-cell-context").textContent += " · " + construction;
+  }
+  function oscillatorReferencePresentation(tip, p) {
+    const o = paneShown.osc, frame = o?.frame;
+    if (!frame || o.state !== "ready" || p.t >= activeCutoff()) return;
+    const i = barNear(frame, p.t); if (i < 0 || p.t < frame.starts[0]) return;
+    const c = frameContext(frame, i), macd = paneShown.key === "macd1d", values = macd ? o.macd : o.rsi;
+    const primary = { ...referenceMetric(macd ? "MACD" : "RSI(14)", values[i], macd ? "usdt" : "RSI points", macd ? "macd" : "rsi"), history: nativeHistory(frame, values, i) };
+    const series = macd ? [{ label: "MACD", history: primary.history }, { label: "Signal", history: nativeHistory(frame, o.signal, i) }, { label: "Histogram", history: nativeHistory(frame, o.hist, i) }] : [{ label: "RSI(14)", history: primary.history }];
+    const companions = macd ? [
+      { label: "MACD / prior daily ATR", unit: "daily-atr", result: E.measure.normalized(o.macd[i], c.atr).result },
+      { label: "Signal / prior daily ATR", unit: "daily-atr", result: E.measure.normalized(o.signal[i], c.atr).result },
+      { label: "Histogram / prior daily ATR", unit: "daily-atr", result: E.measure.normalized(o.hist[i], c.atr).result },
+    ] : [{ label: "One-bar RSI slope", unit: "RSI points/bar", result: E.measure.referenceSlope({ value: values[i], previous: values[i - 1], adjacent: c.adjacent, complete: c.complete, native: true }).result }, referenceMetric("Native close", frame.closes[i]), { label: "Native timeframe", text: TF_NAMES[frame.tf], result: referenceMissing("Timeframe is a categorical fact") }];
+    const groups = macd ? [{ name: "Momentum series", metrics: [referenceMetric("Signal", o.signal[i], "usdt", "signal"), referenceMetric("Histogram", o.hist[i], "usdt", "histogram")] }] : [];
+    const divergence = o.divergences?.find((d) => d.b.i === i && d.b.confirmed <= activeCutoff());
+    if (divergence) {
+      const d = divergence;
+      groups.push({ name: d.bearish ? "Price higher / RSI lower" : "Price lower / RSI higher", metrics: [referenceMetric("Earlier swing price", d.a.price), referenceMetric("Later swing price", d.b.price), referenceMetric("Earlier swing RSI", d.r0, "RSI points"), referenceMetric("Later swing RSI", d.r1 ?? values[d.b.i], "RSI points")] });
+    }
+    const observation = cardObservation(primary.result, "reference.momentum@1", primary.unit, c.time, null, { source: "cube native bars", completeness: c.status, history: primary.history, denominators: [{ formula: "context.daily-atr@1", denominator: c.atr, nativeTimeframe: frame.tf, time: c.time }] });
+    coreCardPresentation(tip, { primary, companions, groups, observation, profile: relatedIndicatorPlot(series), detailed: inspect.on && inspect.surface === "columns" });
+    tip.querySelector(".ol-cell-context").textContent += ` · ${TF_NAMES[frame.tf]} · momentum, not a reversal guarantee · prior completed UTC-day ATR; correlated series are not independent confirmations`;
+  }
+  function vwapReferencePresentation(tip, h) {
+    const l = h.item, t = Math.min(hover?.t ?? activeCutoff(), activeCutoff());
+    const point = h.curve ? l.r.points.filter((p) => p[0] <= t).at(-1) : null;
+    const end = h.curve ? point?.[0] : l.r.end, value = h.curve ? point?.[1] : l.r.price, start = h.curve ? l.anchor : l.r.span[0];
+    const quote = h.curve ? point?.[2] : l.r.volume, base = h.curve ? point?.[3] : l.r.btc;
+    const swing = l.swing ? swingRecord(l.swing, true) : null, knownAt = swing ? swing.knownAt : end ?? null, candidate = Boolean(swing && !swing.final);
+    const loc = referenceLocation(value, t, knownAt, candidate);
+    let bins = null, width = 125, reason = "No profile with exactly matching VWAP support and cutoff";
+    if (!PACK.live) reason = "VWAP dispersion not available in this recorded source";
+    else if (!h.curve) {
+      const r = lineShown("visible");
+      if (r.state === "ready" && r.exact && r.span[0] === start && Math.min(r.span[1], activeCutoff()) === end) { bins = r.rows; width = r.rowPrice * PR; }
+    } else if (l.key === "svwap") {
+      const p = dayProfile(Math.floor(start / DAYS));
+      if (p.state === "ready" && start === p.d * DAYS && end === Math.min((p.d + 1) * DAYS, activeCutoff())) bins = p.rows;
+    } else if (isVwapDay(l.key)) {
+      const r = lineShown(l.key.slice(5));
+      if (r.state === "ready" && r.exact && r.span[0] === start && Math.min(r.span[1], activeCutoff()) === end) { bins = r.rows; width = r.rowPrice * PR; }
+    } else reason = "Swing-anchor profile not held on this exact support; dispersion unavailable";
+    const dispersion = bins && loc.close !== null ? E.measure.weightedBins({ rows: bins, rowWidth: width, vwap: value, close: loc.close }) : { result: referenceMissing(reason), sigma: null };
+    referenceCard(tip, { primary: referenceMetric("VWAP · quote / base volume", value), companions: [{ label: "Close − VWAP / prior daily ATR", unit: "daily-atr", result: loc.result, signed: true }, { label: "Stretch / weighted-bin σ · approximation", unit: "σ", result: dispersion.result, signed: true }, referenceMetric("Reported quote volume", quote)], time: [start, end ?? start], knownAt, candidate, status: candidate ? "Candidate swing anchor; retrospective before confirmation" : "As of quote/base cutoff", family: "vwap", location: loc, construction: `Σ quote USDT / Σ BTC; base sum ${Number.isFinite(base) ? base : "unavailable"} BTC. Dispersion uses quote/bin-centre estimated base weights on ${width} USDT bins; σ ${dispersion.sigma ?? "unavailable"} USDT, not exact tick moments. ${l.swing ? "The 8-hour-bar-start anchor includes trades before the extreme." : ""}` });
+  }
+  function drawingReferencePresentation(tip, h) {
+    const t = Math.min(hover?.t ?? activeCutoff(), activeCutoff()), object = h.drawing ? drawingById(h.drawing) : null;
+    if (h.drawing && !object) return;
+    if (!object) return referenceCard(tip, { primary: referenceMetric("Authored level", S.level * PR), family: "drawing", status: "Authored level", construction: "Authorship time not recorded; placement time and resolution not recorded. User drawings may include later analysis." });
+    const a = (object.a.timeMs / 1000 - T0) / BASE, b = (object.b.timeMs / 1000 - T0) / BASE, pa = object.a.priceCents / 100, pb = object.b.priceCents / 100;
+    const vertical = a === b, value = vertical ? null : pa + (pb - pa) * (t - a) / (b - a), endATR = contextATR(b), normalized = E.measure.normalized(pb - pa, endATR);
+    const status = `${drawingStatus(object.id)}${object.locked ? "; Locked" : ""}`;
+    referenceCard(tip, { primary: referenceMetric("Authored A → B elapsed", (b - a) * BASE, "seconds"), companions: [{ label: "B − A / B's prior daily ATR", unit: "daily-atr", result: normalized.result, signed: true }, referenceMetric("Line price at inspected edge", value), { label: "Drawing status", text: status, result: referenceMissing("Status is an authored categorical fact") }], location: referenceLocation(value, t), time: [Math.min(a, b), Math.max(a, b)], family: "drawing", status, timeline: referenceTimeline([{ label: "Authored A", time: a }, { label: "Authored B", time: b }, { label: "Inspected edge", time: t }]), construction: `A ${pa} USDT; B ${pb} USDT. ${vertical ? "Vertical line: no unique reference price or infinite slope." : t < Math.min(a, b) || t > Math.max(a, b) ? "Extrapolated at the inspected edge." : "Interpolated between authored endpoints."} Authorship time not recorded; user drawings may include later analysis.`, groups: [{ name: "Authored endpoints", metrics: [referenceMetric("A price", pa), referenceMetric("B price", pb), { label: "Displacement / A's prior daily ATR", unit: "daily-atr", result: E.measure.normalized(pb - pa, contextATR(a)).result }] }] });
+  }
+  function calendarReferencePresentation(tip, h) {
+    if (h.gap) {
+      const g = h.gap, rec = gapRecord(g), delta = g.sun - g.fri, location = referenceLocation(g.fri, g.open), normal = E.measure.normalized(delta, contextATR(g.open));
+      return referenceCard(tip, { primary: referenceMetric("Binance spot weekend proxy · Sunday − Friday", delta), companions: [{ label: "Signed gap / Friday spot", unit: "%", result: E.measure.weekendPercent({ friday: g.fri, sunday: g.sun }), signed: true }, { label: "Gap / pre-reopen daily ATR", unit: "daily-atr", result: normal.result, signed: true }, { label: "Observed fill status", text: rec.fill?.final ? "Filled by completed hourly bar" : rec.fill ? "So far; hourly fill bar forming" : "Open", result: referenceMissing("Fill status is a categorical fact") }], knownAt: rec.knownAt, time: [g.close, g.open], family: "weekend", location, timeline: referenceTimeline([{ label: "Friday boundary", time: g.close }, { label: "Sunday boundary", time: g.open }, { label: "Fill confirmation", time: rec.fill?.knownAt ?? null }]), construction: "Binance spot prices at the fixed Friday 16:00 / Sunday 17:00 Chicago window. Historical closure convention; after 2026-05-29 this is not a current CME closure model. No CME prices or holiday model. Fill is the first observed hourly high/low reaching Friday spot, confirmed at its completed bar end." });
+    }
+    const edge = Math.min(hover?.t ?? activeCutoff(), activeCutoff()), e = h.events[0], delta = (e.t - edge) * BASE;
+    referenceCard(tip, { primary: referenceMetric(e.what, e.t, "base-time"), companions: [referenceMetric(delta >= 0 ? "Until event" : "Elapsed since event", Math.abs(delta), "seconds"), { label: "Timezone", text: e.kind === "usopen" ? "New York; UTC disclosed" : e.kind === "cme" ? "Chicago; UTC disclosed" : "UTC", result: referenceMissing("Timezone is a calendar fact") }, { label: "Event source", text: "Assumed calendar schedule", result: referenceMissing("No measured market event") }], time: [e.t, e.t], family: "calendar", eventKind: e.kind === "funding" ? "fundingClock" : e.kind === "cme" ? "weekendClock" : e.kind === "usopen" ? "usOpenClock" : "clock", status: "Calendar definition; no measured flow or confirmation", timeline: referenceTimeline([{ label: "Effective observation edge", time: edge }, { label: e.what, time: e.t }]), construction: h.events.map(clockNote).filter(Boolean).join("; ") || "UTC calendar boundary; not observed market flow" });
+    tip.dataset.calendarEvent = `${e.kind}|${e.t}`;
+  }
+  function nearestClock(kind, t) {
+    const events = clockEvents(kind, Math.max(0, t - 35 * DAYS), t + 35 * DAYS);
+    return events.reduce((best, e) => !best || Math.abs(e.t - t) < Math.abs(best.t - t) || Math.abs(e.t - t) === Math.abs(best.t - t) && e.t < best.t ? e : best, null);
+  }
+  function stripReferencePresentation(tip, h) {
+    const all = h.lane === "all" ? h.lanes.flatMap((l) => l.events) : h.span.events;
+    const e = [...all].sort((a, b) => Math.abs(a.t0 - (hover?.t ?? activeCutoff())) - Math.abs(b.t0 - (hover?.t ?? activeCutoff())) || a.t0 - b.t0)[0];
+    if (!e) return;
+    if (e.gap) calendarReferencePresentation(tip, { gap: e.gap });
+    else referenceCard(tip, { primary: referenceMetric("Squeeze qualifying duration", (e.t1 - e.t0) * BASE, "seconds"), companions: [referenceMetric("Occurrence", e.t0, "base-time"), referenceMetric("Latest qualification known at", e.rec.knownAt, "base-time"), { label: "Run status", text: EVENT_LABELS[e.rec.label], result: referenceMissing("Run status is a categorical fact") }], time: [e.t0, e.t1], knownAt: e.rec.knownAt, candidate: e.rec.candidate, family: "squeeze", status: EVENT_LABELS[e.rec.label], timeline: referenceTimeline([{ label: "Occurrence", time: e.t0 }, { label: "Latest qualifying bar", time: e.rec.knownAt }, { label: "Run end", time: e.rec.final ? e.t1 : null }]), construction: e.rec.reason + "; source " + e.rec.source.granularity + "; compression has no directional implication" });
+    const details = tip.querySelector(".ol-cell-details");
+    const list = document.createElement("dl"); list.className = "ol-event-inventory";
+    for (const event of all) for (const [label, value] of [[event.what + " occurrence", when(event.t0) + " UTC"], ["Known at", event.rec.knownAt === null ? "not yet" : when(event.rec.knownAt) + " UTC"], ["Status / source", EVENT_LABELS[event.rec.label] + "; " + event.rec.source.granularity + "; " + event.rec.reason]]) list.append(Object.assign(document.createElement("dt"), { textContent: label }), Object.assign(document.createElement("dd"), { textContent: value }));
+    details.append(list);
   }
   function readingATR(t) { return contextATR(t); }
   function readingDistance(value, atr, exact) {
@@ -24397,11 +24709,17 @@
     if (tip.dataset.readout) tip.dataset.readout = "";
     // The annotation record a line, gap or strip tip is made from (E.readout.events), named the same way and cleared the same way.
     if (tip.dataset.event) tip.dataset.event = "";
-    if (onLine) {
+    if (onLine?.strip) {
+      eventTip(tip, onLine.strip);
+      stripReferencePresentation(tip, onLine.strip);
+      syncRowHover(null);
+    } else if (onLine) {
       lineTip(tip, onLine);
+      horizontalReferencePresentation(tip, onLine);
       syncRowHover(null);
     } else if (onClock) {
       clockTip(tip, onClock);
+      calendarReferencePresentation(tip, onClock);
       syncRowHover(null);
     } else if (last && onProfile(p)) {
       const r = Math.floor(p.p / ps),
@@ -24445,9 +24763,11 @@
       if (!waiting || last.under?.bands && p.x < G.x + G.w + G.sw) coreRowsPresentation(tip, p);
     } else if (last && inStrip(p) && eventAt(p)) {
       eventTip(tip, eventAt(p));
+      stripReferencePresentation(tip, eventAt(p));
       syncRowHover(null);
     } else if (last && paneShown && inActivity(p)) {
       paneTip(tip, p, money, count, share, exact, note);
+      if (paneShown.osc) oscillatorReferencePresentation(tip, p);
       syncRowHover(null);
     } else if (!last || !inPlot(p)) {
       tip.hidden = true;
@@ -24629,8 +24949,13 @@
       if (bars.state === "ready")
         for (const g of cmeGaps(bars)) {
           const id = `cmegap|${g.open}`;
-          out.push({ id, key: "cme", name: `CME gap · ${when(g.open)}`, hit: { key: "cme", id, gap: g, colour: lineStyle("clock").colour }, at: (g.hi + g.lo) / 2 / PR, kind: "gap" });
+          out.push({ id, key: "cme", name: `Binance spot weekend proxy · ${when(g.open)}`, hit: { key: "cme", id, gap: g, colour: lineStyle("clock").colour }, at: (g.hi + g.lo) / 2 / PR, kind: "gap" });
         }
+    }
+    for (const lane of eventLanes(cut)) for (const event of lane.events) {
+      if (event.gap) continue; // Existing gap identity already appears above.
+      const id = `strip|${lane.id}|${event.t0}`;
+      out.push({ id, key: lane.id === "squeeze4h" ? "bb4h" : "bb1d", name: `${EVENT_NAMES[lane.id].name} · ${when(event.t0)}`, at: null, kind: "strip", hit: { key: lane.id, id, strip: { lane: lane.id, span: { events: [event], t0: event.t0, t1: event.t1 } } } });
     }
     for (const kind of S.lines.filter((k) => CLOCK[k])) out.push({ id: "clock|" + kind, key: kind, name: CLOCK[kind].name, hit: null, at: null, kind: "clock" });
     if (drawingCollection().visible) for (const object of [...drawingCollection().objects].sort((a, b) => a.ordinal - b.ordinal)) {
@@ -24808,7 +25133,9 @@
       inspect.forced = s === "references" && entry ? entry.hit : false;
       if (s === "references" && entry && !entry.hit) {
         // a clock kind has no line of its own to name: its events, at the cursor's time
+        const event = nearestClock(entry.key, inspect.t);
         tipRows(tip, entry.name, "Calendar lines", [["Kind", entry.name], ["Drawn", occlusion.off.has("clock|" + entry.key) ? "no: held back by the 20% budget" : spaced(CLOCK[entry.key].gap) ? "yes" : "too close together at this zoom"]], "A calendar definition, not a measured trade event");
+        if (event) calendarReferencePresentation(tip, { events: [event] });
         tip.hidden = false;
       } else tooltip(hover, { redraw: false });
       inspect.forced = was;
@@ -29648,12 +29975,12 @@
       cday: { family: "clock", name: "Day start", desc: "00:00 UTC" },
       cweek: { family: "clock", name: "Week open", desc: "Monday 00:00 UTC" },
       cmonth: { family: "clock", name: "Month open", desc: "The 1st, 00:00 UTC" },
-      funding: { family: "clock", name: "Funding", desc: "00:00, 08:00 and 16:00 UTC" },
-      usopen: { family: "clock", name: "US equity open", desc: "13:30 UTC in US daylight time, 14:30 otherwise" },
+      funding: { family: "clock", name: "Funding schedule", desc: "Assumed 00:00, 08:00 and 16:00 UTC; no measured rates" },
+      usopen: { family: "clock", name: "US equity open", desc: "Weekdays 09:30 New York; UTC daylight adjustment, no holiday model" },
       cme: {
         family: "clock",
-        name: "CME close and reopen",
-        desc: "Friday 16:00 and Sunday 17:00 Chicago; live, the spot gap between them is outlined until the hourly bar in which a trade reaches the Friday close ends",
+        name: "Binance spot weekend proxy",
+        desc: "Fixed Friday 16:00 / Sunday 17:00 Chicago spot proxy; historical closure convention, not current CME closure after 2026-05-29",
       },
       deribit: { family: "clock", name: "Deribit expiry", desc: "Fridays 08:00 UTC; the month's last and a quarter's end are named monthly and quarterly" },
     },
@@ -30597,7 +30924,7 @@
     cmonth: { gap: 28 * DAYS, name: "Month open" },
     funding: { gap: DAYS / 3, name: "Funding" },
     usopen: { gap: DAYS, name: "US equity open" },
-    cme: { gap: (49 * HOUR), name: "CME" },
+    cme: { gap: (49 * HOUR), name: "Binance spot weekend proxy" },
     deribit: { gap: 7 * DAYS, name: "Deribit expiry" },
   };
   function clockEvents(kind, a, b) {
@@ -30703,7 +31030,7 @@
       if (close.what !== "CME close" || open.what !== "CME reopen" || open.t > series.end) continue;
       const before = spot(close.t),
         after = spot(open.t);
-      if (!before || !after || before.c * step + step < close.t - DAYS) continue;
+      if (!before || !after || before.c * step + step < close.t - DAYS || after.c * step + step < open.t - DAYS) continue;
       const fri = before.close,
         sun = after.close;
       if (fri === sun) continue;
@@ -30917,7 +31244,7 @@
         if (peak && day.low < 0.5 * peak.high) deep = { day, peak };
         if (!peak || day.high > peak.high) peak = day;
       }
-      if (deep) out.pch = { price: deep.peak.high, t: partAt(deep.peak, "high"), day: deep.peak, low: deep.day };
+      if (deep) out.pch = { price: deep.peak.high, t: partAt(deep.peak, "high"), day: deep.peak, low: deep.day, knownAt: E.measure.priorCycleKnown({ bars: series9.bars, price: deep.peak.high, lowStart: deep.day.t, step: series9.step, edge: end }) };
     }
     // Daily swings on the days, with the daily ATR, and 4-hour swings on the 4-hour bars.
     out.daily = swingsOf(days, atrSeries(days), (d) => d.z, partAt, end, { start: (d) => d.t, len: series9.step });
@@ -31933,7 +32260,7 @@
     tipRows(
       tip,
       head,
-      d ? `${d.bearish ? "Bearish" : "Bullish"} divergence from ${frameBar(f, d.a.i)}` : "",
+      d ? `${d.bearish ? "Price higher / RSI lower" : "Price lower / RSI higher"} from ${frameBar(f, d.a.i)}` : "",
       [
         ["RSI 14", two(o.rsi[i])],
         ["Close", `${price(Math.round(100 * f.closes[i]) / 100)} USDT`],
@@ -33332,7 +33659,7 @@
             tall = Math.max(1, y1 - y0),
             rects = [[x0 - 1, y0 - 1, x0 + wide + 1, y0 + 2], [x0 - 1, y0 + tall - 2, x0 + wide + 1, y0 + tall + 1], [x0 - 1, y0 - 1, x0 + 2, y0 + tall + 1], [x0 + wide - 2, y0 - 1, x0 + wide + 1, y0 + tall + 1]];
           if (wide > 62 && tall > 16) {
-            const w = tagWidth(`${TYPE.s}px ${FONT}`, g.filled === null || g.filled === undefined ? "CME gap · open" : "CME gap") + 6,
+            const w = tagWidth(`${TYPE.s}px ${FONT}`, g.filled === null || g.filled === undefined ? "Weekend gap · open" : "Weekend gap") + 6,
               lx = Math.max(x0 + 4, G.x + 4),
               ly = clamp(y0 + 12, G.y + 12, G.y + G.h - 12);
             rects.push([lx - 3, ly - 10, lx - 3 + w, ly + 8]);
@@ -33445,7 +33772,7 @@
           ctx.lineWidth = 1;
           ctx.strokeRect(x0 + 0.5, y0 + 0.5, wide - 1, tall - 1);
           ctx.globalAlpha = 1;
-          if (wide > 62 && tall > 16) chartLabel(g.filled === null || g.filled === undefined ? "CME gap · open" : "CME gap", Math.max(x0 + 4, G.x + 4), clamp(y0 + 12, G.y + 12, G.y + G.h - 12));
+          if (wide > 62 && tall > 16) chartLabel(g.filled === null || g.filled === undefined ? "Weekend gap · open" : "Weekend gap", Math.max(x0 + 4, G.x + 4), clamp(y0 + 12, G.y + 12, G.y + G.h - 12));
           clockHits.push({ gap: g, box: [x0, Math.min(y0, y1 - 3), x1, Math.max(y1, y0 + 3)] });
         }
     }
@@ -33519,8 +33846,8 @@
       tip.dataset.event = `${rec.kind}|${rec.label}`;
       tipRows(
         tip,
-        `CME gap · ${price(Math.round(size))} USDT`,
-        `${((100 * size) / g.lo).toFixed(2)}% ${g.sun > g.fri ? "up" : "down"} over the weekend`,
+        `Binance spot weekend proxy · ${price(Math.round(size))} USDT`,
+        `${E.measure.weekendPercent({ friday: g.fri, sunday: g.sun }).value.toFixed(2)}% signed Sunday − Friday / Friday`,
         [
           ["Friday close", `${price(g.fri)} USDT · ${when(g.close)} UTC`],
           ["Sunday reopen", `${price(g.sun)} USDT · ${when(g.open)} UTC`],
@@ -33557,7 +33884,7 @@
   const EVENT_NAMES = {
     squeeze4h: { name: "4h squeeze", long: "Bollinger squeeze on 4-hour bars" },
     squeeze1d: { name: "1D squeeze", long: "Bollinger squeeze on daily bars" },
-    cmegap: { name: "CME gap", long: "CME spot gap" },
+    cmegap: { name: "Weekend gap", long: "Binance spot weekend proxy" },
   };
   let eventHits = [];
   // The intervals of each lane, merged where two of one kind overlap (the marks draw the union; the readout keeps
@@ -33579,7 +33906,7 @@
     if (gapLane) {
       const s = barSeries(6);
       if (s.state === "ready")
-        for (const g of cmeGaps(s)) gapLane.events.push({ t0: g.open, t1: g.filled ?? Math.min(s.end, cut), open: g.filled === null || g.filled === undefined, what: "CME gap", gap: g, rec: gapRecord(g) });
+        for (const g of cmeGaps(s)) gapLane.events.push({ t0: g.open, t1: g.filled ?? Math.min(s.end, cut), open: g.filled === null || g.filled === undefined, what: "Binance spot weekend proxy", gap: g, rec: gapRecord(g) });
       else gapLane.pending = true;
     }
     for (const l of lanes) {
@@ -33650,18 +33977,18 @@
     );
   }
   function clockNote(e) {
-    if (e.kind === "usopen") return "9:30 in New York: 13:30 UTC in US daylight time, 14:30 otherwise";
+    if (e.kind === "usopen") return "Weekdays 09:30 New York: 13:30 UTC in US daylight time, 14:30 otherwise; no holiday model or observed opening flow";
     if (e.kind === "cme")
       return e.what === "CME close"
-        ? "Friday 16:00 in Chicago, where CME's weekend close starts"
-        : "Sunday 17:00 in Chicago, when CME reopens for the Monday session";
+        ? "Fixed Friday 16:00 Chicago spot boundary; historical closure convention, after 2026-05-29 not a current CME closure model"
+        : "Fixed Sunday 17:00 Chicago spot boundary; no CME prices or holiday-weekend model";
     if (e.kind === "deribit")
       return e.weight === 3
         ? "Deribit's quarterly expiry: the last Friday of the quarter, 08:00 UTC"
         : e.weight === 2
           ? "Deribit's monthly expiry: the month's last Friday, 08:00 UTC"
           : "Deribit's weekly expiry: Friday, 08:00 UTC";
-    if (e.kind === "funding") return "Perpetual funding, every 8 hours from 00:00 UTC";
+    if (e.kind === "funding") return "Assumed funding schedule at 00:00/08:00/16:00 UTC; not measured funding rates or market flow";
     return "";
   }
   // Tags at the plot's right edge, one per line, level with it or pushed apart
@@ -33902,7 +34229,7 @@
         [
           ["Timeframe", daily ? "1 day" : "1 week, from Monday"],
           ["Age", `${u.age} ${unit}`],
-          ["Distance", `${signed(u.atrs, (x) => x.toFixed(2))} daily ATRs · ${signed(u.usd, (x) => price(Math.round(x)))} USDT`],
+          ["Distance", `${signed(-u.atrs, (x) => x.toFixed(2))} daily ATRs · ${signed(-u.usd, (x) => price(Math.round(x)))} USDT (observation − reference)`],
           ["Latest price", `${price(l.list.latest)} USDT`],
           ["Daily ATR", `${price(Math.round(l.list.atr))} USDT, 14 days, Wilder's`],
           ...knownRowsOf(E.readout.events.untested({ origin: [u.from, u.to], asOf: l.list.end, granularity: "8-hour bars' highs and lows" }), tip),
@@ -33953,6 +34280,7 @@
       retrospective: "A retrospective summary",
       "at anchor": "At its anchor",
       calendar: "A calendar definition, not a measured trade event",
+      authored: "Authored; timing not recorded",
     },
     // The bars an annotation is computed from, in words, by the frame's timeframe.
     FRAME_BARS = {
@@ -33969,7 +34297,7 @@
     const at = (t) => `${when(t)} UTC`,
       waiting = rec.source.complete || rec.source.barEnd === null ? "" : `, its last bar still forming until ${at(rec.source.barEnd)}`;
     return [
-      ["Known at", rec.knownAt !== null ? at(rec.knownAt) : rec.measured === false ? "a calendar definition" : "not yet", "knownAt", rec.knownAt],
+      ["Known at", rec.knownAt !== null ? at(rec.knownAt) : rec.label === "authored" ? "authorship time not recorded" : rec.measured === false ? "a calendar definition" : "not yet", "knownAt", rec.knownAt],
       ["Status", rec.final || rec.label === "as of" ? EVENT_LABELS[rec.label] : `${EVENT_LABELS[rec.label]}: ${rec.reason}`, "finality", rec.label],
       ...(rec.source.granularity ? [["Source", rec.source.granularity + waiting]] : []),
     ];
@@ -34068,7 +34396,7 @@
         t = hover?.t ?? c.r.points[c.r.points.length - 1][0],
         pts = c.r.points;
       let i = 0;
-      while (i < pts.length - 1 && pts[i][0] < t) i++;
+      while (i < pts.length - 1 && pts[i + 1][0] <= t) i++;
       const [pt, v, usdt, btc] = pts[i];
       tipRows(
         tip,
@@ -34648,7 +34976,7 @@
       if (!keys.includes("cme")) return "";
       const s = barSeries(6);
       return s.state === "failed"
-        ? `The CME gap's hourly bars couldn't be read: ${s.error}`
+        ? `The spot weekend proxy's hourly bars couldn't be read: ${s.error}`
         : s.state === "pending"
           ? "Reading hourly bars for the CME gap…"
           : barsShort(s) !== null

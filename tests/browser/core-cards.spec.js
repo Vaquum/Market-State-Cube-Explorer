@@ -226,7 +226,7 @@ test("forming higher-level candle keeps open status after excluding the forming 
   await page.keyboard.press("e"); await page.locator('button[data-surface="cells"]').click();
   await page.locator("#ol-inspect").focus(); await page.keyboard.press("Home");
   const card = page.locator("#ol-inspect-readout");
-  await expect(card).toHaveAttribute("data-presentation", "core");
+  await expect(card).toHaveAttribute("data-presentation", "candle");
   await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).completeness).toBe("open");
   const record = JSON.parse(await card.getAttribute("data-observation"));
   expect(record.time[1]).toBeLessThanOrEqual(Math.floor(600 / 56.25));

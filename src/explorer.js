@@ -22313,7 +22313,7 @@
   }
   function comparisonCapture(target) {
     if (!target || !last || S.mode === "candles") return null;
-    if (last.sourceRevision !== comparisonSourceRevision || last.dataCut !== CUT || last.contextBarsVersion !== barsVersion ||
+    if (last.sourceRevision !== comparisonSourceRevision || last.dataCut !== CUT ||
       last.camera.some((value,i)=>value !== [S.tA,S.tB,S.pA,S.pB,S.n,S.m,S.replay,S.anchor][i])) return null;
     const lens=target.surface === "lens", lp=lens?last.comparisonLens:null,
       frame=lens?lp:last, n=target.n,m=target.m,ts=2**n,ps=2**m,c=target.c,r=target.r;

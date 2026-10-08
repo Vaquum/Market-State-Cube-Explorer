@@ -274,3 +274,35 @@ for (const pane of ["choppiness", "perpath"]) test(`${pane}: measured movement h
   const values = JSON.parse(await card.getAttribute("data-observation")).history.slice(0, 11).map(x => x.result.value);
   for (const value of values) expect(value).toBeCloseTo(pane === "choppiness" ? 2 : 200.5 / 250, 10);
 });
+
+
+test("completed Inspect bar context survives live tail updates", async ({ page, fakeFor, probe }) => {
+  const localTrades = Array.from({ length: 24 }, (_, c) => ({ t_ms: c * 56250 + 1000, price: 2500000, qty: 400000, takerBuy: true }));
+  const fake = await fakeFor({ trades: localTrades, cutoffIso: "2021-01-15T00:00:00Z" });
+  const matches = q => q.n === "0" && Number(q.b1) - Number(q.b0) === 12;
+  const gate = fake.on({ route: "/cube/bars", when: matches }).gate(), aborted = [];
+  page.on("requestfailed", request => { const u = new URL(request.url()); if (u.pathname === "/cube/bars" && matches(Object.fromEntries(u.searchParams))) aborted.push(request.failure()); });
+  try {
+    await page.goto(`${fake.url}/#t=2021-01-01T00:11:15Z~2021-01-01T00:22:30Z&p=24875~25250&r=0,0&auto=0&vis=2&pane=volume`); await probe.waitForReady();
+    await page.keyboard.press("e"); await page.locator('[data-surface="columns"]').click(); await gate.arrived();
+    const card=page.locator("#ol-inspect-readout"), before=JSON.parse(await card.getAttribute("data-observation"));
+    fake.advance({minutes:1,trades:[]});
+    await expect.poll(() => fake.log().filter(x => x.path === "/cube/pack" && x.answer === "delta").length,{timeout:30000}).toBe(1);
+    await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).pack).not.toBe(before.pack);
+    gate.open();
+    await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).denominators[1].numerator).toBe(0);
+    expect(aborted).toEqual([]);
+    expect(fake.log().filter(x => x.path === "/cube/bars" && matches(x.query))).toHaveLength(1);
+  } finally {gate.open();}
+});
+
+test("Measures ending inside a completed bar excludes its later trades", async ({page,fakeFor,probe}) => {
+  const fake=await fakeFor({trades:[{t_ms:1000,price:2500000,qty:100000000,takerBuy:true},{t_ms:50000,price:2510000,qty:100000000,takerBuy:false},{t_ms:130000,price:2520000,qty:100000000,takerBuy:true},{t_ms:200000,price:2700000,qty:100000000,takerBuy:false}],cutoffIso:"2021-01-01T00:10:00Z"});
+  await page.goto(`${fake.url}/#t=2021-01-01T00:00Z~2021-01-01T00:10Z&p=24875~27250&r=1,0&vis=2&sel=2021-01-01T00:00Z~2021-01-01T00:02:30Z,25000~27125`); await probe.waitForReady();
+  const card=page.locator("#ol-vol").locator(".."); await card.locator(".ol-core-details > summary").click();
+  await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).denominators?.[1]?.time).toEqual([0,2]);
+  const record=JSON.parse(await card.getAttribute("data-observation"));
+  expect(record.denominators[1].numerator).toBe(100);
+  expect(record.time[1]).toBeGreaterThan(2);
+  await expect(card).toContainText("Different measured-through boundaries");
+});

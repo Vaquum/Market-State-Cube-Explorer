@@ -317,7 +317,7 @@ test("rewinding inside a cached completed bar withholds its later response", asy
   await expect(card.locator('[data-field="response"]')).toHaveAttribute("data-canonical","0");
   await probe.waitForQuiet({quietMs:300,timeout:30000});
   await page.evaluate(next=>{location.hash=next;},hash+"&mode=candles&replay=1&at=2021-01-01T00:00:30Z");
-  await probe.waitForReady();await page.keyboard.press("e");
+  await probe.waitForReady();
   await page.getByRole("tab",{name:"Columns",exact:true}).click();
   await page.locator("#ol-inspect").focus();await page.keyboard.press("Home");
   await expect(card.locator('[data-field="response"]')).toHaveAttribute("data-canonical","hidden");

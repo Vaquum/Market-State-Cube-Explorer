@@ -362,9 +362,9 @@ test.describe("B55 Inspect: the review of PR #53", () => {
     await openRich(page, fake, probe);
     const names = await options(page),
       frame = await pane.last();
-    const drawn = frame.texts.filter((x) => /^CME gap/.test(x.text)).length;
+    const drawn = frame.texts.filter((x) => /^Weekend gap/.test(x.text)).length;
     expect(drawn, "the plot draws CME gaps").toBeGreaterThan(0);
-    const gaps = names.filter((n) => /^CME gap · /.test(n));
+    const gaps = names.filter((n) => /^Binance spot weekend proxy · /.test(n));
     expect(gaps.length, "every gap drawn is a reference").toBeGreaterThanOrEqual(drawn);
     expect(new Set(gaps).size, "named by their own opening").toBe(gaps.length);
     for (const name of [gaps[0], gaps.at(-1)]) {
@@ -423,7 +423,7 @@ test.describe("B55 Inspect: the review of PR #53", () => {
     await surface(page, "references");
     expect(Object.values(state), "the budget holds some calendar kind back and draws another").toEqual(expect.arrayContaining(["occlusion"]));
     expect(Object.values(state).some((s) => s !== "occlusion"), "and not all of them").toBe(true);
-    for (const [key, name] of [["cday", "Day start"], ["funding", "Funding"], ["cme", "CME"]]) {
+    for (const [key, name] of [["cday", "Day start"], ["funding", "Funding schedule"], ["cme", "Binance spot weekend proxy"]]) {
       await page.locator("#ol-inspect-reference").selectOption({ label: name });
       const drawn = await page.locator('#ol-inspect-readout dt:has-text("Drawn") + dd').textContent();
       if (state[key] === "occlusion") expect(drawn, `${name} is held back by the budget`).toMatch(/^no: held back by the 20% budget/);

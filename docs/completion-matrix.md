@@ -28,7 +28,7 @@ What each normative decision of the parent (D1 to D12) asks for, which slice own
 | Item | Status |
 |---|---|
 | #46 to #48 implemented with applicable evidence | the three slices are implemented and tested as above; the evidence marked OUTSTANDING is not attached, so this item is not done |
-| Every visual consumer has its role and linked regressions in `docs/visual-contract.md`, and no undocumented legacy path remains | done: 186 rows, none left `todo`; the lint allowlist is empty; the retired tokens, tiers and static legend text are gone |
+| Every visual consumer has its role and linked regressions in `docs/visual-contract.md`, and no undocumented legacy path remains | done: 188 rows, none left `todo`; the lint allowlist is empty; the retired tokens, tiers and static legend text are gone |
 | Numerical mapping, visible and inspected records, composition and restored views agree | shown by B03, B44, B14, B52 and B53 on the fake cube |
 | R1 to R34 reflected in implementation and tests | each of the 34 is mapped to its tests below (the section "Review items R1 to R34"); disposition at the specification level is not code verification, and a test is named only where it exists |
 | Final operator, accessibility, replay and model, persistence and performance evidence and authorised production evidence | OUTSTANDING items above; a release with any of them outstanding needs the operator's scoped acceptance in the pull request (none is recorded: the three slices are released all the same), and neither #48 nor #45 closes on such a release |

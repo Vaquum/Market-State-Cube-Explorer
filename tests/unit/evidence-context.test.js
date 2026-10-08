@@ -1,8 +1,8 @@
 "use strict";
-// S3-STATE/OUTCOME/BOOTSTRAP: literal method vectors, hand-built candidate ledger
+// U100 (P7-S3 #86): literal method vectors, hand-built candidate ledger
 // and disjoint populations. No renderer, fake service or detector supplies expectations.
 const test = require("node:test"), assert = require("node:assert/strict");
-const H = require("../../src/evidence.js"), E = require("../../src/encoding.js");
+const H = require("../../src/evidence.js"), E = require("../support/enc");
 const key = ["seasonal-state@1","block-bootstrap@2","next-poc","example",0,0,[0,100,0,1],100,100,[100,100,null,100],"0".repeat(64),[0,1],[1,2],[0,1,2],1,1,8,64521,"prior-positive-volume","prior-seasonal-eligible","observed-f32"];
 const provenance = { instrument: "example", sourceDigest: "0".repeat(64), priceLow: 0, priceHigh: 1, sourceCutoff: 100, canonicalCutoff: 100, replayEdge: null, precisionID: "observed-f32" };
 function input(cols, n = 0) { return { cols, n, m: 0, a: cols.length - 1, b0: 0, b1: cols.length * 2 ** n, barrier: 1, kind: "next-poc", horizon: 1, provenance,

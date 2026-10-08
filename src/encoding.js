@@ -1840,14 +1840,17 @@
     if (candidate || knownAt !== null && observedAt < knownAt) normalized.result = API.result.make("unsupported", { reason: "Retrospective comparison before reference confirmation" });
     return normalized;
   }
+  // E.measure.referenceSlope: one adjacent completed native-bar change, optionally normalized by prior daily ATR.
   function msrReferenceSlope({ value, previous, adjacent, complete, atr, native = false }) {
     if (!adjacent || !complete || !Number.isFinite(value) || !Number.isFinite(previous)) return { result: API.result.make("unsupported", { reason: "Slope needs adjacent completed native bars" }), numerator: null, denominator: msrNumber(atr) };
     return native ? { result: API.result.finite(value - previous), numerator: value - previous, denominator: 1 } : msrNormalized(value - previous, atr);
   }
+  // E.measure.fibonacciDepth: continuous unclamped retracement, with zero impulse explicitly undefined.
   function msrFibDepth({ earlier, later, close }) {
     return ![earlier, later, close].every(Number.isFinite) ? API.result.make("unsupported", { reason: "Fibonacci anchors or completed close unavailable" })
       : later === earlier ? API.result.make("undefined", { denominator: "Fibonacci impulse" }) : API.result.finite((later - close) / (later - earlier));
   }
+  // E.measure.weekendPercent: signed Sunday-minus-Friday spot percentage on the Friday denominator.
   function msrWeekend({ friday, sunday, stale = false }) {
     return stale || ![friday, sunday].every(Number.isFinite) || friday <= 0 ? API.result.make("unsupported", { reason: "Missing or stale boundary spot price" }) : API.result.finite(100 * (sunday - friday) / friday);
   }

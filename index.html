@@ -24186,21 +24186,30 @@
       const values = history.map((v, i) => v || metric.movement ? metric.pick(v, i) : null);
       // The selected point describes the current readout, including an explicitly labelled portion.
       values[11] = Number.isFinite(metric.value) ? metric.value : null;
+      const metricKey = main ? selected : Object.keys(metrics).find((key) => metrics[key] === metric);
+      const descriptor = main || compactKeys.includes(metricKey) ? composition[metricKey] ?? measure(metricKey, current, main ? basis : metricKey === "size" ? "mean" : "amount") : null;
+      // A measured zero denominator is undefined. Only absent source coverage is unsupported.
+      // Keep the canonical result for the selected point and derive earlier non-values from counters.
+      const typedHistory = descriptor ? values.map((value, i) => {
+        if (i === 11) return main ? readout?.typed ?? descriptor.result : descriptor.result;
+        if (Number.isFinite(value)) return E.result.finite(value);
+        const sample = metric.movement ? moving.samples[i] : rowHistory.samples[i];
+        if (!sample) return E.result.make("unsupported", { reason: "History coverage unavailable" });
+        return E.measure.cellComposition({ z: sample.z, column: sample.column })[metricKey]?.result ??
+          measure(metricKey, sample.z, main ? basis : metricKey === "size" ? "mean" : "amount", main && basis === "perMinute" ? "perMinute" : main && basis === "usdt" ? "usdt" : "spans", sample.end).result;
+      }) : null;
       if (main) {
-        const selectedSamples = metric.movement ? moving.samples : rowHistory.samples;
-        const selectedResult = readout?.typed ?? (Number.isFinite(metric.value) ? E.result.finite(metric.value) : E.result.make("unsupported", { reason: "Selected measurement unavailable" }));
+        const selectedResult = typedHistory[11];
         const observation = cardObservation(selectedResult, readout?.measure?.formula ?? "cells.volume.amount@1", readout?.measure?.unit ?? "usdt", time, [r * ps * PR, (r + 1) * ps * PR], {
           level: { n, m }, denominators: [{ formula: "context.daily-atr@1", numerator: null, denominator: atr, time: [Math.max(0, (Math.floor(c * ts / DAYS) - 1) * DAYS), Math.floor(c * ts / DAYS) * DAYS], source: "Prior completed UTC day · Wilder ATR(14)" }, ...measurementDenominators(selected, time)],
-          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], denominators: measurementDenominators(selected, [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))]), result: i === 11 ? selectedResult : Number.isFinite(value) ? E.result.finite(value) : selectedSamples[i] ? E.result.make("undefined", { denominator: metric.label + " denominator" }) : E.result.make("unsupported", { reason: "History coverage unavailable" }) })),
+          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], denominators: measurementDenominators(selected, [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))]), result: typedHistory[i] })),
         });
         tip.dataset.observation = JSON.stringify(observation);
       }
-      const metricKey = main ? selected : Object.keys(metrics).find((key) => metrics[key] === metric);
       if (compactKeys.includes(metricKey)) {
-        const descriptor = composition[metricKey] ?? measure(metricKey, current, metricKey === selected ? basis : metricKey === "size" ? "mean" : "amount");
         compactHistories.push({ id: metricKey, formula: descriptor.formula, unit: descriptor.unit, slots: values.map((v, i) => {
           const time = i === 11 && main ? readout?.support?.time ?? [c * ts, Math.min((c + 1) * ts, last.cut)] : [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))];
-          return { time, result: Number.isFinite(v) ? E.result.finite(v) : E.result.make("unsupported", { reason: "Displayed compact history unavailable at capture" }), denominators: measurementDenominators(metricKey, time) };
+          return { time, result: typedHistory[i], denominators: measurementDenominators(metricKey, time) };
         }) });
       }
       const spark = readingSparkline(values, metric.label, { signed: metric.signed, share: metric.share, fixed: metric.fixed, provisional: open });

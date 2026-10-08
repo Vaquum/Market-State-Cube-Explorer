@@ -428,3 +428,32 @@ test("captured Cascade original and history wait for their complete parent in re
   expect(C.captureText(capture,{edge:capture.observed.t1})).toContain("Original captured reading: Unavailable in replay");
   expect(C.originating(capture,knownThrough).value).toBe(capture.originatingObservation.result.value);
 });
+
+for (const mode of ["flow", "volume"]) {
+  test(`measured zero-denominator ${mode} capture preserves canonical non-values in frozen histories and Copy`, async ({ page, fakeFor, probe }) => {
+    const fake = await fakeFor("micro:mixed"); await ready(page, fake, probe, VIEW + "&mode=" + mode);
+    // Column 1, row 203 and its preceding cell are covered by the mixed fixture, with no trades.
+    const p = await point(page, 84375, 25437.5); await page.mouse.move(p.x, p.y); await page.keyboard.press("e");
+    await page.getByRole("tab", { name: "Cells", exact: true }).click();
+    const card = page.locator("#ol-inspect-readout");
+    await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).result.tag).toBe(mode === "flow" ? "empty-population" : "finite");
+    await probe.waitForQuiet({ quietMs: 300, timeout: 30000 });
+    await page.locator("#ol-inspect").focus(); await page.keyboard.press("Enter");
+    await page.locator("#ol-inspect-detail-body").getByRole("button", { name: "Add to comparison" }).click();
+    await expect.poll(async () => (await saved(page))?.captures.length).toBe(1);
+    const capture = (await saved(page)).captures[0]; expect([capture.c, capture.r]).toEqual([1, 203]);
+    const key = mode === "flow" ? "flow" : "imbalance", denominator = mode === "flow" ? "total volume" : "cell volume";
+    const history = capture.context.histories.find((h) => h.id === key);
+    const result = mode === "flow" ? { tag: "empty-population", reason: "total volume is 0", denominator } : { tag: "undefined", denominator };
+    expect(history.slots.slice(-2).map((slot) => slot.result)).toEqual([result, result]);
+    expect(history.slots[0].result.tag).toBe("unsupported");
+    if (mode === "flow") expect(capture.originatingObservation.result).toEqual(history.slots.at(-1).result);
+    else expect(capture.originatingObservation.result).toEqual({ tag: "finite", value: 0 });
+    await clipboard(page);
+    const copied = await copyFocused(page), label = mode === "flow" ? "Taker-buy volume share" : "Net taker imbalance";
+    const line = copied.split("\n").find((line) => line.startsWith(label + " frozen history:"));
+    expect(line).toMatch(mode === "flow" ? /; total volume is 0; total volume is 0$/ : /; undefined; undefined$/);
+    const details = page.locator(`${WORK} .ol-comparison-details`); await details.locator("summary").click();
+    await expect(details.locator(`[data-history="${key}"] li`).last()).toHaveAttribute("data-canonical", result.tag);
+  });
+}

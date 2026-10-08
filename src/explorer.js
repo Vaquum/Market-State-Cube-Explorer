@@ -4304,7 +4304,8 @@
     const s = coreBarSpec(n, c), step = 2 ** n, held = coreBarContexts.get(s.key) ?? [...coreBarContexts.values()].find((x) => coreBarCompatible(x) && x.n === n && x.a <= c * step && x.b >= support[1]);
     const range = candleRange(n, c * step, (c + 1) * step), bar = held?.bars.find((x) => x.c === c) ?? range.bars.find((x) => x.c === c);
     const stop = held ? Math.min((c + 1) * step, held.end) : bar?.through;
-    const result = bar ? E.result.finite(bar.close - bar.open)
+    const result = bar && (!Number.isFinite(stop) || stop > activeCutoff()) ? E.result.make("hidden", { reason: "All-price bar support ends after the active cutoff" })
+      : bar ? E.result.finite(bar.close - bar.open)
       : held ? E.result.make("empty-population", { denominator: "all-price reported trades", reason: "No trades in all-price bar support" })
       : E.result.make(motion.failed.has(s.key) ? "failed" : motion.busy?.key === s.key ? "pending" : "unsupported", { reason: motion.failed.get(s.key) ?? (PACK.live ? "All-price bar unavailable; inspect to read context" : "OHLC unavailable in recorded source") });
     return { result, paired: support[0] === c * step && support[1] === stop, time: [c * step, Number.isFinite(stop) ? stop : Math.min((c + 1) * step, activeCutoff())], atr: contextATR(c * step) };
@@ -6103,6 +6104,8 @@
     else delete target.dataset.presentation;
     if (source.dataset.observation) target.dataset.observation = source.dataset.observation;
     else delete target.dataset.observation;
+    if (source.dataset.compactHistories) target.dataset.compactHistories = source.dataset.compactHistories;
+    else delete target.dataset.compactHistories;
     const details = target.querySelector(".ol-cell-details");
     if (details) {
       details.open = expanded;

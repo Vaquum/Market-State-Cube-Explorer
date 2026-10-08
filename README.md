@@ -152,3 +152,6 @@ Local check of the server, which needs the cube volume and service and therefore
 ```sh
 python3 tools/cube_bridge.py --port 8487
 ```
+
+
+Reference inspection follows the same four-figure cards as Measurements. Open **Inspect → References** for price location, native indicator context and individually selectable squeeze/weekend events. Measurement details retains raw construction, source and confirmation. Clock selects the nearest scheduled occurrence to the inspected instant. The Binance spot weekend proxy, assumed funding schedule and authored drawings disclose their limits; missing causal inputs stay unavailable.

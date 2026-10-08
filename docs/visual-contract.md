@@ -331,6 +331,7 @@ A Wave-2 package that adds a NEW top-level helper reading `colors.*` under a nam
 | N-52 | Focus/Cards/semantic Matrix and cell collection actions | src/comparison-ui.js `create`; src/view.html `#ol-tab-compare`, `#ol-panel-compare`, `#ol-comparisonWorkspace`; src/explorer.css `.ol-comparison-*`, `.ol-cell-menu` | Shared eligible-set linear bars and reference tick; signed numeric labels; max 24 mounted collection entries | UM / +/-/mid / STATE / IX / CHR: existing role inks, explicit numbers/differences/ranks/reasons, shared domain; chart scale is disclosed only as original context | COMPARE | #71 | U95, B63 | done |
 | N-53 | Tab comparison restoration and storage failure notices | src/state.js `comparison`; src/explorer.js `comparisonPersist`, `comparisonExpand`; src/comparison-ui.js storage/copy controls | comparisonVersion 1 session record, 4 MiB UTF-8 boundary, rejected raw text retained, visible recovery | CHR / STATE: Kept in this tab, Unsaved comparison, Retry and confirmed Discard; no chart-history or portable capture payload | COMPARE | #71 | U96, B63 | done |
 | N-54 | Core card figures, fixed-band histories and declared profile miniature | src/explorer.js `coreCardPresentation`, `corePanePresentation`, `coreRowsPresentation`, `measuresPresentation`, `readingProfile`; src/explorer.css `.ol-core-stats`, `.ol-card-profile` | One primary plus three companions; 12-slot 72×30 history; 160×64 profile with displayed 96px height | CHR / REF:Profile / STATE: neutral ink history/profile, named POC/value boundaries, signed numbers, typed gaps and accessible values | HOVER, INSPECT, MEASURES | #84 | U98, B66, B28, B65 | done |
+| N-55 | Reference location tracks, related native indicators and event timelines | src/explorer.js `referenceCard`, `referenceTrack`, `relatedIndicatorPlot`, `referenceTimeline`, reference/oscillator/calendar/strip adapters; src/explorer.css `.ol-reference-track`, `.ol-related-plot` | Four core figures; 160×40 track/timeline and 160×64 related plot displayed at 72px; 12 causal native intervals | CHR / REF / STATE: neutral ink, solid/dashed/dotted named series, signed readings, gaps, accessible values and raw construction | HOVER, INSPECT, REFERENCES, EVENT STRIP | #85 | U99, U55, B67, B33, B34, B55, B43 | done |
 
 
 ## 4. The retired-role ratchet
@@ -787,6 +788,8 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B65 | `tests/browser/comparison-capture.spec.js` | Canonical live/recorded sums, explicit Update, stale live/motion menus, finer Lens, replay portions/copy, loaded POC freezing, Ctrl-click, transactional near-cap reveal and pending rectangle facts | #71 |
 | U98 | `tests/unit/card-observation.test.js` | Independent daily ATR, weekly six-offset cohorts, exact tiling/zero/gap/replay and weighted-bin vectors; JSON-safe support | #84 |
 | B66 | `tests/browser/core-cards.spec.js` | Nine core canonical values, four readable figures, seasonal precision/sharing, abort/retry/focus, profile/support, both themes and narrow view | #84 |
+| U99 | `tests/unit/reference-context.test.js` | Hand vectors for signed causal location, native slope, unclamped Fibonacci, signed weekend percentages and retrospective prior-cycle boundary | #85 |
+| B67 | `tests/browser/reference-cards.spec.js` | Served synthetic close/ATR arithmetic, native reference hierarchy/history, calendar identity, Fibonacci and MA facts; themes and narrow readout | #85 |
 
 ## 10. Migration status per slice
 
@@ -799,7 +802,7 @@ Rendered from the Status column at S2's convergence: `done` is the work of S1 an
 | D | 22 | 8 | 0 | 0 | 0 | 14 |
 | F | 17 | 0 | 0 | 0 | 0 | 17 |
 | R | 15 | 0 | 0 | 0 | 0 | 15 |
-| N | 45 | 0 | 0 | 0 | 0 | 45 |
+| N | 46 | 0 | 0 | 0 | 0 | 46 |
 | all | 186 | 31 | 0 | 0 | 0 | 155 |
 
 ## 11. Contributor checklist

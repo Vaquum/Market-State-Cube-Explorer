@@ -101,3 +101,12 @@ This is one complete implementation slice. The original parent's outstanding ope
 | Labels and construction across shared consumers | Row concentration/profile-share/touched-row names; historical-token disclosure; profile bins, ties, area and independent axes | relative-volume, legacy-migration, text, rows-strip and capture specs; System reference | Implemented; final commit checks pending |
 | Existing cube only | Explorer client helpers and existing delivered routes; no Origo, bridge, reader or wire change | Source diff; protocol oracles | Design constraint retained; real-host/designated-machine evidence not claimed |
 | Remaining P7-S2/P7-S3 | Not implemented by this slice | Separate issues #85/#86 | OUTSTANDING |
+
+
+## PRD-0007 — reference card overhaul, P7-S2 (#85)
+
+| Requirement | Implementation | Evidence | Status |
+|---|---|---|---|
+| D4 reference location/construction, causal ATR and indicator context | S1 core renderer extended with reference tracks, native shared plots, profiles and explicit unavailable context | U99, U55, B67 plus existing B33/B34/B55 | Implemented; final commit checks pending |
+| D5 occurrence/confirmation, authored limits and strip access | Event-table extension, prior-cycle completed-input recognition, nearest Clock occurrence, individually selectable existing squeeze records | U99, U55, B67, events-known-at and Inspect/touch regression inventory | Implemented; final commit checks pending |
+| Existing-data and geometry constraints | Existing detectors, routes, controls and three event lanes retained; exactly matched profile approximation or unavailable | reference-regression, focus-inventory, keyboard-matrix, text-contrast and benchmark protocol | Verification pending; no performance/host certification claimed |

@@ -51,7 +51,7 @@ test.describe("B27 the event strip", () => {
     const [x, y, w, h, , , , , , ey, eh, collapsed] = layout;
     expect(collapsed, "the lanes fit on this chart").toBe(0);
     expect(eh, "three lanes of 14 px").toBe(42);
-    const names = ["4h squeeze", "1D squeeze", "Weekend gap"];
+    const names = ["4h squeeze", "1D squeeze", "Spot gap"];
     names.forEach((name, i) => {
       const t = frame.texts.find((f) => f.text === name);
       expect(t, `the lane ${name} is named`).toBeTruthy();
@@ -104,7 +104,7 @@ test.describe("B27 the event strip", () => {
     expect(eh, "one line").toBe(14);
     const line = frame.texts.find((t) => /lanes need a taller chart$/.test(t.text));
     expect(line, "the disclosure").toBeTruthy();
-    expect(line.text).toMatch(/^4h squeeze \d+ · 1D squeeze \d+ · Weekend gap \d+ · lanes need a taller chart$/);
+    expect(line.text).toMatch(/^4h squeeze \d+ · 1D squeeze \d+ · Spot gap \d+ · lanes need a taller chart$/);
     expect(frame.texts.some((t) => t.text === "4h squeeze" && t.align === "right"), "no lane name").toBe(false);
     expect(line.y).toBeCloseTo(ey + 7, 0);
   });

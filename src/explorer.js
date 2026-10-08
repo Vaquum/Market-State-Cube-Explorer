@@ -11380,6 +11380,7 @@
       const displacement = E.measure.normalized(bar.close - bar.open, atr), range = E.measure.normalized(bar.high - bar.low, atr);
       const observation = cardObservation(E.result.finite(bar.close), "candles.close@1", "usdt", [bar.start, bar.through], null, {
         level: { n, m: null }, history: series((v) => v.close),
+        completeness: bar.state === "so-far" ? "open" : CANON !== null && bar.through > CANON ? "provisional" : "complete",
         denominators: [{ ...displacement, time: [bar.start, bar.through], source: "Prior completed UTC day · Wilder ATR(14)" }],
       });
       coreCardPresentation(tip, {
@@ -14909,7 +14910,7 @@
   const EVENT_NAMES = {
     squeeze4h: { name: "4h squeeze", long: "Bollinger squeeze on 4-hour bars" },
     squeeze1d: { name: "1D squeeze", long: "Bollinger squeeze on daily bars" },
-    cmegap: { name: "Weekend gap", long: "Binance spot weekend proxy" },
+    cmegap: { name: "Spot gap", long: "Binance spot weekend proxy" },
   };
   let eventHits = [];
   // The intervals of each lane, merged where two of one kind overlap (the marks draw the union; the readout keeps

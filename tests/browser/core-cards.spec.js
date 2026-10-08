@@ -306,3 +306,22 @@ test("Measures ending inside a completed bar excludes its later trades", async (
   expect(record.time[1]).toBeGreaterThan(2);
   await expect(card).toContainText("Different measured-through boundaries");
 });
+
+
+test("rewinding inside a cached completed bar withholds its later response", async ({page,fakeFor,probe}) => {
+  const fake=await fakeFor("micro:mixed"), hash="#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24800~25500&r=0,0&auto=0&vis=2&pane=volume";
+  await page.goto(`${fake.url}/${hash}`);await probe.waitForReady();
+  await page.keyboard.press("e");await page.getByRole("tab",{name:"Columns",exact:true}).click();
+  await page.locator("#ol-inspect").focus();await page.keyboard.press("Home");
+  const card=page.locator("#ol-inspect-readout");
+  await expect(card.locator('[data-field="response"]')).toHaveAttribute("data-canonical","0");
+  await probe.waitForQuiet({quietMs:300,timeout:30000});
+  await page.evaluate(next=>{location.hash=next;},hash+"&mode=candles&replay=1&at=2021-01-01T00:00:30Z");
+  await probe.waitForReady();
+  await page.getByRole("tab",{name:"Columns",exact:true}).click();
+  await page.locator("#ol-inspect").focus();await page.keyboard.press("Home");
+  await expect(card.locator('[data-field="response"]')).toHaveAttribute("data-canonical","hidden");
+  await expect(card.locator('[data-field="responseATR"]')).toHaveAttribute("data-canonical","hidden");
+  const observation=JSON.parse(await card.getAttribute("data-observation"));
+  expect(observation.denominators[1].numerator).toBeNull();
+});

@@ -152,6 +152,7 @@ test("real Cascade capture retains the parent support and hides original/history
   expect(observation.result.tag).toBe("finite");
   expect(observation.result.value).toBeCloseTo(Math.log2(4 * 300 / 450.75), 12);
   expect(observation.denominators.find((d) => d.formula === "cells.cascade.parent-volume@1").time).toEqual([0, 2]);
+  expect(observation.history.at(-1).denominators[0].time).toEqual([0, 2]);
   await addMenu(page, p); const capture = (await saved(page)).captures[0], original = capture.originatingObservation;
   expect(original.result).toEqual(observation.result);
   expect(original.denominatorIds).toHaveLength(1);

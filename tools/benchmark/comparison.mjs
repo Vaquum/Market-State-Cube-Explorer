@@ -1,6 +1,6 @@
 // Hand-built typed snapshots for candidate-only comparison diagnostics. No application calculator
 // creates the expected values. The near-cap payload stays in an off-page scalar diagnostic.
-export const COMPARISON_KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT";
+export const COMPARISON_KEY = "market-state-cube-explorer:comparison:v2:BTC/USDT";
 export function comparisonFixture(count, targetBytes = 0) {
   if (!Number.isInteger(count) || count < 0) throw new RangeError("Invalid capture count");
   const start = Date.parse("2026-09-23T12:00:00Z"), seconds = 56.25, width = 125;
@@ -8,6 +8,7 @@ export function comparisonFixture(count, targetBytes = 0) {
     const end = start + (i + 1) * seconds * 1000, amount = i + 1;
     const metric = (value, formula, unit) => ({ tag: "finite", value, formula, unit, supportEnd: end, knownThrough: end, numerator: value, denominator: null });
     return {
+      contextOrigin: "legacy-structural", context: {supports:{},histories:[],originatingObservation:null}, originatingObservation:null,
       id: "bench-cell-" + i, instrument: "BTC/USDT", level: { n: 0, m: 0 }, origin: start / 1000, c: i, r: 561 + i,
       nominal: { t0: end - seconds * 1000, t1: end, low: 70125 + i * width, high: 70250 + i * width },
       observed: { t0: end - seconds * 1000, t1: end, low: 70125 + i * width, high: 70250 + i * width, seconds, width },
@@ -25,7 +26,14 @@ export function comparisonFixture(count, targetBytes = 0) {
       }, detail: [{ label: "Taker buys", value: amount * .75, unit: "usdt", tag: "finite", supportEnd: end, knownThrough: end }],
     };
   });
-  const record = { comparisonVersion: 1, instrument: "BTC/USDT", captures, focus: count ? captures[0].id : null, reference: null,
+  for (const capture of captures) {
+    const end=capture.measuredThrough, supports={observation:{supportEnd:end,knownThrough:end},atr:{supportEnd:end-86400000,knownThrough:end-86400000,result:{tag:"finite",value:125}}};
+    for(let slot=0;slot<12;slot++) supports["h"+slot]={supportEnd:end-(11-slot)*56250,knownThrough:end-(11-slot)*56250};
+    const histories=["volume","trades","flow","delta"].map(id=>{const metric=capture.metrics[id==="volume"||id==="trades"||id==="delta"?id+".amount":id];return {id,formula:metric.formula,unit:metric.unit,slots:Array.from({length:12},(_,slot)=>({result:{tag:"finite",value:metric.value*(slot+1)/12},supportId:"h"+slot,denominatorIds:[]}))};});
+    const originatingObservation={formula:"cells.volume.amount@1",unit:"usdt",basis:"amount",result:{tag:"finite",value:capture.metrics["volume.amount"].value},comparisonMetric:"volume",supportId:"observation",historyIds:["volume"]};
+    capture.contextOrigin="frame-v2";capture.originatingObservation=originatingObservation;capture.context={supports,histories,originatingObservation};
+  }
+  const record = { comparisonVersion: 2, selectedMetric: "volume", instrument: "BTC/USDT", captures, focus: count ? captures[0].id : null, reference: null,
     basis: "auto", sort: { key: "time", direction: "asc" }, view: "grid", page: 0, poc: null, expanded: false, restoreLayout: null };
   if (targetBytes) {
     if (!count) throw new RangeError("A near-cap record needs a capture");

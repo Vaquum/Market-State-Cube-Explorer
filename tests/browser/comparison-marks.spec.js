@@ -86,6 +86,6 @@ test.describe("B41 the historical comparison is neutral: a square for the matchi
     expect(shapes.all.radius, "the all-states key is a ring").toBe("50%");
     expect(shapes.track, "the outcome track is the neutral hue").toBe(c.compare);
     await expect(page.locator(".ol-evidence-legend")).toContainText("Matching states");
-    await expect(page.locator(".ol-evidence-legend")).toContainText("All states");
+    await expect(page.locator(".ol-evidence-legend")).toContainText("All seasonally eligible states");
   });
 });

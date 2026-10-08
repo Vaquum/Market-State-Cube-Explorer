@@ -2126,14 +2126,27 @@
 #origo-lens .ol-outcome-head,
 #origo-lens .ol-outcome {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 52px 44px 38px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: baseline;
-  gap: var(--sp-2);
+  gap: var(--sp-1);
 }
 #origo-lens .ol-outcome-head {
   margin-top: var(--sp-3);
-  font-size: var(--fs-s);
+  font-size: 14px;
   color: var(--ol-muted);
+}
+#origo-lens .ol-outcome-head > span:first-child,
+#origo-lens .ol-outcome > span:first-child {
+  grid-column: 1 / -1;
+  font-size: 14px;
+}
+#origo-lens .ol-outcome > span:not(:first-child) {
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+#origo-lens .ol-outcome > span:nth-child(2) {
+  font-size: 28px;
+  line-height: 1.2;
 }
 #origo-lens .ol-outcome-head span:not(:first-child),
 #origo-lens .ol-outcome span:not(:first-child) {
@@ -3386,3 +3399,16 @@
 }
 #origo-lens .ol-event-inventory { font-size: 14px; overflow-wrap: anywhere; }
 #origo-lens .ol-event-inventory dd { font-size: 18px; margin-bottom: var(--sp-2); }
+
+/* P7-S3 evidence: intervals remain distinct from historical outcome boxes. */
+.ol-evidence-intervals { font-size: .75rem; line-height: 1.45; }
+.ol-evidence-interval { margin: .5rem 0; }
+.ol-evidence-interval span { display: block; font-variant-numeric: tabular-nums; }
+.ol-ledger-content { max-height: 24rem; overflow: auto; }
+
+/* P7-S3: readable provenance and frozen histories use the existing neutral palette. */
+#ol-query-provenance { display:grid; grid-template-columns:minmax(110px,auto) minmax(0,1fr); gap:8px 16px; font-size:14px; line-height:1.45; }
+#ol-query-provenance dd { margin:0; overflow-wrap:anywhere; }
+.ol-comparison-frozen-history { padding:8px 0; font-size:14px; }
+.ol-comparison-frozen-history svg { display:block; }
+.ol-comparison-frozen-history ol { display:flex; flex-wrap:wrap; gap:8px; padding-left:20px; }

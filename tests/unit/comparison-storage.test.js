@@ -2,7 +2,7 @@
 // Independent records and real UTF-8 byte counts exercise the tab-only boundary and retention policy.
 const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs"), vm = require("node:vm"), path = require("node:path");
 const SOURCE = fs.readFileSync(path.join(__dirname, "../../src/state.js"), "utf8");
-const KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT", CAP = 4 * 1024 * 1024;
+const KEY = "market-state-cube-explorer:comparison:v2:BTC/USDT", CAP = 4 * 1024 * 1024;
 class Storage {
   constructor(copy) { this.map = new Map(copy?.map); this.writes = []; this.readError = null; this.writeError = null; this.removeError = null; }
   getItem(key) { if (this.readError) throw this.readError; return this.map.get(key) ?? null; }
@@ -18,6 +18,7 @@ function load(local = new Storage(), session = new Storage(), blocked = false) {
 }
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const capture = (row = 0) => ({
+  contextOrigin: "legacy-structural", context: { supports: {}, histories: [], originatingObservation: null }, originatingObservation: null,
   id: "cell-" + row, instrument: "BTC/USDT", level: { n: 0, m: 0 }, origin: 1000, c: 0, r: row,
   nominal: { t0: 1000000, t1: 1060000, low: row * 125, high: (row + 1) * 125 },
   observed: { t0: 1000000, t1: 1030000, low: row * 125, high: (row + 1) * 125, seconds: 30, width: 125 },
@@ -31,7 +32,7 @@ const capture = (row = 0) => ({
   shortExposure: false, originalScale: "Explore",
 });
 const record = (count = 1) => ({
-  comparisonVersion: 1, instrument: "BTC/USDT", captures: Array.from({ length: count }, (_, row) => capture(row)),
+  comparisonVersion: 2, selectedMetric: "volume", instrument: "BTC/USDT", captures: Array.from({ length: count }, (_, row) => capture(row)),
   focus: count ? "cell-0" : null, reference: null, basis: "auto", sort: { key: "time", direction: "asc" },
   view: "grid", page: 0, poc: null, expanded: false, restoreLayout: null,
 });
@@ -105,7 +106,7 @@ test("32 and 128 captures have no count cap and reload all off-page facts", () =
   }
 });
 test("corrupt and newer text remain verbatim; Retry cannot replace them without discard", () => {
-  for (const raw of ["{broken", JSON.stringify({ ...record(), comparisonVersion: 2 }), JSON.stringify({ ...record(), focus: "missing" })]) {
+  for (const raw of ["{broken", JSON.stringify({ ...record(), comparisonVersion: 3 }), JSON.stringify({ ...record(), focus: "missing" })]) {
     const a = load(); a.session.map.set(KEY, raw);
     const read = a.comparison.read("BTC/USDT"); assert.equal(read.value, null); assert.equal(read.raw, raw);
     assert.equal(a.comparison.write("BTC/USDT", record()).status, "retained"); assert.equal(a.session.getItem(KEY), raw);
@@ -263,7 +264,7 @@ test("explicit successful read adopts recovered captures while absent or previou
   assert.equal(absent.comparison.write("BTC/USDT", record(2)).ok, true, "recovered absence has no unread captures to replace");
 });
 test("initial read failure does not weaken corrupt or newer raw retention", () => {
-  for (const raw of ["{broken", JSON.stringify({ ...record(), comparisonVersion: 2 })]) {
+  for (const raw of ["{broken", JSON.stringify({ ...record(), comparisonVersion: 3 })]) {
     const a = load(); a.session.map.set(KEY, raw); a.session.readError = failure("SecurityError"); a.comparison.read("BTC/USDT"); a.session.readError = null;
     assert.equal(a.comparison.write("BTC/USDT", record()).status, "retained"); assert.equal(a.session.getItem(KEY), raw);
     a.session.removeItem(KEY); assert.equal(a.comparison.write("BTC/USDT", record()).status, "retained");
@@ -282,4 +283,67 @@ test("recovered absence stays known when an owned write succeeds but its verific
   const latest = record(3); latest.focus = "cell-2";
   assert.equal(a.comparison.write("BTC/USDT", latest).ok, true, "Retry can advance the owned record rather than retain it as unread");
   assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), latest);
+});
+
+const LEGACY_KEY = KEY.replace(":v2:", ":v1:");
+const legacy = () => { const v = record(); v.comparisonVersion = 1; delete v.selectedMetric; for (const c of v.captures) { delete c.contextOrigin; delete c.context; delete c.originatingObservation; } return v; };
+test("legacy restore is read-only; first verified v2 mutation retires only unchanged copied legacy text", () => {
+  const a = load(), raw = JSON.stringify(legacy()); a.session.map.set(LEGACY_KEY, raw);
+  const got = a.comparison.read("BTC/USDT"); assert.equal(got.value.comparisonVersion, 2); assert.equal(got.value.captures[0].contextOrigin, "legacy-structural");
+  assert.equal(a.session.writes.length, 0); assert.equal(a.session.getItem(LEGACY_KEY), raw);
+  got.value.selectedMetric = "trades"; assert.equal(a.comparison.write("BTC/USDT", got.value).ok, true);
+  assert.equal(a.session.getItem(LEGACY_KEY), null); assert.equal(JSON.parse(a.session.getItem(KEY)).selectedMetric, "trades");
+});
+test("failed migration retains exact v1 and working record; changed rollback is retained separately", () => {
+  const a = load(), raw = JSON.stringify(legacy()); a.session.map.set(LEGACY_KEY, raw); const working = a.comparison.read("BTC/USDT").value;
+  a.session.writeError = failure("QuotaExceededError"); assert.equal(a.comparison.write("BTC/USDT", working).ok, false); assert.equal(a.session.getItem(LEGACY_KEY), raw);
+  a.session.writeError = null; const changed = raw + " "; a.session.map.set(LEGACY_KEY, changed);
+  const saved = a.comparison.write("BTC/USDT", working); assert.equal(saved.ok, true); assert.match(saved.legacyNotice, /Changed rollback/); assert.equal(a.session.getItem(LEGACY_KEY), changed);
+});
+test("invalid v2 never falls back to valid v1", () => {
+  const a = load(); a.session.map.set(LEGACY_KEY, JSON.stringify(legacy())); a.session.map.set(KEY, "bad");
+  assert.equal(a.comparison.read("BTC/USDT").value, null); assert.equal(a.comparison.write("BTC/USDT", record()).status, "retained");
+});
+test("context caps and references reject atomically without truncating or altering stored captures", () => {
+  const a = load(), value = record(), c = value.captures[0]; c.contextOrigin = "frame-v2";
+  c.context.supports = { observation: { supportEnd: 1030000, knownThrough: 1030000 }, atr: { supportEnd: 1000000, knownThrough: 1000000, result: { tag: "finite", value: 100 } } };
+  c.context.histories = [{ id: "volume", formula: "cells.volume.amount@1", unit: "usdt", slots: Array.from({length:12}, () => ({result:{tag:"finite",value:1},supportId:"observation",denominatorIds:["atr"]})) }];
+  assert.equal(a.comparison.write("BTC/USDT", value).ok, true); const stored = a.session.getItem(KEY);
+  for (const mutate of [v => v.captures[0].context.histories[0].slots.push(v.captures[0].context.histories[0].slots[0]), v => v.captures[0].context.histories[0].slots[0].denominatorIds=["unknown"], v => v.captures[0].context.supports.atr.source="€".repeat(6000), v => v.captures[0].context.supports.atr.bad=Infinity]) {
+    const broken = plain(value); mutate(broken); assert.equal(a.comparison.write("BTC/USDT", broken).ok, false); assert.equal(a.session.getItem(KEY), stored);
+  }
+});
+
+test("v2 context accepts four histories, twelve slots and exactly 16 KiB UTF-8; one-byte excess is atomic", () => {
+  const a=load(), value=record(), c=value.captures[0]; c.contextOrigin="frame-v2";
+  c.context.supports={observation:{supportEnd:1030000,knownThrough:1030000,source:"€\""}};
+  c.context.histories=["volume","trades","flow","delta"].map(id=>({id,formula:"fixture@1",unit:"usdt",slots:Array.from({length:12},()=>({result:{tag:"finite",value:1},supportId:"observation",denominatorIds:[]}))}));
+  c.context.supports.observation.source += "x".repeat(16384-Buffer.byteLength(JSON.stringify(c.context)));
+  assert.equal(Buffer.byteLength(JSON.stringify(c.context)),16384);
+  assert.equal(a.comparison.write("BTC/USDT",value).ok,true); const raw=a.session.getItem(KEY);
+  const over=plain(value); over.captures[0].context.supports.observation.source+="x";
+  assert.equal(a.comparison.write("BTC/USDT",over).ok,false); assert.equal(a.session.getItem(KEY),raw);
+  const fifth=plain(value); fifth.captures[0].context.supports.observation.source="small"; fifth.captures[0].context.histories.push({...fifth.captures[0].context.histories[0],id:"size"});
+  assert.equal(a.comparison.write("BTC/USDT",fifth).ok,false); assert.equal(a.session.getItem(KEY),raw);
+});
+test("failed v2 readback during migration retains the exact legacy rollback", () => {
+  const a=load(), raw=JSON.stringify(legacy()); a.session.map.set(LEGACY_KEY,raw); const working=a.comparison.read("BTC/USDT").value;
+  const original=a.session.getItem.bind(a.session); a.session.getItem=key=>key===KEY && a.session.map.has(KEY)?null:original(key);
+  const result=a.comparison.write("BTC/USDT",working); assert.equal(result.ok,false); assert.equal(result.status,"unsaved");
+  assert.equal(a.session.map.get(LEGACY_KEY),raw); assert.equal(working.captures.length,1);
+});
+
+
+test("a legacy JSON string whose v2 upgrade exceeds the byte cap cannot replace saved work", () => {
+  const a = load(), value = legacy();
+  value.captures[0].source += "x".repeat(CAP - Buffer.byteLength(JSON.stringify(value)));
+  const raw = JSON.stringify(value);
+  assert.equal(Buffer.byteLength(raw), CAP, "the incoming v1 is valid at the existing cap");
+  assert.equal(a.comparison.validate(JSON.parse(raw)).ok, true);
+  assert.equal(a.comparison.write("BTC/USDT", record(2)).ok, true);
+  const before = a.session.getItem(KEY), writes = a.session.writes.length;
+  const failed = a.comparison.write("BTC/USDT", raw);
+  assert.equal(failed.status, "oversized"); assert.equal(failed.ok, false);
+  assert.equal(a.session.getItem(KEY), before); assert.equal(a.session.writes.length, writes);
+  assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), record(2));
 });

@@ -191,7 +191,7 @@ One POC choice freezes the price at a ready, nonempty period-profile row centre 
 
 Capture retains a replay-limited frame as captured. Each metric and numeric supporting detail has separate actual aggregate supportEnd and snapshot knownThrough. In replay both must be established and at or before the effective edge; otherwise the whole stored metric is unavailable, with no numeric DOM attribute, difference, rank or copy payload. A clipped denominator does not establish a numerator's boundary. Captured Relative volume uses the later actual support end of its current rectangle and volume-reference period, including when Rows displays Time at price. Moving forward or leaving replay restores the same snapshot; it does not reconstruct the rest of a partial cell. Structural whole-cell knownAt and finality remain separate. This does not provide historical revision reconstruction.
 
-The dedicated instrument-scoped sessionStorage record is comparison:v1:BTC/USDT, comparisonVersion 1, independent of visualVersion and the view codec. It owns collection, focus/reference, basis/sort/view/page, selected POC and expanded/restoration layout. Reload restores this tab; duplicated tabs subsequently diverge. Captures enter neither addresses, named Views nor chart history. Whole UTF-8 records have a 4 MiB read/write cap without an item-count cap or eviction. Oversized changes leave existing work unchanged; quota/access failure retains running work with Unsaved comparison. Rejected raw text is retained, unapplied; Retry cannot overwrite it. Confirmed Discard stored record permits saving the current valid work. Presentation saves are coalesced after visible updates, using cached immutable capture text; ordinary pointer/chart/replay navigation does not serialize collections.
+The dedicated instrument-scoped sessionStorage record is comparison:v2:BTC/USDT, comparisonVersion 2, independent of visualVersion and the view codec. It owns collection, focus/reference, basis/sort/view/page, selected POC and expanded/restoration layout. Reload restores this tab; duplicated tabs subsequently diverge. Captures enter neither addresses, named Views nor chart history. Whole UTF-8 records have a 4 MiB read/write cap without an item-count cap or eviction. Oversized changes leave existing work unchanged; quota/access failure retains running work with Unsaved comparison. Rejected raw text is retained, unapplied; Retry cannot overwrite it. Confirmed Discard stored record permits saving the current valid work. Presentation saves are coalesced after visible updates, using cached immutable capture text; ordinary pointer/chart/replay navigation does not serialize collections.
 
 ## Core card observations (PRD-0007, P7-S1)
 
@@ -219,3 +219,59 @@ VWAP remains true quote/base volume. Stretch uses supported exactly matching pro
 The cme/cmeGap keys now display Binance spot weekend proxy. Signed percentage is `100*(SundaySpot-FridaySpot)/FridaySpot`; equal spots mean no gap and stale boundary spots remain unavailable. The fixed Friday 16:00/Sunday 17:00 Chicago convention is historical; after 2026-05-29 it is not a current CME closure model. Fill confirmation uses the completed first hourly input reaching Friday spot. Funding times are an assumed schedule, not measured rates. Weekday US openings lack a holiday model. Clock Inspect chooses the nearest event of its kind, ties earlier. Existing squeeze/weekend lanes expose individual records through References without adding lanes.
 
 Daily/weekly untested POCs retain last 30 completed days/26 weeks, inclusive ±125 USDT intersection with later 8-hour bars and the 5-daily-ATR visibility filter. Loaded-column untested levels retain their separate row-width revisit rule. Neither absence of revisit is attraction. Drawings preserve authored A→B order, negative/zero elapsed time and unknown authorship. Vertical lines have no unique line price or infinite slope; endpoint normalization uses each endpoint's causal ATR or is unavailable. No authored fields are added.
+
+### PRD-0007 historical and frozen context
+
+`seasonal-state@1` keeps POC direction and buy-share terciles, replacing raw volume
+conditioning with all-price quote activity divided by the mean of six preceding
+weekly UTC matches (at least four covered). Buy thresholds use prior positive-volume
+columns; activity thresholds use prior eligible seasonal observations. Type-7
+terciles are fixed before the retrospective anchor; equality enters the upper bucket.
+No two-factor or raw-volume fallback is admitted. Outcomes require every completed,
+contiguous POC through each native horizon 1–8; barrier equality counts, but an early
+crossing does not rescue a missing later horizon. Baseline includes matching cases.
+
+The paged ledger keeps all native starts and assigns the first failure in order:
+coverage, empty POC population, missing POC, missing contiguous predecessor,
+ineligible seasonality, unavailable fitted threshold. State-eligible starts then
+partition into matching/nonmatching and completed/missing/unfinished horizons.
+Cases expose buy share, seasonal ratio, fixed buckets, fit boundary and column-end
+POC excursion minimum, maximum and span in USDT/rows. Available normalization uses
+that case's prior completed-day ATR. Non-modal outcomes retain the existing modal
+predicate; neutral outcomes and deterministic lower/unchanged/higher ties are not
+reclassified as trading losses.
+
+`block-bootstrap@2` aligns pooled calendar blocks to T0. Native block length is
+ceil(six weeks + one state step + eight forward steps). Partial/empty intersecting
+blocks stay in the shared 2000 draws. UTF-8 FNV-1a of canonical key plus the literal
+version suffix seeds xorshift32 (13/17/5); Type-7 2.5/97.5 percentiles describe
+approximate pointwise estimation uncertainty separately from outcome boxes. Every
+component needs its own N>=30, the common >=20 full matched-block floor and >=1800
+valid draws. Degenerate components withhold independently. Longer dependence and
+nonstationarity can invalidate nominal coverage. Source digest covers observed
+winning state, threshold, weekly denominator and outcome tuples through the fixed
+anchor. Actual transport cutoffs remain provenance. Producer revision is absent
+when the existing pack does not supply one: this is current-source reconstruction.
+Computation uses cancellable setTimeout batches and no per-case transport.
+
+The v2 comparison record persists one of the existing nine selected metrics.
+Each capture retains its original reading and at most four already displayed
+histories of twelve slots, with explicit support references and denominator support.
+Complete context is capped at 16 KiB UTF-8, within the unchanged 4 MiB record cap.
+Capture adds no reads or reconstructed histories. Unavailable context stays frozen;
+late support requires reopening the capture action. Replay independently gates
+raw facts, original readings, history slots and denominators. Legacy structural
+captures have unknown original readings and unrecorded frozen context.
+
+Restore prefers v2; v1 is read only when v2 is absent. Restore never writes.
+An explicit mutation verifies the v2 write/readback before retiring the exact copied
+v1 text. Quota/readback failures retain v1 and valid unsaved work; changed rollback
+text stays separate without reconciliation. Invalid/oversized context rejects whole
+mutations. Future version keys remain protected until explicit confirmed discard.
+Signed normalized POC context uses the nearest band edge minus reference, divided
+by captured prior ATR; existing unsigned distance ranks remain unchanged. Upper
+half-open band boundary touches; lower boundary contains. A reference known after
+actual observation end is disclosed as retrospective; missing timing stays unknown.
+Cells keep raw accumulated travel USDT and dwell seconds. Candles keep canonical
+OHLC and add net move/range plus supported ATR companions. Query discloses requested,
+measured and shown levels/bounds, source/canonical/replay edges and frozen provenance.

@@ -2,13 +2,13 @@
 // Hand-built captures test set arithmetic, tab ownership and DOM ergonomics independently of capture resolution.
 const { test, expect } = require("./fixtures.js");
 test.use({ reducedMotion: "reduce" });
-const KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT", CAP = 4 * 1024 * 1024;
+const KEY = "market-state-cube-explorer:comparison:v2:BTC/USDT", CAP = 4 * 1024 * 1024;
 const HASH = "#t=2026-09-23T12:00Z~2026-09-24T12:00Z&p=24600~25400&r=4,0&vis=2";
 const START = Date.parse("2026-09-23T12:00:00Z");
 function cell(index) {
   const amount = index + 1, end = START + (index + 1) * 60000;
   const metric = (value, formula, unit) => ({ tag: "finite", value, formula, unit, supportEnd: end, knownThrough: end, numerator: value, denominator: null });
-  return { id: "cell-" + index, instrument: "BTC/USDT", level: { n: 0, m: 0 }, origin: START / 1000, c: index, r: 561 + index,
+  return { contextOrigin: "legacy-structural", context: { supports: {}, histories: [], originatingObservation: null }, originatingObservation: null, id: "cell-" + index, instrument: "BTC/USDT", level: { n: 0, m: 0 }, origin: START / 1000, c: index, r: 561 + index,
     nominal: { t0: end - 60000, t1: end, low: 70125 + index * 125, high: 70250 + index * 125 },
     observed: { t0: end - 60000, t1: end, low: 70125 + index * 125, high: 70250 + index * 125, seconds: 60, width: 125 },
     capturedAt: Date.parse("2026-10-04T18:00:00Z"), measuredThrough: end, source: "hand fixture", completeness: "Complete",
@@ -24,7 +24,7 @@ function cell(index) {
   };
 }
 function collection(count) {
-  return { comparisonVersion: 1, instrument: "BTC/USDT", captures: Array.from({ length: count }, (_, i) => cell(i)), focus: count ? "cell-0" : null,
+  return { comparisonVersion: 2, selectedMetric: "volume", instrument: "BTC/USDT", captures: Array.from({ length: count }, (_, i) => cell(i)), focus: count ? "cell-0" : null,
     reference: null, basis: "auto", sort: { key: "time", direction: "asc" }, view: "grid", page: 0, poc: null, expanded: false, restoreLayout: null };
 }
 async function seed(page, value) {
@@ -279,7 +279,7 @@ test("successful Copy keeps a quota-failed new capture visibly unsaved until Ret
   await expect(action(page, "retry")).toBeHidden(); await expect(status).not.toContainText("Unsaved comparison");
 });
 
-for (const rejected of ["{invalid JSON", JSON.stringify({ ...collection(1), comparisonVersion: 2 })]) {
+for (const rejected of ["{invalid JSON", JSON.stringify({ ...collection(1), comparisonVersion: 3 })]) {
   test(`rejected ${rejected.startsWith("{") && rejected.includes("comparisonVersion") ? "newer" : "corrupt"} text survives until confirmed Discard`, async ({ page, fakeFor }) => {
     const fake = await fakeFor("mini"); await open(page, fake, rejected);
     await expect(panel(page).locator(".ol-comparison-empty")).toBeVisible(); await expect(action(page, "discard")).toBeVisible(); await expect(action(page, "retry")).toBeHidden();
@@ -287,7 +287,7 @@ for (const rejected of ["{invalid JSON", JSON.stringify({ ...collection(1), comp
     await action(page, "discard").click(); await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
     expect(await page.evaluate((key) => sessionStorage.getItem(key), KEY)).toBe(rejected);
     await action(page, "discard").click(); await page.getByRole("dialog").getByRole("button", { name: "Confirm", exact: true }).click();
-    await persisted(page, (v) => v?.comparisonVersion === 1 && v.captures.length === 0); await expect(action(page, "discard")).toBeHidden();
+    await persisted(page, (v) => v?.comparisonVersion === 2 && v.captures.length === 0); await expect(action(page, "discard")).toBeHidden();
   });
 }
 
@@ -441,3 +441,31 @@ for (const recovery of ["reload", "discard"]) {
     }
   });
 }
+
+test("selected metric shares four-figure cards while original reading and captured history remain frozen",async({page,fakeFor})=>{
+  const value=collection(2), capture=value.captures[0], through=capture.observed.t1;
+  capture.contextOrigin="frame-v2";
+  const original={formula:"fixture.volume@1",unit:"usdt",basis:"amount",result:{tag:"finite",value:1},comparisonMetric:"volume",supportId:"observation",historyIds:["volume"]};
+  capture.originatingObservation=original;
+  capture.context={supports:{observation:{supportEnd:through,knownThrough:through}},originatingObservation:original,histories:[{id:"volume",formula:"fixture.volume@1",unit:"usdt",slots:[1,null,3].map(v=>({result:v===null?{tag:"unsupported",reason:"Fixture gap"}:{tag:"finite",value:v},supportId:"observation",denominatorIds:[]}))}]};
+  capture.context.histories.push({id:"imbalance",formula:"cells.imbalance@1",unit:"signed-share",slots:[{result:{tag:"finite",value:.5},supportId:"observation",denominatorIds:[]}]});
+  const fake=await fakeFor("mini");await open(page,fake,value);
+  const focus=panel(page).locator('.ol-comparison-focus');
+  await expect(focus.locator(':scope > .ol-comparison-metrics > .ol-comparison-metric')).toHaveCount(4);
+  await expect(focus.locator('.ol-comparison-history')).toHaveCount(1);
+  await control(page,'selectedMetric').selectOption('trades');
+  await expect(focus.locator('.ol-comparison-primary')).toHaveAttribute('data-metric','trades');
+  await expect(entries(page).first().locator('.ol-comparison-primary')).toHaveAttribute('data-metric','trades');
+  await focus.locator('.ol-comparison-details summary').click();
+  await expect(focus.locator('.ol-comparison-details')).toContainText('fixture.volume@1');
+  await expect(focus.locator('[data-history="volume"]')).toContainText('Fixture gap');
+  await expect(focus.locator('[data-history="imbalance"]')).toContainText('Net taker imbalance');
+  await expect(focus.locator('[data-history="imbalance"] li')).toHaveAttribute('data-canonical','0.5');
+  await action(page,'view').filter({hasText:'Matrix'}).click();
+  await expect(panel(page).locator('.ol-comparison-matrix thead th').nth(1)).toHaveText('Trades');
+  await persisted(page,v=>v?.selectedMetric==='trades');
+  const stored=await page.evaluate(key=>JSON.parse(sessionStorage.getItem(key)),KEY);
+  expect(stored.captures[0].originatingObservation).toEqual(original);
+  expect(stored.captures[0].context).toEqual(capture.context);
+  await page.screenshot({path:'reports/p7-s3-comparison-frozen.png'});
+});

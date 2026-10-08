@@ -206,3 +206,29 @@ test("resort consumes cached gated statistics, including fixed intensity, withou
   const later = C.analyze([a, b], { basis: "amount", edge: T + 60000 });
   assert.deepEqual(C.sort([a, b], { key: "intensity", direction: "asc" }, later.metrics).map((item) => item.id), ["a", "b"]);
 });
+
+test("signed normalized POC context preserves unsigned ranks and independently gates capture, ATR and reference", () => {
+  const c = capture("a", {"volume.amount":10}, {contextOrigin:"frame-v2",context:{supports:{atr:{supportEnd:T,knownThrough:T,result:{tag:"finite",value:250}}},histories:[]}});
+  const poc = {price:25250,supportEnd:T+60000,knownThrough:T+60000,label:"Prior POC"};
+  assert.equal(C.normalizedPoc(c,poc).value,-.5); assert.equal(C.analyze([c],{poc}).metrics.poc.a.value,125);
+  assert.equal(C.normalizedPoc(c,{...poc,price:24875}).value,.5);
+  assert.equal(C.normalizedPoc(c,{...poc,price:25125}).relation,"Touches");
+  assert.equal(C.normalizedPoc(c,{...poc,price:25000}).relation,"Contains");
+  assert.match(C.normalizedPoc(c,{...poc,knownThrough:T+70000}).causal,/Later reference/);
+  assert.equal(C.normalizedPoc(c,poc,T+59999).tag,"hidden"); assert.equal(C.normalizedPoc(c,poc,T+59999).numerator,undefined);
+  c.context.supports.atr.knownThrough=T+70000;assert.equal(C.normalizedPoc(c,poc,T+60000).tag,"hidden");
+  c.context.supports.atr.result.value=0;assert.equal(C.normalizedPoc(c,poc).tag,"undefined");
+});
+test("frozen history gates its own denominators independently of selected metric and retains explicit absence", () => {
+  const c=capture("a",{}, {contextOrigin:"frame-v2",context:{supports:{own:{supportEnd:T,knownThrough:T},later:{supportEnd:T+60000,knownThrough:T+60000}},histories:[{id:"volume",formula:"fixture@1",unit:"usdt",slots:[{result:{tag:"finite",value:12},supportId:"own",denominatorIds:["later"]}]}]}});
+  assert.equal(C.frozenHistory(c,"volume",T).slots[0].result.tag,"hidden");
+  assert.equal(C.frozenHistory(c,"volume",T+60000).slots[0].result.value,12);
+  assert.match(C.frozenHistory(c,"trades").reason,/not captured/);
+  assert.match(C.frozenHistory({...c,contextOrigin:"legacy-structural"},"volume").reason,/not recorded/);
+});
+
+test("copy includes every frozen compact companion without adding comparison metrics",()=>{
+  const c=capture("a",{}, {contextOrigin:"frame-v2",context:{supports:{own:{supportEnd:T,knownThrough:T}},histories:[{id:"imbalance",formula:"cells.imbalance@1",unit:"signed-share",slots:[{result:{tag:"finite",value:.5},supportId:"own",denominatorIds:[]}]}]}});
+  assert.match(C.captureText(c),/Net taker imbalance frozen history: 0.5/);
+  assert.equal(C.METRICS.length,9);
+});

@@ -3,7 +3,7 @@ const { test, expect } = require("./fixtures.js");
 const { addRecorder, lastDraw, rectOf, boxOf } = require("./cells-support.js");
 const FROM = "2021-01-01T00:00Z", TO = "2021-01-01T00:20Z";
 const VIEW = `#t=${FROM}~${TO}&p=24800~25500&r=0,0&auto=0&vis=2&lines=`;
-const KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT";
+const KEY = "market-state-cube-explorer:comparison:v2:BTC/USDT";
 const amounts = [100000, 100000, 100000, 225000, 225000];
 const trades = Array.from({ length: 20 }, (_, c) => [
   ...amounts.map((qty, i) => ({ t_ms: c * 56250 + 1000 + i, price: 2500000, qty, takerBuy: i < 3 })),

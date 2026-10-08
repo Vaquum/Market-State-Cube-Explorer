@@ -7,7 +7,7 @@ const { atRest } = require("./rows-support.js");
 const reference = require("../reference/index.js");
 const { resolveProfile } = require("../support/profiles.js");
 const wire = require("../support/wire.js");
-const KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT", EPOCH = wire.T0 * 1000;
+const KEY = "market-state-cube-explorer:comparison:v2:BTC/USDT", EPOCH = wire.T0 * 1000;
 const VIEW = "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24800~25500&r=0,0&auto=0&vis=2&marks=none&lines=";
 const WORK = "#ol-comparisonWorkspace";
 const saved = (page) => page.evaluate((key) => JSON.parse(sessionStorage.getItem(key)), KEY);
@@ -175,6 +175,9 @@ test("a covered known-zero cell is numeric while its empty ratios retain typed r
   const fake = await fakeFor("micro:mixed"); await ready(page, fake, probe);
   await addMenu(page, await point(page, 28125, 25312.5)); const capture = (await saved(page)).captures[0];
   expect([capture.c, capture.r]).toEqual([0, 202]);
+  expect(Buffer.byteLength(JSON.stringify(capture.context))).toBeLessThanOrEqual(16384);
+  expect(Object.keys(capture.context.supports).length).toBeLessThanOrEqual(14);
+  expect(capture.context.histories.length).toBeLessThanOrEqual(4);
   for (const key of ["volume.amount", "volume.intensity", "trades.amount", "delta.amount"]) {
     expect(capture.metrics[key].tag).toBe("finite"); expect(capture.metrics[key].value).toBe(0);
   }
@@ -330,7 +333,8 @@ test("Add refuses a near-cap collection when revealing its new cell requires pag
       metrics: { "volume.amount": { tag: "finite", value: index + 1, formula: "cells.volume.amount@1", unit: "usdt", supportEnd: t1, knownThrough: t1 } }, detail: [] };
   });
   captures[0].metrics["volume.amount"].audit = "";
-  const before = { comparisonVersion: 1, instrument: "BTC/USDT", captures, focus: "prior-0", reference: null, basis: "amount",
+  for (const capture of captures) Object.assign(capture, { contextOrigin: "legacy-structural", context: { supports: {}, histories: [], originatingObservation: null }, originatingObservation: null });
+  const before = { comparisonVersion: 2, selectedMetric: "volume", instrument: "BTC/USDT", captures, focus: "prior-0", reference: null, basis: "amount",
     sort: { key: "added", direction: "asc" }, view: "grid", page: 0, poc: null, expanded: false, restoreLayout: null };
   const oldPreflight = { ...before, captures: [...captures, sample], focus: sample.id };
   captures[0].metrics["volume.amount"].audit = "x".repeat(cap - Buffer.byteLength(JSON.stringify(oldPreflight)));
@@ -354,4 +358,28 @@ test("Add refuses a near-cap collection when revealing its new cell requires pag
   await expect(page.locator(WORK)).toHaveAttribute("data-writes", writes);
   expect(await page.evaluate((key) => sessionStorage.getItem(key), KEY)).toBe(raw);
   expect(await saved(page)).toEqual(before);
+});
+
+
+test("captured Cascade original and history wait for their complete parent in replay", async ({page,fakeFor,probe}) => {
+  const fake=await fakeFor("mini"); await ready(page,fake,probe,VIEW+"&mode=cascade");
+  const p=await point(page);await page.mouse.move(p.x,p.y);await page.keyboard.press("e");
+  await page.getByRole("tab", {name:"Cells", exact:true}).click();
+  const card=page.locator("#ol-inspect-readout");
+  await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).result.tag).toBe("finite");
+  await probe.waitForQuiet({quietMs:300,timeout:30000});
+  await page.locator("#ol-inspect").focus();await page.keyboard.press("Enter");
+  await page.locator("#ol-inspect-detail-body").getByRole("button",{name:"Add to comparison"}).click();
+  await expect.poll(async () => (await saved(page))?.captures.length).toBe(1);
+  const capture=(await saved(page)).captures[0], C=require("../../src/comparison.js");
+  expect(capture.originatingObservation.formula).toBe("cells.cascade.log2@1");
+  const support=capture.context.supports[capture.originatingObservation.supportId];
+  expect(support.knownThrough).toBe(EPOCH+112500);
+  expect(support.knownThrough).toBeGreaterThan(capture.observed.t1);
+  const history=capture.context.histories.find(h=>h.id==="cascade");
+  expect(history.slots.at(-1).denominatorIds.length).toBeGreaterThan(0);
+  expect(C.originating(capture,capture.observed.t1).tag).toBe("hidden");
+  expect(C.frozenHistory(capture,"cascade",capture.observed.t1).slots.at(-1).result.tag).toBe("hidden");
+  expect(C.captureText(capture,{edge:capture.observed.t1})).toContain("Original captured reading: Unavailable in replay");
+  expect(C.originating(capture,support.knownThrough).value).toBe(capture.originatingObservation.result.value);
 });

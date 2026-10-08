@@ -153,9 +153,9 @@ function parseDoc(text) {
 
 const COLUMNS = ["ID", "Consumer", "File / function / CSS rule", "Current", "Target role", "Measurement / channel", "Owner", "Tests", "Status"];
 const STATUSES = ["keep", "todo-S1", "todo-S2", "todo-S3", "done"];
-const OWNERS = ["#46", "#47", "#48", "#62", "#66", "#71", "#84", "#85"];
+const OWNERS = ["#46", "#47", "#48", "#62", "#66", "#71", "#84", "#85", "#86"];
 const ROW_ID = /^([CDFRTN])-(\d\d)([a-z]?)$/;
-const TEST_ID = /\b(?:U\d\d[a-z]?|B\d\d)\b/g;
+const TEST_ID = /\b(?:U\d{2,3}[a-z]?|B\d\d)\b/g;
 
 const doc = parseDoc(read(DOC));
 const inventory = doc.tables.filter((t) => t.header[1] === "Consumer");
@@ -429,7 +429,7 @@ describe("docs/visual-contract.md: decision list, register, test index", () => {
     const seen = new Set();
     for (const r of testIndex.rows) {
       const [id, file, covers, owner] = r.cells;
-      assert.match(id, /^(?:U\d\d[a-z]?|B\d\d)$/, id);
+      assert.match(id, /^(?:U\d{2,3}[a-z]?|B\d\d)$/, id);
       assert.ok(!seen.has(id), `duplicate ${id}`);
       seen.add(id);
       assert.match(file, /^`tests\/(?:unit\/[\w-]+\.test|browser\/[\w-]+\.spec)\.js`$/, id);

@@ -34,7 +34,7 @@
   let CANON = canonOf(PACK);
   // Notices can apply panel layout while saved calibration is read during startup.
   const C = window.explorerComparison;
-  const comparisonEmpty = () => ({comparisonVersion:1,instrument:INSTRUMENT,captures:[],focus:null,reference:null,
+  const comparisonEmpty = () => ({comparisonVersion:2,selectedMetric:"volume",instrument:INSTRUMENT,captures:[],focus:null,reference:null,
     basis:"auto",sort:{key:"time",direction:"asc"},view:"grid",page:0,poc:null,expanded:false,restoreLayout:null});
   let comparisonModel = comparisonEmpty(), comparisonUI = null, comparisonAnalysis = null,
     comparisonStatsKey = "", comparisonRenderKey = "", comparisonLastEdge = undefined, comparisonRevision = 0, comparisonTimer = null,
@@ -2513,7 +2513,7 @@
       motion:lensMotionParts(cp), box:{x:cf.x,y:cf.y,w:cf.w,h:cf.h} } : null;
     last = { full, query, shown, meas, b, cut, mv, under, sc, src, comparisonLens, n:renderN(), m:renderM(),
       sourceEnd: sourceRange(src)[1], token:PACK.state_token ?? null, generation:live.generation,
-      sourceVersion:sourcesKey(), sourceRevision:comparisonSourceRevision,
+      sourceVersion:sourcesKey(), sourceRevision:comparisonSourceRevision, contextBarsVersion:barsVersion,
       camera:[S.tA,S.tB,S.pA,S.pB,S.n,S.m,S.replay,S.anchor],
       motionEnd:mv?.src?.end ?? null, canon:CANON, dataCut:CUT };
     comparisonRefresh();
@@ -3268,6 +3268,10 @@
               : meas.query.n !== S.n
                 ? `The cube's answer to these six parameters, in ${level} (the finest this span shows at once); totals and POCs don't depend on the column width.`
                 : "The cube's answer to these six parameters.";
+    const provenance = el("query-provenance"); provenance.replaceChildren();
+    const current = evidence.job?.key === evidenceKey() ? evidence.job?.output ?? evidence.ready : null;
+    const fields = [["Source / pack", `${PACK.live ? "Cube" : "Recorded"} · ${PACK.source ?? "source identity unavailable"} · ${PACK.state_token ?? "snapshot"}`], ["Source cutoff", when(CUT) + " UTC"], ["Canonical cutoff", CANON === null ? "Not supplied" : when(CANON) + " UTC"], ["Replay edge", S.replay ? when(activeCutoff()) + " UTC" : "Live"], ["Measured through", Number.isFinite(meas.end) ? when(meas.end) + " UTC" : "Unavailable"], ["Requested bounds", `${range(meas.r[0],meas.r[1])} UTC; ${price(meas.r[2]*PR)}–${price(meas.r[3]*PR)} USDT; n=${S.n}, m=${S.m}`], ["Actual measured bounds", `${range(b[0],b[1])} UTC; ${price(b[2]*PR)}–${price(b[3]*PR)} USDT; n=${meas.query.n}, m=${meas.query.m}`], ["Shown level", `n=${renderN()}, m=${renderM()}`], ["Historical evidence study", current?.provenance ? `${current.version} / ${current.uncertainty?.version}; digest ${current.provenance.sourceDigest}; fit ${when((current.a+1)*2**current.n)} UTC; ${current.provenance.reconstruction}` : "Current-source study unavailable or preparing"], ["Frozen comparison", `${comparisonModel.captures.length} captures; ${comparisonModel.selectedMetric} / ${comparisonAnalysis?.basis ?? comparisonModel.basis}; each record retains its captured source and measured-through boundary`]];
+    for (const [label,value] of fields) provenance.append(Object.assign(document.createElement("dt"),{textContent:label}),Object.assign(document.createElement("dd"),{textContent:value}));
   }
   // Copy text to the clipboard. `source` is the text, a promise of it, or a function that makes either (a
   // view code is made asynchronously: it is compressed). The clipboard is asked at once, inside the click,
@@ -4822,6 +4826,8 @@
       if (!sample) return null;
       return finite(measure(selected, sample.z, basis, readout?.measure?.basis === "perMinute" ? "perMinute" : readout?.measure?.basis === "usdt" ? "usdt" : "spans", sample.end));
     };
+    const compactKeys = [selected, ...["volume", "trades", ["flow", "delta"].includes(selected) ? "size" : "imbalance", "size"].filter((key) => key !== selected).slice(0, 3)], compactHistories = [];
+    const measurementDependencies = (col) => selected === "cascade" ? [{ formula: "cells.cascade.parent@1", time: [Math.floor(col / 2) * 2 * ts, (Math.floor(col / 2) + 1) * 2 * ts], knownAt: (Math.floor(col / 2) + 1) * 2 * ts, source: "Complete parent cell" }] : [];
     const stats = document.createElement(detailed ? "div" : "dl"); stats.className = "ol-cell-stats";
     const appendMetric = (parent, metric, main = false) => {
       const row = document.createElement("div"); row.className = "ol-cell-stat";
@@ -4847,10 +4853,15 @@
         const selectedSamples = metric.movement ? moving.samples : rowHistory.samples;
         const selectedResult = readout?.typed ?? (Number.isFinite(metric.value) ? E.result.finite(metric.value) : E.result.make("unsupported", { reason: "Selected measurement unavailable" }));
         const observation = cardObservation(selectedResult, readout?.measure?.formula ?? "cells.volume.amount@1", readout?.measure?.unit ?? "usdt", time, [r * ps * PR, (r + 1) * ps * PR], {
-          level: { n, m }, denominators: [{ formula: "context.daily-atr@1", numerator: null, denominator: atr, time: [Math.max(0, (Math.floor(c * ts / DAYS) - 1) * DAYS), Math.floor(c * ts / DAYS) * DAYS], source: "Prior completed UTC day · Wilder ATR(14)" }],
-          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], result: i === 11 ? selectedResult : Number.isFinite(value) ? E.result.finite(value) : selectedSamples[i] ? E.result.make("undefined", { denominator: metric.label + " denominator" }) : E.result.make("unsupported", { reason: "History coverage unavailable" }) })),
+          level: { n, m }, denominators: [{ formula: "context.daily-atr@1", numerator: null, denominator: atr, time: [Math.max(0, (Math.floor(c * ts / DAYS) - 1) * DAYS), Math.floor(c * ts / DAYS) * DAYS], source: "Prior completed UTC day · Wilder ATR(14)" }, ...measurementDependencies(c)],
+          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], denominators: measurementDependencies(c - 11 + i), result: i === 11 ? selectedResult : Number.isFinite(value) ? E.result.finite(value) : selectedSamples[i] ? E.result.make("undefined", { denominator: metric.label + " denominator" }) : E.result.make("unsupported", { reason: "History coverage unavailable" }) })),
         });
         tip.dataset.observation = JSON.stringify(observation);
+      }
+      const metricKey = main ? selected : Object.keys(metrics).find((key) => metrics[key] === metric);
+      if (compactKeys.includes(metricKey)) {
+        const descriptor = composition[metricKey] ?? measure(metricKey, current, metricKey === selected ? basis : metricKey === "size" ? "mean" : "amount");
+        compactHistories.push({ id: metricKey, formula: descriptor.formula, unit: descriptor.unit, slots: values.map((v, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], denominators: main ? measurementDependencies(c - 11 + i) : [], result: Number.isFinite(v) ? E.result.finite(v) : E.result.make("unsupported", { reason: "Displayed compact history unavailable at capture" }) })) });
       }
       const spark = readingSparkline(values, metric.label, { signed: metric.signed, share: metric.share, fixed: metric.fixed, provisional: open });
       row.append(term, value, spark);
@@ -4950,6 +4961,7 @@
     }
     tip.replaceChildren(...[head, sub, state, stats, ...(!detailed ? [balance, context] : []), details].filter(Boolean));
     tip.dataset.presentation = "cell";
+    tip.dataset.compactHistories = JSON.stringify(compactHistories.sort((a,b) => compactKeys.indexOf(a.id) - compactKeys.indexOf(b.id)));
     tip.dataset.atr = atr === null ? "unavailable" : String(atr);
   }
   // A drawn cell's path and dwell for the tooltip, or why it has none yet. Path is shown in the three ways
@@ -11412,7 +11424,9 @@
     const body = table.tBodies[0], frag = document.createDocumentFragment();
     for (const bar of r.bars.slice(tablePage * CELLS_PAGE, (tablePage + 1) * CELLS_PAGE)) {
       const row = document.createElement("tr"); row.tabIndex = -1; row.dataset.candle = bar.c;
-      for (const text of [range(bar.start, bar.stop), price(bar.open), price(bar.high), price(bar.low), price(bar.close), bar.direction, bar.state === "so-far" ? "So far" : "Complete"]) { const td = document.createElement("td"); td.textContent = text; row.append(td); }
+      const atr = contextATR(bar.start), displacement = bar.close - bar.open, spread = bar.high - bar.low;
+      const values = [[range(bar.start, bar.stop)], ...[["open",bar.open],["high",bar.high],["low",bar.low],["close",bar.close],["netMove",displacement],["range",spread]].map(([field,value])=>[price(value),field,value]), ...[["netMoveATR",displacement],["rangeATR",spread]].map(([field,value])=>{const result=E.measure.normalized(value,atr).result;return [result.tag === "finite" ? result.value.toFixed(4) + " ATR" : E.result.describe(result).short,field,result.tag === "finite" ? result.value : result.tag];}), [bar.direction], [bar.state === "so-far" ? "So far" : "Complete"]];
+      for (const [text,field,value] of values) { const td=document.createElement("td");td.textContent=text;if(field){td.dataset.field=field;td.dataset.canonical=String(value);}row.append(td); }
       row.addEventListener("focus", () => { if (!inspect.on) inspectEnter(); inspect.surface = "cells"; inspect.t = (bar.start + bar.stop) / 2; inspect.p = bar.close / PR; inspectRender(true); });
       row.addEventListener("keydown", (e) => { const next = e.key === "ArrowDown" ? row.nextElementSibling : e.key === "ArrowUp" ? row.previousElementSibling : null; if (next) { e.preventDefault(); next.focus(); } });
       frag.append(row);
@@ -16764,7 +16778,7 @@
       const meta = src === history ? src : PACK.blocks[src.id],
         start = meta?.b0 ?? src.col0 * 2 ** src.n,
         stop = Math.min(end, meta?.b1 ?? src.col1 * 2 ** src.n);
-      const c0 = Math.ceil(start / ts),
+      const c0 = Math.max(Math.ceil(start / ts), Math.floor(end / ts) - 100000),
         c1 = Math.floor(stop / ts);
       if (c1 <= c0) continue;
       const owned = new Set();
@@ -16780,10 +16794,12 @@
           : aggregate(src, n, m, [c0 * ts, c1 * ts, 0, Infinity]).cols;
       let accepted = 0;
       for (const col of grouped)
-        if (owned.has(col.c) && col.v > 0 && col.poc !== null) {
-          byColumn.set(col.c, { ...col, source: src.id });
+        if (owned.has(col.c)) {
+          byColumn.set(col.c, { ...col, source: src.id, precision: src === history ? "Float32" : "Float64", covered: col.v > 0 || col.covered === true });
           accepted++;
         }
+      // A delivered cell block covers its empty columns; sparse MSCC does not.
+      if (src !== history) for (const c of owned) if (!byColumn.has(c)) byColumn.set(c, { c, v: 0, bv: 0, poc: null, covered: true, source: src.id, precision: "Float64" });
       if (accepted)
         used.set(src.id, { id: src.id, n: src.n, m: src.m, columns: accepted });
     }
@@ -16791,6 +16807,7 @@
       cols: [...byColumn.values()].sort((a, b) => a.c - b.c),
       sources: [...used.values()],
       covered: owners.size,
+      b0: owners.size ? [...owners.keys()].reduce((a, b) => Math.min(a, b), Infinity) * ts : Math.max(0, end - 100000 * ts), b1: end,
     };
   }
   function evidenceSummary(cases, field) {
@@ -16808,162 +16825,129 @@
   }
   // The anchor column: the chosen anchor, or the last complete column in view.
   function evidenceAnchor() {
-    const end = Math.min(CUT, S.anchor === null ? bounds()[1] : S.anchor);
+    const end = Math.min(activeCutoff(), S.anchor === null ? bounds()[1] : S.anchor);
     return Math.floor(end / stepT()) - 1;
   }
+  const evidenceSources = new WeakMap(); let evidenceSourceSerial=0;
+  function evidenceSourceIdentity(source) { if(!source)return "absent";if(!evidenceSources.has(source))evidenceSources.set(source,++evidenceSourceSerial);return evidenceSources.get(source); }
   function evidenceKey() {
-    const loaded = TIERS.map((id) => id + ":" + (sources[id]?.cells.length ?? "-")).join(","),
-      history = PACK.live ? histories.get(historyKey(renderN(), renderM())) : null;
-    return [
-      "v5",
-      renderN(),
-      renderM(),
-      evidenceAnchor(),
-      S.barrier || 1,
-      loaded,
-      history ? `${history.b0}-${history.b1}-${history.cols.length}` : "none",
-    ].join("|");
+    return ["seasonal-state@1", live.generation, PACK.state_token, renderN(), renderM(), evidenceAnchor(), S.barrier || 1, S.horizon, S.evidenceKind, CUT, CANON, S.replay ? activeCutoff() : null,
+      TIERS.map((id) => `${id}:${evidenceSourceIdentity(sources[id])}`).join(","), ...[historyKey(renderN(),renderM()),historyKey(Math.min(renderN(),9),0)].map((id)=>evidenceSourceIdentity(histories.get(id))), [...cube.failed.entries()].map(([k,v]) => k + v).join("|")].join("|");
   }
-  // Continuations wait for the view to settle: a level change mid-gesture would
-  // otherwise recompute them inside the frame. Meanwhile the last result at the
-  // same level stays up, marked as updating.
   let gestureAt = 0;
-  const evidence = { ready: null, last: null, timer: 0 },
-    gesturing = () =>
-      drag !== null || nav.pinch !== null || performance.now() - gestureAt < 200;
+  const evidence = { ready: null, last: null, timer: 0, job: null },
+    gesturing = () => drag !== null || nav.pinch !== null || performance.now() - gestureAt < 200;
+  // No old study survives a changed requested edge, pack, fit, horizon or source.
   function settledEvidence() {
     const key = evidenceKey();
-    if (evidenceCache.has(key) || !gesturing()) {
-      evidence.ready = evidence.last = calcEvidence();
-      return evidence.ready;
-    }
-    evidence.ready = null;
-    clearTimeout(evidence.timer);
-    evidence.timer = setTimeout(requestDraw, 220);
-    const e = evidence.last;
-    return e && e.n === renderN() && e.m === renderM() && e.barrier === (S.barrier || 1)
-      ? e
-      : null;
-  }
-  function calcEvidence() {
-    const n = renderN(),
-      m = renderM(),
-      ts = stepT(),
-      a = evidenceAnchor(),
-      barrier = S.barrier || 1,
-      key = evidenceKey();
-    if (evidenceCache.has(key)) return evidenceCache.get(key);
-    // Live, the level's history comes from the cube; until it has, nothing is
-    // compared on a partial history. One that can't be read leaves the loaded
-    // tiers, which say so.
-    if (PACK.live && !histories.has(historyKey(n, m)) && !cube.failed.has(historyKey(n, m)))
-      return { a, n, m, barrier, loading: true, error: "Reading this level's history from the cube…" };
-    const history = evidenceColumns(n, m, (a + 1) * ts),
-      cols = history.cols,
-      ai = cols.findIndex((c) => c.c === a);
-    const shared = {
-      a,
-      n,
-      m,
-      barrier,
-      from: cols[0]?.c,
-      sources: history.sources,
-      covered: history.covered,
-    };
-    if (ai < 1)
-      return {
-        ...shared,
-        error:
-          ai < 0
-            ? "No completed POC at this anchor."
-            : "Not enough earlier columns in loaded history.",
-      };
-    const prior = cols.slice(0, ai),
-      shares = prior.map((c) => c.bv / c.v).sort((a, b) => a - b),
-      vols = prior.map((c) => c.v).sort((a, b) => a - b),
-      st = [d3.quantileSorted(shares, 1 / 3), d3.quantileSorted(shares, 2 / 3)],
-      vt = [d3.quantileSorted(vols, 1 / 3), d3.quantileSorted(vols, 2 / 3)];
-    function stateAt(i) {
-      if (i < 1 || cols[i - 1].c + 1 !== cols[i].c) return null;
-      const c = cols[i],
-        share = c.bv / c.v;
-      return [
-        Math.sign(c.poc - cols[i - 1].poc) + 1,
-        share < st[0] ? 0 : share < st[1] ? 1 : 2,
-        c.v < vt[0] ? 0 : c.v < vt[1] ? 1 : 2,
-      ];
-    }
-    const state = stateAt(ai);
-    if (!state)
-      return {
-        ...shared,
-        error: "The anchor has no preceding POC in a contiguous column.",
-      };
-    const cases = Array.from({ length: 9 }, () => []),
-      matched = Array.from({ length: 9 }, () => []);
-    for (let i = 1; i < ai; i++) {
-      const s = stateAt(i);
-      if (!s) continue;
-      const matches = s.every((x, j) => x === state[j]);
-      let first = 0,
-        firstAt = null,
-        min = 0,
-        max = 0;
-      for (let h = 1; h <= 8; h++) {
-        if (i + h > ai || cols[i + h].c !== cols[i].c + h) break;
-        const delta = cols[i + h].poc - cols[i].poc;
-        min = Math.min(min, delta);
-        max = Math.max(max, delta);
-        if (!first && Math.abs(delta) >= barrier) {
-          first = Math.sign(delta);
-          firstAt = h;
+    if (evidenceCache.has(key)) { if(evidence.job)evidence.job.cancelled=true; clearTimeout(evidence.timer); evidence.ready = evidence.last = evidenceCache.get(key); evidence.job={key,cancelled:false,output:evidence.ready}; return evidence.ready; }
+    if (evidence.job?.key !== key) {
+      if (evidence.job) evidence.job.cancelled = true;
+      evidence.ready = evidence.last = null;
+      const job = { key, cancelled: false }; evidence.job = job;
+      clearTimeout(evidence.timer);
+      evidence.timer = setTimeout(async () => {
+        if (job.cancelled || evidenceKey() !== key) return;
+        try {
+          const out = await calcEvidence(job);
+          if (!out || job.cancelled || evidenceKey() !== key) return;
+          if (evidenceCache.size >= 6) evidenceCache.delete(evidenceCache.keys().next().value);
+          if (!out.loading) evidenceCache.set(key, out);
+          evidence.ready = evidence.last = out; job.output = out; requestDraw();
+        } catch (error) {
+          if (job.cancelled || evidenceKey() !== key) return;
+          job.output = { a: evidenceAnchor(), n: renderN(), m: renderM(), barrier: S.barrier || 1, error: `Evidence calculation unavailable: ${error.message}` }; evidence.ready=evidence.last=job.output; requestDraw();
         }
-        const c = {
-          c: cols[i].c,
-          end: cols[i + h].c,
-          poc: cols[i].poc,
-          finalPoc: cols[i + h].poc,
-          delta,
-          direction: Math.sign(delta),
-          first,
-          firstAt,
-          min,
-          max,
-          state: s,
-          source: cols[i].source,
-          buyShare: cols[i].bv / cols[i].v,
-          volume: cols[i].v,
-          matched: matches,
-        };
-        cases[h].push(c);
-        if (matches) matched[h].push(c);
-      }
+      }, gesturing() ? 220 : 0);
     }
-    const out = {
-      ...shared,
-      poc: cols[ai].poc,
-      state,
-      thresholds: { share: st, volume: vt },
-      cases,
-      matched,
-      match: matched.map((c) => evidenceSummary(c, "direction")),
-      all: cases.map((c) => evidenceSummary(c, "direction")),
-      barrierMatch: matched.map((c) => evidenceSummary(c, "first")),
-      barrierAll: cases.map((c) => evidenceSummary(c, "first")),
-      lastColumn: a,
-    };
-    if (evidenceCache.size >= 6)
-      evidenceCache.delete(evidenceCache.keys().next().value);
-    evidenceCache.set(key, out);
-    return out;
+    return evidence.job?.output ?? { a: evidenceAnchor(), n: renderN(), m: renderM(), barrier: S.barrier || 1, loading: true, error: "Preparing current-source evidence…" };
+  }
+  async function calcEvidence(job) {
+    const n = renderN(), m = renderM(), ts = stepT(), a = evidenceAnchor(), end = (a + 1) * ts, barrier = S.barrier || 1;
+    const shared = { a, n, m, barrier };
+    const keys = [...new Set([historyKey(n, m), historyKey(Math.min(n, 9), 0)])];
+    const failed = keys.find((key) => cube.failed.has(key));
+    if (failed) return { ...shared, error: `History unavailable: ${cube.failed.get(failed)}` };
+    if (PACK.live && keys.some((key) => !histories.has(key))) return { ...shared, loading: true, error: "Reading this level's history from the cube…" };
+    const history = evidenceColumns(n, m, end), recordedSeasonal = PACK.live ? null : n===9 && m===0 ? history : evidenceColumns(Math.min(n,9),0,end), index = PACK.live ? seasonalSource(n) : E.measure.seasonalIndex({cols:recordedSeasonal.cols,n:Math.min(n,9),b0:recordedSeasonal.b0,b1:recordedSeasonal.b1,precision:"Observed recorded values / Float64 aggregation",source:"Recorded covered tiers"}), p = PACK.provenance ?? {};
+    const seasonalHeld = PACK.live ? histories.get(historyKey(Math.min(n, 9), 0)) : null;
+    const tuples = history.cols.map((c) => [c.source, c.c, c.v, c.bv, c.poc, c.covered ? "covered" : "missing", (c.c + 1) * ts, "complete"]);
+    // Denominator records are dependencies too. Tail beyond the fixed anchor is excluded.
+    if (recordedSeasonal) for(const c of recordedSeasonal.cols) tuples.push(["recorded-seasonal",c.c,c.v,c.bv,c.poc,c.covered?"covered":"missing",(c.c+1)*2**Math.min(n,9),"complete"]);
+    if (seasonalHeld) for (const c of seasonalHeld.cols) if ((c.c + 1) * 2 ** seasonalHeld.n <= end) tuples.push(["seasonal-history", c.c, c.v, c.bv, c.poc, c.v > 0 || c.covered === true ? "covered" : "missing", (c.c + 1) * 2 ** seasonalHeld.n, "complete"]);
+    tuples.sort((x, y) => (String(x[0]) < String(y[0]) ? -1 : String(x[0]) > String(y[0]) ? 1 : 0) || x[1] - y[1]);
+    const packKey = p.packKey ?? PACK.packKey ?? [PACK.source, T0, BASE, PR], revision = p.revision ?? null;
+    const sourceDigest = E.hash.hex(E.hash.sha256(E.hash.utf8(JSON.stringify([packKey, revision, tuples]))));
+    const provenance = { instrument: INSTRUMENT, sourceDigest, packKey, revision, sourceCutoff: CUT, canonicalCutoff: CANON, replayEdge: S.replay ? activeCutoff() : null, measuredThrough: end,
+      priceLow: 0, priceHigh: null, precisionID: "observed-source-values+Float64-aggregation", reconstruction: "Current-source reconstruction; original vintages not guaranteed" };
+    const out = await window.explorerEvidence.compute({ cols: history.cols, b0: history.b0, b1: end, a, n, m, barrier, horizon: S.horizon, kind: S.evidenceKind === "barrier" ? "poc-barrier" : "next-poc", provenance,
+      seasonal: (args) => E.measure.seasonalActivity({ ...args, index, week: 7 * DAYS }) }, { cancelled: () => job.cancelled || evidenceKey() !== job.key });
+    return out ? { ...out, sources: history.sources, covered: history.covered } : null;
   }
   function evidenceTotals(e) {
     const barriers = S.evidenceKind === "barrier";
     return {
-      sample: e.error ? null : (barriers ? e.barrierMatch : e.match)[S.horizon],
+      sample: e.error || !e.state ? null : (barriers ? e.barrierMatch : e.match)[S.horizon],
       base: e.error ? null : (barriers ? e.barrierAll : e.all)[S.horizon],
       field: barriers ? "first" : "direction",
     };
+  }
+  function evidenceIntervals(e) {
+    const host = el("evidence-intervals"); host.replaceChildren(); delete host.dataset.bootstrap;
+    host.dataset.study = e.error ? "unavailable" : e.provenance?.sourceDigest ?? "pending";
+    const title = document.createElement("p"); title.textContent = "Approximate pointwise 95% estimation intervals · fixed anchor thresholds"; host.append(title);
+    if (!e.uncertainty) { host.append(document.createTextNode(e.error ?? "Computing intervals…")); return; }
+    for (const kind of ["up", "flat", "down"]) {
+      const line = document.createElement("p"); line.className = "ol-evidence-interval";
+      line.append(Object.assign(document.createElement("strong"), { textContent: el("label-" + kind).textContent + ": " }));
+      for (const [component, label] of [["conditional", "Matching"], ["baseline", "All seasonally eligible states"], ["difference", "Difference"]]) {
+        const record = e.uncertainty.intervals[kind][component], span = document.createElement("span"), result = record.result;
+        span.dataset.component = component; span.dataset.direction = kind; span.dataset.canonical = JSON.stringify(result);
+        span.textContent = label + " " + (result.tag === "finite" ? result.value.map((v) => v.toFixed(2)).join("–") + (component === "difference" ? " pp" : "%") : result.reason) + "; "; line.append(span);
+      }
+      host.append(line);
+    }
+    const limits = document.createElement("p"); limits.textContent = `${e.uncertainty.fullMatched} full matched calendar blocks of ${dur(e.blockLength * stepT() * BASE)}; ${e.uncertainty.calendarBlocks} sampled calendar blocks including empty/partial. ${e.uncertainty.qualification}`; host.append(limits);
+    host.dataset.bootstrap = JSON.stringify({ key: e.uncertainty.key, resamples: e.uncertainty.resamples, seed: e.uncertainty.seed, fullMatched: e.uncertainty.fullMatched, calendarBlocks: e.uncertainty.calendarBlocks, intervals: e.uncertainty.intervals });
+  }
+  // The complete ledger stays in the study. Render only 50 native starts at a time.
+  // Counts describe disjoint first failures; outcome partitions reconcile independently per horizon.
+  function evidenceLedger(e) {
+    for (const id of ["evidence-ledger", "cases-ledger"]) {
+      const details = el(id); if (!details) continue;
+      if (details._study === e) continue;
+      details._study = e; details._page = 0;
+      const render = () => {
+        const old = details.querySelector(".ol-ledger-content"); if (old) old.remove();
+        const host = document.createElement("div"); host.className = "ol-ledger-content"; details.append(host);
+        if (!e.ledger) { host.textContent = e.error ?? "Preparing current-source ledger…"; return; }
+        const failures = Object.fromEntries(window.explorerEvidence.REASONS.map((reason) => [reason, e.ledger.filter((r) => r.reason === reason).length]));
+        const eligible = e.ledger.filter((r) => r.state), completed = e.cases[S.horizon], matching = eligible.filter((r) => r.matched);
+        const counts = { starts: e.ledger.length, firstFailures: failures, stateEligible: eligible.length, matching: matching.length, nonmatching: eligible.length - matching.length,
+          matchingCompleted: e.matched[S.horizon].length, baselineCompleted: completed.length, missingHorizon: eligible.filter((r) => r.outcomes[S.horizon]?.reason === "Missing horizon coverage").length, unfinished: eligible.filter((r) => r.outcomes[S.horizon]?.reason === "Unfinished horizon").length };
+        const summary = document.createElement("pre"); summary.textContent = JSON.stringify(counts, null, 2); host.append(summary);
+        host.dataset.counts = JSON.stringify(counts);
+        if (!details.open) return;
+        const table = document.createElement("table"); table.className = "ol-table";
+        table.append(Object.assign(document.createElement("caption"), { textContent: `Every served native start; fit anchor ${when((e.a + 1) * stepT())} UTC; ${e.version}` }));
+        for (const row of e.ledger.slice(details._page * 50, (details._page + 1) * 50)) {
+          const tr = document.createElement("tr"); tr.dataset.candidate = String(row.c);
+          const outcome = row.outcomes[S.horizon];
+          for (const value of [row.c, range(...row.time) + " UTC", row.reason ?? (row.matched ? "Matching state" : "Nonmatching state"), row.buyShare === null ? "Buy share unavailable" : (100 * row.buyShare).toPrecision(7) + "% buy share", row.seasonal.result.tag === "finite" ? row.seasonal.result.value.toPrecision(7) + "× seasonal" : row.seasonal.result.reason ?? row.seasonal.result.tag, row.state?.join("/") ?? "No eligible state", outcome?.reason ?? (outcome ? `Completed ${when(outcome.knownThrough)} UTC; ${outcome.result.value} rows` : "State excluded")]) {
+            tr.append(Object.assign(document.createElement("td"), { textContent: String(value) }));
+          }
+          host.append(table); table.append(tr);
+        }
+        const pages = Math.max(1, Math.ceil(e.ledger.length / 50));
+        for (const [label, shift] of [["Previous candidate page", -1], ["Next candidate page", 1]]) {
+          const button = document.createElement("button"); button.type = "button"; button.className = "ol-action cursor-interaction"; button.textContent = label;
+          button.disabled = details._page + shift < 0 || details._page + shift >= pages;
+          button.onclick = () => { details._page += shift; render(); }; host.append(button);
+        }
+        host.append(document.createTextNode(` ${details._page + 1}/${pages}; all ${e.ledger.length} candidates retained`));
+      };
+      details.ontoggle = render; render();
+    }
   }
   function evidenceUI(e) {
     const { sample, base } = evidenceTotals(e),
@@ -16984,7 +16968,7 @@
       delete el("anchor-time").dataset.withheld;
     }
     el("state").textContent =
-      e.error ||
+      e.error || e.anchorReason ||
       [
         ["Falling POC", "Flat POC", "Rising POC"][e.state[0]],
         [
@@ -16992,7 +16976,7 @@
           "middle buy-share third",
           "upper buy-share third",
         ][e.state[1]],
-        ["lower volume third", "middle volume third", "upper volume third"][
+        ["lower seasonal-activity third", "middle seasonal-activity third", "upper seasonal-activity third"][
           e.state[2]
         ],
       ].join(" · ");
@@ -17017,7 +17001,7 @@
       const baseOk = Boolean(base && base.n >= 30),
         p = supported ? sample[kind] / sample.n : 0,
         bp = baseOk ? base[kind] / base.n : 0,
-        diff = Math.round(p * 100) - Math.round(bp * 100);
+        diff = 100 * (p - bp);
       el("label-" + kind).textContent = labels[kind];
       el("prob-" + kind).textContent = supported
         ? Math.round(p * 100) + "%"
@@ -17031,7 +17015,7 @@
         : "—";
       el("diff-" + kind).textContent =
         supported && baseOk
-          ? (diff > 0 ? "+" : diff < 0 ? "−" : "±") + Math.abs(diff)
+          ? (diff > 0 ? "+" : diff < 0 ? "−" : "±") + Math.abs(diff).toFixed(2) + " pp"
           : "—";
       el("bar-" + kind).style.width = p * 100 + "%";
       el("base-" + kind).style.width = bp * 100 + "%";
@@ -17044,7 +17028,7 @@
               ? " · " + sample[kind] + " of " + sample.n + " matching cases"
               : "") +
             (supported && baseOk
-              ? ` · ${Math.round(p * 100)}% against ${Math.round(bp * 100)}% in all states`
+              ? ` · ${Math.round(p * 100)}% against ${Math.round(bp * 100)}% in all seasonally eligible states`
               : "") +
             " · inspect these cases",
         );
@@ -17073,7 +17057,8 @@
         (barriers
           ? " Barriers use the first column-end POC crossing; trade first-touch is not observable here."
           : " The boxes show where the POC moved in history.") +
-        " Every outcome ends by the anchor.";
+        " Every completed outcome ends by the anchor. " + (e.provenance?.reconstruction ?? "") +
+        ` seasonal-state@1; fitted before anchor ${when((e.a + 1) * stepT())} UTC; shares ${JSON.stringify(e.thresholds?.share)}; seasonal ${JSON.stringify(e.thresholds?.seasonal)}; ${sample?.overlapping ?? 0} matching/${base?.overlapping ?? 0} baseline overlapping forward windows. Six-week denominators and fixed thresholds create additional dependence.`;
     el("evidence-brief").textContent = e.loading
       ? "Reading history…"
       : e.error
@@ -17081,6 +17066,7 @@
       : supported
         ? "Empirical shares, not calibrated odds."
         : "Below 30 matches: percentages withheld.";
+    evidenceIntervals(e); evidenceLedger(e);
     evidenceCases(e);
   }
   // The drawer's cases table: sortable, fifty to a page, each date a jump
@@ -17112,7 +17098,8 @@
         th.setAttribute("aria-sort", S.caseDir > 0 ? "ascending" : "descending");
       else th.removeAttribute("aria-sort");
     }
-    if (e.error) {
+    evidenceLedger(e);
+    if (e.error || !e.cases) {
       list.replaceChildren();
       el("case-definition").textContent = e.error;
       el("case-page").textContent = "0 cases";
@@ -17128,6 +17115,7 @@
         : "flat",
       modalSign = { up: 1, flat: 0, down: -1 }[modal];
     let rows = filter === "reference" ? e.cases[h] : e.matched[h];
+    evidenceLedger(e);
     if (["up", "flat", "down"].includes(filter))
       rows = rows.filter(
         (c) => c[field] === { up: 1, flat: 0, down: -1 }[filter],
@@ -17153,7 +17141,7 @@
     S.casePage = clamp(S.casePage || 0, 0, pages - 1);
     el("case-definition").textContent =
       filter === "failure"
-        ? `Cases opposing the matching sample’s most common outcome (${modal}). This is a retrospective comparison.`
+        ? `Non-modal POC outcomes: all matching completed cases except ${modal}. Neutral may qualify; ties choose lower, unchanged, higher. Sample mode; rates below 30 are withheld.`
         : "Open a date to replay its recorded starting state. Excursions use column-end POCs.";
     const fragment = document.createDocumentFragment(),
       cell = (tr, content) => {
@@ -17197,9 +17185,9 @@
       );
       cell(
         tr,
-        `${signed(c.min * stepP() * PR, price)} / ${signed(c.max * stepP() * PR, price)}`,
+        `${signed(c.min * stepP() * PR, price)} / ${signed(c.max * stepP() * PR, price)} USDT · span ${price((c.max - c.min) * stepP() * PR)} USDT · ${(c.max - c.min)} rows · own prior daily ATR ${Number.isFinite(contextATR(c.c * stepT())) && contextATR(c.c * stepT()) > 0 ? ((c.max-c.min)*stepP()*PR/contextATR(c.c*stepT())).toFixed(4) + " ATR span" : "unavailable"}`,
       );
-      cell(tr, Math.round(c.buyShare * 100) + "%");
+      cell(tr, (c.buyShare * 100).toPrecision(6) + "% · seasonal " + c.seasonal.result.value.toPrecision(6) + "× · buckets " + c.state.join("/") + " · fit " + when((e.a + 1) * stepT()) + " UTC");
       fragment.append(tr);
     }
     if (!rows.length) {
@@ -17215,6 +17203,7 @@
     el("case-page").textContent = rows.length
       ? `${S.casePage + 1} / ${pages} · ${integer(rows.length)}`
       : "0 cases";
+    el("case-page").textContent += ` completed rows of ${filter === "reference" ? "all seasonally eligible states" : "matching states"}`;
     el("case-prev").disabled = S.casePage === 0;
     el("case-next").disabled = S.casePage + 1 >= pages;
   }
@@ -17250,7 +17239,7 @@
   // column and matching states fill its middle, so the two read side by side.
   // Boxes cover whole rows, so an outcome that stayed in its row still shows.
   function drawCone(e) {
-    if (e.error) return;
+    if (e.error || e.poc === null) return;
     const ts = stepT(),
       ps = stepP(),
       x0 = G.X((e.a + 1) * ts),
@@ -17371,7 +17360,7 @@
     el("case-filter").addEventListener("change", () => {
       S.caseFilter = el("case-filter").value;
       S.casePage = 0;
-      evidenceCases(calcEvidence());
+      evidenceCases(settledEvidence());
       save();
     });
     for (const [id, step] of [
@@ -17380,7 +17369,7 @@
     ])
       el(id).addEventListener("click", () => {
         S.casePage = (S.casePage || 0) + step;
-        evidenceCases(calcEvidence());
+        evidenceCases(settledEvidence());
       });
     for (const button of qsa("[data-case-sort]"))
       button.addEventListener("click", () => {
@@ -17391,7 +17380,7 @@
           S.caseDir = -1;
         }
         S.casePage = 0;
-        evidenceCases(calcEvidence());
+        evidenceCases(settledEvidence());
         save();
       });
   }
@@ -17653,14 +17642,14 @@
     historyKey = (n, m) => ["history", live.generation, n, m].join("|");
   function historyWant() {
     const target = coreContextTarget(), expanded = Boolean(el("context").querySelector(".ol-core-details[open]")), wants = [];
-    if (S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases")) wants.push([renderN(), renderM()]);
+    if (S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases")) wants.push([renderN(), renderM()], [Math.min(renderN(), 9), 0]);
     if (target || expanded) wants.push([Math.min(target?.n ?? renderN(), 9), 0]);
     for (const [n, m] of wants) {
       const key = historyKey(n, m), sourcePack = PACK.state_token;
       if (histories.has(key) || cube.failed.has(key)) continue;
       return { key, relevant: () => {
         const current = coreContextTarget(), expandedNow = Boolean(el("context").querySelector(".ol-core-details[open]"));
-        return (S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases")) && historyKey(renderN(), renderM()) === key ||
+        return (S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases")) && [historyKey(renderN(), renderM()), historyKey(Math.min(renderN(), 9), 0)].includes(key) ||
           (current || expandedNow) && historyKey(Math.min(current?.n ?? renderN(), 9), 0) === key;
       }, path: `/cube/columns?n=${n}&m=${m}`, decode: (body) => unpackHistory(body.columns),
         apply: (history) => { histories.set(key, { ...history, sourcePack }); while (histories.size > 3) histories.delete(histories.keys().next().value); evidenceCache.clear(); } };
@@ -22309,9 +22298,52 @@
     const n=lens?lp.n:last.n,m=lens?lp.m:last.m;
     return {c:Math.floor(p.t / 2**n),r:Math.floor(p.p / 2**m),n,m,surface:lens?"lens":"cells",periodPrice:p.p};
   }
+  function comparisonFrozenContext(target, fallback, factSupport) {
+    const supports = {}, histories = [], stats = [el("inspect-readout"), el("tip")];
+    let observation = null, displayed = [];
+    for (const node of stats) {
+      if (!node || node.hidden || !node.dataset.observation) continue;
+      try {
+        const candidate = JSON.parse(node.dataset.observation), time = candidate.time, price = candidate.price;
+        if (candidate.level.n !== target.n || candidate.level.m !== target.m || Math.floor(time[0] / 2 ** target.n) !== target.c || !price || price[0] !== target.r * 2 ** target.m * PR || candidate.pack !== last.token) continue;
+        observation = candidate; displayed = JSON.parse(node.dataset.compactHistories ?? "[]"); break;
+      } catch { /* An unmatched or unreadable card is not reconstructed. */ }
+    }
+    const result = observation?.result ?? fallback.result;
+    supports.observation = { formula: observation?.formula ?? fallback.formula, unit: observation?.unit ?? fallback.unit, supportEnd: factSupport, knownThrough: factSupport,
+      time: observation?.time ?? [target.c * 2 ** target.n, (target.c + 1) * 2 ** target.n], price: observation?.price ?? null, source: observation?.source ?? last.src.id, pack: last.token, precision: observation?.precision ?? "Float64", completeness: observation?.completeness ?? "Committed cell frame" };
+    const atr = observation?.denominators?.find((d) => d.formula === "context.daily-atr@1"), available = Number.isFinite(atr?.denominator);
+    supports.atr = { formula: "context.daily-atr@1", unit: "usdt", result: available ? E.result.finite(atr.denominator) : E.result.make("unsupported", { reason: "Context ATR unavailable at capture" }),
+      supportEnd: available ? comparisonMs(atr.time[1]) : null, knownThrough: available ? comparisonMs(atr.time[1]) : null, time: atr?.time ?? null, source: atr?.source ?? "Context not held at capture" };
+    const historySupportIds = new Map();
+    const denominatorSupport = (record) => {
+      const end = Array.isArray(record.time) && Number.isFinite(record.time[1]) ? comparisonMs(record.time[1]) : factSupport;
+      const known = Number.isFinite(record.knownAt) ? comparisonMs(record.knownAt) : end;
+      const support = { ...record, supportEnd: end, knownThrough: Math.max(end, known) }, key = JSON.stringify(support);
+      let id = historySupportIds.get(key);
+      if (!id) { id = `dependency:${historySupportIds.size}`; historySupportIds.set(key, id); supports[id] = support; }
+      return id;
+    };
+    const originDependencies = (observation?.denominators ?? []).map(denominatorSupport);
+    supports.observation.supportEnd = Math.max(factSupport, comparisonMs(observation?.time?.[1] ?? fallback.time?.[1] ?? target.c * 2 ** target.n), ...originDependencies.map(id => supports[id].supportEnd));
+    supports.observation.knownThrough = Math.max(supports.observation.supportEnd, ...originDependencies.map(id => supports[id].knownThrough));
+    for (const series of displayed) {
+      const slots = series.slots.map((slot) => {
+        const support = { time: slot.time, supportEnd: comparisonMs(slot.time[1]), knownThrough: comparisonMs(slot.time[1]), source: supports.observation.source, pack: last.token, precision: supports.observation.precision };
+        const key = JSON.stringify(support); let id = historySupportIds.get(key);
+        if (!id) { id = `history:${historySupportIds.size}`; historySupportIds.set(key,id); supports[id]=support; }
+        return { result: slot.result, supportId: id, denominatorIds: (slot.denominators ?? []).map(denominatorSupport) };
+      });
+      histories.push({ id: series.id, formula: series.formula, unit: series.unit, slots });
+    }
+    const chart = observation?.formula ?? fallback.formula, unit = observation?.unit ?? fallback.unit;
+    const mapped = { volume: "volume", geometry: "volume", trades: "trades", size: "size", flow: "flow", flowtrades: "flowtrades", delta: "delta", path: unit === "row-spans" ? "path" : null, dwell: unit === "share" ? "dwell" : null }[S.mode] ?? null;
+    const origin = { formula: chart, unit, basis: fallback.basis ?? "amount", result, comparisonMetric: mapped, supportId: "observation", historyIds: histories.some((h) => h.id === mapped) ? [mapped] : [] };
+    return { supports, histories, originatingObservation: origin };
+  }
   function comparisonCapture(target) {
     if (!target || !last || S.mode === "candles") return null;
-    if (last.sourceRevision !== comparisonSourceRevision || last.dataCut !== CUT ||
+    if (last.sourceRevision !== comparisonSourceRevision || last.dataCut !== CUT || last.contextBarsVersion !== barsVersion ||
       last.camera.some((value,i)=>value !== [S.tA,S.tB,S.pA,S.pB,S.n,S.m,S.replay,S.anchor][i])) return null;
     const lens=target.surface === "lens", lp=lens?last.comparisonLens:null,
       frame=lens?lp:last, n=target.n,m=target.m,ts=2**n,ps=2**m,c=target.c,r=target.r;
@@ -22410,12 +22442,17 @@
       completeness:(complete?"Complete":"Still open")+(portion?" · portion":"")+(last.canon!==null&&(c+1)*ts>last.canon?" · provisional minutes":""),
       when:{eventStartMs:nominal.t0,eventEndMs:nominal.t1,knownAtMs:complete&&!timePortion?nominal.t1:null,knownAtReason:complete&&!timePortion?"the end of the interval":"the interval is open or partial"},
       shortExposure,originalScale:last.sc?.[lens?"lens":"cells"]?.mappingId??"none",metrics,detail};
+    const chartMode = S.mode === "geometry" ? "volume" : S.mode;
+    const original = E.measure.cellMeasurement({ mode: chartMode, basis: (lens ? last.sc?.lens : last.sc?.cells)?.basis ?? "amount", pathBasis: (lens ? last.sc?.lens : last.sc?.cells)?.pathBasis ?? "spans", z: ["path", "dwell"].includes(chartMode) ? mz : z, geom: { BASE, PR }, level: { n,m }, bounds: b, cut, end: ["path", "dwell"].includes(chartMode) ? motionEnd ?? -Infinity : Infinity, CUT:last.dataCut, replay:S.replay, read: null, measured:null, cascade:null });
+    capture.context = comparisonFrozenContext(target, original, factSupport); capture.contextOrigin = "frame-v2"; capture.originatingObservation = capture.context.originatingObservation;
     capture.id=C.identity(capture);
     return comparisonFreeze(capture);
   }
   function comparisonFingerprint(capture) {
     if(!capture)return "";
-    const {capturedAt,...record}=capture;
+    // Context belongs to the snapshot taken when the menu opened. Pointer focus
+    // may hide that originating card; that does not change the owned frame facts.
+    const {capturedAt,context,originatingObservation,...record}=capture;
     return JSON.stringify([record,comparisonSourceRevision,last?.sourceVersion,live.generation,PACK.state_token,CUT,sourcesKey(),last?.cut,S.mode]);
   }
   function comparisonPocs() {
@@ -22446,12 +22483,12 @@
     const eligibility=edge===null?"live":comparisonModel.captures.map(c=>[...Object.values(c.metrics),...c.detail].map(m=>Number.isFinite(m.supportEnd)&&Number.isFinite(m.knownThrough)&&Math.max(m.supportEnd,m.knownThrough)<=edge?1:0).join("")).join("|")+"|"+(comparisonModel.poc&&Math.max(comparisonModel.poc.supportEnd??Infinity,comparisonModel.poc.knownThrough??Infinity)<=edge),
       statsKey=[comparisonRevision,comparisonModel.basis,comparisonModel.reference,JSON.stringify(comparisonModel.poc),eligibility].join("|");
     if(statsKey!==comparisonStatsKey) {comparisonUI.clearCopyFallback();comparisonStatsKey=statsKey;comparisonCounters.stats++;comparisonAnalysis=preparedAnalysis??C.analyze(comparisonModel.captures,{...comparisonModel,edge});}
-    const pocs=comparisonPocs(),pocEligibility=edge===null?"live":pocs.map(p=>Number.isFinite(p.supportEnd)&&Number.isFinite(p.knownThrough)&&Math.max(p.supportEnd,p.knownThrough)<=edge),renderKey=JSON.stringify([statsKey,comparisonModel.focus,comparisonModel.sort,comparisonModel.page,comparisonModel.view,comparisonModel.expanded,comparisonMessage,comparisonUnsaved,comparisonRejected,pocs,pocEligibility]);
+    const pocs=comparisonPocs(),pocEligibility=edge===null?"live":pocs.map(p=>Number.isFinite(p.supportEnd)&&Number.isFinite(p.knownThrough)&&Math.max(p.supportEnd,p.knownThrough)<=edge),renderKey=JSON.stringify([statsKey,comparisonModel.focus,comparisonModel.sort,comparisonModel.page,comparisonModel.view,comparisonModel.expanded,comparisonModel.selectedMetric,comparisonMessage,comparisonUnsaved,comparisonRejected,pocs,pocEligibility]);
     if(!force&&renderKey===comparisonRenderKey)return;
     // Sorting is pure presentation: it reuses metric cohorts and never refits their statistics.
     comparisonAnalysis={...comparisonAnalysis,ordered:C.sort?C.sort(comparisonModel.captures,comparisonModel.sort,comparisonAnalysis.metrics):C.analyze(comparisonModel.captures,{...comparisonModel,edge}).ordered};
     comparisonRenderKey=renderKey;comparisonCounters.renders++;
-    comparisonUI.render(comparisonModel,comparisonAnalysis,{edge,pocOptions:pocs,status:comparisonMessage,unsaved:comparisonUnsaved,storageRejected:comparisonRejected});
+    comparisonUI.render(comparisonModel,comparisonAnalysis,{edge,pocOptions:pocs,status:comparisonMessage,unsaved:comparisonUnsaved,storageRejected:comparisonRejected,context:C});
     const comparisonLabel = `Compare${comparisonModel.captures.length ? ` · ${comparisonModel.captures.length}` : ""}`;
     el("comparison-count").textContent = comparisonLabel;
     el("tab-compare").setAttribute("aria-label", comparisonLabel);
@@ -22465,11 +22502,13 @@
       comparisonCounters.writes++;comparisonCounters.bytes+=result.bytes??0;
       comparisonUnsaved=!result.ok;comparisonRejected=result.status==="retained";
       if(!result.ok)comparisonMessage=`Unsaved comparison · ${result.reason}`;
+      else if(result.legacyNotice)comparisonMessage=result.legacyNotice;
       else if(comparisonMessage.startsWith("Unsaved comparison"))comparisonMessage="";
       comparisonRefresh();
     },0);
   }
   function comparisonCommit(next,content=false,reveal=false) {
+    next={...next,comparisonVersion:2,selectedMetric:next.selectedMetric??"volume"};
     let preparedAnalysis=null;
     if(reveal) {
       // Reveal belongs to the candidate record; reuse its analysis after the size preflight.
@@ -22488,7 +22527,9 @@
     else comparisonMessage=replace?"Capture updated":"Cell added";
     const captures=comparisonModel.captures.slice();
     if(i<0)captures.push(capture);else if(replace)captures[i]=capture;
-    if(!comparisonCommit({...comparisonModel,captures,focus:capture.id},i<0||replace,true))return;
+    const initialMetric = comparisonModel.captures.length === 0 ? capture.originatingObservation.comparisonMetric ?? "volume" : comparisonModel.selectedMetric;
+    if (comparisonModel.captures.length === 0 && capture.originatingObservation.comparisonMetric === null) comparisonMessage += " · Original reading has no compatible comparison key; initialized to Volume";
+    if(!comparisonCommit({...comparisonModel,selectedMetric:initialMetric,captures,focus:capture.id},i<0||replace,true))return;
     S.drawer="compare";S.drawerOpen=true;
     if (!comparisonModel.expanded) S.drawerHeight=Math.max(S.drawerHeight,Math.min(420,drawerMax()));
     applyPanels();comparisonRefresh(true);comparisonPersist();update();
@@ -22505,9 +22546,9 @@
     if(!expanded){geometry();update();scheduleCube();scaleArm();}
   }
   async function comparisonCopy(capture) {
-    const text=C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc});
+    const text=C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc,selectedMetric:comparisonModel.selectedMetric,basis:comparisonAnalysis?.basis??comparisonModel.basis});
     try {if(!navigator.clipboard?.writeText)throw Error("Clipboard unavailable");await navigator.clipboard.writeText(text);comparisonMessage="Cell copied";comparisonRefresh();}
-    catch {S.drawer="compare";S.drawerOpen=true;applyPanels();comparisonRefresh(true);comparisonUI.showCopyFallback(C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc}));}
+    catch {S.drawer="compare";S.drawerOpen=true;applyPanels();comparisonRefresh(true);comparisonUI.showCopyFallback(C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc,selectedMetric:comparisonModel.selectedMetric,basis:comparisonAnalysis?.basis??comparisonModel.basis}));}
   }
   function comparisonConfirm(message,onConfirm) {
     const returnTo=document.activeElement,dialog=document.createElement("dialog");dialog.className="ol-comparison-confirm";
@@ -22531,7 +22572,8 @@
       if(next.focus===action.id)next.focus=(order[i+1]??order[i-1])?.id??null;
       if(next.reference===action.id){next.reference=null;comparisonMessage="Reference removed · using set median";}
       comparisonCommit(next,true,true);return;
-    }else if(action.type==="basis")next.basis=action.value;
+    }else if(action.type==="selectedMetric")next.selectedMetric=action.value;
+    else if(action.type==="basis")next.basis=action.value;
     else if(action.type==="reference")next.reference=action.id||null;
     else if(action.type==="view")next.view=action.value;
     else if(action.type==="page")next.page=action.value;
@@ -22585,7 +22627,7 @@
   }
   function comparisonLoad() {
     const saved=window.explorerState.comparison.read(INSTRUMENT);
-    if(saved.status==="ok") {comparisonModel=saved.value;comparisonModel.captures.forEach(comparisonFreeze);comparisonRevision++;if(comparisonModel.expanded){S.drawer="compare";S.drawerOpen=true;}}
+    if(saved.status==="ok") {comparisonModel=saved.value;if(saved.legacyNotice)comparisonMessage=saved.legacyNotice;comparisonModel.captures.forEach(comparisonFreeze);comparisonRevision++;if(comparisonModel.expanded){S.drawer="compare";S.drawerOpen=true;}}
     else if(saved.status!=="absent") {comparisonRejected=saved.raw!==null;comparisonUnsaved=true;comparisonMessage=`Unsaved comparison · ${saved.reason}`;}
     comparisonRefresh(true);
   }

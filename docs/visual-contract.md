@@ -332,6 +332,7 @@ A Wave-2 package that adds a NEW top-level helper reading `colors.*` under a nam
 | N-53 | Tab comparison restoration and storage failure notices | src/state.js `comparison`; src/explorer.js `comparisonPersist`, `comparisonExpand`; src/comparison-ui.js storage/copy controls | comparisonVersion 1 session record, 4 MiB UTF-8 boundary, rejected raw text retained, visible recovery | CHR / STATE: Kept in this tab, Unsaved comparison, Retry and confirmed Discard; no chart-history or portable capture payload | COMPARE | #71 | U96, B63 | done |
 | N-54 | Core card figures, fixed-band histories and declared profile miniature | src/explorer.js `coreCardPresentation`, `corePanePresentation`, `coreRowsPresentation`, `measuresPresentation`, `readingProfile`; src/explorer.css `.ol-core-stats`, `.ol-card-profile` | One primary plus three companions; 12-slot 72×30 history; 160×64 profile with displayed 96px height | CHR / REF:Profile / STATE: neutral ink history/profile, named POC/value boundaries, signed numbers, typed gaps and accessible values | HOVER, INSPECT, MEASURES | #84 | U98, B66, B28, B65 | done |
 | N-55 | Reference location tracks, related native indicators and event timelines | src/explorer.js `referenceCard`, `referenceTrack`, `relatedIndicatorPlot`, `referenceTimeline`, reference/oscillator/calendar/strip adapters; src/explorer.css `.ol-reference-track`, `.ol-related-plot` | Four core figures; 160×40 track/timeline and 160×64 related plot displayed at 72px; 12 causal native intervals | CHR / REF / STATE: neutral ink, solid/dashed/dotted named series, signed readings, gaps, accessible values and raw construction | HOVER, INSPECT, REFERENCES, EVENT STRIP | #85 | U99, U55, B67, B33, B34, B55, B43 | done |
+| N-56 | Seasonal candidate ledger, approximate uncertainty, frozen context and selected comparison reading | src/evidence.js; src/explorer.js evidence, comparison, table and Query adapters; src/state.js comparison v2; src/comparison-ui.js | Current-source seasonal-state@1 with shared calendar block-bootstrap@2; bounded frozen support and actual source edges | CHR / REF / STATE: pointwise estimation ranges separate from outcome boxes; typed missing support; neutral histories and signed numbers | EVID, CASES, COMPARE, TABLE, QUERY | #86 | U100, U95, U96, B68, B63 | done |
 
 
 ## 4. The retired-role ratchet
@@ -790,6 +791,8 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B66 | `tests/browser/core-cards.spec.js` | Nine core canonical values, four readable figures, seasonal precision/sharing, abort/retry/focus, profile/support, both themes and narrow view | #84 |
 | U99 | `tests/unit/reference-context.test.js` | Hand vectors for signed causal location, native slope, unclamped Fibonacci, signed weekend percentages and retrospective prior-cycle boundary | #85 |
 | B67 | `tests/browser/reference-cards.spec.js` | Served synthetic close/ATR arithmetic, native reference hierarchy/history, calendar identity, Fibonacci and MA facts; themes and narrow readout | #85 |
+| U100 | `tests/unit/evidence-context.test.js` | Literal seed/Type-7 streams, ledger first failures, full horizons and independent bootstrap floors | #86 |
+| B68 | `tests/browser/evidence-cards.spec.js` | Long-source interval qualification, short-source withholding, ledger reconciliation and rewind suppression | #86 |
 
 ## 10. Migration status per slice
 
@@ -802,8 +805,8 @@ Rendered from the Status column at S2's convergence: `done` is the work of S1 an
 | D | 22 | 8 | 0 | 0 | 0 | 14 |
 | F | 17 | 0 | 0 | 0 | 0 | 17 |
 | R | 15 | 0 | 0 | 0 | 0 | 15 |
-| N | 46 | 0 | 0 | 0 | 0 | 46 |
-| all | 187 | 31 | 0 | 0 | 0 | 156 |
+| N | 47 | 0 | 0 | 0 | 0 | 47 |
+| all | 188 | 31 | 0 | 0 | 0 | 157 |
 
 ## 11. Contributor checklist
 

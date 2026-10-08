@@ -8,8 +8,8 @@ const trades = Array.from({ length: 48 }, (_, d) => [0, 1, 2].flatMap((part) => 
 const cutoffIso = "2021-02-17T12:00:00Z";
 const view = "#t=2021-02-17T08:00Z~2021-02-17T12:00Z&p=9000~15500&r=8,0&vis=2";
 test.use({ viewport: { width: 1920, height: 1080 }, reducedMotion: "reduce" });
-async function reference(page, fakeFor, probe, lines, match, viewHash = view) {
-  const fake = await fakeFor({ trades: trades.filter((x) => x.t_ms <= Date.parse(cutoffIso) - EPOCH), cutoffIso });
+async function reference(page, fakeFor, probe, lines, match, viewHash = view, source = null) {
+  const fake = await fakeFor(source ?? { trades: trades.filter((x) => x.t_ms <= Date.parse(cutoffIso) - EPOCH), cutoffIso });
   await page.goto(`${fake.url}/${viewHash}&lines=${lines}`); await probe.waitForReady();
   await page.keyboard.press("e"); await page.locator('[data-surface="references"]').click();
   const options = page.locator("#ol-inspect-reference option");
@@ -80,4 +80,59 @@ test("historical Fibonacci inspection withholds depth until its fixed current an
   expect(record.result.tag).toBe("unsupported");
   expect(record.denominators[0].knownAt).toBeGreaterThan(record.denominators[0].observedAt);
   await expect(card).toContainText("Retrospective comparison before anchor construction is known");
+});
+
+
+test("peak and Fibonacci event support records occurrence before recognition", async ({ page, fakeFor, probe }) => {
+  for (const [line, match] of [["ath", /^ATH$/], ["fib30", /^30D 50.0%$/]]) {
+    const { card } = await reference(page, fakeFor, probe, line, match, view, { trades, cutoffIso: "2021-02-18T00:00:00Z" });
+    const record = JSON.parse(await card.getAttribute("data-observation"));
+    const known = record.denominators[0].knownAt;
+    expect(record.time[0]).toBeLessThan(known);
+    if (line === "ath") expect(record.time).toEqual([47 * 1536 + 1024, 48 * 1536]);
+    else expect(record.time[0]).toBe(18 * 1536);
+    await card.locator(".ol-cell-details > summary").click();
+    await expect(card.locator('dd[data-field="knownAt"]')).toHaveAttribute("data-canonical", String(known));
+    await expect(page.locator("#ol-tip")).toHaveAttribute("data-event", line === "ath" ? "ath|as of" : "fibonacci|as of");
+    await page.keyboard.press("Escape");
+  }
+});
+
+function shapedTrades(days, priceOf) {
+  return Array.from({ length: days }, (_, d) => [0, 1, 2].flatMap(part => [-50, 50].map((offset, k) => ({ t_ms: d * DAY + part * 8 * HOUR + (k + 1) * 60000, price: (priceOf(d) + offset) * 100, qty: 100000000, takerBuy: k === 1 })))).flat();
+}
+
+test("confirmed swing VWAP history never backdates later accumulated trades", async ({ page, fakeFor, probe }) => {
+  const source = { trades: shapedTrades(60, d => d < 20 ? 10000 : d <= 26 ? 10000 + (d - 19) * 300 : 9000 + (d - 27) * 30), cutoffIso: "2021-03-02T00:00:00Z" };
+  const { card } = await reference(page, fakeFor, probe, "avwaph", /VWAP from the last daily swing high/, "#w=7d&r=9,0&vis=2", source);
+  const record = JSON.parse(await card.getAttribute("data-observation"));
+  await card.locator(".ol-cell-details > summary").click();
+  const known = record.denominators[0].knownAt;
+  const anchor = Number(await card.locator('dd[data-field="vwapAnchorKnownAt"]').getAttribute("data-canonical"));
+  const measured = Number(await card.locator('dd[data-field="vwapMeasuredThrough"]').getAttribute("data-canonical"));
+  expect(anchor).toBe(28 * 1536);
+  expect(measured).toBeGreaterThan(anchor); expect(known).toBe(measured);
+  const formerlyLeaking = record.history.filter(x => x.time[1] >= anchor && x.time[1] < measured);
+  expect(formerlyLeaking.length).toBeGreaterThan(0);
+  expect(formerlyLeaking.every(x => x.result.tag === "unsupported")).toBe(true);
+  // This curve uses a finer cutoff than the latest completed 8h close. The
+  // current as-of comparison is available; that earlier history slot is not.
+  expect(record.history.at(-1).time[1]).toBeLessThan(measured);
+  expect(record.history.at(-1).result.tag).toBe("unsupported");
+  const context = record.denominators[0];
+  expect(Number(await card.locator('.ol-core-stats > .ol-cell-stat').nth(1).locator('dd').getAttribute('data-canonical'))).toBeCloseTo((context.close - record.result.value) / context.denominator, 10);
+});
+
+test("prior-cycle identity stays a candidate while later exceedance is forming", async ({ page, fakeFor, probe }) => {
+  // Peak at day 20, qualifying low at day 30; the new ATH is on day 44's
+  // unfinished first eight-hour bar, so no completed exceedance establishes identity.
+  const cutoff = "2021-02-14T04:00:00Z";
+  const source = { trades: shapedTrades(45, d => d === 20 ? 30000 : d >= 30 && d < 44 ? 10000 : d === 44 ? 31000 : 20000).filter(x => x.t_ms < Date.parse(cutoff) - EPOCH), cutoffIso: cutoff };
+  const { card } = await reference(page, fakeFor, probe, "pch", /^PCH$/, "#w=7d&r=9,0&vis=2", source);
+  const record = JSON.parse(await card.getAttribute("data-observation"));
+  expect(record.result.value).toBe(30050);
+  expect(record.time).toEqual([20 * 1536, 20 * 1536 + 512]);
+  expect(record.denominators[0].knownAt).toBeNull(); expect(record.denominators[0].candidate).toBe(true);
+  await expect(card).toContainText("Prior-cycle candidate; recognition pending");
+  await expect(card).not.toContainText("Retrospectively recognized prior cycle");
 });

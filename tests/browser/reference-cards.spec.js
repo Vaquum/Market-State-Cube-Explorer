@@ -136,3 +136,18 @@ test("prior-cycle identity stays a candidate while later exceedance is forming",
   await expect(card).toContainText("Prior-cycle candidate; recognition pending");
   await expect(card).not.toContainText("Retrospectively recognized prior cycle");
 });
+
+
+test("historical visible-range VWAP withholds later profile stretch", async ({ page, fakeFor, probe }) => {
+  const { card } = await reference(page, fakeFor, probe, "visible,vvwap", /^Visible VWAP$/, "#t=2021-02-16T00:00Z~2021-02-17T00:00Z&p=9000~15500&r=9,0&vis=2", { trades, cutoffIso: "2021-02-18T00:00:00Z" });
+  const record = JSON.parse(await card.getAttribute("data-observation"));
+  const context = record.denominators[0];
+  expect(record.result.tag).toBe("finite");
+  expect(context.close).toBeGreaterThan(0);
+  expect(context.knownAt).toBeGreaterThan(context.observedAt);
+  const figures = card.locator(".ol-core-stats > .ol-cell-stat dd");
+  await expect(figures.nth(1)).toHaveAttribute("data-canonical", "unsupported");
+  await expect(figures.nth(2)).toHaveAttribute("data-canonical", "unsupported");
+  await expect(figures.nth(2)).toContainText("Retrospective comparison before VWAP measurement or anchor confirmation");
+  await expect(card).toContainText("σ unavailable USDT");
+});

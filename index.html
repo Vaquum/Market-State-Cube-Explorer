@@ -23900,7 +23900,9 @@
       const r = lineShown(l.key.slice(5));
       if (r.state === "ready" && r.exact && r.span[0] === start && Math.min(r.span[1], activeCutoff()) === end) { bins = r.rows; width = r.rowPrice * PR; }
     } else reason = "Swing-anchor profile not held on this exact support; dispersion unavailable";
-    const dispersion = bins && loc.close !== null ? E.measure.weightedBins({ rows: bins, rowWidth: width, vwap: value, close: loc.close }) : { result: referenceMissing(reason), sigma: null };
+    const retrospective = candidate || knownAt !== null && t < knownAt;
+    const dispersion = retrospective ? { result: referenceMissing("Retrospective comparison before VWAP measurement or anchor confirmation"), sigma: null }
+      : bins && loc.close !== null ? E.measure.weightedBins({ rows: bins, rowWidth: width, vwap: value, close: loc.close }) : { result: referenceMissing(reason), sigma: null };
     referenceCard(tip, { primary: referenceMetric("VWAP · quote / base volume", value), companions: [{ label: "Close − VWAP / prior daily ATR", unit: "daily-atr", result: loc.result, signed: true }, { label: "Stretch / weighted-bin σ · approximation", unit: "σ", result: dispersion.result, signed: true }, referenceMetric("Reported quote volume", quote)], time: [start, end ?? start], knownAt, candidate, status: candidate ? "Candidate swing anchor; retrospective before confirmation" : "As of quote/base cutoff", family: "vwap", location: loc, groups: [{ name: "Construction timing", metrics: [referenceMetric("Quote/base measured through", end, "base-time", "vwapMeasuredThrough"), referenceMetric("Anchor confirmation", swing?.knownAt, "base-time", "vwapAnchorKnownAt")] }], construction: `Σ quote USDT / Σ BTC; base sum ${Number.isFinite(base) ? base : "unavailable"} BTC. Dispersion uses quote/bin-centre estimated base weights on ${width} USDT bins; σ ${dispersion.sigma ?? "unavailable"} USDT, not exact tick moments. ${l.swing ? "The 8-hour-bar-start anchor includes trades before the extreme." : ""}` });
   }
   function drawingReferencePresentation(tip, h) {

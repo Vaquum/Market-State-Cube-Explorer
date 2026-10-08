@@ -51,7 +51,7 @@ test.describe("B27 the event strip", () => {
     const [x, y, w, h, , , , , , ey, eh, collapsed] = layout;
     expect(collapsed, "the lanes fit on this chart").toBe(0);
     expect(eh, "three lanes of 14 px").toBe(42);
-    const names = ["4h squeeze", "1D squeeze", "Weekend gap"];
+    const names = ["4h squeeze", "1D squeeze", "Spot gap"];
     names.forEach((name, i) => {
       const t = frame.texts.find((f) => f.text === name);
       expect(t, `the lane ${name} is named`).toBeTruthy();

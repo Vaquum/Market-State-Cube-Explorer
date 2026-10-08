@@ -56,6 +56,8 @@ Testing it: `tests/unit/color-matrix.test.js` (U60) fails when this file is not 
 | comparison.negative | Comparison negative bar | area | #b3624b | #d89777 | label, number, position | signed net-volume number or labeled share below midpoint, shared domain (U95, B63) |
 | comparison.midpoint | Comparison midpoint bar | area | #b9c2bc | #5f6b64 | label, number, position | explicit zero or 50-percent number, shared domain (U95, B63) |
 | comparison.reference | Comparison reference tick | stroke | #20392b | #e0eee4 | label, position | Against control names Set median or pinned cell; unit difference alongside the bar (U95, B63) |
+| card.history | Core card history stroke | stroke | #20392b | #e0eee4 | label, number, position | Named metric, accessible interval values and typed gap reasons on an opaque card (B66) |
+| card.profile | Core card volume profile bins | area | #84928a | #859189 | label, number, position | Declared price/amount domains and accessible bin values; named POC/value boundaries (B66) |
 
 ## Contexts
 
@@ -71,15 +73,16 @@ Testing it: `tests/unit/color-matrix.test.js` (U60) fails when this file is not 
 | plane | The resolution plane, the menus and the controls | 6 |
 | candles | Directional candle bodies and wicks | 3 |
 | comparison | Captured-cell metric bars and their reference ticks on opaque dashboard surfaces | 10 |
+| core-cards | Core card histories and profiles on opaque card surfaces | 3 |
 
 ## Summary
 
-144 pairs, each in two themes.
+147 pairs, each in two themes.
 
 | Theme | Pairs | Separated (>= 8 under every condition) | Form | Redundant | FAIL |
 |---|---|---|---|---|---|
-| light | 144 | 102 | 25 | 17 | 0 |
-| dark | 144 | 105 | 23 | 16 | 0 |
+| light | 147 | 104 | 26 | 17 | 0 |
+| dark | 147 | 108 | 23 | 16 | 0 |
 
 ## The PRD's named pairs
 
@@ -188,6 +191,8 @@ Each cell is the least CIEDE2000 over the eight conditions, with the condition t
 | ref.profile and mark.occupancy | marks | 27.9 | 2.2 (gray) | form | 33.5 | 21.8 (gray) | separated |
 | ref.profile and mark.movement | marks | 41.1 | 15.9 (gray) | separated | 37.1 | 4.3 (gray) | form |
 | ref.profile and mark.inset | profiles | 37.7 | 23.8 (gray) | separated | 25.8 | 6.8 (gray) | form |
+| ref.profile and card.history | core-cards | 40.1 | 27.6 (gray) | separated | 25.9 | 10.4 (gray) | separated |
+| ref.profile and card.profile | core-cards | 27.1 | 5.0 (gray) | form | 27.9 | 14.2 (gray) | separated |
 | ref.level and ref.average | refs | 59.5 | 14.3 (gray) | separated | 60.4 | 1.4 (gray) | redundant |
 | ref.level and ref.vwap | refs | 48.2 | 23.6 (gray) | separated | 44.7 | 1.1 (gray) | redundant |
 | ref.level and ref.clock | refs | 30.3 | 3.5 (gray) | redundant | 29.9 | 1.8 (gray) | redundant |
@@ -254,3 +259,4 @@ Each cell is the least CIEDE2000 over the eight conditions, with the condition t
 | comparison.negative and comparison.midpoint | comparison | 36.4 | 22.7 (gray) | separated | 36.2 | 22.5 (gray) | separated |
 | comparison.negative and comparison.reference | comparison | 43.7 | 21.5 (protan-1) | separated | 32.9 | 16.9 (gray) | separated |
 | comparison.midpoint and comparison.reference | comparison | 56.6 | 55.6 (protan-1) | separated | 38.5 | 38.2 (protan-0.5) | separated |
+| card.history and card.profile | core-cards | 33.9 | 33.3 (deutan-0.5) | separated | 24.5 | 24.3 (protan-1) | separated |

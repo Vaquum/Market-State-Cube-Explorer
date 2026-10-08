@@ -1053,7 +1053,7 @@
       dwell: "was ranked share of column time; now a linear 0-100% share of covered column time",
       geometry: "was a green outline at low opacity; now a neutral occupancy outline",
       rows: "was the square root of the share of the peak among rows in view; now Value over all measured rows of the period, Explore",
-      relvol: "was rectangle share over whole-period share with -2 for no current volume; now version 2 on matched support with a tagged −∞",
+      relvol: "Historical rows=relvol now selects rows.relvol@3: row volume versus mean traded row. The original formula of an unversioned token is unknown; no earlier meaning is reconstructed",
       pane: "was scaled to the bars in view at every draw; now a registered Auto axis",
       efficiency: "was compared with \"0.70 expected\"; now with the recorded model reference and its provenance",
     },
@@ -1741,6 +1741,99 @@
     return out;
   }
 
+  // E.measure.normalized: a contextual quotient retains its raw numerator and named denominator.
+  // Absent ATR is unsupported, zero ATR undefined; neither changes the raw price unit.
+  function msrNormalized(value, denominator) {
+    const result = !Number.isFinite(value) ? API.result.make("unsupported", { reason: "Numerator unavailable" })
+      : denominator === null || denominator === undefined ? API.result.make("unsupported", { reason: "Prior completed-day ATR unavailable" })
+      : !Number.isFinite(denominator) || denominator < 0 ? API.result.make("invalid-input", { reason: "Invalid ATR" })
+      : denominator === 0 ? API.result.make("undefined", { denominator: "daily ATR" }) : API.result.finite(value / denominator);
+    return { formula: "context.daily-atr@1", unit: "daily-atr", numerator: msrNumber(value), denominator: msrNumber(denominator), result };
+  }
+
+  // E.measure.dailyATR: Wilder(14) on completed contiguous UTC days, keyed by day index.
+  // A missing/incomplete day restarts the warmup; this accessor does not redefine native indicator ATR.
+  function msrDailyATR(days, length = 14) {
+    const out = new Map();
+    let previous = null, sum = 0, count = 0, atr = null;
+    for (const day of days) {
+      if (!day.whole || ![day.k, day.high, day.low, day.close].every(Number.isFinite) || day.high < day.low) {
+        previous = null; sum = 0; count = 0; atr = null; continue;
+      }
+      if (previous && day.k !== previous.k + 1) { previous = null; sum = 0; count = 0; atr = null; }
+      const tr = previous ? Math.max(day.high - day.low, Math.abs(day.high - previous.close), Math.abs(day.low - previous.close)) : day.high - day.low;
+      count++;
+      if (atr === null) { sum += tr; if (count === length) atr = sum / length; }
+      else atr = ((length - 1) * atr + tr) / length;
+      if (atr !== null) out.set(day.k, atr);
+      previous = day;
+    }
+    return out;
+  }
+
+  // E.measure.seasonalIndex: one bounded prefix index of delivered all-price quote volumes.
+  // Positive emitted records establish observations; omitted or unqualified zero records remain gaps.
+  function msrSeasonalIndex({ cols, n, b0, b1, precision = "Float64", source = "recorded" }) {
+    const step = 2 ** n, first = Math.ceil(b0 / step), last = Math.floor(b1 / step), size = Math.max(0, last - first);
+    if (!Number.isInteger(n) || n < 0 || n > 20 || ![b0, b1].every(Number.isFinite) || size > 100000) throw new RangeError("Invalid seasonal support");
+    const values = new Float64Array(size), valid = new Uint8Array(size), seen = new Set();
+    for (const col of cols) {
+      const i = col.c - first;
+      if (!Number.isInteger(i) || i < 0 || i >= size) continue;
+      if (seen.has(i)) throw new RangeError("Duplicate seasonal column");
+      seen.add(i);
+      if (Number.isFinite(col.v) && (col.v > 0 || (col.v === 0 && col.covered === true))) { values[i] = col.v; valid[i] = 1; }
+    }
+    const sums = new Float64Array(size + 1), missing = new Uint32Array(size + 1);
+    for (let i = 0; i < size; i++) { sums[i + 1] = sums[i] + values[i]; missing[i + 1] = missing[i] + (valid[i] ? 0 : 1); }
+    const at = (start, end) => {
+      const a = start / step - first, b = end / step - first;
+      if (!Number.isInteger(a) || !Number.isInteger(b) || b <= a) return API.result.make("unsupported", { reason: "Support does not tile source intervals exactly" });
+      if (a < 0 || b > size) return API.result.make("outside-support", { reason: "Weekly match outside served history" });
+      if (missing[b] !== missing[a]) return API.result.make("unsupported", { reason: "Weekly match has missing coverage" });
+      return API.result.finite(sums[b] - sums[a]);
+    };
+    return Object.freeze({ at, n, b0: first * step, b1: last * step, precision, source, size });
+  }
+
+  // E.measure.seasonalActivity: six fixed UTC weekly offsets, at least four exactly covered matches.
+  // Matches end no later than target start. Constituent support/reasons survive insufficient cohorts.
+  function msrSeasonalActivity({ index, numerator, start, end, cutoff, week = 10752 }) {
+    const matches = [];
+    for (let j = 1; j <= 6; j++) {
+      const a = start - j * week, b = end - j * week;
+      const result = b > start ? API.result.make("unsupported", { reason: "Weekly match overlaps target" })
+        : b > cutoff ? API.result.make("hidden", { reason: "Weekly match beyond replay edge" })
+        : !index ? API.result.make("unsupported", { reason: "Weekly history unavailable" }) : index.at(a, b);
+      matches.push({ offset: j, time: [a, b], result });
+    }
+    const eligible = matches.filter((x) => x.result.tag === "finite");
+    const mean = eligible.length ? eligible.reduce((sum, x) => sum + x.result.value, 0) / eligible.length : null;
+    const result = ![start, end, cutoff].every(Number.isFinite) || numerator < 0 || end <= start
+      ? API.result.make("invalid-input", { reason: "Invalid seasonal observation" })
+      : !Number.isFinite(numerator) ? API.result.make("unsupported", { reason: "All-price target volume unavailable" })
+      : end > cutoff ? API.result.make("hidden", { reason: "Target beyond replay edge" })
+      : eligible.length < 4 ? API.result.make("unsupported", { reason: "Fewer than four covered weekly matches" })
+      : mean === 0 ? API.result.make("undefined", { denominator: "mean weekly quote volume" }) : API.result.finite(numerator / mean);
+    return { formula: "context.seasonal-volume@1", unit: "ratio", numerator: msrNumber(numerator), denominator: mean, count: eligible.length,
+      time: [start, end], cutoff, precision: index?.precision ?? null, source: index?.source ?? null, matches, result };
+  }
+
+  // E.measure.weightedBins: centred compensated variance using quote/row-centre estimated base weights.
+  // True VWAP is supplied from matching quote/base sums; this is explicitly not exact tick dispersion.
+  function msrWeightedBins({ rows, rowWidth, vwap, close }) {
+    const invalid = ![rowWidth, vwap, close].every(Number.isFinite) || rowWidth <= 0 || vwap <= 0;
+    if (invalid) return { result: API.result.make("invalid-input", { reason: "Invalid weighted-bin inputs" }), sigma: null, approximation: "quote volume / bin centre", rowWidth: msrNumber(rowWidth) };
+    const sum = (items) => { let total = 0, correction = 0; for (const x of items) { const y = x - correction, t = total + y; correction = (t - total) - y; total = t; } return total; };
+    const bins = rows.filter((x) => Number.isFinite(x.r) && Number.isFinite(x.v) && x.v > 0 && (x.r + .5) * rowWidth > 0)
+      .map((x) => { const centre = (x.r + .5) * rowWidth; return { centre, weight: x.v / centre }; });
+    const weight = sum(bins.map((x) => x.weight)), variance = weight > 0 ? sum(bins.map((x) => x.weight * (x.centre - vwap) ** 2)) / weight : null;
+    const sigma = variance === null ? null : Math.sqrt(variance);
+    const result = sigma === null ? API.result.make("empty-population", { denominator: "estimated base volume" })
+      : sigma === 0 ? API.result.make("undefined", { denominator: "weighted-bin dispersion" }) : API.result.finite((close - vwap) / sigma);
+    return { result, sigma, approximation: "quote volume / bin centre", rowWidth, bins: bins.length };
+  }
+
   // Price bands are intervals: their center cannot establish containment or overlap.
   function msrBandLocation({ low, high, poc, valueLow, valueHigh }) {
     if (![low, high, poc, valueLow, valueHigh].every(Number.isFinite) || high <= low || valueHigh <= valueLow) return null;
@@ -1765,6 +1858,11 @@
     cellMeasurement: msrCellMeasurement,
     cellComposition: msrCellComposition,
     bandLocation: msrBandLocation,
+    normalized: msrNormalized,
+    dailyATR: msrDailyATR,
+    seasonalIndex: msrSeasonalIndex,
+    seasonalActivity: msrSeasonalActivity,
+    weightedBins: msrWeightedBins,
     columnValue: msrColumnValue,
     dwellCheck: msrDwellCheck,
     dwellResidual: msrDwellResidual,
@@ -8526,7 +8624,18 @@
     summary: rdoEvSummary,
   });
 
+  // E.readout.observation: JSON-safe card-observation@1 at the measurement boundary.
+  // Result tags are unchanged. Each denominator/history point carries its own observation support.
+  function rdoCardObservation({ formula, unit, result, time, price = null, level, exposure = null, source, pack = null,
+    precision = "Float64", measuredThrough, completeness = "complete", visibility = "visible", denominators = [], history = [] }) {
+    if (typeof formula !== "string" || typeof unit !== "string" || !Array.isArray(time) || time.length !== 2 ||
+      !time.every(Number.isFinite) || time[1] < time[0] || !Number.isFinite(measuredThrough)) throw new TypeError("Invalid card observation support");
+    return API.result.assertJsonSafe({ version: "card-observation@1", formula, unit, result, time, price, level, exposure,
+      source, pack, precision, measuredThrough, completeness, visibility, denominators, history });
+  }
+
   API.readout = Object.freeze({
+    observation: rdoCardObservation,
     ROLE: rdoRole,
     cellsFrame: rdoCellsFrame,
     rowsFrame: rdoRowsFrame,

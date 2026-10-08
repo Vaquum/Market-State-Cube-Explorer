@@ -28,7 +28,7 @@ What each normative decision of the parent (D1 to D12) asks for, which slice own
 | Item | Status |
 |---|---|
 | #46 to #48 implemented with applicable evidence | the three slices are implemented and tested as above; the evidence marked OUTSTANDING is not attached, so this item is not done |
-| Every visual consumer has its role and linked regressions in `docs/visual-contract.md`, and no undocumented legacy path remains | done: 185 rows, none left `todo`; the lint allowlist is empty; the retired tokens, tiers and static legend text are gone |
+| Every visual consumer has its role and linked regressions in `docs/visual-contract.md`, and no undocumented legacy path remains | done: 173 rows, none left `todo`; the lint allowlist is empty; the retired tokens, tiers and static legend text are gone |
 | Numerical mapping, visible and inspected records, composition and restored views agree | shown by B03, B44, B14, B52 and B53 on the fake cube |
 | R1 to R34 reflected in implementation and tests | each of the 34 is mapped to its tests below (the section "Review items R1 to R34"); disposition at the specification level is not code verification, and a test is named only where it exists |
 | Final operator, accessibility, replay and model, persistence and performance evidence and authorised production evidence | OUTSTANDING items above; a release with any of them outstanding needs the operator's scoped acceptance in the pull request (none is recorded: the three slices are released all the same), and neither #48 nor #45 closes on such a release |
@@ -90,3 +90,14 @@ This is one complete implementation slice. The original parent's outstanding ope
 | D3-D5 closed metrics, shared basis/reference/ranks and frozen loaded POC | `src/comparison.js`, Lines-derived POC picker | `cell-comparison.test.js`; `cell-comparison.spec.js`, `comparison-session.spec.js`, `comparison-capture.spec.js`, `comparison-poc-loading.spec.js` (startup source replacement and expanded reload; no picker reads or hidden chart work) |
 | D6 tab-only collection and storage recovery | `src/state.js` comparison record; coalesced capture/presentation persistence | `comparison-storage.test.js`; `cell-comparison.spec.js`, `comparison-session.spec.js`, `comparison-capture.spec.js` |
 | D7 actual additions and integration gates | this matrix, visual consumer and generated color inventories, README/help, complete browser/unit/golden/build checks | `comparison-benchmark.test.js`; candidate-only DOM diagnostics under navigation.v4, with outcomes recorded in the implementation PR; no extra slice or new operator campaign |
+
+## PRD-0007 — core card overhaul, P7-S1 (#84)
+
+| Original requirement | Implementation | Evidence | Status |
+|---|---|---|---|
+| D1 compact hierarchy, profiles and causal histories | Shared core card renderer; Measures companions; native Rows/profile support; nine core Columns; retained cell/candle geometry | B66, B28, cell-native-inspector and inspector-presentation specs | Implemented; final commit checks pending |
+| D2 canonical observation/support and D3 composition/context | `card-observation@1`, existing canonical helpers, daily ATR, six-offset seasonal index, real MSCC precision, zero/gap/cutoff disclosures | U98, B66, readout-agreement and comparison-capture specs | Implemented; final commit checks pending |
+| D5 causal availability/model exception and bounded reads | Per-point prior ATR, fixed support, complete parent, retrospective touched-row model; Inspect/expansion demand and cancellation | B66, model-provenance and read-priority specs | Implemented; final commit checks pending |
+| Labels and construction across shared consumers | Row concentration/profile-share/touched-row names; historical-token disclosure; profile bins, ties, area and independent axes | relative-volume, legacy-migration, text, rows-strip and capture specs; System reference | Implemented; final commit checks pending |
+| Existing cube only | Explorer client helpers and existing delivered routes; no Origo, bridge, reader or wire change | Source diff; protocol oracles | Design constraint retained; real-host/designated-machine evidence not claimed |
+| Remaining P7-S2/P7-S3 | Not implemented by this slice | Separate issues #85/#86 | OUTSTANDING |

@@ -188,7 +188,7 @@ test("a background capture retains its clicked period price band across coarser 
   await addMenu(page, await point(page, 28125, 25187.5));
   const native = (await saved(page)).captures[0],
     band = (capture) => capture.detail.find((detail) => detail.label === "Period row band"),
-    relative = (capture) => capture.detail.find((detail) => detail.label.startsWith("Relative volume · ") && detail.label.endsWith(" · captured context"));
+    relative = (capture) => capture.detail.find((detail) => detail.label.startsWith("Row volume versus mean traded row · ") && detail.label.endsWith(" · captured context"));
   expect(band(native).value).toBe("25125–25250");
   expect(relative(native).tag).toBe("finite");
   await page.evaluate((next) => { location.hash = next; }, hash.replace("r=0,0", "r=0,2"));
@@ -282,10 +282,10 @@ for (const rows of ["volume", "relvol"]) test(`${rows === "relvol" ? "Period rel
   await expect.poll(async () => (await saved(page))?.captures.length).toBe(1);
   const capture = (await saved(page)).captures[0];
   const relative = capture.detail.find((detail) => rows === "relvol"
-    ? detail.label.startsWith("Relative volume · ") && detail.label.endsWith(" · captured context")
-    : detail.label === "View vs period · captured context");
-  const rectangle = capture.detail.find((detail) => detail.label === "Relative volume rectangle through");
-  const period = capture.detail.find((detail) => detail.label === (rows === "relvol" ? "Relative volume period through" : "Relative volume reference through"));
+    ? detail.label.startsWith("Row volume versus mean traded row · ") && detail.label.endsWith(" · captured context")
+    : detail.label === "Profile-share log₂ ratio · captured context");
+  const rectangle = capture.detail.find((detail) => detail.label === "Profile-share rectangle through");
+  const period = capture.detail.find((detail) => detail.label === (rows === "relvol" ? "Row concentration period through" : "Profile-share reference through"));
   expect(relative, "the real row comparison remains finite while the next period read is held").toBeTruthy();
   expect(relative.tag).toBe("finite"); expect(Number.isFinite(relative.value)).toBe(true);
   const rewind = Date.parse("2026-09-24T12:30:00Z");

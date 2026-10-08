@@ -3148,7 +3148,7 @@
       trades: { name: "Trades", desc: "Trades in each column" },
       size: { name: "Trade size", desc: "Average USDT per trade in each column" },
       efficiency: {
-        name: "Efficiency",
+        name: "Volume per touched row versus expected",
         desc: "USDT per 125 USDT row each column's trades touched, against its parent column's and the recorded model's expected ratio; the pane says how that model stands at the cutoff",
       },
       choppiness: { name: "Choppiness", desc: "How far the price travelled in each column, over its range" },
@@ -3694,13 +3694,15 @@
       }
       el("motion-to").textContent = reached ? `${when(rect.end)} UTC` : "—";
       // Moved through: without a trade in the rectangle's own cells either.
-      el("moved").textContent = !reached
+      const sameCountSupport = reached && rect.end === Math.min(b[1], meas.end ?? activeCutoff(), activeCutoff());
+      el("moved").textContent = !sameCountSupport || rect.query.n !== query.n || rect.query.m !== query.m
         ? "—"
         : integer(
             rect.query.n === query.n && rect.query.m === query.m
-              ? rect.query.moved.filter((z) => !query.map.has(z.c + "," + z.r)).length
+              ? rect.query.moved.filter((z) => !query.map.has(z.c + "," + z.r) && (z.c + 1) * ts <= Math.min(rect.end, activeCutoff())).length
               : rect.query.moved.length,
           );
+      el("moved").title = !reached ? "Movement support unavailable" : !sameCountSupport ? "Different measured-through boundaries; no nested count" : rect.query.n !== query.n || rect.query.m !== query.m ? "Movement and occupancy levels differ; no nested count" : `Of covered zero-trade cells through ${when(rect.end)} UTC at n=${query.n}, m=${query.m}`;
     }
     const wait = (text) => (measuring ? "—" : text);
     el("poc-value").textContent = wait(
@@ -3747,8 +3749,149 @@
     el("key-open").hidden = openRows === 0 && !unfinishedShown;
     el("key-unavailable").hidden = !coverageGap;
     el("data-coarse").hidden = !(renderN() > S.n || renderM() > S.m);
+    measuresPresentation(meas, mv);
     queryUI(meas);
     renderCells(measuring ? null : query, b, mv);
+  }
+  function readingProfile(query, rowWidth, selected = null) {
+    const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg"), rows = query.rows.filter((x) => x.v > 0);
+    svg.classList.add("ol-card-profile"); svg.setAttribute("viewBox", "0 0 160 64"); svg.setAttribute("role", "img");
+    if (!rows.length) { svg.setAttribute("aria-label", "Empty traded profile; no POC or value area"); return svg; }
+    const low = rows[0].r, high = rows.at(-1).r + 1, bins = new Map();
+    for (const row of rows) { const i = Math.min(47, Math.floor((row.r - low) * 48 / (high - low))); const v = bins.get(i) ?? { v: 0, low: row.r, high: row.r + 1 }; v.v += row.v; v.high = row.r + 1; bins.set(i, v); }
+    const peak = Math.max(...[...bins.values()].map((x) => x.v)), summary = [];
+    for (const [i, bin] of bins) {
+      const rect = document.createElementNS(ns, "rect"); rect.setAttribute("x", "3"); rect.setAttribute("y", String(60 - i * 56 / 48)); rect.setAttribute("width", String(bin.v / peak * 125)); rect.setAttribute("height", "1.2"); rect.setAttribute("fill", "currentColor"); rect.setAttribute("opacity", ".55"); svg.append(rect);
+      summary.push(`${price(bin.low * rowWidth)}–${price(bin.high * rowWidth)} USDT: ${usdt(bin.v)} USDT traded`);
+    }
+    const mark = (row, name, color) => { const line = document.createElementNS(ns, "path"); line.setAttribute("d", `M2 ${60 - (row - low) / (high - low) * 56} H145`); line.setAttribute("stroke", color); line.setAttribute("fill", "none"); line.setAttribute("stroke-width", "1.5"); const title = document.createElementNS(ns, "title"); title.textContent = `${name}: ${price(row * rowWidth)} USDT`; line.append(title); svg.append(line); };
+    const area = contiguousArea(query.rows, query.poc, query.v);
+    if (query.poc !== null) mark(query.poc + .5, "POC centre", "var(--ol-poc)");
+    if (area) { mark(area.r0, "Value low", "var(--ol-poc)"); mark(area.r1, "Value high", "var(--ol-poc)"); }
+    if (selected !== null) mark(selected + .5, "Inspected row centre", "var(--ol-ink)");
+    svg.setAttribute("aria-label", `Volume profile, ${price(low * rowWidth)}–${price(high * rowWidth)} USDT. Lower prices at bottom; independent amount scale. POC ${query.poc === null ? "unavailable" : price((query.poc + .5) * rowWidth)}. ${summary.join("; ")}`);
+    svg.dataset.priceDomain = JSON.stringify([low * rowWidth, high * rowWidth]); svg.dataset.amountDomain = JSON.stringify([0, peak]);
+    return svg;
+  }
+  function measuresPresentation(meas, mv) {
+    const q = meas.query, time = [meas.b[0], Math.max(meas.b[0], Math.min(meas.b[1], meas.end ?? activeCutoff(), activeCutoff()))], band = meas.b.slice(2).map((v) => v * PR);
+    const refusal = meas.state === "pending" || meas.state === "failed" ? E.result.make(meas.state, { reason: meas.error ?? "Measuring this rectangle" }) : null;
+    const finite = (v) => refusal ?? E.result.finite(v), share = (a, b, name) => refusal ?? (b > 0 ? E.result.finite(a / b) : E.result.make("undefined", { denominator: name }));
+    const composition = E.measure.cellComposition({ z: q, read: refusal ? { state: meas.state, reason: meas.error ?? "Measuring this rectangle" } : null });
+    const target = allPriceAmount(q.n, time), seasonal = seasonalContext(q.n, time[0], time[1], target?.v ?? NaN), response = aggregateBarResponse(q.n, time);
+    const seasonalMetric = { label: "Seasonal activity · all-price USDT", result: refusal ?? seasonal.result, unit: "ratio" };
+    const data = {
+      vol: { result: finite(q.v), unit: "usdt", companions: [{ label: "Reported trades", result: finite(q.ct), unit: "trades" }, { label: "Buyer-initiated share", result: share(q.bv, q.v, "rectangle volume"), unit: "share" }, seasonalMetric] },
+      count: { result: finite(q.ct), unit: "trades", companions: [{ label: "Covered-minute rate", result: share(q.ct * 60, (time[1] - time[0]) * BASE, "covered seconds"), unit: "trades-per-minute" }, { label: "Buyer-initiated count", result: finite(q.bt), unit: "trades" }, { label: "Seller-initiated count", result: finite(q.ct - q.bt), unit: "trades" }] },
+      buyvol: { result: finite(q.bv), unit: "usdt", companions: [{ label: "Seller-initiated USDT", result: finite(q.v - q.bv), unit: "usdt" }, { label: "Buyer-initiated share", result: share(q.bv, q.v, "rectangle volume"), unit: "share" }, { label: "Delta / volume", result: composition.imbalance.result, unit: "signed-share" }] },
+      "delta-value": { result: finite(2 * q.bv - q.v), unit: "usdt", companions: [{ label: "Delta / volume", result: composition.imbalance.result, unit: "signed-share" }, { label: "Quote volume", result: finite(q.v), unit: "usdt" }, { label: "All-price close − open / prior daily ATR", result: refusal ?? E.measure.normalized(response.result.tag === "finite" ? response.result.value : NaN, response.atr).result, unit: "daily-atr" }] },
+      buycount: { result: finite(q.bt), unit: "trades", companions: [{ label: "Seller-initiated count", result: finite(q.ct - q.bt), unit: "trades" }, { label: "Buyer-initiated mean", result: composition.buySize.result, unit: "usdt-per-trade" }, { label: "Seller-initiated mean", result: composition.sellSize.result, unit: "usdt-per-trade" }] },
+    };
+    if (mv) {
+      const motionTime = [meas.b[0], Math.max(meas.b[0], Math.min(meas.b[1], mv.rect?.end ?? meas.b[0]))], motionQuery = mv.rect?.query;
+      const missing = E.result.make(mv.rect?.state === "failed" ? "failed" : "pending", { reason: mv.rect?.error ?? "Movement support not measured" });
+      const seconds = (motionTime[1] - motionTime[0]) * BASE, dwell = motionQuery ? E.measure.dwellCheck(motionQuery.w, seconds) ?? (seconds > 0 ? E.result.finite(motionQuery.w / seconds) : E.result.make("undefined", { denominator: "covered seconds" })) : missing;
+      data.path = { time: motionTime, level: motionQuery ? { n: motionQuery.n, m: motionQuery.m } : { n: q.n, m: q.m }, result: motionQuery ? E.result.finite(motionQuery.p) : missing, unit: "usdt", companions: [
+        { label: "Measured row spans", result: motionQuery ? E.result.finite(motionQuery.p / (2 ** motionQuery.m * PR)) : missing, unit: "row-spans" },
+        { label: "Covered-time dwell share", result: dwell, unit: "share" }, { label: "Quote volume · activity cutoff", result: finite(q.v), unit: "usdt" },
+      ] };
+      data.dwell = { time: motionTime, level: data.path.level, result: motionQuery ? E.result.finite(motionQuery.w) : missing, unit: "seconds", companions: [
+        { label: "Covered-time share", result: dwell, unit: "share" }, { label: "Covered seconds", result: E.result.finite(seconds), unit: "seconds" },
+        { label: "Accumulated travel", result: data.path.result, unit: "usdt" },
+      ] };
+    }
+    for (const [id, metric] of Object.entries(data)) {
+      const primary = el(id), card = primary.parentElement;
+      card.dataset.presentation = "measure"; primary.dataset.canonical = String(metric.result.tag === "finite" ? metric.result.value : metric.result.tag);
+      let companions = card.querySelector(".ol-measure-companions");
+      if (!companions) { companions = document.createElement("dl"); companions.className = "ol-measure-companions"; card.append(companions); }
+      const signature = JSON.stringify(metric.companions);
+      if (companions.dataset.signature !== signature) {
+        companions.replaceChildren(); companions.dataset.signature = signature;
+        for (const m of metric.companions) { const row = document.createElement("div"), shown = m.result.tag === "finite" ? cardValue(m.result.value, m.unit) : { text: E.result.describe(m.result).short, unit: "" };
+          row.append(Object.assign(document.createElement("dt"), { textContent: m.label }), Object.assign(document.createElement("dd"), { textContent: [shown.text, shown.unit].filter(Boolean).join(" ") })); companions.append(row); }
+      }
+      let details = card.querySelector(".ol-core-details");
+      if (!details) { details = document.createElement("details"); details.className = "ol-core-details"; details.append(Object.assign(document.createElement("summary"), { textContent: "Measurement details" }), document.createElement("div")); card.append(details); }
+      const observation = cardObservation(metric.result, { vol: "cells.volume.amount@1", count: "cells.trades.amount@1", buyvol: "taker-buy.amount@1", buycount: "taker-buy-count.amount@1", "delta-value": "cells.delta.amount@1", path: "cells.path.usdt@1", dwell: "cells.dwell.seconds@1" }[id], metric.unit, metric.time ?? time, band, { level: metric.level ?? { n: q.n, m: q.m } });
+      card.dataset.observation = JSON.stringify(observation);
+      const info = details.lastElementChild;
+      let text = `Half-open support ${range(...observation.time)} UTC; ${price(band[0])}–${price(band[1])} USDT. ${metric.result.tag === "finite" ? usdt(metric.result.value) : E.result.describe(metric.result).long} ${metric.unit}. Source ${observation.source}; n=${observation.level.n}, m=${observation.level.m}. Counts are reported trade records, not independent orders or participants.`;
+      if (id === "path" || id === "dwell") text += " Path includes the prior-column entry move. Movement and activity can end at different cutoffs; no joint inference is made across them.";
+      if (details.open) {
+        text += ` Seasonal activity is all-price quote volume: ${seasonal?.result.tag === "finite" ? cardValue(seasonal.result.value, "ratio").text + "×" : seasonal ? E.result.describe(seasonal.result).long : "Complete all-price support unavailable"}.`;
+        if (seasonal) text += ` ${seasonal.count}/6 eligible preceding weekly offsets; mean ${seasonal.denominator === null ? "unavailable" : usdt(seasonal.denominator)} USDT; ${seasonal.precision ?? "source precision"}. UTC-clock matching does not adjust daylight-saving shifts.`;
+        text += ` All-price close − open on ${range(...response.time)} UTC: ${response.result.tag === "finite" ? signed(response.result.value, usdt) + " USDT" : E.result.describe(response.result).long}.`;
+        const normalized = E.measure.normalized(response.result.tag === "finite" ? response.result.value : NaN, response.atr);
+        if (!response.paired) text += " Different measured-through boundaries; response retains its own support and no paired interpretation.";
+        text += ` Displacement / prior daily ATR: ${normalized.result.tag === "finite" ? cardValue(normalized.result.value, "daily-atr").text + " daily ATR" : E.result.describe(normalized.result).long}.`;
+        text += ` Buyer-initiated ${usdt(q.bv)} USDT; seller-initiated ${usdt(q.v - q.bv)} USDT. Buyer mean: ${composition.buySize.result.tag === "finite" ? usdt(composition.buySize.result.value) + " USDT / trade" : E.result.describe(composition.buySize.result).long}; seller mean: ${composition.sellSize.result.tag === "finite" ? usdt(composition.sellSize.result.value) + " USDT / trade" : E.result.describe(composition.sellSize.result).long}.`;
+        observation.denominators = [{ ...seasonal }, { ...normalized, time: response.time }];
+        card.dataset.observation = JSON.stringify(observation);
+      }
+      if (info.textContent !== text) info.textContent = text;
+    }
+    let profile = el("context").querySelector(".ol-measures-profile");
+    if (!profile) { profile = document.createElement("div"); profile.className = "ol-measures-profile"; el("poc-value").closest("section").append(profile); }
+    if (profile._query !== q || profile.dataset.state !== meas.state) { profile._query = q; profile.dataset.state = meas.state; profile.replaceChildren(refusal ? Object.assign(document.createElement("p"), { className: "ol-cell-context", textContent: E.result.describe(refusal).long }) : readingProfile(q, PR * 2 ** q.m), Object.assign(document.createElement("p"), { className: "ol-cell-context", textContent: `Profile: ${PR * 2 ** q.m} USDT bins; lower-row POC ties. Contiguous whole-bin value area targets 70% and may exceed it. Buy POC requires an observed buy population.` })); }
+    el("moved").parentElement.firstElementChild.textContent = "Of which: moved through";
+    el("open-count").parentElement.firstElementChild.title = "All intersecting rows in the open column; occupied open cells also remain in occupied cells";
+    el("zero-count").parentElement.firstElementChild.title = "Covered closed cells without reported trades; excludes open or unread support";
+    let location = profile.querySelector(".ol-profile-location");
+    if (!location) { location = document.createElement("p"); location.className = "ol-cell-context ol-profile-location"; profile.append(location); }
+    const poc = q.poc === null ? null : (q.poc + .5) * 2 ** q.m * PR;
+    const profileCard = el("poc-value").closest("section"), area = contiguousArea(q.rows, q.poc, q.v);
+    profileCard.dataset.observation = JSON.stringify(cardObservation(refusal ?? (poc === null ? E.result.make("empty-population", { denominator: "profile volume" }) : E.result.finite(poc)), "profile.poc.centre@1", "usdt", time, band, { level: { n: q.n, m: q.m }, denominators: [{ totalVolume: q.v, buyVolume: q.bv, rowWidth: 2 ** q.m * PR, buyPoc: q.bpoc === null ? null : (q.bpoc + .5) * 2 ** q.m * PR, valueArea: area ? { low: area.r0 * 2 ** q.m * PR, high: area.r1 * 2 ** q.m * PR, actualFraction: area.share, nominalFraction: .7 } : null }] }));
+    let profileDetails = profileCard.querySelector(".ol-core-details");
+    if (!profileDetails) { profileDetails = document.createElement("details"); profileDetails.className = "ol-core-details"; profileDetails.append(Object.assign(document.createElement("summary"), { textContent: "Measurement details" }), document.createElement("p")); profileCard.append(profileDetails); }
+    const profileText = `Half-open profile ${range(...time)} UTC; ${2 ** q.m * PR} USDT rows. POC uses quote volume; Buy POC uses buyer-initiated quote volume and is unavailable with no buy population. Lower row wins ties. Value area grows contiguously in whole bins from POC: ${area && !refusal ? (area.share * 100).toPrecision(4) + "% actual volume" : "unavailable"}, nominal 70%. Independent amount domain. All-price close support ${range(...response.time)} UTC${response.paired ? "" : "; Different measured-through boundaries"}.`;
+    if (profileDetails.lastElementChild.textContent !== profileText) profileDetails.lastElementChild.textContent = profileText;
+    const normalized = E.measure.normalized(refusal || response.close === null || poc === null ? NaN : response.close - poc, response.atr);
+    const text = `All-price close versus this profile's POC: ${normalized.result.tag === "finite" ? cardValue(normalized.result.value, "daily-atr").text + " daily ATR" : E.result.describe(normalized.result).long}. Raw POC and value boundaries remain USDT; this is location, not a direction forecast.`;
+    if (location.textContent !== text) location.textContent = text;
+  }
+  function allPriceAmount(n, time) {
+    const src = exactSource([time[0], time[1], 0, 2 ** 32], n, 0);
+    if (src) return aggregate(src, n, 0, [time[0], time[1], 0, Infinity]);
+    const index = seasonalSource(n), result = index?.at(...time);
+    return result?.tag === "finite" ? { v: result.value } : null;
+  }
+  function coreRowsPresentation(tip, p) {
+    const u = last.under, period = Boolean(u?.bands && (p.inspect || p.x < G.x + G.w + G.sw));
+    const bands = period ? u.bands : last.query;
+    if (!bands) return;
+    const m = bands.m, row = Math.floor(p.p / 2 ** m), band = bands.map.get(row) ?? { r: row, v: 0, bv: 0, w: 0 };
+    const q = period ? u.volBands ?? bands : bands;
+    const time = period ? [u.res.span[0], u.through] : [last.b[0], Math.min(last.b[1], last.cut)];
+    const priceBand = [row * 2 ** m * PR, (row + 1) * 2 ** m * PR], kind = period ? u.kind : "volume";
+    const rv = kind === "relvol" ? u.relvol ?? periodRelvolFor(q, u.vol) : null;
+    const readout = period && kind !== "relvol" && last.sc?.rows ? last.sc.rows.readout(band) : null;
+    const result = kind === "relvol" ? rv.at(Math.floor(p.p / 2 ** rv.support.bm)) : readout?.typed ?? E.result.finite(kind === "delta" ? 2 * band.bv - band.v : kind === "time" ? band.w : band.v);
+    const unit = kind === "relvol" ? "log2-ratio" : kind === "time" ? "seconds" : "usdt", formula = kind === "relvol" ? "rows.relvol@3" : kind === "time" ? "rows.time.seconds@1" : `rows.${kind}.amount@1`;
+    const comparison = u?.volBands ? relvolFor(u.volBands, u.vol, u.rect) : null;
+    const profileShare = comparison ? comparison.at(Math.floor(p.p / 2 ** comparison.support.bm)) : E.result.make("unsupported", { reason: "Period comparison unavailable" });
+    const volumeRow = Math.floor(p.p / 2 ** q.m), volume = q.map.get(volumeRow)?.v ?? 0, total = q.v;
+    const observation = cardObservation(result, formula, unit, time, priceBand, { level: { n: q.n ?? renderN(), m },
+      denominators: [{ formula: "rows.relvol@3", time, value: rv?.meanVolume ?? null }, { formula: "rows.relvol@2", time: last.b.slice(0, 2), support: comparison?.support ?? null, result: profileShare }] });
+    const companions = kind === "time" ? [
+      { label: "Share of row-attributed dwell", unit: "share", result: bands.w > 0 ? E.result.finite(band.w / bands.w) : E.result.make("undefined", { denominator: "row-attributed dwell" }) },
+      { label: "Share of supported covered time", unit: "share", result: E.measure.dwellCheck(band.w, Math.max(0, time[1] - time[0]) * BASE) ?? E.result.finite(band.w / ((time[1] - time[0]) * BASE)) },
+      { label: "Period row volume · separate cutoff", unit: "usdt", result: E.result.finite(volume) },
+    ] : [
+      { label: period ? "Period row volume" : "Drawn row volume", unit: "usdt", result: E.result.finite(volume) },
+      { label: "Share of declared profile", unit: "share", result: total > 0 ? E.result.finite(volume / total) : E.result.make("undefined", { denominator: "profile volume" }) },
+      { label: "Profile-share log₂ ratio", unit: "log2-ratio", formula: "rows.relvol@2", result: profileShare, field: "profileShare" },
+    ];
+    coreCardPresentation(tip, { primary: { label: kind === "relvol" ? "Row volume versus mean traded row" : kind === "time" ? "Time at price" : kind === "delta" ? "Delta · taker-buy minus taker-sell USDT" : "Row volume", unit, result, field: "value" },
+      companions, observation, profile: readingProfile(q, 2 ** q.m * PR, volumeRow), detailed: Boolean(p.inspect) });
+    const context = tip.querySelector(".ol-cell-context");
+    context.textContent += ` · ${period ? periodLabel(u.period) : S.selection ? "Selection" : "In view"} · ${2 ** m * PR} USDT rows`;
+    if (readout?.coordinate?.clip === "low" || readout?.coordinate?.clip === "high") context.textContent += ` · Numeric clipping: ${readout.coordinate.clip === "low" ? E.text.key.below : E.text.key.above}`;
+    if (rv && Number.isFinite(rv.meanVolume)) context.textContent += ` · Average traded row ${usdt(rv.meanVolume)} USDT`;
+    if (rv?.support.first !== null && rv?.support.first !== undefined) context.textContent += ` · Period price range ${price(rv.support.first * 2 ** q.m * PR)}–${price((rv.support.last + 1) * 2 ** q.m * PR)} USDT`;
+    context.textContent += " · Profile-share compares overlapping clipped bins; pc=s uses wholly-in-view bins.";
+    if (tip.querySelector(".ol-tip-head")) tip.querySelector(".ol-tip-head").textContent = `${price(priceBand[0])}–${price(priceBand[1])} USDT`;
+    if (readout) scaleRt.tipReadout = readout;
   }
   // The rectangle's measured cells, or none while the cube measures them.
   const measuredCells = (l) =>
@@ -4026,23 +4169,196 @@
   }
   // Presentation leaves the canonical readout intact. Price distances use the last completed day's
   // Wilder ATR at this cell's time, never a later day's volatility or an estimate from price rows.
-  function readingATR(t) {
+  // PRD-0007: presentation consumes observations; it never schedules transport from a hover or draw.
+  function cardObservation(result, formula, unit, time, priceBand = null, extra = {}) {
+    return E.readout.observation({ result, formula, unit, time, price: priceBand,
+      level: { n: renderN(), m: renderM() }, exposure: { seconds: Math.max(0, time[1] - time[0]) * BASE },
+      source: PACK.live ? "cube" : "recorded", pack: PACK.state_token ?? null, measuredThrough: Math.min(time[1], activeCutoff()),
+      completeness: time[1] > Math.floor(CUT) ? "open" : CANON !== null && time[1] > CANON ? "provisional" : "complete",
+      visibility: time[1] > activeCutoff() ? "hidden" : "visible", ...extra });
+  }
+  const contextAtrMemo = new WeakMap(), seasonalIndexes = new WeakMap(), loadedSeasonalIndexes = new WeakMap();
+  function contextATR(t) {
     if (!PACK.live) return null;
     const series = barSeries(9);
     if (series.state !== "ready") return null;
-    const cal = barCalendar(series), day = Math.floor(t / DAYS) - 1;
-    const value = cal.atr.get(day);
-    return value > 0 && cal.days.by.get(day)?.whole ? value : null;
+    const days = barCalendar(series).days;
+    let atr = contextAtrMemo.get(days);
+    if (!atr) { atr = E.measure.dailyATR(days.list); contextAtrMemo.set(days, atr); }
+    return atr.get(Math.floor(t / DAYS) - 1) ?? null;
   }
+  function seasonalSource(n) {
+    const level = Math.min(n, 9), held = PACK.live ? histories.get(historyKey(level, 0)) : null;
+    if (held) {
+      if (!seasonalIndexes.has(held)) seasonalIndexes.set(held, E.measure.seasonalIndex({ cols: held.cols, n: level, b0: held.b0, b1: held.b1, precision: "Float32", source: "MSCC column history" }));
+      return seasonalIndexes.get(held);
+    }
+    return null;
+  }
+  function seasonalContext(n, start, end, amount) {
+    let index = seasonalSource(n);
+    // Recorded/coherent loaded tiers can establish only intervals actually tiled by their cells.
+    if (!index) {
+      const level = Math.min(n, 9), lo = Math.max(0, start - 6 * 7 * DAYS), hi = Math.min(end, activeCutoff());
+      const src = exactSource([lo, hi, 0, 2 ** 32], level, 0);
+      if (src) {
+        let memo = loadedSeasonalIndexes.get(src.cells);
+        if (!memo) loadedSeasonalIndexes.set(src.cells, (memo = new Map()));
+        const key = [level, lo, hi, activeCutoff()].join("|");
+        index = memo.get(key);
+        if (!index) {
+          const query = aggregate(src, level, 0, [lo, hi, 0, Infinity]);
+          const first = Math.ceil(lo / 2 ** level), stop = Math.floor(hi / 2 ** level), by = new Map(query.cols.map((x) => [x.c, x]));
+          if (stop - first <= 100000) {
+            // Complete loaded cell support establishes covered zero; MSCC omissions cannot.
+            const cols = Array.from({ length: stop - first }, (_, i) => by.get(first + i) ?? { c: first + i, v: 0, covered: true });
+            index = E.measure.seasonalIndex({ cols, n: level, b0: lo, b1: hi, source: src.id });
+            memo.set(key, index);
+            while (memo.size > 3) memo.delete(memo.keys().next().value);
+          }
+        }
+      }
+    }
+    return E.measure.seasonalActivity({ index, numerator: amount, start, end, cutoff: activeCutoff(), week: 7 * DAYS });
+  }
+  function coreContextTarget() {
+    if (!inspect.on || !last) return null;
+    if (["cells", "lens"].includes(inspect.surface)) return inspectedCell();
+    if (inspect.surface !== "columns" || !paneShown || paneShown.key.startsWith("rsi") || paneShown.key === "macd1d") return null;
+    const w = inspectWhere();
+    return w.inside ? { n: Math.round(Math.log2(w.sp.ts)), m: ["cascade", "efficiency"].includes(paneShown.key) ? 0 : renderM(), c: w.c, r: 0 } : null;
+  }
+  const coreHistoryMemo = new WeakMap();
+  function coreColumnHistory(n, m, c, band, moving = false) {
+    const cut = activeCutoff(), spec = cellContextSpec(n, m, c, cut, moving);
+    const held = (moving ? cellMotionResults : cellContextResults).get(spec.key), span = [spec.a, spec.b, 0, 2 ** 32];
+    const src = held ? null : moving ? motionExact(span, n, m) : exactSource(span, n, m);
+    const q = held?.query ?? (src ? moving ? boundedMotion(src, n, m, [spec.a, Math.min(spec.b, src.end, cut), 0, Infinity]) : aggregate(src, n, m, span) : null);
+    const from = held?.start ?? (src ? sourceRange(src)[0] : Infinity), end = held?.end ?? (src ? Math.min(moving ? src.end : sourceRange(src)[1], cut) : -Infinity);
+    const aligned = band.every((x) => x % 2 ** m === 0);
+    let memo = q ? coreHistoryMemo.get(q) : null;
+    if (q && !memo) coreHistoryMemo.set(q, (memo = new Map()));
+    const key = band.join("|"), hit = memo?.get(key);
+    let by = hit?.by, all = hit?.all;
+    if (!by) {
+      const cropped = q && aligned ? (moving ? motionSummary(q.cells.filter((z) => z.r * 2 ** m >= band[0] && (z.r + 1) * 2 ** m <= band[1]), n, m)
+        : summarize(q.cells.filter((z) => z.r * 2 ** m >= band[0] && (z.r + 1) * 2 ** m <= band[1]), n, m)) : null;
+      by = new Map(cropped?.cols.map((x) => [x.c, x]) ?? []); all = new Map(q?.cols.map((x) => [x.c, x]) ?? []);
+      memo?.set(key, { by, all });
+      while (memo?.size > 4) memo.delete(memo.keys().next().value);
+    }
+    const step = 2 ** n;
+    return Array.from({ length: 12 }, (_, i) => {
+      const col = c - 11 + i, a = col * step, b = Math.min((col + 1) * step, cut);
+      if (!aligned || a < from || b > end || b <= a || col < 0) return { time: [a, Math.max(a, b)], result: E.result.make("unsupported", { reason: aligned ? "History support unavailable" : "Price band does not tile held history rows" }), col: null, all: all.get(col) ?? null };
+      return { time: [a, b], col: by.get(col) ?? { c: col, v: 0, bv: 0, ct: 0, bt: 0, p: 0, w: 0, hi: NaN, lo: NaN }, all: all.get(col) ?? { c: col, v: 0 }, result: null };
+    });
+  }
+  const coreBarContexts = new Map();
+  function coreBarTarget() {
+    const target = coreContextTarget();
+    if (target) return target;
+    if (!last || !el("context").querySelector(".ol-core-details[open]")) return null;
+    const n = last.query.n, time = [last.b[0], Math.min(last.b[1], activeCutoff())], step = 2 ** n;
+    // Aggregate cards reuse a bounded existing bar span; an arbitrarily long view starts no huge read.
+    return time[1] > time[0] && time[1] - time[0] <= 12 * step && time[0] % step === 0
+      ? { n, c: Math.ceil(time[1] / step) - 1 } : null;
+  }
+  function aggregateBarResponse(n, time) {
+    const step = 2 ** n, held = [...coreBarContexts.values()].find((x) => x.pack === PACK.state_token && x.n === n && x.a <= time[0] && x.b >= Math.floor(time[1]) && x.key.endsWith("|" + activeCutoff()));
+    const range = candleRange(n, ...time), bars = held?.bars.filter((x) => x.c * step >= time[0] && x.c * step < time[1]) ?? range.bars;
+    const end = Math.min(time[1], held?.end ?? range.end ?? time[0]);
+    const paired = time[0] % step === 0 && time[1] % step === 0 && end === time[1];
+    const actualTime = bars.length ? [Math.max(time[0], bars[0].c * step), Math.max(time[0], end)] : time;
+    const result = !held && range.state !== "ready" ? E.result.make(range.state === "failed" ? "failed" : "unsupported", { reason: range.reason ?? "All-price bars unavailable; expand to request bounded context" })
+      : !bars.length ? E.result.make("empty-population", { denominator: "all-price reported trades" }) : E.result.finite(bars.at(-1).close - bars[0].open);
+    return { result, time: actualTime, paired, close: result.tag === "finite" ? bars.at(-1).close : null, atr: contextATR(actualTime[0]) };
+  }
+  function coreBarSpec(n, c) {
+    const step = 2 ** n, a = Math.max(0, (c - 11) * step), b = Math.min((c + 1) * step, Math.floor(activeCutoff()));
+    return { n, a, b, pack: PACK.state_token, key: ["card-bars", live.generation, PACK.state_token, n, a, b, activeCutoff()].join("|") };
+  }
+  function coreBarsWant() {
+    const target = coreBarTarget();
+    if (!PACK.live || !target) return null;
+    const s = coreBarSpec(target.n, target.c);
+    if (s.b <= s.a || coreBarContexts.has(s.key)) return null;
+    return { ...s, relevant: () => { const now = coreBarTarget(); return now && coreBarSpec(now.n, now.c).key === s.key; },
+      path: `/cube/bars?n=${s.n}&b0=${s.a}&b1=${s.b}`, decode: async (body) => ({ bars: await unpackBars(body.bars), end: body.end }),
+      apply: (value) => { coreBarContexts.set(s.key, { ...s, ...value }); while (coreBarContexts.size > 12) coreBarContexts.delete(coreBarContexts.keys().next().value); } };
+  }
+  function coreBarResponse(n, c, support) {
+    const s = coreBarSpec(n, c), step = 2 ** n, held = coreBarContexts.get(s.key) ?? [...coreBarContexts.values()].find((x) => x.pack === PACK.state_token && x.n === n && x.a <= c * step && x.b >= support[1] && x.key.endsWith("|" + activeCutoff()));
+    const range = candleRange(n, c * step, (c + 1) * step), bar = held?.bars.find((x) => x.c === c) ?? range.bars.find((x) => x.c === c);
+    const stop = held ? Math.min((c + 1) * step, held.end) : bar?.through;
+    const result = !bar ? E.result.make(motion.failed.has(s.key) ? "failed" : motion.busy?.key === s.key ? "pending" : held ? "empty-population" : "unsupported", { reason: motion.failed.get(s.key) ?? (held ? "No trades in all-price bar support" : PACK.live ? "All-price bar unavailable; inspect to read context" : "OHLC unavailable in recorded source") })
+      : E.result.finite(bar.close - bar.open);
+    return { result, paired: support[0] === c * step && support[1] === stop, time: [c * step, Number.isFinite(stop) ? stop : Math.min((c + 1) * step, activeCutoff())], atr: contextATR(c * step) };
+  }
+  function cardValue(value, unit, exact = nav.shift) {
+    if (unit === "share" || unit === "signed-share") return { text: unit === "signed-share" ? signed(value * 100, (x) => x.toFixed(exact ? 2 : 1)) : (value * 100).toFixed(exact ? 2 : 1), unit: "%" };
+    if (unit === "daily-atr") return { text: value === 0 ? "0" : Number(value.toPrecision(exact ? 6 : 3)).toString(), unit: "daily ATR" };
+    if (unit === "log2-ratio") return { text: signed(value, (x) => x.toFixed(exact ? 4 : 2)), unit: "log₂ ratio" };
+    const names = { usdt: "USDT", trades: "trades", "usdt-per-trade": "USDT / trade", ratio: "×", seconds: "seconds", "trades-per-minute": "trades / min", "row-spans": "row spans", "path-per-range": "path / range", "usdt-per-usdt-moved": "USDT / USDT moved" };
+    return { text: exact ? usdt(value) : compact(value), unit: names[unit] ?? unit };
+  }
+  function coreCardPresentation(tip, { primary, companions = [], groups = [], observation, profile = null, detailed = false }) {
+    const raw = tip.querySelector(".ol-tip-rows") ?? Object.assign(document.createElement("dl"), { className: "ol-tip-rows" });
+    const head = tip.querySelector(".ol-tip-head"), sub = tip.querySelector(".ol-tip-sub"), notes = [...tip.querySelectorAll(".ol-tip-note")];
+    const stats = document.createElement("dl"); stats.className = "ol-cell-stats ol-core-stats";
+    const details = document.createElement("details"); details.className = "ol-cell-details"; details.hidden = !detailed;
+    details.append(Object.assign(document.createElement("summary"), { textContent: "Measurement details" }));
+    const append = (parent, metric, main = false) => {
+      const row = document.createElement("div"); row.className = "ol-cell-stat"; row.dataset.primary = String(main);
+      const term = Object.assign(document.createElement("dt"), { textContent: metric.label });
+      const old = metric.field ? raw.querySelector(`dd[data-field="${metric.field}"]`) : null;
+      if (old) old.previousElementSibling?.remove();
+      const value = old ?? document.createElement("dd"), result = metric.result ?? E.result.make("unsupported", { reason: "Context unavailable" });
+      value.hidden = false;
+      value.dataset.field = metric.field ?? metric.label;
+      value.dataset.canonical = String(result.tag === "finite" ? result.value : result.tag);
+      value.dataset.formula = metric.formula ?? observation.formula;
+      const shown = result.tag === "finite" ? cardValue(result.value, metric.unit) : { text: E.result.describe(result).short, unit: metric.unit === "daily-atr" ? "daily ATR" : "" };
+      if (result.tag === "finite" && metric.signed && result.value > 0) shown.text = "+" + shown.text;
+      if (result.tag === "finite" && metric.signed) value.dataset.sign = result.value > 0 ? "positive" : result.value < 0 ? "negative" : "zero";
+      value.replaceChildren(document.createTextNode(shown.text));
+      if (shown.unit) value.append(Object.assign(document.createElement("span"), { className: "ol-reading-unit", textContent: shown.unit }));
+      row.append(term, value);
+      if (metric.history) {
+        const values = metric.history.map((x) => x.result.tag === "finite" ? x.result.value : null);
+        row.append(readingSparkline(values, metric.label, { signed: ["signed-share", "log2-ratio"].includes(metric.unit), share: metric.unit === "share" }));
+        if (detailed) {
+          const table = document.createElement("table"); table.className = "ol-card-history";
+          table.append(Object.assign(document.createElement("caption"), { textContent: metric.label + " · supported intervals" }));
+          for (const x of metric.history) { const tr = document.createElement("tr"); tr.append(Object.assign(document.createElement("th"), { textContent: range(...x.time) + " UTC", scope: "row" }), Object.assign(document.createElement("td"), { textContent: x.result.tag === "finite" ? Object.values(cardValue(x.result.value, metric.unit)).join(" ") : E.result.describe(x.result).long })); table.append(tr); }
+          details.append(table);
+        }
+      }
+      parent.append(row);
+    };
+    append(stats, primary, true);
+    for (const metric of companions.slice(0, 3)) append(stats, metric);
+    if (profile) stats.append(profile);
+    for (const group of groups) {
+      const section = document.createElement("section"); section.className = "ol-cell-group";
+      section.append(Object.assign(document.createElement("h3"), { textContent: group.name }));
+      const list = document.createElement("dl"); for (const metric of group.metrics) append(list, metric); section.append(list); details.append(section);
+    }
+    const context = Object.assign(document.createElement("div"), { className: "ol-cell-context", textContent: `${range(...observation.time)} UTC · ${observation.completeness} · ${observation.source} · ${observation.precision}` });
+    details.append(raw, ...notes, Object.assign(document.createElement("pre"), { className: "ol-card-provenance", textContent: JSON.stringify(observation, null, 2) }));
+    tip.replaceChildren(...[head, sub, stats, context, details].filter(Boolean));
+    tip.dataset.presentation = "core"; tip.dataset.observation = JSON.stringify(observation);
+  }
+  function readingATR(t) { return contextATR(t); }
   function readingDistance(value, atr, exact) {
-    return atr > 0
-      ? { text: (value / atr).toFixed(exact ? 4 : 2), unit: "daily ATR" }
-      : { text: exact ? usdt(value) : compact(value), unit: "USDT" };
+    const normalized = E.measure.normalized(value, atr);
+    return normalized.result.tag === "finite" ? cardValue(normalized.result.value, "daily-atr", exact)
+      : { text: E.result.describe(normalized.result).short, unit: "daily ATR" };
   }
   const cellContextResults = new Map(), cellMotionResults = new Map();
   function cellContextSpec(n, m, c, cut = activeCutoff(), moving = false) {
     const ts = 2 ** n, a = Math.max(0, (c - 11) * ts), b = Math.min((c + 1) * ts, Math.ceil(cut));
-    return { n, m, c, a, b, cut, key: [moving ? "cell-motion" : "cell-context", live.generation, n, m, a, b, cut].join("|") };
+    return { n, m, c, a, b, cut, key: [moving ? "cell-motion" : "cell-context", live.generation, PACK.state_token, n, m, a, b, cut, "card-observation@1"].join("|") };
   }
   // Query full price support. Camera bounds never define this history or its column denominator.
   function cellHistory(n, m, c, r, cut = activeCutoff(), moving = false) {
@@ -4083,13 +4399,14 @@
     return src ? aggregate(src, n, m, [time[0], Math.ceil(time[1]), 0, Infinity]).cols.find((x) => x.c === c) ?? { v: 0 } : null;
   }
   function cellContextWant(moving = false) {
-    const target = inspectedCell();
+    const target = coreContextTarget();
     if (!PACK.live || !target) return null;
     const history = cellHistory(target.n, target.m, target.c, target.r, activeCutoff(), moving), s = history.spec;
     const cache = moving ? cellMotionResults : cellContextResults;
     if (history.complete || cache.has(s.key) || s.b <= s.a) return null;
     return {
       key: s.key,
+      relevant: () => { const now = coreContextTarget(); return now && cellContextSpec(now.n, now.m, now.c, activeCutoff(), moving).key === s.key; },
       path: `/cube/query?n=${s.n}&m=${s.m}&b0=${s.a}&b1=${s.b}${moving ? "&motion=1" : ""}`,
       loading: moving ? "Reading this cell's path and dwell…" : "Reading this price band's history…",
       decode: async (body) => ({ block: await unpack(body.block, s.key), body }),
@@ -4186,7 +4503,7 @@
       volume: { label: "Volume", value: current.v, format: money, field: "volume", pick: (v) => v.v },
       trades: { label: "Trades", value: current.ct, format: (v) => ({ text: count(v), unit: "trades" }), field: "trades", pick: (v) => v.ct },
       size: { label: "Mean reported trade", value: current.ct > 0 ? current.v / current.ct : null, format: (v) => money(v, "USDT / trade"), field: "size", pick: (v) => v.ct > 0 ? v.v / v.ct : null },
-      delta: { label: "Buy − sell", value: 2 * current.bv - current.v, format: delta, field: "delta", pick: (v) => 2 * v.bv - v.v, signed: true },
+      delta: { label: "Delta · taker-buy minus taker-sell USDT", value: 2 * current.bv - current.v, format: delta, field: "delta", pick: (v) => 2 * v.bv - v.v, signed: true },
       flow: { label: "Taker buy share", value: current.v > 0 ? current.bv / current.v : null, format: share, pick: (v) => v.v > 0 ? v.bv / v.v : null, share: true },
       flowtrades: { label: "Buyer-initiated count share", value: current.ct > 0 ? current.bt / current.ct : null, format: share, field: "countShare", pick: (v) => v.ct > 0 ? v.bt / v.ct : null, share: true },
       imbalance: { label: "Net taker imbalance", value: derived("imbalance"), format: (v) => ({ text: signed(v * 100, (x) => x.toFixed(exact ? 2 : 1)), unit: "% of cell volume" }), field: "imbalance", pick: (v) => finite(E.measure.cellComposition({ z: v }).imbalance), signed: true, fixed: [-1, 1] },
@@ -4255,6 +4572,14 @@
       const values = history.map((v, i) => v || metric.movement ? metric.pick(v, i) : null);
       // The selected point describes the current readout, including an explicitly labelled portion.
       values[11] = Number.isFinite(metric.value) ? metric.value : null;
+      if (main) {
+        const selectedSamples = metric.movement ? moving.samples : rowHistory.samples;
+        const observation = cardObservation(readout?.typed ?? (Number.isFinite(metric.value) ? E.result.finite(metric.value) : E.result.make("unsupported", { reason: "Selected measurement unavailable" })), readout?.measure?.formula ?? "cells.volume.amount@1", readout?.measure?.unit ?? "usdt", time, [r * ps * PR, (r + 1) * ps * PR], {
+          level: { n, m }, denominators: [{ formula: "context.daily-atr@1", numerator: null, denominator: atr, time: [Math.max(0, (Math.floor(c * ts / DAYS) - 1) * DAYS), Math.floor(c * ts / DAYS) * DAYS], source: "Prior completed UTC day · Wilder ATR(14)" }],
+          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], result: i === 11 ? readout?.typed ?? E.result.finite(value) : Number.isFinite(value) ? E.result.finite(value) : selectedSamples[i] ? E.result.make("undefined", { denominator: metric.label + " denominator" }) : E.result.make("unsupported", { reason: "History coverage unavailable" }) })),
+        });
+        tip.dataset.observation = JSON.stringify(observation);
+      }
       const spark = readingSparkline(values, metric.label, { signed: metric.signed, share: metric.share, fixed: metric.fixed, provisional: open });
       row.append(term, value, spark);
       if (detailed && values.slice(0, -1).every((v) => !Number.isFinite(v))) {
@@ -4488,6 +4813,77 @@
   // value and the why come from the pane's frame (one Readout per column,
   // the same record the bar was encoded from); the rows beside them are the
   // column's own amounts. Numeric rows name themselves for a test.
+  function corePanePresentation(tip, p, key, x, readout) {
+    const n = renderN(), whole = ["cascade", "efficiency"].includes(key), m = whole ? 0 : renderM(), step = 2 ** n, c = x.c;
+    const time = [whole ? c * step : Math.max(c * step, last.b[0]), Math.min((c + 1) * step, whole ? Infinity : last.b[1], last.cut, PANE_MEASURES[key].motion ? last.mv?.end ?? last.cut : Infinity)];
+    const band = whole ? [0, 2 ** 32] : [last.b[2], last.b[3]], history = coreColumnHistory(n, m, c, band), moving = coreColumnHistory(n, m, c, band, true);
+    const finite = (value) => Number.isFinite(value) ? E.result.finite(value) : E.result.make("unsupported", { reason: "Input unavailable" });
+    const ratio = (a, b, denominator) => b === 0 ? E.result.make("undefined", { denominator }) : Number.isFinite(a) && Number.isFinite(b) ? finite(a / b) : E.result.make("unsupported", { reason: "Denominator unavailable" });
+    const compositionInput = x.w ?? x;
+    const currentSample = history.at(-1);
+    const completeInput = currentSample?.time[0] === time[0] && currentSample.time[1] === time[1] ? currentSample.col : null;
+    const counters = Number.isFinite(compositionInput.ct) ? compositionInput : completeInput ?? compositionInput;
+    const composition = E.measure.cellComposition({ z: counters, read: Number.isFinite(counters.ct) ? null : { state: "unsupported", reason: "Aggressor counts unavailable from touched-row response" } });
+    const series = (pick, movement = false) => (movement ? moving : history).map((sample) => ({ time: sample.time, result: sample.col ? pick(sample.col, sample) : sample.result }));
+    const metrics = {
+      volume: { label: "Volume", unit: "usdt", field: "volume", result: finite((x.w ?? x).v), history: series((v) => finite(v.v)) },
+      trades: { label: "Trades", unit: "trades", field: "trades", result: finite(counters.ct), history: series((v) => finite(v.ct)) },
+      imbalance: { label: "Delta / volume", unit: "signed-share", field: "imbalance", result: composition.imbalance.result, history: series((v) => E.measure.cellComposition({ z: v }).imbalance.result) },
+      buySize: { label: "Buyer-initiated mean", unit: "usdt-per-trade", field: "buySize", result: composition.buySize.result, history: series((v) => E.measure.cellComposition({ z: v }).buySize.result) },
+      sellSize: { label: "Seller-initiated mean", unit: "usdt-per-trade", field: "sellSize", result: composition.sellSize.result, history: series((v) => E.measure.cellComposition({ z: v }).sellSize.result) },
+      buyAmount: { label: "Buyer-initiated USDT", unit: "usdt", result: finite(counters.bv) },
+      sellAmount: { label: "Seller-initiated USDT", unit: "usdt", result: finite(counters.v - counters.bv) },
+      buyShare: { label: "Buyer-initiated share", unit: "share", result: ratio(counters.bv, (x.w ?? x).v, "column volume") },
+      sellShare: { label: "Seller-initiated share", unit: "share", result: ratio(counters.v - counters.bv, (x.w ?? x).v, "column volume") },
+      tradeRate: { label: "Trades per covered minute", unit: "trades-per-minute", result: ratio(counters.ct * 60, (time[1] - time[0]) * BASE, "covered seconds") },
+    };
+    const currentHistory = history.at(-1);
+    const allAmount = currentHistory.time[0] === time[0] && currentHistory.time[1] === time[1] ? currentHistory.all?.v ?? allPriceAmount(n, time)?.v : allPriceAmount(n, time)?.v;
+    const seasonal = seasonalContext(n, time[0], time[1], allAmount ?? NaN);
+    metrics.seasonal = { label: "Seasonal activity · all-price USDT", unit: "ratio", field: "seasonal", formula: seasonal.formula, result: seasonal.result };
+    const response = coreBarResponse(n, c, time), norm = E.measure.normalized(response.result.tag === "finite" ? response.result.value : NaN, response.atr);
+    metrics.response = { label: "All-price close − open", unit: "usdt", field: "response", signed: true, result: response.result };
+    metrics.responseATR = { label: "All-price displacement / daily ATR", unit: "daily-atr", field: "responseATR", signed: true, result: response.result.tag === "finite" ? norm.result : response.result };
+    metrics.path = { label: "Accumulated travel", unit: "usdt", result: finite(x.p), history: series((v) => finite(v.p), true) };
+    metrics.seasonal.history = history.map((sample) => ({ time: sample.time, result: seasonalContext(n, sample.time[0], sample.time[1], sample.all?.v ?? NaN).result }));
+    const observation = cardObservation(readout.typed, readout.measure.formula, readout.measure.unit, time, whole ? null : band.map((v) => v * PR), {
+      denominators: [{ formula: seasonal.formula, result: seasonal.result, numerator: seasonal.numerator, denominator: seasonal.denominator, count: seasonal.count,
+        matches: seasonal.matches, precision: seasonal.precision, source: seasonal.source }, { formula: norm.formula, result: norm.result, numerator: norm.numerator, denominator: norm.denominator, time: response.time, price: null, paired: response.paired, reason: response.paired ? null : "Different measured-through boundaries" }],
+      history: history.map((sample) => ({ time: sample.time, price: band.map((v) => v * PR), result: sample.result ?? E.result.finite(sample.col.v) })),
+    });
+    const primaryHistory = series((col, sample) => {
+      if (whole) {
+        const sibling = history.find((v) => v.col?.c === (col.c % 2 ? col.c - 1 : col.c + 1));
+        if (!sibling?.col || !sample.all || !sibling.all) return E.result.make("unsupported", { reason: "Complete parent outside bounded history" });
+        if ((Math.floor(col.c / 2) + 1) * 2 * step > last.cut) return E.result.make("waiting-for-complete-parent");
+        const child = sample.all, other = sibling.all, parentV = child.v + other.v;
+        if (key === "cascade") return E.ratio.cascade({ structure: "complete", childV: child.v, parentV, factor: 2 });
+        const rows = new Set([...(child.rows ?? []), ...(other.rows ?? [])].filter((v) => v.ct > 0).map((v) => v.r));
+        return E.ratio.efficiency({ structure: "complete", child: { v: child.v, rows: (child.rows ?? []).filter((v) => v.ct > 0).length }, parent: { v: parentV, rows: rows.size }, baseline: E.model.PROVENANCE.baseline });
+      }
+      const v = ["choppiness", "perpath"].includes(key) ? moving.find((v) => v.col?.c === col.c)?.col : col;
+      if (!v) return E.result.make("unsupported", { reason: "Movement support unavailable" });
+      const scratch = { tag: 0, value: NaN, reason: null, denominator: null }; E.measure.columnValue(key, v, null, scratch);
+      return scratch.tag === E.result.TAG.finite ? finite(scratch.value) : E.result.make(E.result.TAGS[scratch.tag], { ...(scratch.reason ? { reason: scratch.reason } : {}), ...(scratch.denominator ? { denominator: scratch.denominator } : {}) });
+    });
+    primaryHistory[11] = { time, result: readout.typed };
+    const primary = { label: key === "delta" ? "Delta · taker-buy minus taker-sell USDT" : PANE_MEASURES[key].label, unit: readout.measure.unit, signed: PANE_MEASURES[key].signed, field: "value", result: readout.typed, history: primaryHistory };
+    const support = key === "delta" || key === "takertrades" ? [metrics.imbalance, metrics.volume, metrics.response]
+      : key === "cascade" ? [{ label: "Parent volume percentage", unit: "share", field: "share", result: finite(x.share) }, metrics.volume, metrics.response]
+      : ["choppiness", "perpath"].includes(key) ? [metrics.path, metrics.volume, metrics.response]
+      : key === "trades" ? [metrics.tradeRate, metrics.volume, metrics.seasonal]
+      : [key === "volume" ? metrics.trades : metrics.volume, metrics.buySize, metrics.seasonal];
+    const groups = [{ name: "Activity", metrics: [metrics.volume, metrics.trades, metrics.tradeRate, metrics.seasonal] },
+      { name: "Aggression", metrics: [metrics.imbalance, metrics.buyAmount, metrics.sellAmount, metrics.buyShare, metrics.sellShare] },
+      { name: "Reported trade size", metrics: [metrics.buySize, metrics.sellSize] }, { name: "Movement", metrics: [metrics.response, metrics.responseATR] }];
+    // The raw companion fields already moved into the compact view need no duplicate canonical field.
+    for (const group of groups) group.metrics = group.metrics.filter((v) => !support.includes(v));
+    observation.history = primaryHistory.map((sample) => ({ ...sample, price: observation.price }));
+    coreCardPresentation(tip, { primary, companions: support, groups: p.inspect ? groups : [], observation, detailed: Boolean(p.inspect) });
+    if (key === "efficiency") tip.querySelector(".ol-cell-context").textContent += ` · ${modelNoteWords(paneShown.model)} · Retrospective model comparison; no causal expectation claimed`;
+    if (response.result.tag === "finite" && !response.paired) tip.querySelector(".ol-cell-context").textContent += " · All-price response: different measured-through boundaries; no paired interpretation";
+    if (key === "choppiness") tip.querySelector(".ol-cell-context").textContent += " · Path includes the previous-column entry move; range uses interval trades";
+  }
   function paneTip(tip, p, money, count, share, exact, note) {
     if (paneShown.measure.osc) return oscillatorTip(tip, p);
     const ts = stepT(),
@@ -4549,7 +4945,9 @@
               ? "Only part of its parent column is loaded"
               : "";
       tipRows(tip, head, sub, [], [E.result.describe(typed).long, more, modelNote]);
-      return paneTipFields(tip, [], at);
+      paneTipFields(tip, [], at);
+      corePanePresentation(tip, p, key, x, readout);
+      return;
     }
     const value = typed.value,
       // [label, text, field, canonical]: what the row says, and the number a test reads back.
@@ -4563,7 +4961,7 @@
             ]
           : key === "efficiency"
             ? [
-                ["Efficiency", ratioText(value, exact), "value", value],
+                ["Volume per touched row versus expected", ratioText(value, exact), "value", value],
                 ["USDT per row", money(x.e), "perRow", x.e],
                 ["Rows touched", integer(x.w.rows), "rows", x.w.rows],
                 ["Parent's USDT per row", money(x.ep), "parentPerRow", x.ep],
@@ -4616,6 +5014,7 @@
             : "";
     tipRows(tip, head, sub, [...list.map(([label, text]) => [label, text]), ...axis.rows], [notes, modelNote, note]);
     paneTipFields(tip, [...list.map(([, , field, canonical]) => ({ field, canonical })), ...axis.meta], at);
+    corePanePresentation(tip, p, key, x, readout);
   }
   // The tooltip's row section: the row's USDT in the rectangle and its share
   // of it (left out over the profile, which gives them already), the
@@ -4694,7 +5093,7 @@
       if (u.kind === "relvol" && period?.v > 0)
         out.push(["Period's USDT", `${approx}${money(period.v)} · ${share(vb.v > 0 ? period.v / vb.v : 0)} of the period`]);
       out.push([
-        u.kind === "relvol" ? label : "View vs period",
+        u.kind === "relvol" ? label : "Profile-share log₂ ratio",
         u.kind !== "relvol" && (u.rect.state === "pending" || u.rect.state === "failed")
           ? "measuring the rectangle…"
           : typed.tag === "finite"
@@ -4985,7 +5384,7 @@
       ["Taker buys", `${f.money(z.bv)} · ${text(flow, f.share)}`, "buyVolume", z.bv],
       ["Taker sells", f.money(z.v - z.bv), "sellVolume", z.v - z.bv],
       ["Taker-buy trades", `${f.count(z.bt)} · ${text(flowTrades, f.share)}`, "buyTrades", z.bt],
-      ["Buy − sell", text(delta, (x) => signed(x, f.money)), "delta", canonical(delta)],
+      ["Delta · taker-buy minus taker-sell USDT", text(delta, (x) => signed(x, f.money)), "delta", canonical(delta)],
     ];
   }
   // The legend marker for what the pointer is on, whatever it is on: the tooltip's readout while the tip
@@ -5048,6 +5447,8 @@
       ps = stepP(),
       priceRow = (r) => `${price(r * ps * PR)}–${price((r + 1) * ps * PR)} USDT`;
     let readout = null;
+    delete tip.dataset.observation;
+    delete tip.dataset.presentation;
     // A line or its tag under the pointer names the line; a clock line or a
     // CME gap, its event.
     const authored = inspect.forced === null && ["pan", "trend"].includes(tool()) && !drawingDraft ? drawingHits(p)[0] : null;
@@ -5108,6 +5509,7 @@
           ],
           note,
         );
+      if (!waiting || last.under?.bands && p.x < G.x + G.w + G.sw) coreRowsPresentation(tip, p);
     } else if (last && inStrip(p) && eventAt(p)) {
       eventTip(tip, eventAt(p));
       syncRowHover(null);
@@ -5338,7 +5740,7 @@
       // an oscillator's columns are its own bars (a day, or four hours), not the Cells grid's
       bar = surface === "columns" && paneShown?.measure?.osc ? (paneShown.key === "rsi4h" ? DAYS / 6 : DAYS) : null,
       ts = lens ? lens.ts : bar ?? stepT(),
-      ps = lens ? lens.ps : stepP(),
+      ps = lens ? lens.ps : surface === "rows" && last?.under?.bands ? 2 ** last.under.bands.m : stepP(),
       lo = Math.max(lens ? lens.lensBounds[0] : 0, S.tA),
       hi = Math.min(lens ? lens.lensBounds[1] : cutEdge(), S.tB, cutEdge()),
       pLo = Math.max(0, lens ? lens.lensBounds[2] : S.pA),
@@ -5352,7 +5754,7 @@
       p = inspect.p ?? (S.pA + S.pB) / 2,
       x = G.X(t),
       y = G.Y(p);
-    if (s === "rows") return { x: (G.tx[0] ?? G.x + G.w) + 6, y, t, p, inspect: true };
+    if (s === "rows") return { x: G.x + G.w + Math.max(1, G.sw / 2), y, t, p, inspect: true };
     if (s === "columns") return { x: clamp(x, G.x, G.x + G.w), y: G.ay + G.ah / 2, t, p, inspect: true };
     if (s === "references") return { x: G.x + G.w - 24, y: clamp(y, G.y + 8, G.y + G.h - 8), t, p, inspect: true };
     return { x: clamp(x, G.x, G.x + G.w), y: clamp(y, G.y, G.y + G.h), t, p, inspect: true };
@@ -5402,6 +5804,8 @@
     target.replaceChildren(...[...source.childNodes].map((node) => node.cloneNode(true)));
     if (source.dataset.presentation) target.dataset.presentation = source.dataset.presentation;
     else delete target.dataset.presentation;
+    if (source.dataset.observation) target.dataset.observation = source.dataset.observation;
+    else delete target.dataset.observation;
     const details = target.querySelector(".ol-cell-details");
     if (details) {
       details.open = expanded;
@@ -5411,6 +5815,7 @@
   // The tooltip's own builders write the readout of the cursor into the tip, and the navigator shows a copy of what they wrote.
   function inspectRender(announce, redraw = true) {
     if (!inspect.on) return;
+    cancelOptionalReads();
     const nav2 = el("inspect"),
       tip = el("tip"),
       s = inspect.surface,
@@ -6099,6 +6504,7 @@
     summaryRefresh();
   }
   function bindRoot() {
+    root.addEventListener("toggle", (event) => { if (event.target.matches(".ol-core-details")) { update(); scheduleCube(); } }, true);
     el("query-text").addEventListener("blur", () => {
       copyFallbackActive = false;
     });
@@ -7595,7 +8001,7 @@
     view.push(
       row(
         "model",
-        "Efficiency model",
+        "Touched-row model",
         status === "retrospective" ? E.text.model.retrospective : status === "timing-unverified" ? E.text.model.timingUnverified : E.text.model.eligibleByBound,
         status,
       ),
@@ -10679,43 +11085,35 @@
     const rows = bar ? [["Open", price(bar.open)], ["High", price(bar.high)], ["Low", price(bar.low)], ["Close", price(bar.close)], ["Direction", bar.direction === "up" ? "Up" : bar.direction === "down" ? "Down" : "Unchanged"], ["Status", bar.state === "so-far" ? "So far" : "Complete"], ["Measured through", when(bar.through) + " UTC"], ["Source", CANON !== null && bar.stop > CANON ? "Live cube · provisional minutes" : "Live cube"]] : [];
     tipRows(tip, head, "Exact prices · USDT", rows, !bar ? t >= candleEdge() ? "After cutoff" : candleStatus(r) : "The forming base interval is excluded; replay uses currently available history.");
     if (bar) {
-      const atr = readingATR(c * step), exact = nav.shift;
-      const history = candleRange(n, Math.max(0, (c - 11) * step), (c + 1) * step).bars;
+      const atr = contextATR(c * step), history = candleRange(n, Math.max(0, (c - 11) * step), (c + 1) * step).bars;
       const by = new Map(history.map((v) => [v.c, v]));
-      const metrics = [
-        { label: "Close", pick: (v) => v.close, format: (v) => ({ text: price(v), unit: "USDT" }) },
-        { label: "Net move", pick: (v) => v.close - v.open, signed: true, format: (v) => {
-          const d = readingDistance(Math.abs(v), atr, exact); return { ...d, text: (v < 0 ? "−" : v > 0 ? "+" : "") + d.text };
-        } },
-        { label: "High − low", pick: (v) => v.high - v.low, format: (v) => readingDistance(v, atr, exact) },
-        ...(detailed ? ["Open", "High", "Low"].map((label) => ({ label, pick: (v) => v[label.toLowerCase()], format: (v) => ({ text: price(v), unit: "USDT" }) })) : []),
-      ];
-      const stats = document.createElement("dl"); stats.className = "ol-cell-stats";
-      for (const metric of metrics) {
-        const row = document.createElement("div"); row.className = "ol-cell-stat";
-        const term = document.createElement("dt"); term.textContent = metric.label;
-        const value = document.createElement("dd"), v = metric.pick(bar), formatted = metric.format(v);
-        value.textContent = formatted.text + " ";
-        const unit = document.createElement("span"); unit.className = "ol-reading-unit"; unit.textContent = formatted.unit; value.append(unit);
-        if (metric.signed) value.dataset.sign = v > 0 ? "positive" : v < 0 ? "negative" : "zero";
-        row.append(term, value, readingSparkline(Array.from({ length: 12 }, (_, i) => {
-          const previous = by.get(c - 11 + i);
-          return previous && (previous.c === c || previous.stop <= candleEdge()) ? metric.pick(previous) : null;
-        }), metric.label, { signed: metric.signed, zero: !["Open", "High", "Low", "Close"].includes(metric.label), provisional: bar.state === "so-far" }));
-        stats.append(row);
-      }
-      const detail = document.createElement("details"); detail.className = "ol-cell-details"; detail.hidden = !detailed;
-      const summary = document.createElement("summary"); summary.textContent = "Measurement details";
-      detail.append(summary, tip.querySelector(".ol-tip-rows"), ...tip.querySelectorAll(".ol-tip-note"));
-      if (atr) {
-        const basis = document.createElement("div"); basis.className = "ol-cell-context";
-        basis.textContent = `Daily ATR: ${price(atr)} USDT · Wilder, 14 completed days before this candle`;
-        detail.append(basis);
-      }
-      const state = document.createElement("div"); state.className = "ol-cell-state";
-      state.textContent = bar.state === "so-far" ? "Still open · measured so far" : "Complete";
-      tip.replaceChildren(tip.querySelector(".ol-tip-head"), state, stats, detail);
+      const series = (pick, normalized = false) => Array.from({ length: 12 }, (_, i) => {
+        const col = c - 11 + i, previous = by.get(col), time = [col * step, previous?.through ?? (col + 1) * step];
+        const basis = normalized ? contextATR(col * step) : null;
+        return { time, denominator: basis, result: !previous || (col !== c && previous.stop > candleEdge())
+          ? E.result.make("unsupported", { reason: "Native bar gap or beyond measured cutoff" })
+          : normalized ? E.measure.normalized(pick(previous), basis).result : E.result.finite(pick(previous)) };
+      });
+      const displacement = E.measure.normalized(bar.close - bar.open, atr), range = E.measure.normalized(bar.high - bar.low, atr);
+      const observation = cardObservation(E.result.finite(bar.close), "candles.close@1", "usdt", [bar.start, bar.through], null, {
+        level: { n, m: null }, history: series((v) => v.close),
+        denominators: [{ ...displacement, time: [bar.start, bar.through], source: "Prior completed UTC day · Wilder ATR(14)" }],
+      });
+      coreCardPresentation(tip, {
+        primary: { label: "Close", result: observation.result, unit: "usdt", history: observation.history },
+        companions: [
+          { label: "Net move / prior daily ATR", result: displacement.result, unit: "daily-atr", signed: true, history: series((v) => v.close - v.open, true) },
+          { label: "High − low / prior daily ATR", result: range.result, unit: "daily-atr", history: series((v) => v.high - v.low, true) },
+          { label: "Reported quote volume", result: E.result.finite(bar.v), unit: "usdt", history: series((v) => v.v) },
+        ],
+        groups: [{ name: "Raw price and movement", metrics: [
+          ...["Open", "High", "Low"].map((label) => ({ label, result: E.result.finite(bar[label.toLowerCase()]), unit: "usdt" })),
+          { label: "Signed close − open", result: E.result.finite(bar.close - bar.open), unit: "usdt" },
+          { label: "High − low", result: E.result.finite(bar.high - bar.low), unit: "usdt" },
+        ] }], observation, detailed,
+      });
       tip.dataset.presentation = "candle";
+      tip.querySelector(".ol-cell-context").textContent += " · all prices · forming base interval excluded · each history point uses its own prior-day ATR";
     }
     for (const field of ["open", "high", "low", "close"]) if (bar) tip.dataset[field] = String(bar[field]); else delete tip.dataset[field];
     scaleRt.tipReadout = null;
@@ -10798,7 +11196,7 @@
       on([...EIGHT_HOUR_LINES, ...STRUCTURE_LINES, ...FOUR_HOUR_LINES, ...averageTf("1d"), ...averageTf("1w")]) ||
       S.lines.some(isVwapDay) ||
       S.pane === "rsi1d" ||
-      S.pane === "macd1d" || inspect.on || S.mode === "candles"
+      S.pane === "macd1d" || inspect.on || Boolean(el("context").querySelector(".ol-core-details[open]")) || S.mode === "candles"
     )
       out.push(9);
     if (on([...FOUR_HOUR_LINES, ...averageTf("4h")]) || S.pane === "rsi4h") out.push(8);
@@ -10868,7 +11266,7 @@
       const span = BAR_CHUNK * 2 ** n;
       for (let j = Math.floor((edge - 1) / span); j >= 0; j--) {
         const want = barChunkWant(n, j);
-        if (want && !motion.failed.has(want.key)) return want;
+        if (want && !motion.failed.has(want.key)) return { ...want, relevant: () => barLevels().includes(n) };
       }
       const tail = barEdgeWant(n);
       if (tail && !motion.failed.has(tail.key)) return tail;
@@ -12636,7 +13034,7 @@
       volume: { name: "Volume", desc: "USDT traded at each price row over the period" },
       delta: { name: "Delta", desc: "Taker-buy minus taker-sell USDT at each price row over the period" },
       relvol: {
-        name: "Relative volume",
+        name: "Row volume versus mean traded row",
         desc: "Each price row's USDT against the average traded row in the selected period, log₂; independent of canvas zoom",
       },
       time: { name: "Time at price", desc: "How long the price spent in each row over the period" },
@@ -15513,7 +15911,7 @@
       },
       perpath: { label: "Volume per path", unit: "USDT per USDT moved", motion: true, value: (c) => paneNumber("perpath", c) },
       cascade: { label: "Share of parent column", unit: "log₂ vs even", ratio: true },
-      efficiency: { label: "Efficiency", unit: "log₂ vs expected", ratio: true },
+      efficiency: { label: "Volume per touched row versus expected", unit: "log₂ vs expected", ratio: true },
       rsi1d: { label: "RSI 14 · 1D", unit: "", osc: true },
       rsi4h: { label: "RSI 14 · 4h", unit: "", osc: true },
       // The parameters are in the name: USDT is what it measures.
@@ -16961,24 +17359,22 @@
   // The continuations' history at the drawn level: each column's POC, volume
   // and taker-buy volume, for up to the last 100,000 columns.
   const histories = new Map(),
-    historyKey = (n, m) => ["history", live.generation, n, m].join("|");
+    historyKey = (n, m) => ["history", live.generation, PACK.state_token, n, m].join("|");
   function historyWant() {
-    if (!(S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases"))) return null;
-    const n = renderN(),
-      m = renderM(),
-      key = historyKey(n, m);
-    if (histories.has(key)) return null;
-    return {
-      key,
-      path: `/cube/columns?n=${n}&m=${m}`,
-      decode: (body) => unpackHistory(body.columns),
-      apply: (history) => {
-        histories.set(key, history);
-        // A level's history can hold 100,000 columns: only the latest few stay.
-        while (histories.size > 3) histories.delete(histories.keys().next().value);
-        evidenceCache.clear();
-      },
-    };
+    const target = coreContextTarget(), expanded = Boolean(el("context").querySelector(".ol-core-details[open]")), wants = [];
+    if (S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases")) wants.push([renderN(), renderM()]);
+    if (target || expanded) wants.push([Math.min(target?.n ?? renderN(), 9), 0]);
+    for (const [n, m] of wants) {
+      const key = historyKey(n, m);
+      if (histories.has(key) || cube.failed.has(key)) continue;
+      return { key, relevant: () => {
+        const current = coreContextTarget(), expandedNow = Boolean(el("context").querySelector(".ol-core-details[open]"));
+        return (S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases")) && historyKey(renderN(), renderM()) === key ||
+          (current || expandedNow) && historyKey(Math.min(current?.n ?? renderN(), 9), 0) === key;
+      }, path: `/cube/columns?n=${n}&m=${m}`, decode: (body) => unpackHistory(body.columns),
+        apply: (history) => { histories.set(key, history); while (histories.size > 3) histories.delete(histories.keys().next().value); evidenceCache.clear(); } };
+    }
+    return null;
   }
   async function unpackHistory(block) {
     const buf = await inflate(block),
@@ -17056,9 +17452,16 @@
   }
   function scheduleCube() {
     if (!PACK.live || !ready || comparisonModel.expanded) return;
+    cancelOptionalReads();
     clearTimeout(cube.timer);
     cube.timer = setTimeout(pumpCube, 200);
     scheduleMotion();
+  }
+  // A departed context does not occupy either transport slot or become a failed read.
+  function cancelOptionalReads() {
+    for (const busy of [cube.busy, motion.busy]) {
+      if (busy?.relevant && !busy.relevant()) busy.controller?.abort();
+    }
   }
   function cubeWant() {
     const wants = {
@@ -17082,6 +17485,8 @@
     const want = cubeWant();
     if (!want) return;
     const generation = live.generation;
+    const controller = new AbortController();
+    want.controller = controller;
     cube.busy = want;
     want.start?.();
     if (want.loading) {
@@ -17101,7 +17506,7 @@
       // A read that hangs would hold every later one back: it fails instead.
       const response = await fetch(target, {
           cache: "no-store",
-          signal: AbortSignal.timeout(120000),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]),
         }),
         body = await response.json().catch(() => null);
       offerReload(body);
@@ -17116,7 +17521,7 @@
       // use, an answer for a pack the page replaced meanwhile is dropped and
       // asked for again, so no two cube states ever mix.
       const decoded = await want.decode(body);
-      if (generation === live.generation) { comparisonSourceRevision++; want.apply(decoded); }
+      if (generation === live.generation && !controller.signal.aborted && (!want.relevant || want.relevant())) { comparisonSourceRevision++; want.apply(decoded); }
       else want.drop?.();
     } catch (error) {
       want.drop?.();
@@ -17128,7 +17533,7 @@
             ? "the server can't be reached"
             : error.message
       ).replace(/\.+$/, "");
-      if (!cube.stale) {
+      if (!cube.stale && !controller.signal.aborted) {
         cube.failed.set(want.key, message);
         if (want.id) noted.set(want.id, { label: want.label, message });
       }
@@ -17427,7 +17832,7 @@
   // to be read.
   function motionWant() {
     const viewing = movementOn();
-    if (!(viewing || (PACK.live && (S.rows === "time" || S.lines.includes("vvwap"))) || barLevels().length || viewBarNeeds().length || candleNeeds().length) || cube.stale) return null;
+    if (!(coreBarTarget() || coreContextTarget() || viewing || (PACK.live && (S.rows === "time" || S.lines.includes("vvwap"))) || barLevels().length || viewBarNeeds().length || candleNeeds().length) || cube.stale) return null;
     if (["measure", "tile", "lens"].includes(cube.busy?.kind)) return null;
     for (const want of [measureWant(), tileWant(), lensWant()])
       if (want && !cube.failed.has(want.key)) return null;
@@ -17439,6 +17844,7 @@
         lens ? motionSourceWant(lens) : null,
         cellContextWant(true),
         candleWant(),
+        coreBarsWant(),
         underlayDwellWant(),
         visibleVwapWant(),
         barsWant(),
@@ -17478,6 +17884,8 @@
     if (!want) return;
     const generation = live.generation,
       epoch = motion.epoch;
+    const controller = new AbortController();
+    want.controller = controller;
     motion.busy = want;
     requestDraw();
     try {
@@ -17489,7 +17897,7 @@
       target.password = "";
       const response = await fetch(target, {
           cache: "no-store",
-          signal: AbortSignal.timeout(120000),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]),
         }),
         body = await response.json().catch(() => null);
       offerReload(body);
@@ -17499,7 +17907,7 @@
       }
       if (!response.ok) throw Error(body?.error || `the server answered ${response.status}`);
       const decoded = await want.decode(body);
-      if (generation === live.generation && epoch === motion.epoch) { comparisonSourceRevision++; want.apply(decoded); }
+      if (generation === live.generation && epoch === motion.epoch && !controller.signal.aborted && (!want.relevant || want.relevant())) { comparisonSourceRevision++; want.apply(decoded); }
     } catch (error) {
       const message = (
         error.name === "TimeoutError"
@@ -17508,7 +17916,7 @@
             ? "the server can't be reached"
             : error.message
       ).replace(/\.+$/, "");
-      if (!cube.stale) motion.failed.set(want.key, message);
+      if (!cube.stale && !controller.signal.aborted) motion.failed.set(want.key, message);
     }
     motion.busy = null;
     if (S.mode === "candles" && S.drawerOpen && S.drawer === "cells") buildCandleTable();
@@ -20630,6 +21038,9 @@
       motion.view = null;
       motion.measured.clear();
       histories.clear();
+      coreBarContexts.clear();
+      cellContextResults.clear();
+      cellMotionResults.clear();
       touches.clear();
       lineResults.clear();
       lineLatest.clear();
@@ -21694,10 +22105,10 @@
         if(Number.isFinite(row[3]))addDetail(row[0]+" · captured context",row[3],"",relativeSupport);
       }
       if(under?.kind==="relvol"&&under.volBands) {
-        addDetail("Relative volume period through",Number.isFinite(volumePeriodEnd)?new Date(volumePeriodEnd).toISOString():"Unknown","",relativeSupport);
+        addDetail("Row concentration period through",Number.isFinite(volumePeriodEnd)?new Date(volumePeriodEnd).toISOString():"Unknown","",relativeSupport);
       } else if(under?.volBands) {
-        addDetail("Relative volume rectangle through",Number.isFinite(contextEnd)?new Date(contextEnd).toISOString():"Unknown","",relativeSupport);
-        addDetail("Relative volume reference through",Number.isFinite(volumePeriodEnd)?new Date(volumePeriodEnd).toISOString():"Unknown","",relativeSupport);
+        addDetail("Profile-share rectangle through",Number.isFinite(contextEnd)?new Date(contextEnd).toISOString():"Unknown","",relativeSupport);
+        addDetail("Profile-share reference through",Number.isFinite(volumePeriodEnd)?new Date(volumePeriodEnd).toISOString():"Unknown","",relativeSupport);
       }
     }
     const complete=(c+1)*ts<=last.dataCut, timePortion=t0>c*ts||t1<(c+1)*ts,

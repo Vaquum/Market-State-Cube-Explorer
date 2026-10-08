@@ -423,8 +423,12 @@ test.describe("B28 Relative volume draws only inside its comparison support", ()
     };
     expect(await tipAt(199), "a row the period traded and W left out").toContain("Outside comparison support");
     const inside = await tipAt(202);
-    expect(inside, "the measure and the period").toMatch(/Relative volume · /);
+    expect(inside, "the concentration measure").toContain("Row volume versus mean traded row");
+    expect(inside, "the separate comparison").toContain("Profile-share log₂ ratio");
     expect(inside, "the support W, in USDT").toMatch(/Period price range\s*\d[\d,]*–\d[\d,]* USDT/);
-    expect(inside.replace(/\s+/g, " ")).toContain(`${(W[0] * 125).toLocaleString("en-US")}–${(W[1] * 125).toLocaleString("en-US")} USDT`);
+    const record = JSON.parse(await page.locator("#ol-tip").getAttribute("data-observation"));
+    expect(record.formula).toBe("rows.relvol@3");
+    expect(record.denominators[1].formula).toBe("rows.relvol@2");
+    expect(record.denominators[1].support.bm).toBe(0);
   });
 });

@@ -65,6 +65,9 @@
     {"id": "comparison.negative", "name": "Comparison negative bar", "kind": "area", "source": {"token": "--ol-negative"}, "forms": ["label", "number", "position"], "identity": "signed net-volume number or labeled share below midpoint, shared domain", "tests": ["U95", "B63"]},
     {"id": "comparison.midpoint", "name": "Comparison midpoint bar", "kind": "area", "source": {"token": "--ol-midpoint"}, "forms": ["label", "number", "position"], "identity": "explicit zero or 50-percent number, shared domain", "tests": ["U95", "B63"]},
     {"id": "comparison.reference", "name": "Comparison reference tick", "kind": "stroke", "source": {"token": "--ol-ink"}, "forms": ["label", "position"], "identity": "Against control names Set median or pinned cell; unit difference alongside the bar", "tests": ["U95", "B63"]}
+,
+    {"id": "card.history", "name": "Core card history stroke", "kind": "stroke", "source": {"token": "--ol-ink"}, "forms": ["label", "number", "position"], "identity": "Named metric, accessible interval values and typed gap reasons on an opaque card", "tests": ["B66"]},
+    {"id": "card.profile", "name": "Core card volume profile bins", "kind": "area", "source": {"token": "--ol-ink", "alpha": 0.55, "over": "--ol-surface"}, "forms": ["label", "number", "position"], "identity": "Declared price/amount domains and accessible bin values; named POC/value boundaries", "tests": ["B66"]}
   ],
   "contexts": [
     { "id": "cells-refs", "name": "Cells under the reference lines", "members": ["fill.unsigned.low", "fill.unsigned.high", "fill.positive", "fill.negative", "fill.midpoint", "ref.profile", "ref.level", "ref.average", "ref.vwap", "ref.clock", "ref.user", "ref.compare"], "pairs": "between", "between": [["fill.unsigned.low", "fill.unsigned.high", "fill.positive", "fill.negative", "fill.midpoint"], ["ref.profile", "ref.level", "ref.average", "ref.vwap", "ref.clock", "ref.user", "ref.compare"]] },
@@ -77,6 +80,8 @@
     { "id": "plane", "name": "The resolution plane, the menus and the controls", "members": ["plane.panel", "plane.on", "plane.hover", "plane.border"], "pairs": "all" },
     {"id": "candles", "name": "Directional candle bodies and wicks", "members": ["candle.up", "candle.down", "candle.doji"], "pairs": "all"},
     {"id": "comparison", "name": "Captured-cell metric bars and their reference ticks on opaque dashboard surfaces", "members": ["comparison.unsigned", "comparison.positive", "comparison.negative", "comparison.midpoint", "comparison.reference"], "pairs": "all"}
+,
+    {"id": "core-cards", "name": "Core card histories and profiles on opaque card surfaces", "members": ["card.history", "card.profile", "ref.profile"], "pairs": "all"}
   ],
   "callouts": [
     { "name": "scalar fills versus references", "pairs": [["fill.unsigned.high", "ref.user"], ["fill.positive", "ref.profile"], ["fill.negative", "ref.level"]] },

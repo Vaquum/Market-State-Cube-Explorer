@@ -330,6 +330,7 @@ A Wave-2 package that adds a NEW top-level helper reading `colors.*` under a nam
 | N-51 | Captured-cell arithmetic, typed replay gating and exact copy | src/comparison.js `METRICS`, `analyze`, `value`, `captureText`; src/explorer.js `comparisonCapture` | Owned current frame, median/pinned differences and competition ranks; support-gated finite values | CHR / STATE; formula/unit-compatible canonical values, never missing as zero | COMPARE | #71 | U95, B63, B65 | done |
 | N-52 | Focus/Cards/semantic Matrix and cell collection actions | src/comparison-ui.js `create`; src/view.html `#ol-tab-compare`, `#ol-panel-compare`, `#ol-comparisonWorkspace`; src/explorer.css `.ol-comparison-*`, `.ol-cell-menu` | Shared eligible-set linear bars and reference tick; signed numeric labels; max 24 mounted collection entries | UM / +/-/mid / STATE / IX / CHR: existing role inks, explicit numbers/differences/ranks/reasons, shared domain; chart scale is disclosed only as original context | COMPARE | #71 | U95, B63 | done |
 | N-53 | Tab comparison restoration and storage failure notices | src/state.js `comparison`; src/explorer.js `comparisonPersist`, `comparisonExpand`; src/comparison-ui.js storage/copy controls | comparisonVersion 1 session record, 4 MiB UTF-8 boundary, rejected raw text retained, visible recovery | CHR / STATE: Kept in this tab, Unsaved comparison, Retry and confirmed Discard; no chart-history or portable capture payload | COMPARE | #71 | U96, B63 | done |
+| N-54 | Core card figures, fixed-band histories and declared profile miniature | src/explorer.js `coreCardPresentation`, `corePanePresentation`, `coreRowsPresentation`, `measuresPresentation`, `readingProfile`; src/explorer.css `.ol-core-stats`, `.ol-card-profile` | One primary plus three companions; 12-slot 72×30 history; 160×64 profile with displayed 96px height | CHR / REF:Profile / STATE: neutral ink history/profile, named POC/value boundaries, signed numbers, typed gaps and accessible values | HOVER, INSPECT, MEASURES | #84 | U98, B66, B28, B65 | done |
 
 
 ## 4. The retired-role ratchet
@@ -784,6 +785,8 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B63 | `tests/browser/cell-comparison.spec.js` | Cell gesture/menu/access capture, primary release ownership, button chords and outside-canvas cleanup, uncaptured replay Copy fallback, readable bounded dashboard, shared math, keys and expansion | #71 |
 | B64 | `tests/browser/comparison-session.spec.js` | 1/2/3/6/32/128 captures, bounded Cards/Matrix, reference/basis/POC math, reload/tab isolation, out-of-range dates, frozen POC DOM suppression, durable unsaved status after Copy and successful Escape save recovery, faults, replay and expansion | #71 |
 | B65 | `tests/browser/comparison-capture.spec.js` | Canonical live/recorded sums, explicit Update, stale live/motion menus, finer Lens, replay portions/copy, loaded POC freezing, Ctrl-click, transactional near-cap reveal and pending rectangle facts | #71 |
+| U98 | `tests/unit/card-observation.test.js` | Independent daily ATR, weekly six-offset cohorts, exact tiling/zero/gap/replay and weighted-bin vectors; JSON-safe support | #84 |
+| B66 | `tests/browser/core-cards.spec.js` | Nine core canonical values, four readable figures, seasonal precision/sharing, abort/retry/focus, profile/support, both themes and narrow view | #84 |
 
 ## 10. Migration status per slice
 
@@ -792,12 +795,12 @@ Rendered from the Status column at S2's convergence: `done` is the work of S1 an
 | Prefix | Rows | keep | todo-S1 | todo-S2 | todo-S3 | done |
 |---|---|---|---|---|---|---|
 | T | 38 | 20 | 0 | 0 | 0 | 18 |
-| C | 49 | 3 | 0 | 0 | 0 | 46 |
-| D | 22 | 8 | 0 | 0 | 0 | 14 |
-| F | 17 | 0 | 0 | 0 | 0 | 17 |
+| C | 42 | 3 | 0 | 0 | 0 | 39 |
+| D | 18 | 8 | 0 | 0 | 0 | 10 |
+| F | 15 | 0 | 0 | 0 | 0 | 15 |
 | R | 15 | 0 | 0 | 0 | 0 | 15 |
-| N | 44 | 0 | 0 | 0 | 0 | 44 |
-| all | 185 | 31 | 0 | 0 | 0 | 154 |
+| N | 45 | 0 | 0 | 0 | 0 | 45 |
+| all | 173 | 31 | 0 | 0 | 0 | 142 |
 
 ## 11. Contributor checklist
 

@@ -122,8 +122,22 @@
       const rank = entry.count === 1 ? "Only comparable cell" : entry.count > 1 && finite(entry.rank) ? `Rank ${entry.rank} of ${entry.count}` : `${entry.count || 0} comparable`;
       return `<div class="ol-comparison-metric${metric.key === (state.selectedMetric || "volume") ? " ol-comparison-primary" : ""}" data-metric="${escape(metric.key)}" data-state="${escape(entry.tag || "undefined")}"${available ? ` data-canonical="${escape(entry.value)}"${entry.formula ? ` data-formula="${escape(entry.formula)}"` : ""}` : ""}>
         <span class="ol-comparison-label">${escape(metric.label)}</span><strong class="ol-comparison-value">${escape(available ? valueText(metric, entry.value) : entry.reason)}</strong>
-        ${available ? `${entry.count === 1 ? "" : `<span class="ol-comparison-difference">${escape(deltaText(metric, entry))}</span>`}<span class="ol-comparison-rank">${escape(rank)}</span>${mark(metric, entry)}` : ""}${available && entry.relation ? `<span class="ol-comparison-rank">${escape(entry.relation)}</span>` : ""}
+        ${available ? `${entry.count === 1 ? "" : `<span class="ol-comparison-difference">${escape(deltaText(metric, entry))}</span>`}<span class="ol-comparison-rank">${escape(rank)}</span>${mark(metric, entry)}` : ""}${available && entry.relation ? `<span class="ol-comparison-rank">${escape(entry.relation)}</span>` : ""}${historyMark(capture, metric)}
       </div>`;
+    }
+    function historyMark(capture, metric) {
+      const history = options.context?.frozenHistory(capture, metric.key, options.edge);
+      if (!history) return "";
+      const values = history.slots.map((slot) => slot.result.tag === "finite" ? slot.result.value : null), observed = values.filter(finite);
+      if (!observed.length) return `<span class="ol-comparison-history-note">${escape(history.reason || "Captured history unavailable")}</span>`;
+      const low = Math.min(...observed), high = Math.max(...observed), y = (value) => high === low ? 20 : 36 - 32 * (value - low) / (high - low);
+      const points = values.map((value, i) => value === null ? "" : `<circle cx="${4 + i * 10}" cy="${y(value)}" r="2"/>`).join("");
+      const label = `${metric.label} frozen history; own scale ${number(low,8)}–${number(high,8)} ${unitText(history.unit)}; ` + history.slots.map((slot) => slot.result.tag === "finite" ? number(slot.result.value,8) : slot.result.reason || slot.result.tag).join(", ");
+      return `<svg class="ol-comparison-history" viewBox="0 0 120 40" width="120" height="40" role="img" aria-label="${escape(label)}" fill="currentColor">${points}</svg>`;
+    }
+    function compactMetrics(analysis) {
+      const compact = [state.selectedMetric || "volume", "volume", "trades", "flow", "delta"];
+      return [...new Set(compact)].slice(0,4).map((key) => metrics(analysis).find((metric) => metric.key === key)).filter(Boolean);
     }
     function orderedMetrics(analysis) {
       const all = metrics(analysis), selected = state.selectedMetric || "volume";
@@ -164,17 +178,13 @@
         { label: "Observed exposure", value: `${number(observed.seconds, 8)} seconds × ${number(observed.width, 8)} USDT` },
         ...(Array.isArray(capture.detail) ? capture.detail.map((detail) => safeDetail(detail, options.edge)) : []),
       ];
-      let previousGroup = "";
-      const blocks = orderedMetrics(analysis).map((metric) => {
-        const heading = metric.group && metric.group !== previousGroup ? `<h3>${escape(metric.group)}</h3>` : "";
-        previousGroup = metric.group;
-        return heading + metricBlock(metric, capture, false, analysis);
-      }).join("");
-      return `<div class="ol-comparison-focus-head"><span class="ol-comparison-eyebrow">Focused cell${reference ? " · Reference" : ""}</span><h2>${escape(timeRange(capture, true))}</h2><p class="ol-comparison-band">${escape(band(capture))}</p>${completeness ? `<p class="ol-comparison-completeness">${escape(completeness)}${capture.shortExposure ? " · Short exposure" : ""}</p>` : ""}<div class="ol-comparison-capture-stamp"><span>Captured ${escape(utc(capture.capturedAt))}</span><span>Measured through ${escape(utc(capture.measuredThrough))}</span><span>${escape(sourceLabel)}</span></div><div class="ol-comparison-focus-actions"><button type="button" class="ol-action cursor-interaction" data-comparison-action="reference" data-id="${escape(reference ? "" : capture.id)}" data-focus-key="pin">${reference ? "Use set median" : "Use as reference"}</button><button type="button" class="ol-action cursor-interaction" data-comparison-action="copy" data-id="${escape(capture.id)}" data-focus-key="copy">Copy cell</button><button type="button" class="ol-action cursor-interaction" data-comparison-action="remove" data-id="${escape(capture.id)}" data-focus-key="remove-focus">Remove</button></div></div><div class="ol-comparison-metrics">${blocks}</div><details class="ol-comparison-details" ><summary data-focus-key="details">Capture details</summary><dl>${contextDetails(capture)}${metadata.map((detail) => `<div><dt>${escape(detail.label)}</dt><dd>${escape(typeof detail.value === "number" ? number(detail.value, 8) : detail.value ?? "Unavailable")}${detail.unit ? " " + escape(unitText(detail.unit)) : ""}${detail.tag ? ` <span>${escape(detail.tag)}</span>` : ""}</dd></div>`).join("")}</dl><p>Original chart scale; not a comparison scale.</p></details>`;
+      const compact = compactMetrics(analysis), selected = new Set(compact.map((metric) => metric.key));
+      const blocks = compact.map((metric) => metricBlock(metric, capture, false, analysis)).join("");
+      const remaining = orderedMetrics(analysis).filter((metric) => !selected.has(metric.key)).map((metric) => metricBlock(metric,capture,false,analysis)).join("");
+      return `<div class="ol-comparison-focus-head"><span class="ol-comparison-eyebrow">Focused cell${reference ? " · Reference" : ""}</span><h2>${escape(timeRange(capture, true))}</h2><p class="ol-comparison-band">${escape(band(capture))}</p>${completeness ? `<p class="ol-comparison-completeness">${escape(completeness)}${capture.shortExposure ? " · Short exposure" : ""}</p>` : ""}<div class="ol-comparison-capture-stamp"><span>Captured ${escape(utc(capture.capturedAt))}</span><span>Measured through ${escape(utc(capture.measuredThrough))}</span><span>${escape(sourceLabel)}</span></div><div class="ol-comparison-focus-actions"><button type="button" class="ol-action cursor-interaction" data-comparison-action="reference" data-id="${escape(reference ? "" : capture.id)}" data-focus-key="pin">${reference ? "Use set median" : "Use as reference"}</button><button type="button" class="ol-action cursor-interaction" data-comparison-action="copy" data-id="${escape(capture.id)}" data-focus-key="copy">Copy cell</button><button type="button" class="ol-action cursor-interaction" data-comparison-action="remove" data-id="${escape(capture.id)}" data-focus-key="remove-focus">Remove</button></div></div><div class="ol-comparison-metrics">${blocks}</div><details class="ol-comparison-other"><summary>Other comparison measures</summary><div class="ol-comparison-metrics">${remaining}</div></details><details class="ol-comparison-details" ><summary data-focus-key="details">Capture details</summary><dl>${contextDetails(capture)}${metadata.map((detail) => `<div><dt>${escape(detail.label)}</dt><dd>${escape(typeof detail.value === "number" ? number(detail.value, 8) : detail.value ?? "Unavailable")}${detail.unit ? " " + escape(unitText(detail.unit)) : ""}${detail.tag ? ` <span>${escape(detail.tag)}</span>` : ""}</dd></div>`).join("")}</dl><p>Original chart scale; not a comparison scale.</p></details>`;
     }
     function renderCards(captures, analysis) {
-      const all = orderedMetrics(analysis), compact = [state.selectedMetric || "volume", "volume", "trades", "flow", "delta"];
-      const cardMetrics = [...new Set(compact)].slice(0,4).map((key)=>all.find((metric)=>metric.key===key));
+      const cardMetrics = compactMetrics(analysis);
       return `<div class="ol-comparison-grid">${captures.map((capture) => `<article class="ol-comparison-card" data-capture-id="${escape(capture.id)}" data-focused="${capture.id === state.focus}" data-reference="${capture.id === state.reference}"><div class="ol-comparison-card-head"><button type="button" class="ol-comparison-card-focus cursor-interaction" data-comparison-action="focus" data-id="${escape(capture.id)}" data-focus-key="cell:${escape(capture.id)}"${capture.id === state.focus ? ' aria-current="true"' : ""}><span>${escape(timeRange(capture, true))}</span><strong>${escape(band(capture))}</strong>${capture.id === state.reference ? '<span class="ol-comparison-reference-label">Reference</span>' : ""}</button><button type="button" class="ol-action cursor-interaction" data-comparison-action="remove" data-id="${escape(capture.id)}" data-focus-key="remove:${escape(capture.id)}" aria-label="Remove ${escape(captureName(capture))}">Remove</button></div><div class="ol-comparison-card-metrics">${cardMetrics.map((metric) => metricBlock(metric, capture, true, analysis)).join("")}</div></article>`).join("")}</div>`;
     }
     function renderMatrix(captures, analysis) {

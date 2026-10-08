@@ -313,3 +313,22 @@ test("context caps and references reject atomically without truncating or alteri
     const broken = plain(value); mutate(broken); assert.equal(a.comparison.write("BTC/USDT", broken).ok, false); assert.equal(a.session.getItem(KEY), stored);
   }
 });
+
+test("v2 context accepts four histories, twelve slots and exactly 16 KiB UTF-8; one-byte excess is atomic", () => {
+  const a=load(), value=record(), c=value.captures[0]; c.contextOrigin="frame-v2";
+  c.context.supports={observation:{supportEnd:1030000,knownThrough:1030000,source:"€\""}};
+  c.context.histories=["volume","trades","flow","delta"].map(id=>({id,formula:"fixture@1",unit:"usdt",slots:Array.from({length:12},()=>({result:{tag:"finite",value:1},supportId:"observation",denominatorIds:[]}))}));
+  c.context.supports.observation.source += "x".repeat(16384-Buffer.byteLength(JSON.stringify(c.context)));
+  assert.equal(Buffer.byteLength(JSON.stringify(c.context)),16384);
+  assert.equal(a.comparison.write("BTC/USDT",value).ok,true); const raw=a.session.getItem(KEY);
+  const over=plain(value); over.captures[0].context.supports.observation.source+="x";
+  assert.equal(a.comparison.write("BTC/USDT",over).ok,false); assert.equal(a.session.getItem(KEY),raw);
+  const fifth=plain(value); fifth.captures[0].context.supports.observation.source="small"; fifth.captures[0].context.histories.push({...fifth.captures[0].context.histories[0],id:"size"});
+  assert.equal(a.comparison.write("BTC/USDT",fifth).ok,false); assert.equal(a.session.getItem(KEY),raw);
+});
+test("failed v2 readback during migration retains the exact legacy rollback", () => {
+  const a=load(), raw=JSON.stringify(legacy()); a.session.map.set(LEGACY_KEY,raw); const working=a.comparison.read("BTC/USDT").value;
+  const original=a.session.getItem.bind(a.session); a.session.getItem=key=>key===KEY && a.session.map.has(KEY)?null:original(key);
+  const result=a.comparison.write("BTC/USDT",working); assert.equal(result.ok,false); assert.equal(result.status,"unsaved");
+  assert.equal(a.session.map.get(LEGACY_KEY),raw); assert.equal(working.captures.length,1);
+});

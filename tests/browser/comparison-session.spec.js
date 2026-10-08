@@ -441,3 +441,27 @@ for (const recovery of ["reload", "discard"]) {
     }
   });
 }
+
+test("selected metric shares four-figure cards while original reading and captured history remain frozen",async({page,fakeFor})=>{
+  const value=collection(2), capture=value.captures[0], through=capture.observed.t1;
+  capture.contextOrigin="frame-v2";
+  const original={formula:"fixture.volume@1",unit:"usdt",basis:"amount",result:{tag:"finite",value:1},comparisonMetric:"volume",supportId:"observation",historyIds:["volume"]};
+  capture.originatingObservation=original;
+  capture.context={supports:{observation:{supportEnd:through,knownThrough:through}},originatingObservation:original,histories:[{id:"volume",formula:"fixture.volume@1",unit:"usdt",slots:[1,null,3].map(v=>({result:v===null?{tag:"missing",reason:"Fixture gap"}:{tag:"finite",value:v},supportId:"observation",denominatorIds:[]}))}]};
+  const fake=await fakeFor("mini");await open(page,fake,value);
+  const focus=panel(page).locator('.ol-comparison-focus');
+  await expect(focus.locator(':scope > .ol-comparison-metrics > .ol-comparison-metric')).toHaveCount(4);
+  await expect(focus.locator('.ol-comparison-history')).toHaveCount(1);
+  await control(page,'selectedMetric').selectOption('trades');
+  await expect(focus.locator('.ol-comparison-primary')).toHaveAttribute('data-metric','trades');
+  await expect(entries(page).first().locator('.ol-comparison-primary')).toHaveAttribute('data-metric','trades');
+  await focus.locator('.ol-comparison-details summary').click();
+  await expect(focus.locator('.ol-comparison-details')).toContainText('fixture.volume@1');
+  await expect(focus.locator('[data-history="volume"]')).toContainText('Fixture gap');
+  await action(page,'view').filter({hasText:'Matrix'}).click();
+  await expect(panel(page).locator('.ol-comparison-matrix thead th').nth(1)).toHaveText('Trades');
+  await persisted(page,v=>v?.selectedMetric==='trades');
+  const stored=await page.evaluate(key=>JSON.parse(sessionStorage.getItem(key)),KEY);
+  expect(stored.captures[0].originatingObservation).toEqual(original);
+  expect(stored.captures[0].context).toEqual(capture.context);
+});

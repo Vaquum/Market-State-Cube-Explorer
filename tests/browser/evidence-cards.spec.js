@@ -42,7 +42,7 @@ for(const days of [1800,420]) test(`${days} days: shared calendar intervals qual
     await expect(page.locator('#ol-evidence')).toHaveAttribute('aria-busy','false');
   }
   const old=await host.getAttribute('data-bootstrap');
-  await page.evaluate(()=>{location.hash='#t=2026-09-20T00:00Z~2026-09-21T00:00Z&r=9,0&auto=0&vis=2&tab=continuations&replay=1&at=2026-09-20T08:00Z';});
+  await page.evaluate(()=>{location.hash='#w=30d&r=9,0&auto=0&vis=2&tab=continuations&replay=1&at=2026-09-20T08:00Z';});
   await expect.poll(()=>host.getAttribute('data-bootstrap')).not.toBe(old);
   await expect(page.locator('#ol-evidence')).toHaveAttribute('aria-busy','false',{timeout:60000});
   await expect.poll(()=>host.getAttribute('data-bootstrap'),{timeout:60000}).not.toBeNull();

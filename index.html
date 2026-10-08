@@ -2143,14 +2143,27 @@
 #origo-lens .ol-outcome-head,
 #origo-lens .ol-outcome {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 52px 44px 38px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: baseline;
-  gap: var(--sp-2);
+  gap: var(--sp-1);
 }
 #origo-lens .ol-outcome-head {
   margin-top: var(--sp-3);
-  font-size: var(--fs-s);
+  font-size: 14px;
   color: var(--ol-muted);
+}
+#origo-lens .ol-outcome-head > span:first-child,
+#origo-lens .ol-outcome > span:first-child {
+  grid-column: 1 / -1;
+  font-size: 14px;
+}
+#origo-lens .ol-outcome > span:not(:first-child) {
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+#origo-lens .ol-outcome > span:nth-child(2) {
+  font-size: 28px;
+  line-height: 1.2;
 }
 #origo-lens .ol-outcome-head span:not(:first-child),
 #origo-lens .ol-outcome span:not(:first-child) {

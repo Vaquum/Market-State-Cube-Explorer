@@ -2,7 +2,7 @@
 // B68 (P7-S3 #86): fixed synthetic source support, explicit floor and ledger
 // identities, and requested rewind. The fixture supplies reports, never expected rates.
 const {test,expect}=require('./fixtures.js');
-test.use({reducedMotion:'reduce',viewport:{width:1500,height:950}});
+test.use({reducedMotion:'reduce',viewport:{width:1920,height:1080}});
 for(const days of [1800,420]) test(`${days} days: shared calendar intervals qualify or withhold without hiding distributions`,async({page,fakeFor,probe})=>{
   test.setTimeout(90000);
   const {evidenceFixture}=await import('../../tools/benchmark/evidence-fixture.mjs');
@@ -20,6 +20,23 @@ for(const days of [1800,420]) test(`${days} days: shared calendar intervals qual
   expect(Object.values(counts.firstFailures).reduce((a,b)=>a+b,0)+counts.stateEligible).toBe(counts.starts);
   expect(counts.matching+counts.nonmatching).toBe(counts.stateEligible);
   expect(counts.baselineCompleted+counts.missingHorizon+counts.unfinished).toBe(counts.stateEligible);
+  const grip=page.locator('#ol-side-grip'); await grip.focus();
+  for(let i=0;i<4;i++) await grip.press('ArrowRight');
+  await expect(grip).toHaveAttribute('aria-valuenow','260');
+  for(const theme of ['light','dark']) {
+    await page.emulateMedia({colorScheme:theme});
+    const presentation=await page.locator('.ol-evidence-probs').evaluate(n=>({
+      width:n.clientWidth,scroll:n.scrollWidth,
+      labels:Array.from(n.querySelectorAll('.ol-outcome > span:first-child'),x=>parseFloat(getComputedStyle(x).fontSize)),
+      values:Array.from(n.querySelectorAll('.ol-outcome > span:not(:first-child)'),x=>parseFloat(getComputedStyle(x).fontSize)),
+      primary:Array.from(n.querySelectorAll('.ol-outcome > span:nth-child(2)'),x=>parseFloat(getComputedStyle(x).fontSize))
+    }));
+    expect(presentation.scroll).toBeLessThanOrEqual(presentation.width);
+    expect(presentation.labels.every(x=>x>=14)).toBe(true);
+    expect(presentation.values.every(x=>x>=18)).toBe(true);
+    expect(presentation.primary).toEqual([28,28,28]);
+    if(days===1800) await page.screenshot({path:`reports/p7-s3-evidence-${theme}-narrow.png`});
+  }
   if(days===1800){
     // Filter/sort/page handlers consume the settled study, never its Promise.
     await page.locator('#ol-open-cases').click();

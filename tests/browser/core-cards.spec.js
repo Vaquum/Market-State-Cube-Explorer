@@ -325,3 +325,26 @@ test("rewinding inside a cached completed bar withholds its later response", asy
   const observation=JSON.parse(await card.getAttribute("data-observation"));
   expect(observation.denominators[1].numerator).toBeNull();
 });
+
+test("replay Inspect withholds cached bars beyond its cutoff", async ({ page, fakeFor, probe }) => {
+  const fake = await fakeFor({ trades: [
+    { t_ms: 60000, price: 2500000, qty: 100000000, takerBuy: true },
+    { t_ms: 100000, price: 2520000, qty: 100000000, takerBuy: false }
+  ], cutoffIso: "2021-01-01T00:10:00Z" });
+  await page.goto(`${fake.url}/#t=2021-01-01T00:00Z~2021-01-01T00:10Z&p=24875~25375&r=0,0&auto=0&vis=2&pane=volume&mode=candles&replay=1&at=2021-01-01T00:02:20.625Z`);
+  await probe.waitForReady();
+  await page.keyboard.press("e"); await page.locator('[data-surface="columns"]').click();
+  await page.locator("#ol-inspect").focus(); await page.keyboard.press("Home"); await page.keyboard.press("ArrowRight");
+  const card = page.locator("#ol-inspect-readout");
+  await expect(card.locator('dd[data-field="response"]')).toHaveAttribute("data-canonical", "200");
+  const gate = fake.on({ route: "/cube/bars", when: q => q.n === "0" && q.b0 === "0" && q.b1 === "1" }).gate();
+  try {
+    await page.keyboard.press(",");
+    await gate.arrived();
+    // The clipped primary may itself be unavailable; either rendering must withhold the future value.
+    await expect(card.locator('dd[data-field="response"][data-canonical="200"]')).toHaveCount(0);
+    gate.open();
+    await probe.waitForReady(); await fake.idle();
+    await expect(card.locator('dd[data-field="response"][data-canonical="200"]')).toHaveCount(0);
+  } finally { gate.open(); }
+});

@@ -3375,3 +3375,14 @@
   #origo-lens :is(.ol-cell-menu, .ol-comparison-confirm) button,
   #origo-lens .ol-cell-compare-action { min-height: 44px; }
 }
+
+/* Reference figures retain the core card type and neutral ink, with declared axes. */
+#origo-lens :is(.ol-reference-track, .ol-related-plot) {
+  display: block;
+  width: 100%;
+  height: 72px;
+  margin: var(--sp-2) 0;
+  color: var(--ol-ink);
+}
+#origo-lens .ol-event-inventory { font-size: 14px; overflow-wrap: anywhere; }
+#origo-lens .ol-event-inventory dd { font-size: 18px; margin-bottom: var(--sp-2); }

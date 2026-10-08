@@ -1834,6 +1834,38 @@
     return { result, sigma, approximation: "quote volume / bin centre", rowWidth, bins: bins.length };
   }
 
+  // Context for P7-S2 references. These helpers qualify delivered facts; detector inputs stay unchanged.
+  function msrReferenceLocation({ close, reference, atr, observedAt, knownAt = null, candidate = false }) {
+    const normalized = msrNormalized(close === null || reference === null ? null : close - reference, atr);
+    if (candidate || knownAt !== null && observedAt < knownAt) normalized.result = API.result.make("unsupported", { reason: "Retrospective comparison before reference confirmation" });
+    return normalized;
+  }
+  // E.measure.referenceSlope: one adjacent completed native-bar change, optionally normalized by prior daily ATR.
+  function msrReferenceSlope({ value, previous, adjacent, complete, atr, native = false }) {
+    if (!adjacent || !complete || !Number.isFinite(value) || !Number.isFinite(previous)) return { result: API.result.make("unsupported", { reason: "Slope needs adjacent completed native bars" }), numerator: null, denominator: msrNumber(atr) };
+    return native ? { result: API.result.finite(value - previous), numerator: value - previous, denominator: 1 } : msrNormalized(value - previous, atr);
+  }
+  // E.measure.fibonacciDepth: continuous unclamped retracement, with zero impulse explicitly undefined.
+  function msrFibDepth({ earlier, later, close }) {
+    return ![earlier, later, close].every(Number.isFinite) ? API.result.make("unsupported", { reason: "Fibonacci anchors or completed close unavailable" })
+      : later === earlier ? API.result.make("undefined", { denominator: "Fibonacci impulse" }) : API.result.finite((later - close) / (later - earlier));
+  }
+  // E.measure.weekendPercent: signed Sunday-minus-Friday spot percentage on the Friday denominator.
+  function msrWeekend({ friday, sunday, stale = false }) {
+    return stale || ![friday, sunday].every(Number.isFinite) || friday <= 0 ? API.result.make("unsupported", { reason: "Missing or stale boundary spot price" }) : API.result.finite(100 * (sunday - friday) / friday);
+  }
+  // Identity is only recognized after a completed deep-low input AND a later completed exceedance.
+  function msrPriorCycleKnown({ bars, price, lowStart, step, edge }) {
+    let lowEnd = null;
+    for (const bar of bars) {
+      const start = bar.c * step, end = (bar.c + 1) * step;
+      if (start < lowStart || end > edge) continue;
+      if (lowEnd === null && bar.low < price * .5) lowEnd = end;
+      else if (lowEnd !== null && start >= lowEnd && bar.high > price) return end;
+    }
+    return null;
+  }
+
   // Price bands are intervals: their center cannot establish containment or overlap.
   function msrBandLocation({ low, high, poc, valueLow, valueHigh }) {
     if (![low, high, poc, valueLow, valueHigh].every(Number.isFinite) || high <= low || valueHigh <= valueLow) return null;
@@ -1863,6 +1895,11 @@
     seasonalIndex: msrSeasonalIndex,
     seasonalActivity: msrSeasonalActivity,
     weightedBins: msrWeightedBins,
+    referenceLocation: msrReferenceLocation,
+    referenceSlope: msrReferenceSlope,
+    fibonacciDepth: msrFibDepth,
+    weekendPercent: msrWeekend,
+    priorCycleKnown: msrPriorCycleKnown,
     columnValue: msrColumnValue,
     dwellCheck: msrDwellCheck,
     dwellResidual: msrDwellResidual,
@@ -8358,11 +8395,20 @@
     ["rsiDivergence", "RSI divergence", "The compared swings' locations", "The later swing's confirmation; the RSI extrema were known earlier and do not date it"],
     ["cross", "Moving-average or MACD crossing", "The crossing bar's end", "That complete bar's end; a crossing seen on a bar still forming is a candidate, labelled so far, not confirmed"],
     ["squeeze", "Bollinger squeeze", "The interval of the qualifying bars", "Each bar's available close, final at the bar's completion; a fill drawn from the preceding point is keyed as retrospective interpolation"],
-    ["cmeGap", "CME spot gap", "The reopen and the spot prices at the boundaries", "The gap at the reopen, given the available closes; its fill no earlier than the end of the source bar that establishes the crossing"],
+    ["cmeGap", "Binance spot weekend proxy", "The reopen and the spot prices at the boundaries", "The gap at the reopen, given the available closes; its fill no earlier than the end of the source bar that establishes the crossing"],
     ["period", "Period POC and value area", "The stated period's span", "A retrospective summary as of its measurement cutoff, not known when the period started"],
     ["untested", "Untested level", "The original POC's period", "A status as of the current or replay edge; a later test cannot rewrite an earlier replay status"],
     ["continuation", "Historical continuation range", "The anchor and the horizon", "An empirical sample summary available at the anchor under the existing sample rules, not a forecast later observed"],
     ["clock", "Clock", "The scheduled calendar time", "A calendar definition, not a measured trade event"],
+    ["ath", "Source-limited all-time high", "The extreme's supported 8-hour bar", "Highest so far at the effective edge; a completed extreme is known at its input bar's end"],
+    ["priorCycle", "Prior cycle high", "The old peak's supported bar", "Retrospective identity recognized only after the qualifying deep low and later exceedance, at the last required completed input"],
+    ["fibonacci", "Fibonacci reference", "The earlier and later anchors", "Swing confirmation for swing anchors; rolling extremes develop as of the cutoff"],
+    ["vwap", "Anchored VWAP", "The anchor and measured interval", "As of its quote/base sums' cutoff; swing-anchor identity is retrospective before confirmation"],
+    ["session", "Session reference", "The named UTC session", "Open from the first observed trade's available bar bound; prior-day OHLC only after session completion"],
+    ["drawing", "Authored drawing", "Authored A and B or level coordinates", "Authorship time not recorded; user drawings may include later analysis"],
+    ["fundingClock", "Assumed funding schedule", "00:00, 08:00 and 16:00 UTC", "An assumed schedule, not measured funding rates or flow"],
+    ["weekendClock", "Spot weekend proxy boundaries", "Fixed Friday/Sunday Chicago calendar boundaries", "Historical closure convention; after 2026-05-29 not a current CME closure model"],
+    ["usOpenClock", "US equity opening schedule", "Weekdays 09:30 New York time", "Calendar schedule without a holiday model, not observed opening flow"],
   ];
   const rdoEvTable = Object.freeze(rdoEvRows.map(([kind, name, location, knownAt]) => Object.freeze({ kind, name, location, knownAt })));
   const rdoEvByKind = Object.freeze(Object.fromEntries(rdoEvTable.map((r) => [r.kind, r])));
@@ -8607,9 +8653,22 @@
       knownAtReason: "a summary of the period as of the cutoff it was measured at, not known when the period started",
     };
   }
+  // Existing reference adapters share the event table, including unknown authored timing.
+  function rdoEvReference({ kind, start, end = start, knownAt = null, edge, candidate = false, final = false, granularity = "existing cube inputs" }) {
+    if (!rdoEvByKind[kind] || ![start, end, edge].every(Number.isFinite) || end < start) return null;
+    const authored = kind === "drawing", calendar = ["clock", "fundingClock", "weekendClock", "usOpenClock"].includes(kind);
+    const available = knownAt !== null && knownAt <= edge && !candidate;
+    return rdoEvRecord(kind, { eventStart: start, eventEnd: end, knownAt: authored || calendar || !available ? null : knownAt,
+      candidate: !authored && !calendar && !available, final: available && final, measured: !authored && !calendar,
+      retrospective: authored || knownAt !== null && start < knownAt,
+      label: authored ? "authored" : calendar ? "calendar" : available ? final ? "confirmed" : "as of" : "so far",
+      reason: rdoEvByKind[kind].knownAt, source: rdoEvSource(granularity, null, edge) });
+  }
+
   // E.readout.events: the table, the records of each annotation and the readout's `when` for a measured interval.
   const rdoEvents = Object.freeze({
     TABLE: rdoEvTable,
+    reference: rdoEvReference,
     swing: rdoEvSwing,
     equalSwings: rdoEvEqual,
     rsiDivergence: rdoEvDivergence,

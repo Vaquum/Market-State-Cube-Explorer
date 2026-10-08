@@ -28,7 +28,7 @@ What each normative decision of the parent (D1 to D12) asks for, which slice own
 | Item | Status |
 |---|---|
 | #46 to #48 implemented with applicable evidence | the three slices are implemented and tested as above; the evidence marked OUTSTANDING is not attached, so this item is not done |
-| Every visual consumer has its role and linked regressions in `docs/visual-contract.md`, and no undocumented legacy path remains | done: 186 rows, none left `todo`; the lint allowlist is empty; the retired tokens, tiers and static legend text are gone |
+| Every visual consumer has its role and linked regressions in `docs/visual-contract.md`, and no undocumented legacy path remains | done: 187 rows, none left `todo`; the lint allowlist is empty; the retired tokens, tiers and static legend text are gone |
 | Numerical mapping, visible and inspected records, composition and restored views agree | shown by B03, B44, B14, B52 and B53 on the fake cube |
 | R1 to R34 reflected in implementation and tests | each of the 34 is mapped to its tests below (the section "Review items R1 to R34"); disposition at the specification level is not code verification, and a test is named only where it exists |
 | Final operator, accessibility, replay and model, persistence and performance evidence and authorised production evidence | OUTSTANDING items above; a release with any of them outstanding needs the operator's scoped acceptance in the pull request (none is recorded: the three slices are released all the same), and neither #48 nor #45 closes on such a release |
@@ -101,3 +101,12 @@ This is one complete implementation slice. The original parent's outstanding ope
 | Labels and construction across shared consumers | Row concentration/profile-share/touched-row names; historical-token disclosure; profile bins, ties, area and independent axes | relative-volume, legacy-migration, text, rows-strip and capture specs; System reference | Implemented; final commit checks pending |
 | Existing cube only | Explorer client helpers and existing delivered routes; no Origo, bridge, reader or wire change | Source diff; protocol oracles | Design constraint retained; real-host/designated-machine evidence not claimed |
 | Remaining P7-S2/P7-S3 | Not implemented by this slice | Separate issues #85/#86 | OUTSTANDING |
+
+
+## PRD-0007 — reference card overhaul, P7-S2 (#85)
+
+| Requirement | Implementation | Evidence | Status |
+|---|---|---|---|
+| D4 reference location/construction, causal ATR and indicator context | S1 core renderer extended with reference tracks, native shared plots, profiles and explicit unavailable context | U99, U55, B67 plus existing B33/B34/B55 | Implemented; final commit checks pending |
+| D5 occurrence/confirmation, authored limits and strip access | Event-table extension, prior-cycle completed-input recognition, nearest Clock occurrence, individually selectable existing squeeze records | U99, U55, B67, events-known-at and Inspect/touch regression inventory | Implemented; final commit checks pending |
+| Existing-data and geometry constraints | Existing detectors, routes, controls and three event lanes retained; exactly matched profile approximation or unavailable | reference-regression, focus-inventory, keyboard-matrix, text-contrast and benchmark protocol | Verification pending; no performance/host certification claimed |

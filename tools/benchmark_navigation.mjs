@@ -29,6 +29,7 @@ import { aaSchedule, abSchedule } from "./benchmark/schedule.mjs";
 import { validateConfig } from "./benchmark/schema.mjs";
 import { analyse, analyseAA, analyseScreening } from "./benchmark/stats.mjs";
 import { buildReport, writeReport } from "./benchmark/report.mjs";
+import { evidenceFixture } from "./benchmark/evidence-fixture.mjs";
 import { COMPARISON_KEY, comparisonFixture, comparisonSummary } from "./benchmark/comparison.mjs";
 
 const require = createRequire(import.meta.url);
@@ -287,6 +288,24 @@ function launchOptions(mode) {
 // Candidate-only Compare diagnostics reuse the same runner, fake, page instrumentation and report
 // directory. Older builds have no comparison surface, so these are not folded into the paired
 // navigation verdict. --candidate working --allow-dirty explicitly records the actual built bytes.
+async function runEvidenceDiagnostics({config,args,build,browser,out}) {
+  const samples=[];
+  for(const days of [config.evidence.longDays,config.evidence.withheldDays]) {
+    const fake=await startFake({mode:"live",profile:evidenceFixture(days),pageRoot:build.dir}), context=await browser.newContext({viewport:config.viewport,reducedMotion:"reduce"});
+    try {
+      const page=await context.newPage(), errors=[]; page.on("pageerror",e=>errors.push(String(e)));
+      const begin=performance.now();
+      await page.goto(`${fake.url}/#w=30d&r=${config.evidence.n},${config.evidence.m}&auto=0&vis=2&tab=evidence`,{timeout:config.trial.loadTimeoutMs});
+      await page.locator('#ol-evidence-tab').click();
+      await page.waitForFunction(()=>!!document.getElementById('ol-evidence-intervals')?.dataset.bootstrap,null,{timeout:config.trial.idleTimeoutMs});
+      const result=await page.locator('#ol-evidence-intervals').evaluate(node=>JSON.parse(node.dataset.bootstrap)), reads=readsOf(fake);
+      const qualified=Object.values(result.intervals).some(parts=>Object.values(parts).some(x=>x.result.tag==="finite"));
+      samples.push({days,elapsedMs:performance.now()-begin,qualified,...result,readBytes:reads.bytes,reads:reads.reads,errors});
+      if(errors.length || days===config.evidence.longDays && (!qualified || result.fullMatched<20) || days===config.evidence.withheldDays && qualified) throw new Error(`Evidence fixture qualification mismatch for ${days} days`);
+    } finally {await context.close();await fake.close();}
+  }
+  fs.writeFileSync(path.join(out,"evidence-context.json"),JSON.stringify({kind:"candidate-only-evidence-diagnostic",statement:"Synthetic current-source intervals; no designated-machine timing certificate or new timing gate",samples},null,2)+"\n");
+}
 async function runComparisonDiagnostics({ config, configPath, configBytes, args, mode }) {
   if (!config.comparison) throw new Error("Comparison diagnostics require navigation.v4.json");
   const candidateRef = args.candidate ?? "HEAD";
@@ -358,6 +377,7 @@ async function runComparisonDiagnostics({ config, configPath, configBytes, args,
     fs.writeFileSync(path.join(out, "comparison-actions.md"), markdown.join("\n"));
     log(`comparison diagnostics: ${path.relative(REPO_ROOT, out)}/comparison-actions.json`);
     if (errors.length) throw new Error(`Comparison diagnostics recorded ${errors.length} page error(s)`);
+    if (config.evidence) await runEvidenceDiagnostics({config,args,build,browser,out});
   } finally { await browser.close(); await fake.close(); }
 }
 

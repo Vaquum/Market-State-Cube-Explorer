@@ -48,6 +48,11 @@
       result.thresholds.share, result.thresholds.seasonal, result.state, result.barrier, horizon, MAX_H, result.blockLength,
       "prior-positive-volume", "prior-seasonal-eligible", p.precisionID];
   }
+  function intervalResult({values, ownN, fullMatched, anchorReason = null}) {
+    const pair=values.length ? [quantile(values,.025),quantile(values,.975)] : null;
+    const reason=anchorReason || (ownN<30 ? "Fewer than 30 eligible cases" : fullMatched<20 ? "Fewer than 20 full matched blocks" : values.length<1800 ? "Fewer than 1800 valid resamples" : pair[0]===pair[1] ? "Degenerate resampling interval" : null);
+    return {result:reason ? unavailable(reason,reason==="Degenerate resampling interval" ? "undefined" : "unsupported") : finite(pair),validDraws:values.length};
+  }
   async function bootstrap(input, result, kind, horizon, control = {}) {
     const alive = () => !control.cancelled?.();
     const field = kind === "poc-barrier" ? "first" : "direction", sample = summary(result.matched[horizon], field), base = summary(result.cases[horizon], field);
@@ -82,10 +87,8 @@
     for (const name of ["down", "flat", "up"]) {
       intervals[name] = {};
       for (const component of ["conditional", "baseline", "difference"]) {
-        const values = draws[name][component].sort((a, b) => a - b), pair = values.length ? [quantile(values, .025), quantile(values, .975)] : null;
-        const floor = component === "baseline" ? base.n >= 30 : component === "conditional" ? sample.n >= 30 : sample.n >= 30 && base.n >= 30;
-        const reason = !result.state ? result.anchorReason || "Anchor seasonal support unavailable" : !floor ? "Fewer than 30 eligible cases" : fullMatched < 20 ? "Fewer than 20 full matched blocks" : values.length < 1800 ? "Fewer than 1800 valid resamples" : pair[0] === pair[1] ? "Degenerate resampling interval" : null;
-        intervals[name][component] = { result: reason ? unavailable(reason, reason === "Degenerate resampling interval" ? "undefined" : "unsupported") : finite(pair), validDraws: values.length };
+        const values = draws[name][component].sort((a,b)=>a-b), ownN=component==="baseline" ? base.n : component==="conditional" ? sample.n : Math.min(sample.n,base.n);
+        intervals[name][component]=intervalResult({values,ownN,fullMatched,anchorReason:result.state ? null : result.anchorReason || "Anchor seasonal support unavailable"});
       }
     }
     return { version: BOOTSTRAP, key, seed, fullMatched, calendarBlocks: blocks.length, blockLength: length, resamples: 2000, intervals,
@@ -147,5 +150,5 @@
     out.uncertainty = await bootstrap(input, out, input.kind, input.horizon, control);
     return alive() ? out : null;
   }
-  return Object.freeze({ MODEL, BOOTSTRAP, REASONS: Object.freeze(REASONS), quantile, fnv, random, summary, canonicalKey, bootstrap, compute });
+  return Object.freeze({ MODEL, BOOTSTRAP, REASONS: Object.freeze(REASONS), quantile, fnv, random, summary, canonicalKey, intervalResult, bootstrap, compute });
 });

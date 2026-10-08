@@ -60,3 +60,13 @@ test("shared block bootstrap keeps empty/partial calendar blocks and component d
   assert.equal(out.intervals.up.baseline.result.tag, "finite"); assert.equal(out.intervals.up.difference.result.tag, "finite");
   const again = await H.bootstrap(args, result, "next-poc", 1); assert.deepEqual(out, again);
 });
+
+test("each normative interval boundary is independent: 29/30 cases, 19/20 full matches, 1799/1800 draws", () => {
+ const values=Array.from({length:1800},(_,i)=>i), good={values,ownN:30,fullMatched:20};
+ assert.equal(H.intervalResult(good).result.tag,"finite");
+ assert.match(H.intervalResult({...good,ownN:29}).result.reason,/30/);
+ assert.match(H.intervalResult({...good,fullMatched:19}).result.reason,/20/);
+ assert.match(H.intervalResult({...good,values:values.slice(1)}).result.reason,/1800/);
+ assert.equal(H.intervalResult({...good,values:values.map(()=>1)}).result.tag,"undefined");
+ assert.match(H.intervalResult({...good,anchorReason:"No contiguous predecessor POC"}).result.reason,/predecessor/);
+});

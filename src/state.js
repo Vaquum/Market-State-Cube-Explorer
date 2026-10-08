@@ -504,6 +504,8 @@
     if (value === null || typeof value === "string" || typeof value === "boolean") return true;
     if (typeof value === "number") return Number.isFinite(value);
     if ((!Array.isArray(value) && !comparisonObject(value)) || ancestors.includes(value) || ancestors.length >= 24) return false;
+    if (Reflect.ownKeys(value).some((key) => typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key))) return false;
+    if (Array.isArray(value) && Array.from({length:value.length},(_,i)=>i).some((i)=>!Object.prototype.hasOwnProperty.call(value,i))) return false;
     return Object.values(value).every((v) => comparisonJSONSafe(v, [...ancestors, value]));
   };
   const comparisonContext = (context) => {

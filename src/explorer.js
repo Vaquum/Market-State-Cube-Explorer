@@ -16859,7 +16859,7 @@
     const packKey = p.packKey ?? PACK.packKey ?? [PACK.source, T0, BASE, PR], revision = p.revision ?? null;
     const sourceDigest = E.hash.hex(E.hash.sha256(E.hash.utf8(JSON.stringify([packKey, revision, tuples]))));
     const provenance = { instrument: INSTRUMENT, sourceDigest, packKey, revision, sourceCutoff: CUT, canonicalCutoff: CANON, replayEdge: S.replay ? activeCutoff() : null, measuredThrough: end,
-      priceLow: 0, priceHigh: null, precisionID: history.sources.some((c) => c.id === "history") ? "observed-f32+loaded-f64" : "observed-f64", reconstruction: "Current-source reconstruction; original vintages not guaranteed" };
+      priceLow: 0, priceHigh: null, precisionID: "observed-source-values+Float64-aggregation", reconstruction: "Current-source reconstruction; original vintages not guaranteed" };
     const out = await window.explorerEvidence.compute({ cols: history.cols, b0: history.b0, b1: end, a, n, m, barrier, horizon: S.horizon, kind: S.evidenceKind === "barrier" ? "poc-barrier" : "next-poc", provenance,
       seasonal: (args) => E.measure.seasonalActivity({ ...args, index, week: 7 * DAYS }) }, { cancelled: () => job.cancelled || evidenceKey() !== job.key });
     return out ? { ...out, sources: history.sources, covered: history.covered } : null;
@@ -16873,7 +16873,7 @@
     };
   }
   function evidenceIntervals(e) {
-    const host = el("evidence-intervals"); host.replaceChildren();
+    const host = el("evidence-intervals"); host.replaceChildren(); delete host.dataset.bootstrap;
     host.dataset.study = e.error ? "unavailable" : e.provenance?.sourceDigest ?? "pending";
     const title = document.createElement("p"); title.textContent = "Approximate pointwise 95% estimation intervals · fixed anchor thresholds"; host.append(title);
     if (!e.uncertainty) { host.append(document.createTextNode(e.error ?? "Computing intervals…")); return; }
@@ -16888,7 +16888,7 @@
       host.append(line);
     }
     const limits = document.createElement("p"); limits.textContent = `${e.uncertainty.fullMatched} full matched calendar blocks of ${dur(e.blockLength * stepT() * BASE)}; ${e.uncertainty.calendarBlocks} sampled calendar blocks including empty/partial. ${e.uncertainty.qualification}`; host.append(limits);
-    host.dataset.bootstrap = JSON.stringify({ seed: e.uncertainty.seed, fullMatched: e.uncertainty.fullMatched, calendarBlocks: e.uncertainty.calendarBlocks, intervals: e.uncertainty.intervals });
+    host.dataset.bootstrap = JSON.stringify({ key: e.uncertainty.key, resamples: e.uncertainty.resamples, seed: e.uncertainty.seed, fullMatched: e.uncertainty.fullMatched, calendarBlocks: e.uncertainty.calendarBlocks, intervals: e.uncertainty.intervals });
   }
   // The complete ledger stays in the study. Render only 50 native starts at a time.
   // Counts describe disjoint first failures; outcome partitions reconcile independently per horizon.

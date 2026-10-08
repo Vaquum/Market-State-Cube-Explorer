@@ -155,3 +155,12 @@ python3 tools/cube_bridge.py --port 8487
 
 
 Reference inspection follows the same four-figure cards as Measurements. Open **Inspect → References** for price location, native indicator context and individually selectable squeeze/weekend events. Measurement details retains raw construction, source and confirmation. Clock selects the nearest scheduled occurrence to the inspected instant. The Binance spot weekend proxy, assumed funding schedule and authored drawings disclose their limits; missing causal inputs stay unavailable.
+
+PRD-0007 keeps cards observational: a primary reading and three readable companions,
+with raw values and timing/support behind details. Continuations condition on POC
+movement, taker-buy share and six-week UTC seasonal activity, using fixed anchor
+terciles. Approximate pointwise intervals share calendar-block resamples; they are
+withheld independently when support fails and do not calibrate forecast odds.
+Compare preserves one selected metric/basis and the original frozen reading.
+Legacy captures retain unrecorded context explicitly; migration verifies a v2 tab
+record before retiring unchanged copied v1 text. Query names actual source edges.

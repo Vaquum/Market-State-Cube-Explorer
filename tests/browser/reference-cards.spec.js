@@ -20,7 +20,7 @@ async function reference(page, fakeFor, probe, lines, match) {
 }
 for (const theme of ["light", "dark"]) test(`${theme}: session reference uses completed 8h close, signed prior ATR and four readable slots`, async ({ page, fakeFor, probe }) => {
   await page.addInitScript((value) => localStorage.setItem("origo-theme", value), theme);
-  const { card } = await reference(page, fakeFor, probe, "pdhlc", /Previous day.*high/i);
+  const { card } = await reference(page, fakeFor, probe, "pdhlc", /^PDH$/);
   await expect(card).toHaveAttribute("data-presentation", "core");
   const figures = card.locator(".ol-core-stats > .ol-cell-stat"); await expect(figures).toHaveCount(4);
   await expect(figures.locator("dd")).toHaveCount(4);
@@ -49,7 +49,7 @@ test("Clock Inspect selects a stable nearest funding event and discloses assumed
   await expect(card.locator(".ol-reference-track")).toHaveAttribute("aria-label", /Effective observation edge/);
 });
 test("Fibonacci shows unclamped depth and candidate/as-of construction with anchor timing", async ({ page, fakeFor, probe }) => {
-  const { card } = await reference(page, fakeFor, probe, "fib30", /retracement|Fib/i);
+  const { card } = await reference(page, fakeFor, probe, "fib30", /^30D 50.0%$/);
   await expect(card).toContainText("Continuous retracement depth");
   await expect(card).toContainText("unclamped depth");
   await expect(card).toContainText("Developing rolling extremes");

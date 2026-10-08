@@ -803,7 +803,7 @@ Rendered from the Status column at S2's convergence: `done` is the work of S1 an
 | F | 17 | 0 | 0 | 0 | 0 | 17 |
 | R | 15 | 0 | 0 | 0 | 0 | 15 |
 | N | 46 | 0 | 0 | 0 | 0 | 46 |
-| all | 186 | 31 | 0 | 0 | 0 | 155 |
+| all | 187 | 31 | 0 | 0 | 0 | 156 |
 
 ## 11. Contributor checklist
 

@@ -4326,7 +4326,7 @@
       value.dataset.canonical = String(result.tag === "finite" ? result.value : result.tag);
       if (metric.text !== undefined) value.dataset.fact = metric.text;
       value.dataset.formula = metric.formula ?? observation.formula;
-      const shown = metric.text !== undefined ? { text: metric.text, unit: "" } : result.tag === "finite" ? cardValue(result.value, metric.unit) : { text: E.result.describe(result).short, unit: metric.unit === "daily-atr" ? "daily ATR" : "" };
+      const shown = metric.text !== undefined ? { text: metric.text, unit: "" } : result.tag === "finite" ? (metric.format ? metric.format(result.value) : cardValue(result.value, metric.unit)) : { text: E.result.describe(result).short, unit: metric.unit === "daily-atr" ? "daily ATR" : "" };
       if (result.tag === "finite" && metric.signed && result.value > 0) shown.text = "+" + shown.text;
       if (result.tag === "finite" && metric.signed) value.dataset.sign = result.value > 0 ? "positive" : result.value < 0 ? "negative" : "zero";
       value.replaceChildren(document.createTextNode(shown.text));
@@ -4411,7 +4411,7 @@
       if (rec) {
         tip.dataset.event = `${rec.kind}|${rec.label}`;
         const list = document.createElement("dl"); list.className = "ol-event-inventory";
-        for (const [label, value, field, canonical] of knownRows(rec)) { list.append(Object.assign(document.createElement("dt"), { textContent: label })); const dd = Object.assign(document.createElement("dd"), { textContent: value }); if (field) { dd.dataset.field = field; dd.dataset.canonical = String(canonical); } list.append(dd); }
+        for (const [label, value, field, canonical] of knownRows(rec)) { if (field && tip.querySelector(`dd[data-field="${field}"]`)) continue; list.append(Object.assign(document.createElement("dt"), { textContent: label })); const dd = Object.assign(document.createElement("dd"), { textContent: value }); if (field) { dd.dataset.field = field; dd.dataset.canonical = String(canonical); } list.append(dd); }
         tip.querySelector(".ol-cell-details").append(list);
       }
     }
@@ -4527,14 +4527,15 @@
     if (!frame || o.state !== "ready" || p.t >= activeCutoff()) return;
     const i = barNear(frame, p.t); if (i < 0 || p.t < frame.starts[0]) return;
     const c = frameContext(frame, i), macd = paneShown.key === "macd1d", values = macd ? o.macd : o.rsi;
-    const primary = { ...referenceMetric(macd ? "MACD" : "RSI(14)", values[i], macd ? "usdt" : "RSI points", macd ? "macd" : "rsi"), history: nativeHistory(frame, values, i) };
+    const momentumFormat = (v) => ({ text: v.toFixed(2), unit: macd ? "USDT" : "RSI points" });
+    const primary = { format: momentumFormat, ...referenceMetric(macd ? "MACD" : "RSI(14)", values[i], macd ? "usdt" : "RSI points", macd ? "macd" : "rsi"), history: nativeHistory(frame, values, i) };
     const series = macd ? [{ label: "MACD", history: primary.history }, { label: "Signal", history: nativeHistory(frame, o.signal, i) }, { label: "Histogram", history: nativeHistory(frame, o.hist, i) }] : [{ label: "RSI(14)", history: primary.history }];
     const companions = macd ? [
       { label: "MACD / prior daily ATR", unit: "daily-atr", result: E.measure.normalized(o.macd[i], c.atr).result },
       { label: "Signal / prior daily ATR", unit: "daily-atr", result: E.measure.normalized(o.signal[i], c.atr).result },
       { label: "Histogram / prior daily ATR", unit: "daily-atr", result: E.measure.normalized(o.hist[i], c.atr).result },
     ] : [{ label: "One-bar RSI slope", unit: "RSI points/bar", result: E.measure.referenceSlope({ value: values[i], previous: values[i - 1], adjacent: c.adjacent, complete: c.complete, native: true }).result }, referenceMetric("Native close", frame.closes[i]), { label: "Native timeframe", text: TF_NAMES[frame.tf], result: referenceMissing("Timeframe is a categorical fact") }];
-    const groups = macd ? [{ name: "Momentum series", metrics: [referenceMetric("Signal", o.signal[i], "usdt", "signal"), referenceMetric("Histogram", o.hist[i], "usdt", "histogram")] }] : [];
+    const groups = macd ? [{ name: "Momentum series", metrics: [{ ...referenceMetric("Signal", o.signal[i], "usdt", "signal"), format: momentumFormat }, { ...referenceMetric("Histogram", o.hist[i], "usdt", "histogram"), format: momentumFormat }] }] : [];
     const divergence = o.divergences?.find((d) => d.b.i === i && d.b.confirmed <= activeCutoff());
     if (divergence) {
       const d = divergence;
@@ -4578,7 +4579,7 @@
   function calendarReferencePresentation(tip, h) {
     if (h.gap) {
       const g = h.gap, rec = gapRecord(g), delta = g.sun - g.fri, location = referenceLocation(g.fri, g.open), normal = E.measure.normalized(delta, contextATR(g.open));
-      return referenceCard(tip, { primary: referenceMetric("Binance spot weekend proxy · Sunday − Friday", delta), companions: [{ label: "Signed gap / Friday spot", unit: "%", result: E.measure.weekendPercent({ friday: g.fri, sunday: g.sun }), signed: true }, { label: "Gap / pre-reopen daily ATR", unit: "daily-atr", result: normal.result, signed: true }, { label: "Observed fill status", text: rec.fill?.final ? "Filled by completed hourly bar" : rec.fill ? "So far; hourly fill bar forming" : "Open", result: referenceMissing("Fill status is a categorical fact") }], knownAt: rec.knownAt, time: [g.close, g.open], family: "weekend", location, timeline: referenceTimeline([{ label: "Friday boundary", time: g.close }, { label: "Sunday boundary", time: g.open }, { label: "Fill confirmation", time: rec.fill?.knownAt ?? null }]), construction: "Binance spot prices at the fixed Friday 16:00 / Sunday 17:00 Chicago window. Historical closure convention; after 2026-05-29 this is not a current CME closure model. No CME prices or holiday model. Fill is the first observed hourly high/low reaching Friday spot, confirmed at its completed bar end." });
+      return referenceCard(tip, { primary: referenceMetric("Binance spot weekend proxy · Sunday − Friday", delta), companions: [{ label: "Signed gap / Friday spot", unit: "%", result: E.measure.weekendPercent({ friday: g.fri, sunday: g.sun }), signed: true }, { label: "Gap / pre-reopen daily ATR", unit: "daily-atr", result: normal.result, signed: true }, { label: "Observed fill status", text: rec.fill?.final ? "Filled by completed hourly bar" : rec.fill ? "So far; hourly fill bar forming" : "Open", result: referenceMissing("Fill status is a categorical fact") }], knownAt: rec.knownAt, time: [g.close, g.open], family: "weekend", location, timeline: referenceTimeline([{ label: "Friday boundary", time: g.close }, { label: "Sunday boundary", time: g.open }, { label: "Fill confirmation", time: rec.fill?.knownAt ?? null }]), construction: `Friday close ${price(g.fri)} USDT; Sunday reopen ${price(g.sun)} USDT. Binance spot prices at the fixed Friday 16:00 / Sunday 17:00 Chicago window. Historical closure convention; after 2026-05-29 this is not a current CME closure model. No CME prices or holiday model. Fill is the first observed hourly high/low reaching Friday spot, confirmed at its completed bar end.` });
     }
     const edge = Math.min(hover?.t ?? activeCutoff(), activeCutoff()), e = h.events[0], delta = (e.t - edge) * BASE;
     referenceCard(tip, { primary: referenceMetric(e.what, e.t, "base-time"), companions: [referenceMetric(delta >= 0 ? "Until event" : "Elapsed since event", Math.abs(delta), "seconds"), { label: "Timezone", text: e.kind === "usopen" ? "New York; UTC disclosed" : e.kind === "cme" ? "Chicago; UTC disclosed" : "UTC", result: referenceMissing("Timezone is a calendar fact") }, { label: "Event source", text: "Assumed calendar schedule", result: referenceMissing("No measured market event") }], time: [e.t, e.t], family: "calendar", eventKind: e.kind === "funding" ? "fundingClock" : e.kind === "cme" ? "weekendClock" : e.kind === "usopen" ? "usOpenClock" : "clock", status: "Calendar definition; no measured flow or confirmation", timeline: referenceTimeline([{ label: "Effective observation edge", time: edge }, { label: e.what, time: e.t }]), construction: h.events.map(clockNote).filter(Boolean).join("; ") || "UTC calendar boundary; not observed market flow" });
@@ -11928,7 +11929,7 @@
     cday: { gap: DAYS, name: "Day start" },
     cweek: { gap: 7 * DAYS, name: "Week open" },
     cmonth: { gap: 28 * DAYS, name: "Month open" },
-    funding: { gap: DAYS / 3, name: "Funding" },
+    funding: { gap: DAYS / 3, name: "Funding schedule" },
     usopen: { gap: DAYS, name: "US equity open" },
     cme: { gap: (49 * HOUR), name: "Binance spot weekend proxy" },
     deribit: { gap: 7 * DAYS, name: "Deribit expiry" },

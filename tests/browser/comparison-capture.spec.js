@@ -362,7 +362,7 @@ test("Add refuses a near-cap collection when revealing its new cell requires pag
 
 
 test("captured Cascade original and history wait for their complete parent in replay", async ({page,fakeFor,probe}) => {
-  const fake=await fakeFor("mini"); await ready(page,fake,probe,VIEW+"&mode=cascade");
+  const fake=await fakeFor("micro:mixed"); await ready(page,fake,probe,VIEW+"&mode=cascade");
   const p=await point(page);await page.mouse.move(p.x,p.y);await page.keyboard.press("e");
   await page.getByRole("tab", {name:"Cells", exact:true}).click();
   const card=page.locator("#ol-inspect-readout");

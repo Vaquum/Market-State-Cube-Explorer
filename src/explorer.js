@@ -4617,8 +4617,12 @@
   }
   const cellContextResults = new Map(), cellMotionResults = new Map();
   function cellContextSpec(n, m, c, cut = activeCutoff(), moving = false) {
-    const ts = 2 ** n, a = Math.max(0, (c - 11) * ts), b = Math.min((c + 1) * ts, Math.ceil(cut));
-    return { n, m, c, a, b, cut, key: [moving ? "cell-motion" : "cell-context", live.generation, PACK.state_token, n, m, a, b, cut, "card-observation@1"].join("|") };
+    const ts = 2 ** n, complete = (c + 1) * ts <= cut;
+    // A completed observation survives tail appends. Whole-pack revisions still
+    // invalidate its generation; forming or replay-clipped support keeps its token.
+    cut = Math.min(cut, (c + 1) * ts);
+    const a = Math.max(0, (c - 11) * ts), b = Math.min((c + 1) * ts, Math.ceil(cut));
+    return { n, m, c, a, b, cut, key: [moving ? "cell-motion" : "cell-context", live.generation, complete ? "completed" : PACK.state_token, n, m, a, b, cut, "card-observation@1"].join("|") };
   }
   // Query full price support. Camera bounds never define this history or its column denominator.
   function cellHistory(n, m, c, r, cut = activeCutoff(), moving = false) {
@@ -5122,11 +5126,11 @@
         const rows = new Set([...(child.rows ?? []), ...(other.rows ?? [])].filter((v) => v.ct > 0).map((v) => v.r));
         return E.ratio.efficiency({ structure: "complete", child: { v: child.v, rows: (child.rows ?? []).filter((v) => v.ct > 0).length }, parent: { v: parentV, rows: rows.size }, baseline: E.model.PROVENANCE.baseline });
       }
-      const v = ["choppiness", "perpath"].includes(key) ? moving.find((v) => v.col?.c === col.c)?.col : col;
+      const v = col;
       if (!v) return E.result.make("unsupported", { reason: "Movement support unavailable" });
       const scratch = { tag: 0, value: NaN, reason: null, denominator: null }; E.measure.columnValue(key, v, null, scratch);
       return scratch.tag === E.result.TAG.finite ? finite(scratch.value) : E.result.make(E.result.TAGS[scratch.tag], { ...(scratch.reason ? { reason: scratch.reason } : {}), ...(scratch.denominator ? { denominator: scratch.denominator } : {}) });
-    });
+    }, ["choppiness", "perpath"].includes(key));
     primaryHistory[11] = { time, result: readout.typed };
     const primary = { label: key === "delta" ? "Delta · taker-buy minus taker-sell USDT" : PANE_MEASURES[key].label, unit: readout.measure.unit, signed: PANE_MEASURES[key].signed, field: "value", result: readout.typed, history: primaryHistory };
     const support = key === "delta" || key === "takertrades" ? [metrics.imbalance, metrics.volume, metrics.response]

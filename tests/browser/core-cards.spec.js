@@ -239,3 +239,43 @@ test("forming higher-level candle keeps open status after excluding the forming 
   expect(record.time[1]).toBeLessThanOrEqual(Math.floor(600 / 56.25));
   await expect(card).toContainText(/So far/);
 });
+
+
+test("a completed Inspect query finishes across an advancing live tail", async ({ page, fakeFor, probe }) => {
+  const localTrades = Array.from({ length: 24 }, (_, c) => ({ t_ms: c * 56250 + 1000, price: 2500000, qty: 400000, takerBuy: true }));
+  const fake = await fakeFor({ trades: localTrades, cutoffIso: "2021-01-15T00:00:00Z" });
+  const matches = (q) => q.n === "0" && Number(q.b1) - Number(q.b0) === 12 && !q.motion && !("r0" in q);
+  const gate = fake.on({ route: "/cube/query", when: matches }).gate();
+  const aborted = []; page.on("requestfailed", request => { const u = new URL(request.url()); if (u.pathname === "/cube/query" && matches(Object.fromEntries(u.searchParams))) aborted.push(request.failure()); });
+  try {
+    await page.goto(`${fake.url}/#t=2021-01-01T00:11:15Z~2021-01-01T00:22:30Z&p=24875~25250&r=0,0&auto=0&vis=2&pane=volume`); await probe.waitForReady();
+    await page.keyboard.press("e"); await page.locator('[data-surface="columns"]').click(); await page.locator("#ol-inspect").focus(); await page.keyboard.press("Home");
+    await gate.arrived();
+    const card = page.locator("#ol-inspect-readout");
+    await expect(card).toHaveAttribute("data-observation", /card-observation/);
+    const before = JSON.parse(await card.getAttribute("data-observation"));
+    fake.advance({ minutes: 1, trades: [] });
+    await expect.poll(() => fake.log().filter(x => x.path === "/cube/pack" && x.answer === "delta").length, { timeout: 30000 }).toBe(1);
+    await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).pack).not.toBe(before.pack);
+    gate.open();
+    await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).history.filter(x => x.result.tag === "finite").length).toBe(12);
+    expect(JSON.parse(await card.getAttribute("data-observation")).time).toEqual(before.time);
+    expect(aborted).toEqual([]);
+    expect(fake.log().filter(x => x.path === "/cube/query" && matches(x.query))).toHaveLength(1);
+  } finally { gate.open(); }
+});
+
+for (const pane of ["choppiness", "perpath"]) test(`${pane}: measured movement history survives a failed activity history`, async ({ page, fakeFor, probe, allowConsole }) => {
+  allowConsole(/Failed to load resource/);
+  const localTrades = Array.from({ length: 24 }, (_, c) => [0, 1].map(k => ({ t_ms: c * 56250 + 1000 + k * 1000, price: 2500000 + k * 12500, qty: 400000, takerBuy: k === 1 }))).flat();
+  const fake = await fakeFor({ trades: localTrades, cutoffIso: "2021-01-15T00:00:00Z" });
+  fake.on({ route: "/cube/query", when: q => q.n === "0" && Number(q.b1) - Number(q.b0) === 12 && !q.motion && !("r0" in q) }).fail({ status: 503, body: { error: "activity history rejected" } });
+  await page.goto(`${fake.url}/#t=2021-01-01T00:11:15Z~2021-01-01T00:22:30Z&p=24875~25250&r=0,0&auto=0&vis=2&pane=${pane}`); await probe.waitForReady();
+  await page.keyboard.press("e"); await page.locator('[data-surface="columns"]').click(); await page.locator("#ol-inspect").focus(); await page.keyboard.press("Home");
+  const card = page.locator("#ol-inspect-readout");
+  await expect.poll(() => fake.log().some(x => x.path === "/cube/query" && x.status === 503)).toBe(true);
+  await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).history.slice(0, 11).filter(x => x.result.tag === "finite").length).toBe(11);
+  // Each earlier column travels 250 USDT, spans 125 USDT, and reports 200.5 USDT.
+  const values = JSON.parse(await card.getAttribute("data-observation")).history.slice(0, 11).map(x => x.result.value);
+  for (const value of values) expect(value).toBeCloseTo(pane === "choppiness" ? 2 : 200.5 / 250, 10);
+});

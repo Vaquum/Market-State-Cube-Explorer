@@ -26,7 +26,7 @@ for(const days of [1800,420]) test(`${days} days: shared calendar intervals qual
   for(const theme of ['light','dark']) {
     await page.emulateMedia({colorScheme:theme});
     const presentation=await page.locator('.ol-evidence-probs').evaluate(n=>({
-      width:n.clientWidth,scroll:n.scrollWidth,
+      width:n.closest(".ol-side-body").clientWidth,scroll:n.closest(".ol-side-body").scrollWidth,
       labels:Array.from(n.querySelectorAll('.ol-outcome > span:first-child'),x=>parseFloat(getComputedStyle(x).fontSize)),
       values:Array.from(n.querySelectorAll('.ol-outcome > span:not(:first-child)'),x=>parseFloat(getComputedStyle(x).fontSize)),
       primary:Array.from(n.querySelectorAll('.ol-outcome > span:nth-child(2)'),x=>parseFloat(getComputedStyle(x).fontSize))

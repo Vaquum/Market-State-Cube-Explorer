@@ -3392,3 +3392,10 @@
 .ol-evidence-interval { margin: .5rem 0; }
 .ol-evidence-interval span { display: block; font-variant-numeric: tabular-nums; }
 .ol-ledger-content { max-height: 24rem; overflow: auto; }
+
+/* P7-S3: readable provenance and frozen histories use the existing neutral palette. */
+#ol-query-provenance { display:grid; grid-template-columns:minmax(110px,auto) minmax(0,1fr); gap:8px 16px; font-size:14px; line-height:1.45; }
+#ol-query-provenance dd { margin:0; overflow-wrap:anywhere; }
+.ol-comparison-frozen-history { padding:8px 0; font-size:14px; }
+.ol-comparison-frozen-history svg { display:block; }
+.ol-comparison-frozen-history ol { display:flex; flex-wrap:wrap; gap:8px; padding-left:20px; }

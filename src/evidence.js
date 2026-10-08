@@ -84,7 +84,7 @@
       for (const component of ["conditional", "baseline", "difference"]) {
         const values = draws[name][component].sort((a, b) => a - b), pair = values.length ? [quantile(values, .025), quantile(values, .975)] : null;
         const floor = component === "baseline" ? base.n >= 30 : component === "conditional" ? sample.n >= 30 : sample.n >= 30 && base.n >= 30;
-        const reason = !result.state ? "Anchor seasonal support unavailable" : !floor ? "Fewer than 30 eligible cases" : fullMatched < 20 ? "Fewer than 20 full matched blocks" : values.length < 1800 ? "Fewer than 1800 valid resamples" : pair[0] === pair[1] ? "Degenerate resampling interval" : null;
+        const reason = !result.state ? result.anchorReason || "Anchor seasonal support unavailable" : !floor ? "Fewer than 30 eligible cases" : fullMatched < 20 ? "Fewer than 20 full matched blocks" : values.length < 1800 ? "Fewer than 1800 valid resamples" : pair[0] === pair[1] ? "Degenerate resampling interval" : null;
         intervals[name][component] = { result: reason ? unavailable(reason, reason === "Degenerate resampling interval" ? "undefined" : "unsupported") : finite(pair), validDraws: values.length };
       }
     }
@@ -94,7 +94,11 @@
   async function compute(input, control = {}) {
     const alive = () => !control.cancelled?.(), step = 2 ** input.n;
     if (!Number.isInteger(input.a) || input.b1 <= input.b0 || (input.b1 - input.b0) / step > 100000) throw new RangeError("Invalid bounded evidence support");
-    const by = new Map(input.cols.map((c) => [c.c, c])), rows = [], shares = [], seasonalValues = [];
+    const by = new Map(), rows = [], shares = [], seasonalValues = [];
+    for (let i = 0; i < input.cols.length; i++) {
+      if (i % 1024 === 0) { await yieldTask(); if (!alive()) return null; }
+      by.set(input.cols[i].c, input.cols[i]);
+    }
     const stop = input.a + 1, first = Math.ceil(input.b0 / step);
     for (let c = first; c < stop; c++) {
       if ((c - first) % 512 === 0) { await yieldTask(); if (!alive()) return null; }
@@ -108,7 +112,9 @@
     }
     shares.sort((a, b) => a - b); seasonalValues.sort((a, b) => a - b);
     const st = [quantile(shares, 1 / 3), quantile(shares, 2 / 3)], vt = [quantile(seasonalValues, 1 / 3), quantile(seasonalValues, 2 / 3)], fitted = st.every(Number.isFinite) && vt.every(Number.isFinite);
-    for (const row of rows) {
+    for (let i = 0; i < rows.length; i++) {
+      if (i % 512 === 0) { await yieldTask(); if (!alive()) return null; }
+      const row = rows[i];
       if (!row.reason && !fitted) { row.reason = REASONS[5]; row.result = unavailable(row.reason); }
       if (!row.reason) row.state = [Math.sign(row.poc - by.get(row.c - 1).poc) + 1, bucket(row.buyShare, st), bucket(row.seasonal.result.value, vt)];
     }

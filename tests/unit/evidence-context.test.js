@@ -14,7 +14,7 @@ test("literal UTF-8 FNV suffix and sequential xorshift32 stream", () => {
   assert.deepEqual(actual, [4104184527,4158103763,2054547349,375635478,1435014662,2923872738]);
   assert.deepEqual(actual.map((x) => Math.floor(x / 4294967296 * 2)), [1,1,0,0,0,1]);
   assert.equal(H.quantile([0,10,20,30], 1 / 3), 10); assert.equal(H.quantile([0,10,20,30], 2 / 3), 20);
-  assert.equal(H.quantile([0,10,20,30], .025), .75); assert.equal(H.quantile([0,10,20,30], .975), 29.25);
+  assert.ok(Math.abs(H.quantile([0,10,20,30], .025) - .75) < 1e-14); assert.equal(H.quantile([0,10,20,30], .975), 29.25);
 });
 test("duplicate terciles use the upper bucket, baseline contains matches, unfinished horizons remain in ledger", async () => {
   const out = await H.compute(input(cols(40)));

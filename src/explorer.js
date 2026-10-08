@@ -34,7 +34,7 @@
   let CANON = canonOf(PACK);
   // Notices can apply panel layout while saved calibration is read during startup.
   const C = window.explorerComparison;
-  const comparisonEmpty = () => ({comparisonVersion:1,instrument:INSTRUMENT,captures:[],focus:null,reference:null,
+  const comparisonEmpty = () => ({comparisonVersion:2,selectedMetric:"volume",instrument:INSTRUMENT,captures:[],focus:null,reference:null,
     basis:"auto",sort:{key:"time",direction:"asc"},view:"grid",page:0,poc:null,expanded:false,restoreLayout:null});
   let comparisonModel = comparisonEmpty(), comparisonUI = null, comparisonAnalysis = null,
     comparisonStatsKey = "", comparisonRenderKey = "", comparisonLastEdge = undefined, comparisonRevision = 0, comparisonTimer = null,
@@ -2513,7 +2513,7 @@
       motion:lensMotionParts(cp), box:{x:cf.x,y:cf.y,w:cf.w,h:cf.h} } : null;
     last = { full, query, shown, meas, b, cut, mv, under, sc, src, comparisonLens, n:renderN(), m:renderM(),
       sourceEnd: sourceRange(src)[1], token:PACK.state_token ?? null, generation:live.generation,
-      sourceVersion:sourcesKey(), sourceRevision:comparisonSourceRevision,
+      sourceVersion:sourcesKey(), sourceRevision:comparisonSourceRevision, contextBarsVersion:barsVersion,
       camera:[S.tA,S.tB,S.pA,S.pB,S.n,S.m,S.replay,S.anchor],
       motionEnd:mv?.src?.end ?? null, canon:CANON, dataCut:CUT };
     comparisonRefresh();
@@ -3268,6 +3268,10 @@
               : meas.query.n !== S.n
                 ? `The cube's answer to these six parameters, in ${level} (the finest this span shows at once); totals and POCs don't depend on the column width.`
                 : "The cube's answer to these six parameters.";
+    const provenance = el("query-provenance"); provenance.replaceChildren();
+    const current = evidence.job?.key === evidenceKey() ? evidence.job?.output ?? evidence.ready : null;
+    const fields = [["Source / pack", `${PACK.live ? "Cube" : "Recorded"} · ${PACK.source ?? "source identity unavailable"} · ${PACK.state_token ?? "snapshot"}`], ["Source cutoff", when(CUT) + " UTC"], ["Canonical cutoff", CANON === null ? "Not supplied" : when(CANON) + " UTC"], ["Replay edge", S.replay ? when(activeCutoff()) + " UTC" : "Live"], ["Measured through", Number.isFinite(meas.end) ? when(meas.end) + " UTC" : "Unavailable"], ["Requested bounds", `${range(meas.r[0],meas.r[1])} UTC; ${price(meas.r[2]*PR)}–${price(meas.r[3]*PR)} USDT; n=${S.n}, m=${S.m}`], ["Actual measured bounds", `${range(b[0],b[1])} UTC; ${price(b[2]*PR)}–${price(b[3]*PR)} USDT; n=${meas.query.n}, m=${meas.query.m}`], ["Shown level", `n=${renderN()}, m=${renderM()}`], ["Historical evidence study", current?.provenance ? `${current.version} / ${current.uncertainty?.version}; digest ${current.provenance.sourceDigest}; fit ${when((current.a+1)*2**current.n)} UTC; ${current.provenance.reconstruction}` : "Current-source study unavailable or preparing"], ["Frozen comparison", `${comparisonModel.captures.length} captures; ${comparisonModel.selectedMetric} / ${comparisonAnalysis?.basis ?? comparisonModel.basis}; each record retains its captured source and measured-through boundary`]];
+    for (const [label,value] of fields) provenance.append(Object.assign(document.createElement("dt"),{textContent:label}),Object.assign(document.createElement("dd"),{textContent:value}));
   }
   // Copy text to the clipboard. `source` is the text, a promise of it, or a function that makes either (a
   // view code is made asynchronously: it is compressed). The clipboard is asked at once, inside the click,
@@ -4801,6 +4805,7 @@
       if (!sample) return null;
       return finite(measure(selected, sample.z, basis, readout?.measure?.basis === "perMinute" ? "perMinute" : readout?.measure?.basis === "usdt" ? "usdt" : "spans", sample.end));
     };
+    const compactKeys = [selected, ...["volume", "trades", ["flow", "delta"].includes(selected) ? "size" : "imbalance", "size"].filter((key) => key !== selected).slice(0, 3)], compactHistories = [];
     const stats = document.createElement(detailed ? "div" : "dl"); stats.className = "ol-cell-stats";
     const appendMetric = (parent, metric, main = false) => {
       const row = document.createElement("div"); row.className = "ol-cell-stat";
@@ -4830,6 +4835,11 @@
           history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], result: i === 11 ? selectedResult : Number.isFinite(value) ? E.result.finite(value) : selectedSamples[i] ? E.result.make("undefined", { denominator: metric.label + " denominator" }) : E.result.make("unsupported", { reason: "History coverage unavailable" }) })),
         });
         tip.dataset.observation = JSON.stringify(observation);
+      }
+      const metricKey = main ? selected : Object.keys(metrics).find((key) => metrics[key] === metric);
+      if (compactKeys.includes(metricKey)) {
+        const descriptor = composition[metricKey] ?? measure(metricKey, current, metricKey === selected ? basis : metricKey === "size" ? "mean" : "amount");
+        compactHistories.push({ id: metricKey, formula: descriptor.formula, unit: descriptor.unit, slots: values.map((v, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], result: Number.isFinite(v) ? E.result.finite(v) : E.result.make("unsupported", { reason: "Displayed compact history unavailable at capture" }) })) });
       }
       const spark = readingSparkline(values, metric.label, { signed: metric.signed, share: metric.share, fixed: metric.fixed, provisional: open });
       row.append(term, value, spark);
@@ -4929,6 +4939,7 @@
     }
     tip.replaceChildren(...[head, sub, state, stats, ...(!detailed ? [balance, context] : []), details].filter(Boolean));
     tip.dataset.presentation = "cell";
+    tip.dataset.compactHistories = JSON.stringify(compactHistories.sort((a,b) => compactKeys.indexOf(a.id) - compactKeys.indexOf(b.id)));
     tip.dataset.atr = atr === null ? "unavailable" : String(atr);
   }
   // A drawn cell's path and dwell for the tooltip, or why it has none yet. Path is shown in the three ways
@@ -11390,7 +11401,9 @@
     const body = table.tBodies[0], frag = document.createDocumentFragment();
     for (const bar of r.bars.slice(tablePage * CELLS_PAGE, (tablePage + 1) * CELLS_PAGE)) {
       const row = document.createElement("tr"); row.tabIndex = -1; row.dataset.candle = bar.c;
-      for (const text of [range(bar.start, bar.stop), price(bar.open), price(bar.high), price(bar.low), price(bar.close), bar.direction, bar.state === "so-far" ? "So far" : "Complete"]) { const td = document.createElement("td"); td.textContent = text; row.append(td); }
+      const atr = contextATR(bar.start), displacement = bar.close - bar.open, spread = bar.high - bar.low;
+      const values = [[range(bar.start, bar.stop)], ...[["open",bar.open],["high",bar.high],["low",bar.low],["close",bar.close],["netMove",displacement],["range",spread]].map(([field,value])=>[price(value),field,value]), ...[["netMoveATR",displacement],["rangeATR",spread]].map(([field,value])=>{const result=E.measure.normalized(value,atr).result;return [result.tag === "finite" ? result.value.toFixed(4) + " ATR" : E.result.describe(result).short,field,result.tag === "finite" ? result.value : result.tag];}), [bar.direction], [bar.state === "so-far" ? "So far" : "Complete"]];
+      for (const [text,field,value] of values) { const td=document.createElement("td");td.textContent=text;if(field){td.dataset.field=field;td.dataset.canonical=String(value);}row.append(td); }
       row.addEventListener("focus", () => { if (!inspect.on) inspectEnter(); inspect.surface = "cells"; inspect.t = (bar.start + bar.stop) / 2; inspect.p = bar.close / PR; inspectRender(true); });
       row.addEventListener("keydown", (e) => { const next = e.key === "ArrowDown" ? row.nextElementSibling : e.key === "ArrowUp" ? row.previousElementSibling : null; if (next) { e.preventDefault(); next.focus(); } });
       frag.append(row);
@@ -16836,7 +16849,7 @@
     const tuples = history.cols.map((c) => [c.source, c.c, c.v, c.bv, c.poc, c.covered ? "covered" : "missing", (c.c + 1) * ts, "complete"]);
     // Denominator records are dependencies too. Tail beyond the fixed anchor is excluded.
     if (seasonalHeld) for (const c of seasonalHeld.cols) if ((c.c + 1) * 2 ** seasonalHeld.n <= end) tuples.push(["seasonal-history", c.c, c.v, c.bv, c.poc, c.v > 0 || c.covered === true ? "covered" : "missing", (c.c + 1) * 2 ** seasonalHeld.n, "complete"]);
-    tuples.sort((x, y) => String(x[0]).localeCompare(String(y[0]), "en") || x[1] - y[1]);
+    tuples.sort((x, y) => (String(x[0]) < String(y[0]) ? -1 : String(x[0]) > String(y[0]) ? 1 : 0) || x[1] - y[1]);
     const packKey = p.packKey ?? PACK.packKey ?? [PACK.source, T0, BASE, PR], revision = p.revision ?? null;
     const sourceDigest = E.hash.hex(E.hash.sha256(E.hash.utf8(JSON.stringify([packKey, revision, tuples]))));
     const provenance = { instrument: INSTRUMENT, sourceDigest, packKey, revision, sourceCutoff: CUT, canonicalCutoff: CANON, replayEdge: S.replay ? activeCutoff() : null, measuredThrough: end,
@@ -17059,6 +17072,7 @@
         th.setAttribute("aria-sort", S.caseDir > 0 ? "ascending" : "descending");
       else th.removeAttribute("aria-sort");
     }
+    evidenceLedger(e);
     if (e.error || !e.cases) {
       list.replaceChildren();
       el("case-definition").textContent = e.error;
@@ -17145,7 +17159,7 @@
       );
       cell(
         tr,
-        `${signed(c.min * stepP() * PR, price)} / ${signed(c.max * stepP() * PR, price)} USDT · span ${price((c.max - c.min) * stepP() * PR)} USDT · ${(c.max - c.min)} rows`,
+        `${signed(c.min * stepP() * PR, price)} / ${signed(c.max * stepP() * PR, price)} USDT · span ${price((c.max - c.min) * stepP() * PR)} USDT · ${(c.max - c.min)} rows · own prior daily ATR ${Number.isFinite(contextATR(c.c * stepT())) && contextATR(c.c * stepT()) > 0 ? ((c.max-c.min)*stepP()*PR/contextATR(c.c*stepT())).toFixed(4) + " ATR span" : "unavailable"}`,
       );
       cell(tr, (c.buyShare * 100).toPrecision(6) + "% · seasonal " + c.seasonal.result.value.toPrecision(6) + "× · buckets " + c.state.join("/") + " · fit " + when((e.a + 1) * stepT()) + " UTC");
       fragment.append(tr);
@@ -22258,9 +22272,38 @@
     const n=lens?lp.n:last.n,m=lens?lp.m:last.m;
     return {c:Math.floor(p.t / 2**n),r:Math.floor(p.p / 2**m),n,m,surface:lens?"lens":"cells",periodPrice:p.p};
   }
+  function comparisonFrozenContext(target, fallback, factSupport) {
+    const supports = {}, histories = [], stats = [el("inspect-readout"), el("tip")];
+    let observation = null, displayed = [];
+    for (const node of stats) {
+      if (!node || node.hidden || !node.dataset.observation) continue;
+      try {
+        const candidate = JSON.parse(node.dataset.observation), time = candidate.time, price = candidate.price;
+        if (candidate.level.n !== target.n || candidate.level.m !== target.m || Math.floor(time[0] / 2 ** target.n) !== target.c || !price || price[0] !== target.r * 2 ** target.m * PR || candidate.pack !== last.token) continue;
+        observation = candidate; displayed = JSON.parse(node.dataset.compactHistories ?? "[]"); break;
+      } catch { /* An unmatched or unreadable card is not reconstructed. */ }
+    }
+    const result = observation?.result ?? fallback.result;
+    supports.observation = { formula: observation?.formula ?? fallback.formula, unit: observation?.unit ?? fallback.unit, supportEnd: factSupport, knownThrough: factSupport,
+      time: observation?.time ?? [target.c * 2 ** target.n, (target.c + 1) * 2 ** target.n], price: observation?.price ?? null, source: observation?.source ?? last.src.id, pack: last.token, precision: observation?.precision ?? "Float64", completeness: observation?.completeness ?? "Committed cell frame" };
+    const atr = observation?.denominators?.find((d) => d.formula === "context.daily-atr@1"), available = Number.isFinite(atr?.denominator);
+    supports.atr = { formula: "context.daily-atr@1", unit: "usdt", result: available ? E.result.finite(atr.denominator) : E.result.make("unsupported", { reason: "Context ATR unavailable at capture" }),
+      supportEnd: available ? comparisonMs(atr.time[1]) : null, knownThrough: available ? comparisonMs(atr.time[1]) : null, time: atr?.time ?? null, source: atr?.source ?? "Context not held at capture" };
+    for (const series of displayed) {
+      const slots = series.slots.map((slot, i) => {
+        const id = `${series.id}:${i}`; supports[id] = { time: slot.time, supportEnd: comparisonMs(slot.time[1]), knownThrough: comparisonMs(slot.time[1]), source: supports.observation.source, pack: last.token, precision: supports.observation.precision };
+        return { result: slot.result, supportId: id, denominatorIds: [] };
+      });
+      histories.push({ id: series.id, formula: series.formula, unit: series.unit, slots });
+    }
+    const chart = observation?.formula ?? fallback.formula, unit = observation?.unit ?? fallback.unit;
+    const mapped = { volume: "volume", geometry: "volume", trades: "trades", size: "size", flow: "flow", flowtrades: "flowtrades", delta: "delta", path: unit === "row-spans" ? "path" : null, dwell: unit === "share" ? "dwell" : null }[S.mode] ?? null;
+    const origin = { formula: chart, unit, basis: fallback.basis ?? "amount", result, comparisonMetric: mapped, supportId: "observation", historyIds: histories.some((h) => h.id === mapped) ? [mapped] : [] };
+    return { supports, histories, originatingObservation: origin };
+  }
   function comparisonCapture(target) {
     if (!target || !last || S.mode === "candles") return null;
-    if (last.sourceRevision !== comparisonSourceRevision || last.dataCut !== CUT ||
+    if (last.sourceRevision !== comparisonSourceRevision || last.dataCut !== CUT || last.contextBarsVersion !== barsVersion ||
       last.camera.some((value,i)=>value !== [S.tA,S.tB,S.pA,S.pB,S.n,S.m,S.replay,S.anchor][i])) return null;
     const lens=target.surface === "lens", lp=lens?last.comparisonLens:null,
       frame=lens?lp:last, n=target.n,m=target.m,ts=2**n,ps=2**m,c=target.c,r=target.r;
@@ -22359,6 +22402,9 @@
       completeness:(complete?"Complete":"Still open")+(portion?" · portion":"")+(last.canon!==null&&(c+1)*ts>last.canon?" · provisional minutes":""),
       when:{eventStartMs:nominal.t0,eventEndMs:nominal.t1,knownAtMs:complete&&!timePortion?nominal.t1:null,knownAtReason:complete&&!timePortion?"the end of the interval":"the interval is open or partial"},
       shortExposure,originalScale:last.sc?.[lens?"lens":"cells"]?.mappingId??"none",metrics,detail};
+    const chartMode = S.mode === "geometry" ? "volume" : S.mode;
+    const original = E.measure.cellMeasurement({ mode: chartMode, basis: (lens ? last.sc?.lens : last.sc?.cells)?.basis ?? "amount", pathBasis: (lens ? last.sc?.lens : last.sc?.cells)?.pathBasis ?? "spans", z: ["path", "dwell"].includes(chartMode) ? mz : z, geom: { BASE, PR }, level: { n,m }, bounds: b, cut, end: ["path", "dwell"].includes(chartMode) ? motionEnd ?? -Infinity : Infinity, CUT:last.dataCut, replay:S.replay, read: null, measured:null, cascade:null });
+    capture.context = comparisonFrozenContext(target, original, factSupport); capture.contextOrigin = "frame-v2"; capture.originatingObservation = capture.context.originatingObservation;
     capture.id=C.identity(capture);
     return comparisonFreeze(capture);
   }
@@ -22395,12 +22441,12 @@
     const eligibility=edge===null?"live":comparisonModel.captures.map(c=>[...Object.values(c.metrics),...c.detail].map(m=>Number.isFinite(m.supportEnd)&&Number.isFinite(m.knownThrough)&&Math.max(m.supportEnd,m.knownThrough)<=edge?1:0).join("")).join("|")+"|"+(comparisonModel.poc&&Math.max(comparisonModel.poc.supportEnd??Infinity,comparisonModel.poc.knownThrough??Infinity)<=edge),
       statsKey=[comparisonRevision,comparisonModel.basis,comparisonModel.reference,JSON.stringify(comparisonModel.poc),eligibility].join("|");
     if(statsKey!==comparisonStatsKey) {comparisonUI.clearCopyFallback();comparisonStatsKey=statsKey;comparisonCounters.stats++;comparisonAnalysis=preparedAnalysis??C.analyze(comparisonModel.captures,{...comparisonModel,edge});}
-    const pocs=comparisonPocs(),pocEligibility=edge===null?"live":pocs.map(p=>Number.isFinite(p.supportEnd)&&Number.isFinite(p.knownThrough)&&Math.max(p.supportEnd,p.knownThrough)<=edge),renderKey=JSON.stringify([statsKey,comparisonModel.focus,comparisonModel.sort,comparisonModel.page,comparisonModel.view,comparisonModel.expanded,comparisonMessage,comparisonUnsaved,comparisonRejected,pocs,pocEligibility]);
+    const pocs=comparisonPocs(),pocEligibility=edge===null?"live":pocs.map(p=>Number.isFinite(p.supportEnd)&&Number.isFinite(p.knownThrough)&&Math.max(p.supportEnd,p.knownThrough)<=edge),renderKey=JSON.stringify([statsKey,comparisonModel.focus,comparisonModel.sort,comparisonModel.page,comparisonModel.view,comparisonModel.expanded,comparisonModel.selectedMetric,comparisonMessage,comparisonUnsaved,comparisonRejected,pocs,pocEligibility]);
     if(!force&&renderKey===comparisonRenderKey)return;
     // Sorting is pure presentation: it reuses metric cohorts and never refits their statistics.
     comparisonAnalysis={...comparisonAnalysis,ordered:C.sort?C.sort(comparisonModel.captures,comparisonModel.sort,comparisonAnalysis.metrics):C.analyze(comparisonModel.captures,{...comparisonModel,edge}).ordered};
     comparisonRenderKey=renderKey;comparisonCounters.renders++;
-    comparisonUI.render(comparisonModel,comparisonAnalysis,{edge,pocOptions:pocs,status:comparisonMessage,unsaved:comparisonUnsaved,storageRejected:comparisonRejected});
+    comparisonUI.render(comparisonModel,comparisonAnalysis,{edge,pocOptions:pocs,status:comparisonMessage,unsaved:comparisonUnsaved,storageRejected:comparisonRejected,context:C});
     const comparisonLabel = `Compare${comparisonModel.captures.length ? ` · ${comparisonModel.captures.length}` : ""}`;
     el("comparison-count").textContent = comparisonLabel;
     el("tab-compare").setAttribute("aria-label", comparisonLabel);
@@ -22414,11 +22460,13 @@
       comparisonCounters.writes++;comparisonCounters.bytes+=result.bytes??0;
       comparisonUnsaved=!result.ok;comparisonRejected=result.status==="retained";
       if(!result.ok)comparisonMessage=`Unsaved comparison · ${result.reason}`;
+      else if(result.legacyNotice)comparisonMessage=result.legacyNotice;
       else if(comparisonMessage.startsWith("Unsaved comparison"))comparisonMessage="";
       comparisonRefresh();
     },0);
   }
   function comparisonCommit(next,content=false,reveal=false) {
+    next={...next,comparisonVersion:2,selectedMetric:next.selectedMetric??"volume"};
     let preparedAnalysis=null;
     if(reveal) {
       // Reveal belongs to the candidate record; reuse its analysis after the size preflight.
@@ -22437,7 +22485,9 @@
     else comparisonMessage=replace?"Capture updated":"Cell added";
     const captures=comparisonModel.captures.slice();
     if(i<0)captures.push(capture);else if(replace)captures[i]=capture;
-    if(!comparisonCommit({...comparisonModel,captures,focus:capture.id},i<0||replace,true))return;
+    const initialMetric = comparisonModel.captures.length === 0 ? capture.originatingObservation.comparisonMetric ?? "volume" : comparisonModel.selectedMetric;
+    if (comparisonModel.captures.length === 0 && capture.originatingObservation.comparisonMetric === null) comparisonMessage += " · Original reading has no compatible comparison key; initialized to Volume";
+    if(!comparisonCommit({...comparisonModel,selectedMetric:initialMetric,captures,focus:capture.id},i<0||replace,true))return;
     S.drawer="compare";S.drawerOpen=true;
     if (!comparisonModel.expanded) S.drawerHeight=Math.max(S.drawerHeight,Math.min(420,drawerMax()));
     applyPanels();comparisonRefresh(true);comparisonPersist();update();
@@ -22454,9 +22504,9 @@
     if(!expanded){geometry();update();scheduleCube();scaleArm();}
   }
   async function comparisonCopy(capture) {
-    const text=C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc});
+    const text=C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc,selectedMetric:comparisonModel.selectedMetric,basis:comparisonAnalysis?.basis??comparisonModel.basis});
     try {if(!navigator.clipboard?.writeText)throw Error("Clipboard unavailable");await navigator.clipboard.writeText(text);comparisonMessage="Cell copied";comparisonRefresh();}
-    catch {S.drawer="compare";S.drawerOpen=true;applyPanels();comparisonRefresh(true);comparisonUI.showCopyFallback(C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc}));}
+    catch {S.drawer="compare";S.drawerOpen=true;applyPanels();comparisonRefresh(true);comparisonUI.showCopyFallback(C.captureText(capture,{edge:comparisonEdge(),poc:comparisonModel.poc,selectedMetric:comparisonModel.selectedMetric,basis:comparisonAnalysis?.basis??comparisonModel.basis}));}
   }
   function comparisonConfirm(message,onConfirm) {
     const returnTo=document.activeElement,dialog=document.createElement("dialog");dialog.className="ol-comparison-confirm";
@@ -22480,7 +22530,8 @@
       if(next.focus===action.id)next.focus=(order[i+1]??order[i-1])?.id??null;
       if(next.reference===action.id){next.reference=null;comparisonMessage="Reference removed · using set median";}
       comparisonCommit(next,true,true);return;
-    }else if(action.type==="basis")next.basis=action.value;
+    }else if(action.type==="selectedMetric")next.selectedMetric=action.value;
+    else if(action.type==="basis")next.basis=action.value;
     else if(action.type==="reference")next.reference=action.id||null;
     else if(action.type==="view")next.view=action.value;
     else if(action.type==="page")next.page=action.value;
@@ -22534,7 +22585,7 @@
   }
   function comparisonLoad() {
     const saved=window.explorerState.comparison.read(INSTRUMENT);
-    if(saved.status==="ok") {comparisonModel=saved.value;comparisonModel.captures.forEach(comparisonFreeze);comparisonRevision++;if(comparisonModel.expanded){S.drawer="compare";S.drawerOpen=true;}}
+    if(saved.status==="ok") {comparisonModel=saved.value;if(saved.legacyNotice)comparisonMessage=saved.legacyNotice;comparisonModel.captures.forEach(comparisonFreeze);comparisonRevision++;if(comparisonModel.expanded){S.drawer="compare";S.drawerOpen=true;}}
     else if(saved.status!=="absent") {comparisonRejected=saved.raw!==null;comparisonUnsaved=true;comparisonMessage=`Unsaved comparison · ${saved.reason}`;}
     comparisonRefresh(true);
   }

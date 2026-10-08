@@ -7,7 +7,7 @@ const { atRest } = require("./rows-support.js");
 const reference = require("../reference/index.js");
 const { resolveProfile } = require("../support/profiles.js");
 const wire = require("../support/wire.js");
-const KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT", EPOCH = wire.T0 * 1000;
+const KEY = "market-state-cube-explorer:comparison:v2:BTC/USDT", EPOCH = wire.T0 * 1000;
 const VIEW = "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24800~25500&r=0,0&auto=0&vis=2&marks=none&lines=";
 const WORK = "#ol-comparisonWorkspace";
 const saved = (page) => page.evaluate((key) => JSON.parse(sessionStorage.getItem(key)), KEY);
@@ -330,7 +330,8 @@ test("Add refuses a near-cap collection when revealing its new cell requires pag
       metrics: { "volume.amount": { tag: "finite", value: index + 1, formula: "cells.volume.amount@1", unit: "usdt", supportEnd: t1, knownThrough: t1 } }, detail: [] };
   });
   captures[0].metrics["volume.amount"].audit = "";
-  const before = { comparisonVersion: 1, instrument: "BTC/USDT", captures, focus: "prior-0", reference: null, basis: "amount",
+  for (const capture of captures) Object.assign(capture, { contextOrigin: "legacy-structural", context: { supports: {}, histories: [], originatingObservation: null }, originatingObservation: null });
+  const before = { comparisonVersion: 2, selectedMetric: "volume", instrument: "BTC/USDT", captures, focus: "prior-0", reference: null, basis: "amount",
     sort: { key: "added", direction: "asc" }, view: "grid", page: 0, poc: null, expanded: false, restoreLayout: null };
   const oldPreflight = { ...before, captures: [...captures, sample], focus: sample.id };
   captures[0].metrics["volume.amount"].audit = "x".repeat(cap - Buffer.byteLength(JSON.stringify(oldPreflight)));

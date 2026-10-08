@@ -5,7 +5,7 @@ const { test, expect } = require("./fixtures.js");
 const snapshot = require("../reference/snapshot.js");
 const rational = require("../reference/rational.js");
 test.use({ reducedMotion: "reduce" });
-const KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT", WORK = "#ol-comparisonWorkspace";
+const KEY = "market-state-cube-explorer:comparison:v2:BTC/USDT", WORK = "#ol-comparisonWorkspace";
 const RECORDED = "#w=24h&r=4,0&auto=0&vis=2&marks=none&lines=";
 const MIXED = "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24800~25500&r=0,0&auto=0&vis=2&marks=none&lines=";
 const picker = (page) => page.locator(`${WORK} [data-comparison-control="poc"]`);

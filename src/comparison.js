@@ -68,6 +68,37 @@
     if (!finite(distance)) return unavailable("undefined", "Distance unavailable", meta);
     return { ...meta, tag: "finite", value: distance, relation: low <= poc.price && poc.price < high ? "Contains" : poc.price === high ? "Touches" : low > poc.price ? "Above" : "Below" };
   }
+  function normalizedPoc(capture, poc, edge = null) {
+    const atr = capture?.context?.supports?.atr, meta = { formula: "comparison.poc-signed-daily-atr@1", unit: "daily-atr", supportEnd: capture?.observed?.t1 ?? null, knownThrough: capture?.measuredThrough ?? null };
+    if (!poc || !finite(poc.price)) return unavailable("undefined", "Choose a POC", meta);
+    if (!visible(poc, edge) || !visible(meta, edge) || atr && !visible(atr, edge)) return unavailable("hidden", "Unavailable in replay", meta);
+    const low = capture?.nominal?.low, high = capture?.nominal?.high;
+    if (![low, high].every(finite) || high <= low) return unavailable("failed", "Invalid price band", meta);
+    const numerator = poc.price < low ? low - poc.price : poc.price > high ? high - poc.price : 0;
+    const relation = poc.price === high ? "Touches" : poc.price >= low && poc.price < high ? "Contains" : numerator > 0 ? "Above" : "Below";
+    const causal = !finite(poc.knownThrough) || !finite(capture?.observed?.t1) ? "Causal timing unknown" : poc.knownThrough > capture.observed.t1 ? "Later reference; retrospective context" : "Reference available by observation end";
+    const denominator = atr?.result?.tag === "finite" ? atr.result.value : null;
+    if (!finite(denominator)) return { ...unavailable("unsupported", "Context ATR unavailable", meta), numerator, relation, causal };
+    if (!(denominator > 0)) return { ...unavailable("undefined", "Context ATR zero", meta), numerator, denominator, relation, causal };
+    return { ...meta, tag: "finite", value: numerator / denominator, numerator, denominator, relation, causal, reference: poc.label, referenceKnownThrough: poc.knownThrough };
+  }
+  function frozenHistory(capture, key, edge = null) {
+    const context = capture?.context, history = context?.histories?.find((h) => h.id === key);
+    if (!context || capture.contextOrigin === "legacy-structural") return { reason: "Frozen context not recorded", slots: [] };
+    if (!history) return { reason: "History not captured for this metric", slots: [] };
+    const slots = history.slots.map((slot) => {
+      const support = context.supports[slot.supportId], denominators = slot.denominatorIds.map((id) => context.supports[id]);
+      if (!visible(support, edge) || denominators.some((s) => !visible(s, edge))) return { result: unavailable("hidden", "Unavailable in replay"), supportId: slot.supportId };
+      return { ...slot, support };
+    });
+    return { ...history, slots };
+  }
+  function originating(capture, edge = null) {
+    const origin = capture?.originatingObservation, support = capture?.context?.supports?.[origin?.supportId];
+    if (!origin) return { tag: "unsupported", reason: "Original captured reading unknown; frozen context not recorded" };
+    if (!visible(support, edge)) return { tag: "hidden", reason: "Unavailable in replay" };
+    return { ...origin, tag: origin.result?.tag ?? "unsupported", value: origin.result?.value ?? null, reason: origin.result?.reason ?? null, support };
+  }
   function midpoint(a, b) {
     if (a === b) return a;
     return Math.sign(a) === Math.sign(b) ? a + (b - a) / 2 : (a + b) / 2;
@@ -151,9 +182,15 @@
   const iso = (x) => finite(x) && !Number.isNaN(new Date(x).getTime()) ? new Date(x).toISOString() : "Unknown";
   const numberText = (x) => String(x);
   const rangeText = (bounds) => bounds ? `${iso(bounds.t0)}–${iso(bounds.t1)} UTC; ${numberText(bounds.low)}–${numberText(bounds.high)} USDT` : "Unknown";
-  function captureText(capture, { edge = null, poc = null } = {}) {
+  function captureText(capture, { edge = null, poc = null, selectedMetric = "volume", basis = "amount" } = {}) {
     const lines = [String(capture.instrument), `Cell: ${rangeText(capture.nominal)}`, `Level: ${capture.level?.n},${capture.level?.m}`, `Observed: ${rangeText(capture.observed)}`];
     const row = (label, record) => lines.push(`${label}: ${record.tag === "finite" ? numberText(record.value) + (record.unit ? " " + record.unit : "") : record.reason || record.tag}`);
+    const selected = selectedMetric === "poc" ? pocValue(capture, poc, edge) : value(capture, selectedMetric, basis, edge);
+    row("Selected comparison metric/basis · " + selectedMetric + "/" + basis, selected);
+    const original = originating(capture, edge);
+    lines.push("Original captured reading: " + (original.tag === "hidden" || !original.formula ? original.reason : `${original.formula}; ${original.unit}; ${original.basis}; ${original.result?.tag === "finite" ? original.result.value : original.result?.reason ?? original.result?.tag}`));
+    row("Signed POC distance / captured prior daily ATR", normalizedPoc(capture, poc, edge));
+    const normalized = normalizedPoc(capture, poc, edge); lines.push(`POC signed context: ${normalized.relation ?? "Unavailable"}; ${normalized.causal ?? "Causal timing unknown"}; numerator ${normalized.tag === "hidden" ? "Unavailable in replay" : normalized.numerator ?? "unknown"}; ATR ${normalized.tag === "hidden" ? "Unavailable in replay" : normalized.denominator ?? "unknown"}`);
     for (const descriptor of METRICS) {
       if (descriptor.key === "poc") row(descriptor.label, pocValue(capture, poc, edge));
       else {
@@ -174,9 +211,13 @@
     const sourceText = source && typeof source === "object" ? Object.entries(source).filter(([, v]) => typeof v === "string" || typeof v === "number" || typeof v === "boolean").map(([k, v]) => `${k}=${v}`).join("; ") : source;
     lines.push(`Source: ${sourceText || "Unknown"}`, `Captured at: ${iso(capture.capturedAt)}`, `Measured through: ${iso(capture.measuredThrough)}`);
     if (poc) lines.push(`POC reference: ${visible(poc, edge) ? `${poc.label || poc.period || "POC"}; ${finite(poc.price) ? numberText(poc.price) + " USDT" : "Unavailable"}; measured through ${iso(poc.knownThrough)}` : "Unavailable in replay"}`);
+    for (const descriptor of METRICS) {
+      const history = frozenHistory(capture, descriptor.key, edge);
+      lines.push(`${descriptor.label} frozen history: ${history.reason ?? history.slots.map((slot) => slot.result.tag === "finite" ? slot.result.value : slot.result.reason ?? slot.result.tag).join("; ")}`);
+    }
     return lines.join("\n");
   }
-  const api = Object.freeze({ METRICS, identity, value, analyze, sort, captureText });
+  const api = Object.freeze({ METRICS, identity, value, analyze, sort, captureText, normalizedPoc, frozenHistory, originating });
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.explorerComparison = api;
 })();

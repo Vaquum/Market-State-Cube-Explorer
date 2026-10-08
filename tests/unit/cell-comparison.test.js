@@ -232,3 +232,53 @@ test("copy includes every frozen compact companion without adding comparison met
   assert.match(C.captureText(c),/Net taker imbalance frozen history: 0.5/);
   assert.equal(C.METRICS.length,9);
 });
+test("original contextual reading and copied history wait for reference support and known-through", () => {
+  const result = { tag: "finite", value: 934567.123456 }, origin = {
+    formula: "cells.cascade.log2@1", unit: "log2-ratio", basis: "log2", result,
+    comparisonMetric: null, supportId: "own", denominatorIds: ["parent"], historyIds: ["cascade"],
+  };
+  const c = capture("a", { "volume.amount": 10 }, { contextOrigin: "frame-v2", originatingObservation: origin, context: {
+    supports: { own: { supportEnd: T + 60000, knownThrough: T + 60000 }, parent: { supportEnd: T + 120000, knownThrough: T + 180000 } },
+    originatingObservation: origin,
+    histories: [{ id: "cascade", formula: origin.formula, unit: origin.unit, slots: [{ result, supportId: "own", denominatorIds: ["parent"] }] }],
+  } });
+  for (const edge of [T + 60000, T + 120000, T + 179999]) {
+    const reading = C.originating(c, edge), slot = C.frozenHistories(c, edge)[0].slots[0];
+    assert.equal(reading.tag, "hidden"); assert.equal(slot.result.tag, "hidden");
+    for (const field of ["value", "result", "numerator", "denominator"]) assert.equal(Object.hasOwn(reading, field), false);
+    assert.equal(C.captureText(c, { edge }).includes("934567.123456"), false);
+  }
+  assert.equal(C.originating(c, T + 180000).value, 934567.123456);
+  assert.equal(C.frozenHistory(c, "cascade", T + 180000).slots[0].result.value, 934567.123456);
+  assert.match(C.captureText(c, { edge: T + 180000 }), /cascade frozen history: 934567\.123456/);
+  c.context.supports.parent.supportEnd = T + 240000;
+  assert.equal(C.originating(c, T + 180000).tag, "hidden");
+  c.context.supports.parent.supportEnd = null;
+  assert.equal(C.originating(c, T + 300000).tag, "hidden");
+  assert.equal(C.originating(c).value, 934567.123456);
+});
+test("older contextual records with unrecorded parent support stay hidden in replay", () => {
+  const origin = { formula: "cells.cascade.log2@1", unit: "log2-ratio", basis: "log2", result: { tag: "finite", value: 1.75 }, comparisonMetric: null, supportId: "own", historyIds: ["cascade"] };
+  const c = capture("a", {}, { contextOrigin: "frame-v2", originatingObservation: origin, context: {
+    supports: { own: { supportEnd: T, knownThrough: T } }, originatingObservation: origin,
+    histories: [{ id: "cascade", formula: origin.formula, unit: origin.unit, slots: [{ result: origin.result, supportId: "own", denominatorIds: [] }] }],
+  } });
+  assert.equal(C.originating(c, T + 300000).tag, "hidden");
+  assert.equal(C.frozenHistory(c, "cascade", T + 300000).slots[0].result.tag, "hidden");
+  assert.equal(C.captureText(c, { edge: T + 300000 }).includes("1.75"), false);
+  assert.equal(C.originating(c).value, 1.75);
+});
+test("frozen history enumeration copies the captured inventory without adding comparison metrics", () => {
+  const c = capture("a", {}, { contextOrigin: "frame-v2", context: {
+    supports: { own: { supportEnd: T, knownThrough: T } }, histories: [
+      { id: "imbalance", formula: "fixture.imbalance@1", unit: "signed-share", slots: [{ result: { tag: "finite", value: -.75 }, supportId: "own", denominatorIds: [] }] },
+      { id: "volume", formula: "cells.volume.amount@1", unit: "usdt", slots: [{ result: { tag: "finite", value: 12 }, supportId: "own", denominatorIds: [] }] },
+    ],
+  } });
+  assert.deepEqual(C.frozenHistories(c, T).map((history) => history.id), ["imbalance", "volume"]);
+  const copied = C.captureText(c, { edge: T });
+  assert.match(copied, /Net taker imbalance frozen history: -0\.75/);
+  assert.match(copied, /Volume frozen history: 12/);
+  assert.equal(copied.includes("Trades frozen history:"), false);
+  assert.deepEqual(C.frozenHistories(c, T - 1).map((history) => history.slots[0].result.tag), ["hidden", "hidden"]);
+});

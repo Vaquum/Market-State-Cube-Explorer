@@ -131,7 +131,7 @@ test.describe("B01 no production test hook (DD-T04, S1-003)", () => {
     expect(seen.test).toEqual([]);
     // The existing globals expose the reviewed production APIs, including protected drawing/named-view persistence.
     // The comparison arithmetic and presentation modules are explicit production APIs, never test controls.
-    expect(await page.evaluate(() => Object.keys(window.explorerComparison).sort())).toEqual(["METRICS", "analyze", "captureText", "frozenHistory", "identity", "normalizedPoc", "originating", "sort", "value"]);
+    expect(await page.evaluate(() => Object.keys(window.explorerComparison).sort())).toEqual(["METRICS", "analyze", "captureText", "frozenHistories", "frozenHistory", "identity", "normalizedPoc", "originating", "sort", "value"]);
     expect(await page.evaluate(() => Object.keys(window.explorerComparisonUI).sort())).toEqual(["PAGE_SIZE", "create"]);
     expect(await page.evaluate(() => Object.keys(window.explorerReference).sort())).toEqual(["create"]);
     expect(await page.evaluate(() => Object.keys(window.explorerState).sort())).toEqual(["backup", "comparison", "drawings", "history", "namedViews", "namedViewsStatus", "notice", "read", "save", "saveHistory", "saveNamedViews", "saveNotice", "saveScales", "saveViews", "saved", "scales", "views", "viewsKey"]);

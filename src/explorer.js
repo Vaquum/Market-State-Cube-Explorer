@@ -22420,7 +22420,9 @@
   }
   function comparisonFingerprint(capture) {
     if(!capture)return "";
-    const {capturedAt,...record}=capture;
+    // Context belongs to the snapshot taken when the menu opened. Pointer focus
+    // may hide that originating card; that does not change the owned frame facts.
+    const {capturedAt,context,originatingObservation,...record}=capture;
     return JSON.stringify([record,comparisonSourceRevision,last?.sourceVersion,live.generation,PACK.state_token,CUT,sourcesKey(),last?.cut,S.mode]);
   }
   function comparisonPocs() {

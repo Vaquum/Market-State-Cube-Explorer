@@ -3,7 +3,7 @@ const { test, expect } = require("./fixtures.js");
 const D = require("./drawings-support.js");
 
 test.use({ reducedMotion: "reduce" });
-const COMPARISON_KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT";
+const COMPARISON_KEY = "market-state-cube-explorer:comparison:v2:BTC/USDT";
 const comparison = (page) => page.evaluate((key) => JSON.parse(sessionStorage.getItem(key)), COMPARISON_KEY);
 const params = (page) => new URLSearchParams(new URL(page.url()).hash.slice(1));
 async function defaults(page) {

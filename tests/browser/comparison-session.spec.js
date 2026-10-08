@@ -447,7 +447,7 @@ test("selected metric shares four-figure cards while original reading and captur
   capture.contextOrigin="frame-v2";
   const original={formula:"fixture.volume@1",unit:"usdt",basis:"amount",result:{tag:"finite",value:1},comparisonMetric:"volume",supportId:"observation",historyIds:["volume"]};
   capture.originatingObservation=original;
-  capture.context={supports:{observation:{supportEnd:through,knownThrough:through}},originatingObservation:original,histories:[{id:"volume",formula:"fixture.volume@1",unit:"usdt",slots:[1,null,3].map(v=>({result:v===null?{tag:"missing",reason:"Fixture gap"}:{tag:"finite",value:v},supportId:"observation",denominatorIds:[]}))}]};
+  capture.context={supports:{observation:{supportEnd:through,knownThrough:through}},originatingObservation:original,histories:[{id:"volume",formula:"fixture.volume@1",unit:"usdt",slots:[1,null,3].map(v=>({result:v===null?{tag:"unsupported",reason:"Fixture gap"}:{tag:"finite",value:v},supportId:"observation",denominatorIds:[]}))}]};
   const fake=await fakeFor("mini");await open(page,fake,value);
   const focus=panel(page).locator('.ol-comparison-focus');
   await expect(focus.locator(':scope > .ol-comparison-metrics > .ol-comparison-metric')).toHaveCount(4);

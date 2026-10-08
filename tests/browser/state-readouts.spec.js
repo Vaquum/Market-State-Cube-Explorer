@@ -259,6 +259,8 @@ test.describe("B38 an undefined column", () => {
     await expect(tip).toBeVisible();
     await expect(tip, "named by what is missing").toContainText(/Undefined: price range is 0/);
     await expect(tip, "and never a number for the column's value").not.toContainText(/Choppiness\s*[0-9.]+\s*$/);
-    await expect(tip, "the typed reason and its denominator").toContainText(/Choppiness · path ÷ range\s*Undefined: price range is 0/);
+    const primary = tip.locator(".ol-core-stats > .ol-cell-stat:first-child dd");
+    await expect(primary, "the canonical typed reason").toHaveAttribute("data-canonical", "undefined");
+    await expect(primary, "the typed reason and its denominator").toContainText("Undefined: price range is 0");
   });
 });

@@ -22688,7 +22688,7 @@
     for (const row of rows) { const i = Math.min(47, Math.floor((row.r - low) * 48 / (high - low))); const v = bins.get(i) ?? { v: 0, low: row.r, high: row.r + 1 }; v.v += row.v; v.high = row.r + 1; bins.set(i, v); }
     const peak = Math.max(...[...bins.values()].map((x) => x.v)), summary = [];
     for (const [i, bin] of bins) {
-      const rect = document.createElementNS(ns, "rect"); rect.setAttribute("x", "3"); rect.setAttribute("y", String(60 - i * 56 / 48)); rect.setAttribute("width", String(bin.v / peak * 125)); rect.setAttribute("height", "1.2"); rect.setAttribute("fill", "currentColor"); rect.setAttribute("opacity", ".55"); svg.append(rect);
+      const rect = document.createElementNS(ns, "rect"); rect.setAttribute("x", "3"); rect.setAttribute("y", String(60 - (bin.high - low) * 56 / (high - low))); rect.setAttribute("width", String(bin.v / peak * 125)); rect.setAttribute("height", String(Math.max(.6, (bin.high - bin.low) * 56 / (high - low)))); rect.setAttribute("fill", "currentColor"); rect.setAttribute("opacity", ".55"); svg.append(rect);
       summary.push(`${price(bin.low * rowWidth)}–${price(bin.high * rowWidth)} USDT: ${usdt(bin.v)} USDT traded`);
     }
     const mark = (row, name, color) => { const line = document.createElementNS(ns, "path"); line.setAttribute("d", `M2 ${60 - (row - low) / (high - low) * 56} H145`); line.setAttribute("stroke", color); line.setAttribute("fill", "none"); line.setAttribute("stroke-width", "1.5"); const title = document.createElementNS(ns, "title"); title.textContent = `${name}: ${price(row * rowWidth)} USDT`; line.append(title); svg.append(line); };
@@ -22752,7 +22752,7 @@
         const normalized = E.measure.normalized(response.result.tag === "finite" ? response.result.value : NaN, response.atr);
         if (!response.paired) text += " Different measured-through boundaries; response retains its own support and no paired interpretation.";
         text += ` Displacement / prior daily ATR: ${normalized.result.tag === "finite" ? cardValue(normalized.result.value, "daily-atr").text + " daily ATR" : E.result.describe(normalized.result).long}.`;
-        text += ` Buyer-initiated ${usdt(q.bv)} USDT; seller-initiated ${usdt(q.v - q.bv)} USDT. Buyer mean: ${composition.buySize.result.tag === "finite" ? usdt(composition.buySize.result.value) + " USDT / trade" : E.result.describe(composition.buySize.result).long}; seller mean: ${composition.sellSize.result.tag === "finite" ? usdt(composition.sellSize.result.value) + " USDT / trade" : E.result.describe(composition.sellSize.result).long}.`;
+        text += ` Buyer-initiated ${refusal ? E.result.describe(refusal).long : usdt(q.bv) + " USDT"}; seller-initiated ${refusal ? E.result.describe(refusal).long : usdt(q.v - q.bv) + " USDT"}. Buyer mean: ${composition.buySize.result.tag === "finite" ? usdt(composition.buySize.result.value) + " USDT / trade" : E.result.describe(composition.buySize.result).long}; seller mean: ${composition.sellSize.result.tag === "finite" ? usdt(composition.sellSize.result.value) + " USDT / trade" : E.result.describe(composition.sellSize.result).long}.`;
         observation.denominators = [{ ...seasonal }, { ...normalized, time: response.time }];
         card.dataset.observation = JSON.stringify(observation);
       }
@@ -22768,7 +22768,7 @@
     if (!location) { location = document.createElement("p"); location.className = "ol-cell-context ol-profile-location"; profile.append(location); }
     const poc = q.poc === null ? null : (q.poc + .5) * 2 ** q.m * PR;
     const profileCard = el("poc-value").closest("section"), area = contiguousArea(q.rows, q.poc, q.v);
-    profileCard.dataset.observation = JSON.stringify(cardObservation(refusal ?? (poc === null ? E.result.make("empty-population", { denominator: "profile volume" }) : E.result.finite(poc)), "profile.poc.centre@1", "usdt", time, band, { level: { n: q.n, m: q.m }, denominators: [{ totalVolume: q.v, buyVolume: q.bv, rowWidth: 2 ** q.m * PR, buyPoc: q.bpoc === null ? null : (q.bpoc + .5) * 2 ** q.m * PR, valueArea: area ? { low: area.r0 * 2 ** q.m * PR, high: area.r1 * 2 ** q.m * PR, actualFraction: area.share, nominalFraction: .7 } : null }] }));
+    profileCard.dataset.observation = JSON.stringify(cardObservation(refusal ?? (poc === null ? E.result.make("empty-population", { denominator: "profile volume" }) : E.result.finite(poc)), "profile.poc.centre@1", "usdt", time, band, { level: { n: q.n, m: q.m }, denominators: [{ totalVolume: refusal ? null : q.v, buyVolume: refusal ? null : q.bv, rowWidth: 2 ** q.m * PR, buyPoc: refusal || q.bpoc === null ? null : (q.bpoc + .5) * 2 ** q.m * PR, valueArea: area && !refusal ? { low: area.r0 * 2 ** q.m * PR, high: area.r1 * 2 ** q.m * PR, actualFraction: area.share, nominalFraction: .7 } : null }] }));
     let profileDetails = profileCard.querySelector(".ol-core-details");
     if (!profileDetails) { profileDetails = document.createElement("details"); profileDetails.className = "ol-core-details"; profileDetails.append(Object.assign(document.createElement("summary"), { textContent: "Measurement details" }), document.createElement("p")); profileCard.append(profileDetails); }
     const profileText = `Half-open profile ${range(...time)} UTC; ${2 ** q.m * PR} USDT rows. POC uses quote volume; Buy POC uses buyer-initiated quote volume and is unavailable with no buy population. Lower row wins ties. Value area grows contiguously in whole bins from POC: ${area && !refusal ? (area.share * 100).toPrecision(4) + "% actual volume" : "unavailable"}, nominal 70%. Independent amount domain. All-price close support ${range(...response.time)} UTC${response.paired ? "" : "; Different measured-through boundaries"}.`;
@@ -22787,7 +22787,7 @@
     const u = last.under, period = Boolean(u?.bands && (p.inspect || p.x < G.x + G.w + G.sw));
     const bands = period ? u.bands : last.query;
     if (!bands) return;
-    const m = bands.m, row = Math.floor(p.p / 2 ** m), band = bands.map.get(row) ?? { r: row, v: 0, bv: 0, w: 0 };
+    const m = bands.m, row = Math.floor(p.p / 2 ** m), band = bands.rows.find((x) => x.r === row) ?? { r: row, v: 0, bv: 0, w: 0 };
     const q = period ? u.volBands ?? bands : bands;
     const time = period ? [u.res.span[0], u.through] : [last.b[0], Math.min(last.b[1], last.cut)];
     const priceBand = [row * 2 ** m * PR, (row + 1) * 2 ** m * PR], kind = period ? u.kind : "volume";
@@ -22797,7 +22797,7 @@
     const unit = kind === "relvol" ? "log2-ratio" : kind === "time" ? "seconds" : "usdt", formula = kind === "relvol" ? "rows.relvol@3" : kind === "time" ? "rows.time.seconds@1" : `rows.${kind}.amount@1`;
     const comparison = u?.volBands ? relvolFor(u.volBands, u.vol, u.rect) : null;
     const profileShare = comparison ? comparison.at(Math.floor(p.p / 2 ** comparison.support.bm)) : E.result.make("unsupported", { reason: "Period comparison unavailable" });
-    const volumeRow = Math.floor(p.p / 2 ** q.m), volume = q.map.get(volumeRow)?.v ?? 0, total = q.v;
+    const volumeRow = Math.floor(p.p / 2 ** q.m), volume = q.rows.find((x) => x.r === volumeRow)?.v ?? 0, total = q.v;
     const observation = cardObservation(result, formula, unit, time, priceBand, { level: { n: q.n ?? renderN(), m },
       denominators: [{ formula: "rows.relvol@3", time, value: rv?.meanVolume ?? null }, { formula: "rows.relvol@2", time: last.b.slice(0, 2), support: comparison?.support ?? null, result: profileShare }] });
     const companions = kind === "time" ? [
@@ -23146,7 +23146,11 @@
         }
       }
     }
-    return E.measure.seasonalActivity({ index, numerator: amount, start, end, cutoff: activeCutoff(), week: 7 * DAYS });
+    const activity = E.measure.seasonalActivity({ index, numerator: amount, start, end, cutoff: activeCutoff(), week: 7 * DAYS });
+    const key = historyKey(Math.min(n, 9), 0), failed = !index && cube.failed.get(key);
+    if (failed) activity.result = E.result.make("failed", { reason: failed });
+    else if (!index && cube.busy?.key === key) activity.result = E.result.make("pending", { reason: "Reading seasonal column history" });
+    return { ...activity, sourcePack: histories.get(historyKey(Math.min(n, 9), 0))?.sourcePack ?? PACK.state_token ?? null };
   }
   function coreContextTarget() {
     if (!inspect.on || !last) return null;
@@ -23162,7 +23166,7 @@
     const src = held ? null : moving ? motionExact(span, n, m) : exactSource(span, n, m);
     const q = held?.query ?? (src ? moving ? boundedMotion(src, n, m, [spec.a, Math.min(spec.b, src.end, cut), 0, Infinity]) : aggregate(src, n, m, span) : null);
     const from = held?.start ?? (src ? sourceRange(src)[0] : Infinity), end = held?.end ?? (src ? Math.min(moving ? src.end : sourceRange(src)[1], cut) : -Infinity);
-    const aligned = band.every((x) => x % 2 ** m === 0);
+    const aligned = band.every((x) => x % 2 ** m === 0), failure = (moving ? motion.failed : cube.failed).get(spec.key);
     let memo = q ? coreHistoryMemo.get(q) : null;
     if (q && !memo) coreHistoryMemo.set(q, (memo = new Map()));
     const key = band.join("|"), hit = memo?.get(key);
@@ -23177,7 +23181,7 @@
     const step = 2 ** n;
     return Array.from({ length: 12 }, (_, i) => {
       const col = c - 11 + i, a = col * step, b = Math.min((col + 1) * step, cut);
-      if (!aligned || a < from || b > end || b <= a || col < 0) return { time: [a, Math.max(a, b)], result: E.result.make("unsupported", { reason: aligned ? "History support unavailable" : "Price band does not tile held history rows" }), col: null, all: all.get(col) ?? null };
+      if (!aligned || a < from || b > end || b <= a || col < 0) return { time: [a, Math.max(a, b)], result: failure ? E.result.make("failed", { reason: failure }) : E.result.make("unsupported", { reason: aligned ? "History support unavailable" : "Price band does not tile held history rows" }), col: null, all: all.get(col) ?? null };
       return { time: [a, b], col: by.get(col) ?? { c: col, v: 0, bv: 0, ct: 0, bt: 0, p: 0, w: 0, hi: NaN, lo: NaN }, all: all.get(col) ?? { c: col, v: 0 }, result: null };
     });
   }
@@ -23195,8 +23199,8 @@
     const step = 2 ** n, held = [...coreBarContexts.values()].find((x) => x.pack === PACK.state_token && x.n === n && x.a <= time[0] && x.b >= Math.floor(time[1]) && x.key.endsWith("|" + activeCutoff()));
     const range = candleRange(n, ...time), bars = held?.bars.filter((x) => x.c * step >= time[0] && x.c * step < time[1]) ?? range.bars;
     const end = Math.min(time[1], held?.end ?? range.end ?? time[0]);
-    const paired = time[0] % step === 0 && time[1] % step === 0 && end === time[1];
     const actualTime = bars.length ? [Math.max(time[0], bars[0].c * step), Math.max(time[0], end)] : time;
+    const paired = time[0] % step === 0 && time[1] % step === 0 && end === time[1] && actualTime[0] === time[0];
     const result = !held && range.state !== "ready" ? E.result.make(range.state === "failed" ? "failed" : "unsupported", { reason: range.reason ?? "All-price bars unavailable; expand to request bounded context" })
       : !bars.length ? E.result.make("empty-population", { denominator: "all-price reported trades" }) : E.result.finite(bars.at(-1).close - bars[0].open);
     return { result, time: actualTime, paired, close: result.tag === "finite" ? bars.at(-1).close : null, atr: contextATR(actualTime[0]) };
@@ -23218,8 +23222,9 @@
     const s = coreBarSpec(n, c), step = 2 ** n, held = coreBarContexts.get(s.key) ?? [...coreBarContexts.values()].find((x) => x.pack === PACK.state_token && x.n === n && x.a <= c * step && x.b >= support[1] && x.key.endsWith("|" + activeCutoff()));
     const range = candleRange(n, c * step, (c + 1) * step), bar = held?.bars.find((x) => x.c === c) ?? range.bars.find((x) => x.c === c);
     const stop = held ? Math.min((c + 1) * step, held.end) : bar?.through;
-    const result = !bar ? E.result.make(motion.failed.has(s.key) ? "failed" : motion.busy?.key === s.key ? "pending" : held ? "empty-population" : "unsupported", { reason: motion.failed.get(s.key) ?? (held ? "No trades in all-price bar support" : PACK.live ? "All-price bar unavailable; inspect to read context" : "OHLC unavailable in recorded source") })
-      : E.result.finite(bar.close - bar.open);
+    const result = bar ? E.result.finite(bar.close - bar.open)
+      : held ? E.result.make("empty-population", { denominator: "all-price reported trades", reason: "No trades in all-price bar support" })
+      : E.result.make(motion.failed.has(s.key) ? "failed" : motion.busy?.key === s.key ? "pending" : "unsupported", { reason: motion.failed.get(s.key) ?? (PACK.live ? "All-price bar unavailable; inspect to read context" : "OHLC unavailable in recorded source") });
     return { result, paired: support[0] === c * step && support[1] === stop, time: [c * step, Number.isFinite(stop) ? stop : Math.min((c + 1) * step, activeCutoff())], atr: contextATR(c * step) };
   }
   function cardValue(value, unit, exact = nav.shift) {
@@ -23501,9 +23506,10 @@
       values[11] = Number.isFinite(metric.value) ? metric.value : null;
       if (main) {
         const selectedSamples = metric.movement ? moving.samples : rowHistory.samples;
-        const observation = cardObservation(readout?.typed ?? (Number.isFinite(metric.value) ? E.result.finite(metric.value) : E.result.make("unsupported", { reason: "Selected measurement unavailable" })), readout?.measure?.formula ?? "cells.volume.amount@1", readout?.measure?.unit ?? "usdt", time, [r * ps * PR, (r + 1) * ps * PR], {
+        const selectedResult = readout?.typed ?? (Number.isFinite(metric.value) ? E.result.finite(metric.value) : E.result.make("unsupported", { reason: "Selected measurement unavailable" }));
+        const observation = cardObservation(selectedResult, readout?.measure?.formula ?? "cells.volume.amount@1", readout?.measure?.unit ?? "usdt", time, [r * ps * PR, (r + 1) * ps * PR], {
           level: { n, m }, denominators: [{ formula: "context.daily-atr@1", numerator: null, denominator: atr, time: [Math.max(0, (Math.floor(c * ts / DAYS) - 1) * DAYS), Math.floor(c * ts / DAYS) * DAYS], source: "Prior completed UTC day · Wilder ATR(14)" }],
-          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], result: i === 11 ? readout?.typed ?? E.result.finite(value) : Number.isFinite(value) ? E.result.finite(value) : selectedSamples[i] ? E.result.make("undefined", { denominator: metric.label + " denominator" }) : E.result.make("unsupported", { reason: "History coverage unavailable" }) })),
+          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], result: i === 11 ? selectedResult : Number.isFinite(value) ? E.result.finite(value) : selectedSamples[i] ? E.result.make("undefined", { denominator: metric.label + " denominator" }) : E.result.make("unsupported", { reason: "History coverage unavailable" }) })),
         });
         tip.dataset.observation = JSON.stringify(observation);
       }
@@ -23746,22 +23752,22 @@
     const band = whole ? [0, 2 ** 32] : [last.b[2], last.b[3]], history = coreColumnHistory(n, m, c, band), moving = coreColumnHistory(n, m, c, band, true);
     const finite = (value) => Number.isFinite(value) ? E.result.finite(value) : E.result.make("unsupported", { reason: "Input unavailable" });
     const ratio = (a, b, denominator) => b === 0 ? E.result.make("undefined", { denominator }) : Number.isFinite(a) && Number.isFinite(b) ? finite(a / b) : E.result.make("unsupported", { reason: "Denominator unavailable" });
-    const compositionInput = x.w ?? x;
+    const compositionInput = whole && x.w && typeof x.w === "object" ? x.w : x;
     const currentSample = history.at(-1);
     const completeInput = currentSample?.time[0] === time[0] && currentSample.time[1] === time[1] ? currentSample.col : null;
     const counters = Number.isFinite(compositionInput.ct) ? compositionInput : completeInput ?? compositionInput;
     const composition = E.measure.cellComposition({ z: counters, read: Number.isFinite(counters.ct) ? null : { state: "unsupported", reason: "Aggressor counts unavailable from touched-row response" } });
     const series = (pick, movement = false) => (movement ? moving : history).map((sample) => ({ time: sample.time, result: sample.col ? pick(sample.col, sample) : sample.result }));
     const metrics = {
-      volume: { label: "Volume", unit: "usdt", field: "volume", result: finite((x.w ?? x).v), history: series((v) => finite(v.v)) },
+      volume: { label: "Volume", unit: "usdt", field: "volume", result: finite(compositionInput.v), history: series((v) => finite(v.v)) },
       trades: { label: "Trades", unit: "trades", field: "trades", result: finite(counters.ct), history: series((v) => finite(v.ct)) },
       imbalance: { label: "Delta / volume", unit: "signed-share", field: "imbalance", result: composition.imbalance.result, history: series((v) => E.measure.cellComposition({ z: v }).imbalance.result) },
       buySize: { label: "Buyer-initiated mean", unit: "usdt-per-trade", field: "buySize", result: composition.buySize.result, history: series((v) => E.measure.cellComposition({ z: v }).buySize.result) },
       sellSize: { label: "Seller-initiated mean", unit: "usdt-per-trade", field: "sellSize", result: composition.sellSize.result, history: series((v) => E.measure.cellComposition({ z: v }).sellSize.result) },
       buyAmount: { label: "Buyer-initiated USDT", unit: "usdt", result: finite(counters.bv) },
       sellAmount: { label: "Seller-initiated USDT", unit: "usdt", result: finite(counters.v - counters.bv) },
-      buyShare: { label: "Buyer-initiated share", unit: "share", result: ratio(counters.bv, (x.w ?? x).v, "column volume") },
-      sellShare: { label: "Seller-initiated share", unit: "share", result: ratio(counters.v - counters.bv, (x.w ?? x).v, "column volume") },
+      buyShare: { label: "Buyer-initiated share", unit: "share", result: ratio(counters.bv, compositionInput.v, "column volume") },
+      sellShare: { label: "Seller-initiated share", unit: "share", result: ratio(counters.v - counters.bv, compositionInput.v, "column volume") },
       tradeRate: { label: "Trades per covered minute", unit: "trades-per-minute", result: ratio(counters.ct * 60, (time[1] - time[0]) * BASE, "covered seconds") },
     };
     const currentHistory = history.at(-1);
@@ -23775,7 +23781,7 @@
     metrics.seasonal.history = history.map((sample) => ({ time: sample.time, result: seasonalContext(n, sample.time[0], sample.time[1], sample.all?.v ?? NaN).result }));
     const observation = cardObservation(readout.typed, readout.measure.formula, readout.measure.unit, time, whole ? null : band.map((v) => v * PR), {
       denominators: [{ formula: seasonal.formula, result: seasonal.result, numerator: seasonal.numerator, denominator: seasonal.denominator, count: seasonal.count,
-        matches: seasonal.matches, precision: seasonal.precision, source: seasonal.source }, { formula: norm.formula, result: norm.result, numerator: norm.numerator, denominator: norm.denominator, time: response.time, price: null, paired: response.paired, reason: response.paired ? null : "Different measured-through boundaries" }],
+        matches: seasonal.matches, precision: seasonal.precision, source: seasonal.source, sourcePack: seasonal.sourcePack }, { formula: norm.formula, result: norm.result, numerator: norm.numerator, denominator: norm.denominator, time: response.time, price: null, paired: response.paired, reason: response.paired ? null : "Different measured-through boundaries" }],
       history: history.map((sample) => ({ time: sample.time, price: band.map((v) => v * PR), result: sample.result ?? E.result.finite(sample.col.v) })),
     });
     const primaryHistory = series((col, sample) => {
@@ -36286,20 +36292,22 @@
   // The continuations' history at the drawn level: each column's POC, volume
   // and taker-buy volume, for up to the last 100,000 columns.
   const histories = new Map(),
-    historyKey = (n, m) => ["history", live.generation, PACK.state_token, n, m].join("|");
+    // MSCC contains only completed columns. A delta appends the tail; a whole
+    // pack invalidates the generation. Token changes must not orphan a held read.
+    historyKey = (n, m) => ["history", live.generation, n, m].join("|");
   function historyWant() {
     const target = coreContextTarget(), expanded = Boolean(el("context").querySelector(".ol-core-details[open]")), wants = [];
     if (S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases")) wants.push([renderN(), renderM()]);
     if (target || expanded) wants.push([Math.min(target?.n ?? renderN(), 9), 0]);
     for (const [n, m] of wants) {
-      const key = historyKey(n, m);
+      const key = historyKey(n, m), sourcePack = PACK.state_token;
       if (histories.has(key) || cube.failed.has(key)) continue;
       return { key, relevant: () => {
         const current = coreContextTarget(), expandedNow = Boolean(el("context").querySelector(".ol-core-details[open]"));
         return (S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases")) && historyKey(renderN(), renderM()) === key ||
           (current || expandedNow) && historyKey(Math.min(current?.n ?? renderN(), 9), 0) === key;
       }, path: `/cube/columns?n=${n}&m=${m}`, decode: (body) => unpackHistory(body.columns),
-        apply: (history) => { histories.set(key, history); while (histories.size > 3) histories.delete(histories.keys().next().value); evidenceCache.clear(); } };
+        apply: (history) => { histories.set(key, { ...history, sourcePack }); while (histories.size > 3) histories.delete(histories.keys().next().value); evidenceCache.clear(); } };
     }
     return null;
   }

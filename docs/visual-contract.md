@@ -795,12 +795,12 @@ Rendered from the Status column at S2's convergence: `done` is the work of S1 an
 | Prefix | Rows | keep | todo-S1 | todo-S2 | todo-S3 | done |
 |---|---|---|---|---|---|---|
 | T | 38 | 20 | 0 | 0 | 0 | 18 |
-| C | 42 | 3 | 0 | 0 | 0 | 39 |
-| D | 18 | 8 | 0 | 0 | 0 | 10 |
-| F | 15 | 0 | 0 | 0 | 0 | 15 |
+| C | 49 | 3 | 0 | 0 | 0 | 46 |
+| D | 22 | 8 | 0 | 0 | 0 | 14 |
+| F | 17 | 0 | 0 | 0 | 0 | 17 |
 | R | 15 | 0 | 0 | 0 | 0 | 15 |
 | N | 45 | 0 | 0 | 0 | 0 | 45 |
-| all | 173 | 31 | 0 | 0 | 0 | 142 |
+| all | 186 | 31 | 0 | 0 | 0 | 155 |
 
 ## 11. Contributor checklist
 

@@ -707,6 +707,7 @@
     else serialized = comparisonSerialize(record?.comparisonVersion === 1 ? comparisonUpgrade(record) : record);
     if (!serialized.ok) return serialized;
     if (typeof record === "string" && serialized.value?.comparisonVersion === 1) serialized = comparisonSerialize(comparisonUpgrade(serialized.value));
+    if (!serialized.ok) return serialized;
     if (serialized.instrument !== undefined && serialized.instrument !== instrument) return comparisonFailure("unreadable", "comparison instrument does not match its slot");
     const got = fetchText("sessionStorage", comparisonRoot + instrument);
     if (!got.ok) return comparisonFailure("unsaved", "comparison storage is unavailable (" + describe(got.error) + ")");

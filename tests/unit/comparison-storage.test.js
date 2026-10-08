@@ -332,3 +332,18 @@ test("failed v2 readback during migration retains the exact legacy rollback", ()
   const result=a.comparison.write("BTC/USDT",working); assert.equal(result.ok,false); assert.equal(result.status,"unsaved");
   assert.equal(a.session.map.get(LEGACY_KEY),raw); assert.equal(working.captures.length,1);
 });
+
+
+test("a legacy JSON string whose v2 upgrade exceeds the byte cap cannot replace saved work", () => {
+  const a = load(), value = legacy();
+  value.captures[0].source += "x".repeat(CAP - Buffer.byteLength(JSON.stringify(value)));
+  const raw = JSON.stringify(value);
+  assert.equal(Buffer.byteLength(raw), CAP, "the incoming v1 is valid at the existing cap");
+  assert.equal(a.comparison.validate(JSON.parse(raw)).ok, true);
+  assert.equal(a.comparison.write("BTC/USDT", record(2)).ok, true);
+  const before = a.session.getItem(KEY), writes = a.session.writes.length;
+  const failed = a.comparison.write("BTC/USDT", raw);
+  assert.equal(failed.status, "oversized"); assert.equal(failed.ok, false);
+  assert.equal(a.session.getItem(KEY), before); assert.equal(a.session.writes.length, writes);
+  assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), record(2));
+});

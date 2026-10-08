@@ -140,6 +140,7 @@ test("prior-cycle identity stays a candidate while later exceedance is forming",
 
 test("historical visible-range VWAP withholds later profile stretch", async ({ page, fakeFor, probe }) => {
   const { card } = await reference(page, fakeFor, probe, "visible,vvwap", /^Visible VWAP$/, "#t=2021-02-16T00:00Z~2021-02-17T00:00Z&p=9000~15500&r=9,0&vis=2", { trades, cutoffIso: "2021-02-18T00:00:00Z" });
+  await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).denominators[0].close).toBeGreaterThan(0);
   const record = JSON.parse(await card.getAttribute("data-observation"));
   const context = record.denominators[0];
   expect(record.result.tag).toBe("finite");

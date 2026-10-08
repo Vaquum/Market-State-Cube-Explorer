@@ -359,3 +359,27 @@ test("Add refuses a near-cap collection when revealing its new cell requires pag
   expect(await page.evaluate((key) => sessionStorage.getItem(key), KEY)).toBe(raw);
   expect(await saved(page)).toEqual(before);
 });
+
+
+test("captured Cascade original and history wait for their complete parent in replay", async ({page,fakeFor,probe}) => {
+  const fake=await fakeFor("mini"); await ready(page,fake,probe,VIEW+"&mode=cascade");
+  const p=await point(page);await page.mouse.move(p.x,p.y);await page.keyboard.press("e");
+  await page.locator('[data-surface="cells"]').click();
+  const card=page.locator("#ol-inspect-readout");
+  await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).result.tag).toBe("finite");
+  await probe.waitForQuiet({quietMs:300,timeout:30000});
+  await page.locator("#ol-inspect").focus();await page.keyboard.press("Enter");
+  await page.locator("#ol-inspect-detail-body").getByRole("button",{name:"Add to comparison"}).click();
+  await expect.poll(async () => (await saved(page))?.captures.length).toBe(1);
+  const capture=(await saved(page)).captures[0], C=require("../../src/comparison.js");
+  expect(capture.originatingObservation.formula).toBe("cells.cascade.log2@1");
+  const support=capture.context.supports[capture.originatingObservation.supportId];
+  expect(support.knownThrough).toBe(EPOCH+112500);
+  expect(support.knownThrough).toBeGreaterThan(capture.observed.t1);
+  const history=capture.context.histories.find(h=>h.id==="cascade");
+  expect(history.slots.at(-1).denominatorIds.length).toBeGreaterThan(0);
+  expect(C.originating(capture,capture.observed.t1).tag).toBe("hidden");
+  expect(C.frozenHistory(capture,"cascade",capture.observed.t1).slots.at(-1).result.tag).toBe("hidden");
+  expect(C.captureText(capture,{edge:capture.observed.t1})).toContain("Original captured reading: Unavailable in replay");
+  expect(C.originating(capture,support.knownThrough).value).toBe(capture.originatingObservation.result.value);
+});

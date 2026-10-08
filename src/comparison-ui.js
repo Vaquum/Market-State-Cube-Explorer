@@ -148,7 +148,9 @@
       const original = api.originating(capture, options.edge), normalized = api.normalizedPoc(capture, state.poc, options.edge);
       const originText = original.tag === "finite" ? `${number(original.value, 8)} ${unitText(original.unit)} · ${original.formula} · ${original.basis}` : original.reason;
       const pocText = normalized.tag === "finite" ? `${signed(normalized.value, 6)} daily ATR · ${normalized.relation} · ${normalized.causal}` : normalized.reason;
-      const histories = orderedMetrics(currentAnalysis).map((metric) => {
+      const historyDescriptors = orderedMetrics(currentAnalysis);
+      for (const history of capture.context?.histories ?? []) if (!historyDescriptors.some(metric => metric.key === history.id)) historyDescriptors.push({key: history.id, label: history.id === "imbalance" ? "Net taker imbalance" : history.formula});
+      const histories = historyDescriptors.map((metric) => {
         const history = api.frozenHistory(capture, metric.key, options.edge);
         const values = history.slots.map((slot) => slot.result.tag === "finite" ? slot.result.value : null), finiteValues = values.filter(finite), lo = Math.min(...finiteValues), hi = Math.max(...finiteValues);
         const lines = values.map((value, i) => value === null ? "" : `<circle cx="${4 + i * 10}" cy="${hi === lo ? 20 : 36 - 32 * (value-lo)/(hi-lo)}" r="2"/>`).join("");

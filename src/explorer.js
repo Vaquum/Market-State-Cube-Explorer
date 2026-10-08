@@ -4822,6 +4822,7 @@
       return finite(measure(selected, sample.z, basis, readout?.measure?.basis === "perMinute" ? "perMinute" : readout?.measure?.basis === "usdt" ? "usdt" : "spans", sample.end));
     };
     const compactKeys = [selected, ...["volume", "trades", ["flow", "delta"].includes(selected) ? "size" : "imbalance", "size"].filter((key) => key !== selected).slice(0, 3)], compactHistories = [];
+    const measurementDependencies = (col) => selected === "cascade" ? [{ formula: "cells.cascade.parent@1", time: [Math.floor(col / 2) * 2 * ts, (Math.floor(col / 2) + 1) * 2 * ts], knownAt: (Math.floor(col / 2) + 1) * 2 * ts, source: "Complete parent cell" }] : [];
     const stats = document.createElement(detailed ? "div" : "dl"); stats.className = "ol-cell-stats";
     const appendMetric = (parent, metric, main = false) => {
       const row = document.createElement("div"); row.className = "ol-cell-stat";
@@ -4847,15 +4848,15 @@
         const selectedSamples = metric.movement ? moving.samples : rowHistory.samples;
         const selectedResult = readout?.typed ?? (Number.isFinite(metric.value) ? E.result.finite(metric.value) : E.result.make("unsupported", { reason: "Selected measurement unavailable" }));
         const observation = cardObservation(selectedResult, readout?.measure?.formula ?? "cells.volume.amount@1", readout?.measure?.unit ?? "usdt", time, [r * ps * PR, (r + 1) * ps * PR], {
-          level: { n, m }, denominators: [{ formula: "context.daily-atr@1", numerator: null, denominator: atr, time: [Math.max(0, (Math.floor(c * ts / DAYS) - 1) * DAYS), Math.floor(c * ts / DAYS) * DAYS], source: "Prior completed UTC day · Wilder ATR(14)" }],
-          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], result: i === 11 ? selectedResult : Number.isFinite(value) ? E.result.finite(value) : selectedSamples[i] ? E.result.make("undefined", { denominator: metric.label + " denominator" }) : E.result.make("unsupported", { reason: "History coverage unavailable" }) })),
+          level: { n, m }, denominators: [{ formula: "context.daily-atr@1", numerator: null, denominator: atr, time: [Math.max(0, (Math.floor(c * ts / DAYS) - 1) * DAYS), Math.floor(c * ts / DAYS) * DAYS], source: "Prior completed UTC day · Wilder ATR(14)" }, ...measurementDependencies(c)],
+          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], denominators: measurementDependencies(c - 11 + i), result: i === 11 ? selectedResult : Number.isFinite(value) ? E.result.finite(value) : selectedSamples[i] ? E.result.make("undefined", { denominator: metric.label + " denominator" }) : E.result.make("unsupported", { reason: "History coverage unavailable" }) })),
         });
         tip.dataset.observation = JSON.stringify(observation);
       }
       const metricKey = main ? selected : Object.keys(metrics).find((key) => metrics[key] === metric);
       if (compactKeys.includes(metricKey)) {
         const descriptor = composition[metricKey] ?? measure(metricKey, current, metricKey === selected ? basis : metricKey === "size" ? "mean" : "amount");
-        compactHistories.push({ id: metricKey, formula: descriptor.formula, unit: descriptor.unit, slots: values.map((v, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], result: Number.isFinite(v) ? E.result.finite(v) : E.result.make("unsupported", { reason: "Displayed compact history unavailable at capture" }) })) });
+        compactHistories.push({ id: metricKey, formula: descriptor.formula, unit: descriptor.unit, slots: values.map((v, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], denominators: main ? measurementDependencies(c - 11 + i) : [], result: Number.isFinite(v) ? E.result.finite(v) : E.result.make("unsupported", { reason: "Displayed compact history unavailable at capture" }) })) });
       }
       const spark = readingSparkline(values, metric.label, { signed: metric.signed, share: metric.share, fixed: metric.fixed, provisional: open });
       row.append(term, value, spark);
@@ -22310,12 +22311,23 @@
     supports.atr = { formula: "context.daily-atr@1", unit: "usdt", result: available ? E.result.finite(atr.denominator) : E.result.make("unsupported", { reason: "Context ATR unavailable at capture" }),
       supportEnd: available ? comparisonMs(atr.time[1]) : null, knownThrough: available ? comparisonMs(atr.time[1]) : null, time: atr?.time ?? null, source: atr?.source ?? "Context not held at capture" };
     const historySupportIds = new Map();
+    const denominatorSupport = (record) => {
+      const end = Array.isArray(record.time) && Number.isFinite(record.time[1]) ? comparisonMs(record.time[1]) : factSupport;
+      const known = Number.isFinite(record.knownAt) ? comparisonMs(record.knownAt) : end;
+      const support = { ...record, supportEnd: end, knownThrough: Math.max(end, known) }, key = JSON.stringify(support);
+      let id = historySupportIds.get(key);
+      if (!id) { id = `dependency:${historySupportIds.size}`; historySupportIds.set(key, id); supports[id] = support; }
+      return id;
+    };
+    const originDependencies = (observation?.denominators ?? []).map(denominatorSupport);
+    supports.observation.supportEnd = Math.max(factSupport, comparisonMs(observation?.time?.[1] ?? fallback.time?.[1] ?? target.c * 2 ** target.n), ...originDependencies.map(id => supports[id].supportEnd));
+    supports.observation.knownThrough = Math.max(supports.observation.supportEnd, ...originDependencies.map(id => supports[id].knownThrough));
     for (const series of displayed) {
       const slots = series.slots.map((slot) => {
         const support = { time: slot.time, supportEnd: comparisonMs(slot.time[1]), knownThrough: comparisonMs(slot.time[1]), source: supports.observation.source, pack: last.token, precision: supports.observation.precision };
         const key = JSON.stringify(support); let id = historySupportIds.get(key);
         if (!id) { id = `history:${historySupportIds.size}`; historySupportIds.set(key,id); supports[id]=support; }
-        return { result: slot.result, supportId: id, denominatorIds: [] };
+        return { result: slot.result, supportId: id, denominatorIds: (slot.denominators ?? []).map(denominatorSupport) };
       });
       histories.push({ id: series.id, formula: series.formula, unit: series.unit, slots });
     }

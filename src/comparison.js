@@ -211,7 +211,9 @@
     const sourceText = source && typeof source === "object" ? Object.entries(source).filter(([, v]) => typeof v === "string" || typeof v === "number" || typeof v === "boolean").map(([k, v]) => `${k}=${v}`).join("; ") : source;
     lines.push(`Source: ${sourceText || "Unknown"}`, `Captured at: ${iso(capture.capturedAt)}`, `Measured through: ${iso(capture.measuredThrough)}`);
     if (poc) lines.push(`POC reference: ${visible(poc, edge) ? `${poc.label || poc.period || "POC"}; ${finite(poc.price) ? numberText(poc.price) + " USDT" : "Unavailable"}; measured through ${iso(poc.knownThrough)}` : "Unavailable in replay"}`);
-    for (const descriptor of METRICS) {
+    const historyDescriptors = [...METRICS];
+    for (const history of capture.context?.histories ?? []) if (!historyDescriptors.some(metric => metric.key === history.id)) historyDescriptors.push({key: history.id, label: history.id === "imbalance" ? "Net taker imbalance" : history.formula});
+    for (const descriptor of historyDescriptors) {
       const history = frozenHistory(capture, descriptor.key, edge);
       lines.push(`${descriptor.label} frozen history: ${history.reason ?? history.slots.map((slot) => slot.result.tag === "finite" ? slot.result.value : slot.result.reason ?? slot.result.tag).join("; ")}`);
     }

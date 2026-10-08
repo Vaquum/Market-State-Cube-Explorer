@@ -448,6 +448,7 @@ test("selected metric shares four-figure cards while original reading and captur
   const original={formula:"fixture.volume@1",unit:"usdt",basis:"amount",result:{tag:"finite",value:1},comparisonMetric:"volume",supportId:"observation",historyIds:["volume"]};
   capture.originatingObservation=original;
   capture.context={supports:{observation:{supportEnd:through,knownThrough:through}},originatingObservation:original,histories:[{id:"volume",formula:"fixture.volume@1",unit:"usdt",slots:[1,null,3].map(v=>({result:v===null?{tag:"unsupported",reason:"Fixture gap"}:{tag:"finite",value:v},supportId:"observation",denominatorIds:[]}))}]};
+  capture.context.histories.push({id:"imbalance",formula:"cells.imbalance@1",unit:"signed-share",slots:[{result:{tag:"finite",value:.5},supportId:"observation",denominatorIds:[]}]});
   const fake=await fakeFor("mini");await open(page,fake,value);
   const focus=panel(page).locator('.ol-comparison-focus');
   await expect(focus.locator(':scope > .ol-comparison-metrics > .ol-comparison-metric')).toHaveCount(4);
@@ -458,6 +459,8 @@ test("selected metric shares four-figure cards while original reading and captur
   await focus.locator('.ol-comparison-details summary').click();
   await expect(focus.locator('.ol-comparison-details')).toContainText('fixture.volume@1');
   await expect(focus.locator('[data-history="volume"]')).toContainText('Fixture gap');
+  await expect(focus.locator('[data-history="imbalance"]')).toContainText('Net taker imbalance');
+  await expect(focus.locator('[data-history="imbalance"] li')).toHaveAttribute('data-canonical','0.5');
   await action(page,'view').filter({hasText:'Matrix'}).click();
   await expect(panel(page).locator('.ol-comparison-matrix thead th').nth(1)).toHaveText('Trades');
   await persisted(page,v=>v?.selectedMetric==='trades');

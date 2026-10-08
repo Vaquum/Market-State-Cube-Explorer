@@ -226,3 +226,9 @@ test("frozen history gates its own denominators independently of selected metric
   assert.match(C.frozenHistory(c,"trades").reason,/not captured/);
   assert.match(C.frozenHistory({...c,contextOrigin:"legacy-structural"},"volume").reason,/not recorded/);
 });
+
+test("copy includes every frozen compact companion without adding comparison metrics",()=>{
+  const c=capture("a",{}, {contextOrigin:"frame-v2",context:{supports:{own:{supportEnd:T,knownThrough:T}},histories:[{id:"imbalance",formula:"cells.imbalance@1",unit:"signed-share",slots:[{result:{tag:"finite",value:.5},supportId:"own",denominatorIds:[]}]}]}});
+  assert.match(C.captureText(c),/Net taker imbalance frozen history: 0.5/);
+  assert.equal(C.METRICS.length,9);
+});

@@ -104,7 +104,7 @@ test.describe("B27 the event strip", () => {
     expect(eh, "one line").toBe(14);
     const line = frame.texts.find((t) => /lanes need a taller chart$/.test(t.text));
     expect(line, "the disclosure").toBeTruthy();
-    expect(line.text).toMatch(/^4h squeeze \d+ · 1D squeeze \d+ · Weekend gap \d+ · lanes need a taller chart$/);
+    expect(line.text).toMatch(/^4h squeeze \d+ · 1D squeeze \d+ · Spot gap \d+ · lanes need a taller chart$/);
     expect(frame.texts.some((t) => t.text === "4h squeeze" && t.align === "right"), "no lane name").toBe(false);
     expect(line.y).toBeCloseTo(ey + 7, 0);
   });

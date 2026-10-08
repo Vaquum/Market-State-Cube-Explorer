@@ -88,15 +88,21 @@
     if (!history) return { reason: "History not captured for this metric", slots: [] };
     const slots = history.slots.map((slot) => {
       const support = context.supports[slot.supportId], denominators = slot.denominatorIds.map((id) => context.supports[id]);
-      if (!visible(support, edge) || denominators.some((s) => !visible(s, edge))) return { result: unavailable("hidden", "Unavailable in replay"), supportId: slot.supportId };
+      const missingParent = history.formula === "cells.cascade.log2@1" && !slot.denominatorIds.length;
+      if ((edge !== null && missingParent) || !visible(support, edge) || denominators.some((s) => !visible(s, edge))) return { result: unavailable("hidden", "Unavailable in replay"), supportId: slot.supportId };
       return { ...slot, support };
     });
     return { ...history, slots };
   }
+  function frozenHistories(capture, edge = null) {
+    return (capture?.context?.histories || []).map((history) => ({ ...frozenHistory(capture, history.id, edge), id: history.id, formula: history.formula, unit: history.unit }));
+  }
   function originating(capture, edge = null) {
     const origin = capture?.originatingObservation, support = capture?.context?.supports?.[origin?.supportId];
     if (!origin) return { tag: "unsupported", reason: "Original captured reading unknown; frozen context not recorded" };
-    if (!visible(support, edge)) return { tag: "hidden", reason: "Unavailable in replay" };
+    const denominators = (origin.denominatorIds || []).map((id) => capture?.context?.supports?.[id]);
+    const missingParent = origin.formula === "cells.cascade.log2@1" && !origin.denominatorIds?.length;
+    if ((edge !== null && missingParent) || !visible(support, edge) || denominators.some((s) => !visible(s, edge))) return { tag: "hidden", reason: "Unavailable in replay" };
     return { ...origin, tag: origin.result?.tag ?? "unsupported", value: origin.result?.value ?? null, reason: origin.result?.reason ?? null, support };
   }
   function midpoint(a, b) {
@@ -211,15 +217,14 @@
     const sourceText = source && typeof source === "object" ? Object.entries(source).filter(([, v]) => typeof v === "string" || typeof v === "number" || typeof v === "boolean").map(([k, v]) => `${k}=${v}`).join("; ") : source;
     lines.push(`Source: ${sourceText || "Unknown"}`, `Captured at: ${iso(capture.capturedAt)}`, `Measured through: ${iso(capture.measuredThrough)}`);
     if (poc) lines.push(`POC reference: ${visible(poc, edge) ? `${poc.label || poc.period || "POC"}; ${finite(poc.price) ? numberText(poc.price) + " USDT" : "Unavailable"}; measured through ${iso(poc.knownThrough)}` : "Unavailable in replay"}`);
-    const historyDescriptors = [...METRICS];
-    for (const history of capture.context?.histories ?? []) if (!historyDescriptors.some(metric => metric.key === history.id)) historyDescriptors.push({key: history.id, label: history.id === "imbalance" ? "Net taker imbalance" : history.formula});
-    for (const descriptor of historyDescriptors) {
-      const history = frozenHistory(capture, descriptor.key, edge);
-      lines.push(`${descriptor.label} frozen history: ${history.reason ?? history.slots.map((slot) => slot.result.tag === "finite" ? slot.result.value : slot.result.reason ?? slot.result.tag).join("; ")}`);
+    if (capture.contextOrigin === "legacy-structural" || !capture.context) lines.push("Frozen context not recorded");
+    for (const history of frozenHistories(capture, edge)) {
+      const label = byKey[history.id]?.label ?? (history.id === "imbalance" ? "Net taker imbalance" : history.id);
+      lines.push(`${label} frozen history: ${history.reason ?? history.slots.map((slot) => slot.result.tag === "finite" ? slot.result.value : slot.result.reason ?? slot.result.tag).join("; ")}`);
     }
     return lines.join("\n");
   }
-  const api = Object.freeze({ METRICS, identity, value, analyze, sort, captureText, normalizedPoc, frozenHistory, originating });
+  const api = Object.freeze({ METRICS, identity, value, analyze, sort, captureText, normalizedPoc, frozenHistory, frozenHistories, originating });
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.explorerComparison = api;
 })();

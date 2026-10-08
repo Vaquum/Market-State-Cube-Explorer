@@ -287,6 +287,42 @@ test("recovered absence stays known when an owned write succeeds but its verific
 
 const LEGACY_KEY = KEY.replace(":v2:", ":v1:");
 const legacy = () => { const v = record(); v.comparisonVersion = 1; delete v.selectedMetric; for (const c of v.captures) { delete c.contextOrigin; delete c.context; delete c.originatingObservation; } return v; };
+test("a valid v1 at 4 MiB cannot overwrite v2 when its upgrade exceeds the cap", () => {
+  for (const input of ["object", "string", "serialized"]) {
+    const a = load(), value = legacy(), saved = record(2);
+    value.captures[0].source += "x".repeat(CAP - Buffer.byteLength(JSON.stringify(value)));
+    const raw = JSON.stringify(value);
+    assert.equal(Buffer.byteLength(raw), CAP, "the input is independently measured at the v1 byte boundary");
+    assert.equal(a.comparison.validate(value).ok, true);
+    const v1 = a.comparison.serialize(value); assert.equal(v1.ok, true); assert.equal(v1.bytes, CAP);
+    a.session.map.set(LEGACY_KEY, raw);
+    assert.equal(a.comparison.write("BTC/USDT", saved).ok, true);
+    const before = a.session.getItem(KEY), writes = a.session.writes.length;
+    const working = input === "object" ? value : input === "string" ? raw : v1;
+    const result = a.comparison.write("BTC/USDT", working);
+    assert.equal(result.ok, false, input); assert.equal(result.status, "oversized", input);
+    assert.equal(a.session.getItem(KEY), before, "failed upgrade preserves the exact valid v2 text");
+    assert.equal(a.session.getItem(LEGACY_KEY), raw, "failed upgrade preserves the exact legacy rollback");
+    assert.equal(a.session.writes.length, writes, "failed upgrade makes no setItem call");
+    assert.equal(Buffer.byteLength(JSON.stringify(value)), CAP, "failed upgrade leaves the running v1 input unchanged");
+    assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), saved);
+  }
+});
+test("all v1 write inputs accept an upgrade that lands exactly at the v2 byte cap", () => {
+  for (const input of ["object", "string", "serialized"]) {
+    const a = load(), value = legacy(), expected = record();
+    const padding = "x".repeat(CAP - Buffer.byteLength(JSON.stringify(expected)));
+    value.captures[0].source += padding; expected.captures[0].source += padding;
+    const raw = JSON.stringify(value);
+    assert.ok(Buffer.byteLength(raw) < CAP); assert.equal(Buffer.byteLength(JSON.stringify(expected)), CAP);
+    const working = input === "object" ? value : input === "string" ? raw : a.comparison.serialize(value);
+    const result = a.comparison.write("BTC/USDT", working);
+    assert.equal(result.ok, true, input); assert.equal(result.bytes, CAP, input);
+    assert.equal(Buffer.byteLength(a.session.getItem(KEY)), CAP);
+    assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), expected, "the accepted write is a complete valid v2 record");
+    assert.equal(value.comparisonVersion, 1, "upgrade does not mutate its input");
+  }
+});
 test("legacy restore is read-only; first verified v2 mutation retires only unchanged copied legacy text", () => {
   const a = load(), raw = JSON.stringify(legacy()); a.session.map.set(LEGACY_KEY, raw);
   const got = a.comparison.read("BTC/USDT"); assert.equal(got.value.comparisonVersion, 2); assert.equal(got.value.captures[0].contextOrigin, "legacy-structural");
@@ -332,7 +368,28 @@ test("failed v2 readback during migration retains the exact legacy rollback", ()
   const result=a.comparison.write("BTC/USDT",working); assert.equal(result.ok,false); assert.equal(result.status,"unsaved");
   assert.equal(a.session.map.get(LEGACY_KEY),raw); assert.equal(working.captures.length,1);
 });
-
+test("originating observation denominator IDs round-trip and reject unknown supports atomically", () => {
+  const a = load(), value = record(), c = value.captures[0]; c.contextOrigin = "frame-v2";
+  c.context.supports = {
+    observation: { supportEnd: 1030000, knownThrough: 1030000 },
+    atr: { supportEnd: 1000000, knownThrough: 1000000, result: { tag: "finite", value: 100 } },
+  };
+  c.context.originatingObservation = { formula: "cells.volume.intensity@1", unit: "usdt/s", basis: "intensity", supportId: "observation", denominatorIds: ["atr"], historyIds: [], comparisonMetric: "volume", result: { tag: "finite", value: 10 } };
+  c.originatingObservation = c.context.originatingObservation;
+  assert.equal(a.comparison.write("BTC/USDT", value).ok, true);
+  const raw = a.session.getItem(KEY), writes = a.session.writes.length;
+  assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), value);
+  for (const denominatorIds of [["unknown"], [null], "atr", null, {}]) {
+    const invalid = plain(value), capture = invalid.captures[0];
+    capture.context.originatingObservation.denominatorIds = denominatorIds;
+    capture.originatingObservation.denominatorIds = denominatorIds;
+    assert.equal(a.comparison.write("BTC/USDT", invalid).ok, false);
+    assert.equal(a.session.getItem(KEY), raw); assert.equal(a.session.writes.length, writes);
+  }
+  delete c.context.originatingObservation.denominatorIds;
+  assert.equal(a.comparison.write("BTC/USDT", value).ok, true, "older v2 observations remain readable without denominator IDs");
+  assert.deepEqual(plain(a.comparison.read("BTC/USDT").value), value);
+});
 
 test("a legacy JSON string whose v2 upgrade exceeds the byte cap cannot replace saved work", () => {
   const a = load(), value = legacy();

@@ -4304,8 +4304,7 @@
     const s = coreBarSpec(n, c), step = 2 ** n, held = coreBarContexts.get(s.key) ?? [...coreBarContexts.values()].find((x) => coreBarCompatible(x) && x.n === n && x.a <= c * step && x.b >= support[1]);
     const range = candleRange(n, c * step, (c + 1) * step), bar = held?.bars.find((x) => x.c === c) ?? range.bars.find((x) => x.c === c);
     const stop = held ? Math.min((c + 1) * step, held.end) : bar?.through;
-    const result = bar && (!Number.isFinite(stop) || stop > activeCutoff()) ? E.result.make("hidden", { reason: "All-price bar support ends after the active cutoff" })
-      : bar ? E.result.finite(bar.close - bar.open)
+    const result = bar ? E.result.finite(bar.close - bar.open)
       : held ? E.result.make("empty-population", { denominator: "all-price reported trades", reason: "No trades in all-price bar support" })
       : E.result.make(motion.failed.has(s.key) ? "failed" : motion.busy?.key === s.key ? "pending" : "unsupported", { reason: motion.failed.get(s.key) ?? (PACK.live ? "All-price bar unavailable; inspect to read context" : "OHLC unavailable in recorded source") });
     return { result, paired: support[0] === c * step && support[1] === stop, time: [c * step, Number.isFinite(stop) ? stop : Math.min((c + 1) * step, activeCutoff())], atr: contextATR(c * step) };
@@ -4828,7 +4827,11 @@
       return finite(measure(selected, sample.z, basis, readout?.measure?.basis === "perMinute" ? "perMinute" : readout?.measure?.basis === "usdt" ? "usdt" : "spans", sample.end));
     };
     const compactKeys = [selected, ...["volume", "trades", ["flow", "delta"].includes(selected) ? "size" : "imbalance", "size"].filter((key) => key !== selected).slice(0, 3)], compactHistories = [];
-    const measurementDependencies = (col) => selected === "cascade" ? [{ formula: "cells.cascade.parent@1", time: [Math.floor(col / 2) * 2 * ts, (Math.floor(col / 2) + 1) * 2 * ts], knownAt: (Math.floor(col / 2) + 1) * 2 * ts, source: "Complete parent cell" }] : [];
+    const measurementDenominators = (key, support) => {
+      if (key !== "cascade") return [];
+      const start = Math.floor(Math.floor(support[0] / ts) / 2) * 2 * ts;
+      return [{ formula: "cells.cascade.parent-volume@1", unit: "usdt", time: [start, start + 2 * ts], measuredThrough: start + 2 * ts, source: PACK.live ? "cube" : "recorded" }];
+    };
     const stats = document.createElement(detailed ? "div" : "dl"); stats.className = "ol-cell-stats";
     const appendMetric = (parent, metric, main = false) => {
       const row = document.createElement("div"); row.className = "ol-cell-stat";
@@ -4854,15 +4857,18 @@
         const selectedSamples = metric.movement ? moving.samples : rowHistory.samples;
         const selectedResult = readout?.typed ?? (Number.isFinite(metric.value) ? E.result.finite(metric.value) : E.result.make("unsupported", { reason: "Selected measurement unavailable" }));
         const observation = cardObservation(selectedResult, readout?.measure?.formula ?? "cells.volume.amount@1", readout?.measure?.unit ?? "usdt", time, [r * ps * PR, (r + 1) * ps * PR], {
-          level: { n, m }, denominators: [{ formula: "context.daily-atr@1", numerator: null, denominator: atr, time: [Math.max(0, (Math.floor(c * ts / DAYS) - 1) * DAYS), Math.floor(c * ts / DAYS) * DAYS], source: "Prior completed UTC day · Wilder ATR(14)" }, ...measurementDependencies(c)],
-          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], denominators: measurementDependencies(c - 11 + i), result: i === 11 ? selectedResult : Number.isFinite(value) ? E.result.finite(value) : selectedSamples[i] ? E.result.make("undefined", { denominator: metric.label + " denominator" }) : E.result.make("unsupported", { reason: "History coverage unavailable" }) })),
+          level: { n, m }, denominators: [{ formula: "context.daily-atr@1", numerator: null, denominator: atr, time: [Math.max(0, (Math.floor(c * ts / DAYS) - 1) * DAYS), Math.floor(c * ts / DAYS) * DAYS], source: "Prior completed UTC day · Wilder ATR(14)" }, ...measurementDenominators(selected, time)],
+          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], result: i === 11 ? selectedResult : Number.isFinite(value) ? E.result.finite(value) : selectedSamples[i] ? E.result.make("undefined", { denominator: metric.label + " denominator" }) : E.result.make("unsupported", { reason: "History coverage unavailable" }) })),
         });
         tip.dataset.observation = JSON.stringify(observation);
       }
       const metricKey = main ? selected : Object.keys(metrics).find((key) => metrics[key] === metric);
       if (compactKeys.includes(metricKey)) {
         const descriptor = composition[metricKey] ?? measure(metricKey, current, metricKey === selected ? basis : metricKey === "size" ? "mean" : "amount");
-        compactHistories.push({ id: metricKey, formula: descriptor.formula, unit: descriptor.unit, slots: values.map((v, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], denominators: main ? measurementDependencies(c - 11 + i) : [], result: Number.isFinite(v) ? E.result.finite(v) : E.result.make("unsupported", { reason: "Displayed compact history unavailable at capture" }) })) });
+        compactHistories.push({ id: metricKey, formula: descriptor.formula, unit: descriptor.unit, slots: values.map((v, i) => {
+          const time = i === 11 && main ? readout?.support?.time ?? [c * ts, Math.min((c + 1) * ts, last.cut)] : [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))];
+          return { time, result: Number.isFinite(v) ? E.result.finite(v) : E.result.make("unsupported", { reason: "Displayed compact history unavailable at capture" }), denominators: measurementDenominators(metricKey, time) };
+        }) });
       }
       const spark = readingSparkline(values, metric.label, { signed: metric.signed, share: metric.share, fixed: metric.fixed, provisional: open });
       row.append(term, value, spark);
@@ -5733,6 +5739,7 @@
       priceRow = (r) => `${price(r * ps * PR)}–${price((r + 1) * ps * PR)} USDT`;
     let readout = null;
     delete tip.dataset.observation;
+    delete tip.dataset.compactHistories;
     delete tip.dataset.presentation;
     // A line or its tag under the pointer names the line; a clock line or a
     // CME gap, its event.
@@ -6193,6 +6200,8 @@
       const note = state === "outside" ? "The cursor is outside the view. Home brings it back; the view is not moved." : "Nothing to read here.";
       readout.replaceChildren(Object.assign(document.createElement("div"), { className: "ol-tip-note", textContent: note }));
       delete readout.dataset.presentation;
+      delete readout.dataset.observation;
+      delete readout.dataset.compactHistories;
       summary = `${position}. ${note}`;
     }
     readout.dataset.readout = readoutId(inspect.readout);
@@ -22315,33 +22324,32 @@
     const result = observation?.result ?? fallback.result;
     supports.observation = { formula: observation?.formula ?? fallback.formula, unit: observation?.unit ?? fallback.unit, supportEnd: factSupport, knownThrough: factSupport,
       time: observation?.time ?? [target.c * 2 ** target.n, (target.c + 1) * 2 ** target.n], price: observation?.price ?? null, source: observation?.source ?? last.src.id, pack: last.token, precision: observation?.precision ?? "Float64", completeness: observation?.completeness ?? "Committed cell frame" };
+    const supportOf = (record) => ({ formula: record.formula ?? "Captured denominator", unit: record.unit ?? "", time: record.time ?? null,
+      supportEnd: comparisonMs(record.time?.[1]), knownThrough: comparisonMs(record.knownThrough ?? record.measuredThrough ?? record.knownAt ?? record.time?.[1]),
+      source: record.source ?? supports.observation.source, pack: record.pack ?? last.token, precision: record.precision ?? supports.observation.precision });
+    const references = new Map(), referenceIds = (records = []) => records.map((record) => {
+      const support = supportOf(record), key = JSON.stringify(support); let id = references.get(key);
+      if (!id) { id = `reference:${references.size}`; references.set(key, id); supports[id] = support; }
+      return id;
+    });
+    const observationDenominators = (observation?.denominators ?? []).filter((d) => d.formula !== "context.daily-atr@1" || observation?.unit === "daily-atr");
+    const denominatorIds = referenceIds(observationDenominators);
     const atr = observation?.denominators?.find((d) => d.formula === "context.daily-atr@1"), available = Number.isFinite(atr?.denominator);
     supports.atr = { formula: "context.daily-atr@1", unit: "usdt", result: available ? E.result.finite(atr.denominator) : E.result.make("unsupported", { reason: "Context ATR unavailable at capture" }),
-      supportEnd: available ? comparisonMs(atr.time[1]) : null, knownThrough: available ? comparisonMs(atr.time[1]) : null, time: atr?.time ?? null, source: atr?.source ?? "Context not held at capture" };
+      supportEnd: available ? comparisonMs(atr.time?.[1]) : null, knownThrough: available ? comparisonMs(atr.knownThrough ?? atr.measuredThrough ?? atr.knownAt ?? atr.time?.[1]) : null, time: atr?.time ?? null, source: atr?.source ?? "Context not held at capture" };
     const historySupportIds = new Map();
-    const denominatorSupport = (record) => {
-      const end = Array.isArray(record.time) && Number.isFinite(record.time[1]) ? comparisonMs(record.time[1]) : factSupport;
-      const known = Number.isFinite(record.knownAt) ? comparisonMs(record.knownAt) : end;
-      const support = { ...record, supportEnd: end, knownThrough: Math.max(end, known) }, key = JSON.stringify(support);
-      let id = historySupportIds.get(key);
-      if (!id) { id = `dependency:${historySupportIds.size}`; historySupportIds.set(key, id); supports[id] = support; }
-      return id;
-    };
-    const originDependencies = (observation?.denominators ?? []).map(denominatorSupport);
-    supports.observation.supportEnd = Math.max(factSupport, comparisonMs(observation?.time?.[1] ?? fallback.time?.[1] ?? target.c * 2 ** target.n), ...originDependencies.map(id => supports[id].supportEnd));
-    supports.observation.knownThrough = Math.max(supports.observation.supportEnd, ...originDependencies.map(id => supports[id].knownThrough));
     for (const series of displayed) {
       const slots = series.slots.map((slot) => {
-        const support = { time: slot.time, supportEnd: comparisonMs(slot.time[1]), knownThrough: comparisonMs(slot.time[1]), source: supports.observation.source, pack: last.token, precision: supports.observation.precision };
+        const support = { time: slot.time, supportEnd: comparisonMs(slot.time?.[1]), knownThrough: comparisonMs(slot.knownThrough ?? slot.measuredThrough ?? slot.time?.[1]), source: supports.observation.source, pack: last.token, precision: supports.observation.precision };
         const key = JSON.stringify(support); let id = historySupportIds.get(key);
         if (!id) { id = `history:${historySupportIds.size}`; historySupportIds.set(key,id); supports[id]=support; }
-        return { result: slot.result, supportId: id, denominatorIds: (slot.denominators ?? []).map(denominatorSupport) };
+        return { result: slot.result, supportId: id, denominatorIds: referenceIds(slot.denominators) };
       });
       histories.push({ id: series.id, formula: series.formula, unit: series.unit, slots });
     }
     const chart = observation?.formula ?? fallback.formula, unit = observation?.unit ?? fallback.unit;
     const mapped = { volume: "volume", geometry: "volume", trades: "trades", size: "size", flow: "flow", flowtrades: "flowtrades", delta: "delta", path: unit === "row-spans" ? "path" : null, dwell: unit === "share" ? "dwell" : null }[S.mode] ?? null;
-    const origin = { formula: chart, unit, basis: fallback.basis ?? "amount", result, comparisonMetric: mapped, supportId: "observation", historyIds: histories.some((h) => h.id === mapped) ? [mapped] : [] };
+    const origin = { formula: chart, unit, basis: fallback.basis ?? "amount", result, comparisonMetric: mapped, supportId: "observation", denominatorIds, historyIds: histories.some((h) => h.id === mapped) ? [mapped] : [] };
     return { supports, histories, originatingObservation: origin };
   }
   function comparisonCapture(target) {
@@ -22447,7 +22455,7 @@
       shortExposure,originalScale:last.sc?.[lens?"lens":"cells"]?.mappingId??"none",metrics,detail};
     const chartMode = S.mode === "geometry" ? "volume" : S.mode;
     const original = E.measure.cellMeasurement({ mode: chartMode, basis: (lens ? last.sc?.lens : last.sc?.cells)?.basis ?? "amount", pathBasis: (lens ? last.sc?.lens : last.sc?.cells)?.pathBasis ?? "spans", z: ["path", "dwell"].includes(chartMode) ? mz : z, geom: { BASE, PR }, level: { n,m }, bounds: b, cut, end: ["path", "dwell"].includes(chartMode) ? motionEnd ?? -Infinity : Infinity, CUT:last.dataCut, replay:S.replay, read: null, measured:null, cascade:null });
-    capture.context = comparisonFrozenContext(target, original, factSupport); capture.contextOrigin = "frame-v2"; capture.originatingObservation = capture.context.originatingObservation;
+    capture.context = comparisonFrozenContext(target, original, ["path", "dwell"].includes(chartMode) ? comparisonMs(motionEnd) : factSupport); capture.contextOrigin = "frame-v2"; capture.originatingObservation = capture.context.originatingObservation;
     capture.id=C.identity(capture);
     return comparisonFreeze(capture);
   }
@@ -22486,7 +22494,8 @@
     const eligibility=edge===null?"live":comparisonModel.captures.map(c=>[...Object.values(c.metrics),...c.detail].map(m=>Number.isFinite(m.supportEnd)&&Number.isFinite(m.knownThrough)&&Math.max(m.supportEnd,m.knownThrough)<=edge?1:0).join("")).join("|")+"|"+(comparisonModel.poc&&Math.max(comparisonModel.poc.supportEnd??Infinity,comparisonModel.poc.knownThrough??Infinity)<=edge),
       statsKey=[comparisonRevision,comparisonModel.basis,comparisonModel.reference,JSON.stringify(comparisonModel.poc),eligibility].join("|");
     if(statsKey!==comparisonStatsKey) {comparisonUI.clearCopyFallback();comparisonStatsKey=statsKey;comparisonCounters.stats++;comparisonAnalysis=preparedAnalysis??C.analyze(comparisonModel.captures,{...comparisonModel,edge});}
-    const pocs=comparisonPocs(),pocEligibility=edge===null?"live":pocs.map(p=>Number.isFinite(p.supportEnd)&&Number.isFinite(p.knownThrough)&&Math.max(p.supportEnd,p.knownThrough)<=edge),renderKey=JSON.stringify([statsKey,comparisonModel.focus,comparisonModel.sort,comparisonModel.page,comparisonModel.view,comparisonModel.expanded,comparisonModel.selectedMetric,comparisonMessage,comparisonUnsaved,comparisonRejected,pocs,pocEligibility]);
+    const contextEligibility=edge===null?"live":comparisonModel.captures.map(c=>[...Object.values(c.context?.supports??{}),{supportEnd:c.observed?.t1,knownThrough:c.measuredThrough}].map(s=>Number.isFinite(s.supportEnd)&&Number.isFinite(s.knownThrough)&&Math.max(s.supportEnd,s.knownThrough)<=edge?1:0).join("")),
+      pocs=comparisonPocs(),pocEligibility=edge===null?"live":pocs.map(p=>Number.isFinite(p.supportEnd)&&Number.isFinite(p.knownThrough)&&Math.max(p.supportEnd,p.knownThrough)<=edge),renderKey=JSON.stringify([statsKey,contextEligibility,comparisonModel.focus,comparisonModel.sort,comparisonModel.page,comparisonModel.view,comparisonModel.expanded,comparisonModel.selectedMetric,comparisonMessage,comparisonUnsaved,comparisonRejected,pocs,pocEligibility]);
     if(!force&&renderKey===comparisonRenderKey)return;
     // Sorting is pure presentation: it reuses metric cohorts and never refits their statistics.
     comparisonAnalysis={...comparisonAnalysis,ordered:C.sort?C.sort(comparisonModel.captures,comparisonModel.sort,comparisonAnalysis.metrics):C.analyze(comparisonModel.captures,{...comparisonModel,edge}).ordered};

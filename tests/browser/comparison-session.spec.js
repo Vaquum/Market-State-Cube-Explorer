@@ -469,3 +469,52 @@ test("selected metric shares four-figure cards while original reading and captur
   expect(stored.captures[0].context).toEqual(capture.context);
   await page.screenshot({path:'reports/p7-s3-comparison-frozen.png'});
 });
+
+for (const selectedMetric of ["volume", "trades"]) {
+  test(`${selectedMetric} capture preserves imbalance history in details and Copy cell independently of ranked metrics`, async ({ page, fakeFor }) => {
+    const value = collection(1), capture = value.captures[0], through = capture.observed.t1;
+    value.selectedMetric = selectedMetric;
+    capture.contextOrigin = "frame-v2";
+    const unit = selectedMetric === "volume" ? "usdt" : "trades";
+    const original = { formula: `fixture.${selectedMetric}@1`, unit, basis: "amount", result: { tag: "finite", value: 1 },
+      comparisonMetric: selectedMetric, supportId: "observation", historyIds: [selectedMetric] };
+    capture.originatingObservation = original;
+    capture.context = {
+      supports: {
+        observation: { supportEnd: through, knownThrough: through },
+        later: { supportEnd: through, knownThrough: START + 3 * 60000 },
+      },
+      originatingObservation: original,
+      histories: [
+        { id: selectedMetric, formula: original.formula, unit, slots: [{ result: { tag: "finite", value: 1 }, supportId: "observation", denominatorIds: [] }] },
+        { id: "imbalance", formula: "cells.delta.amount@1", unit: "usdt", slots: [
+          { result: { tag: "finite", value: 987.125 }, supportId: "later", denominatorIds: [] },
+          { result: { tag: "unsupported", reason: "Fixture imbalance gap" }, supportId: "observation", denominatorIds: [] },
+          { result: { tag: "finite", value: -321.5 }, supportId: "observation", denominatorIds: [] },
+        ] },
+      ],
+    };
+    const fake = await fakeFor("mini"); await open(page, fake, value);
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { window.comparisonCopiedText = text; } } });
+    });
+    const focus = panel(page).locator(".ol-comparison-focus"), history = focus.locator('[data-history="imbalance"]');
+    await focus.locator(".ol-comparison-details summary").click();
+    await expect(focus.locator(".ol-comparison-frozen-history")).toHaveCount(2);
+    await expect(history).toContainText("Net taker imbalance · frozen");
+    await expect(history.locator("li")).toHaveText(["987.125 USDT", "Fixture imbalance gap", "-321.5 USDT"]);
+    await expect(control(page, "selectedMetric").locator("option")).toHaveCount(9);
+    await expect(control(page, "selectedMetric").locator('option[value="imbalance"]')).toHaveCount(0);
+    await action(page, "copy").click();
+    await expect.poll(() => page.evaluate(() => window.comparisonCopiedText)).toContain("Net taker imbalance frozen history: 987.125; Fixture imbalance gap; -321.5");
+
+    await page.evaluate((hash) => { location.hash = hash; }, HASH.replace("r=4,0", "r=0,0") + "&replay=1&at=2026-09-23T12:02:00Z");
+    await expect(history.locator("li").first()).toHaveAttribute("data-canonical", "hidden");
+    await expect(history.locator("li")).toHaveText(["Unavailable in replay", "Fixture imbalance gap", "-321.5 USDT"]);
+    expect(await history.innerHTML()).not.toContain("987.125");
+    await action(page, "copy").click();
+    await expect.poll(() => page.evaluate(() => window.comparisonCopiedText)).toContain("Net taker imbalance frozen history: Unavailable in replay; Fixture imbalance gap; -321.5");
+    expect(await page.evaluate(() => window.comparisonCopiedText)).not.toContain("987.125");
+    expect((await stored(page)).captures[0].context).toEqual(capture.context);
+  });
+}

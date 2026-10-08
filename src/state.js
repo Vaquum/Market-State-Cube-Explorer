@@ -527,7 +527,7 @@
       }
     }
     const origin = context.originatingObservation;
-    comparisonAssert(origin === null || comparisonObject(origin) && [origin.formula, origin.unit, origin.basis].every(comparisonText) && supported(origin.supportId) && Array.isArray(origin.historyIds) && origin.historyIds.every((id) => ids.has(id)) && (origin.comparisonMetric === null || comparisonMetricKeys.includes(origin.comparisonMetric)) && comparisonObject(origin.result) && comparisonTags.has(origin.result.tag) && (origin.result.tag === "finite" ? Number.isFinite(origin.result.value) : origin.result.value === null || origin.result.value === undefined), "invalid originating observation");
+    comparisonAssert(origin === null || comparisonObject(origin) && [origin.formula, origin.unit, origin.basis].every(comparisonText) && supported(origin.supportId) && (origin.denominatorIds === undefined || Array.isArray(origin.denominatorIds) && origin.denominatorIds.every(supported)) && Array.isArray(origin.historyIds) && origin.historyIds.every((id) => ids.has(id)) && (origin.comparisonMetric === null || comparisonMetricKeys.includes(origin.comparisonMetric)) && comparisonObject(origin.result) && comparisonTags.has(origin.result.tag) && (origin.result.tag === "finite" ? Number.isFinite(origin.result.value) : origin.result.value === null || origin.result.value === undefined), "invalid originating observation");
   };
   const comparisonUpgrade = (value) => ({ ...value, comparisonVersion: 2, selectedMetric: value.selectedMetric ?? "volume", captures: value.captures.map((capture) => capture.contextOrigin ? capture : { ...capture, contextOrigin: "legacy-structural", originatingObservation: null, context: { supports: {}, histories: [], originatingObservation: null } }) });
   const comparisonCapture = (capture, instrument) => {
@@ -702,11 +702,12 @@
   const comparisonWrite = (instrument, record) => {
     if (instrument !== "BTC/USDT") return comparisonFailure("unreadable", "unsupported comparison instrument");
     let serialized;
-    if (typeof record === "string") serialized = comparisonParse(record, instrument);
+    if (typeof record === "string") {
+      const parsed = comparisonParse(record, instrument);
+      serialized = parsed.ok && parsed.value.comparisonVersion === 1 ? comparisonSerialize(comparisonUpgrade(parsed.value)) : parsed;
+    }
     else if (record && comparisonSerialized.has(record)) serialized = record.comparisonVersion === 1 ? comparisonSerialize(comparisonUpgrade(comparisonParse(record.raw, instrument).value)) : record;
     else serialized = comparisonSerialize(record?.comparisonVersion === 1 ? comparisonUpgrade(record) : record);
-    if (!serialized.ok) return serialized;
-    if (typeof record === "string" && serialized.value?.comparisonVersion === 1) serialized = comparisonSerialize(comparisonUpgrade(serialized.value));
     if (!serialized.ok) return serialized;
     if (serialized.instrument !== undefined && serialized.instrument !== instrument) return comparisonFailure("unreadable", "comparison instrument does not match its slot");
     const got = fetchText("sessionStorage", comparisonRoot + instrument);

@@ -142,6 +142,46 @@ test("capture uses the current replay portion; backward gating hides DOM and cop
   await expect(volume).toHaveAttribute("data-canonical", "100.5"); expect((await saved(page)).captures).toEqual([capture]);
 });
 
+test("real Cascade capture retains the parent support and hides original/history until the parent is known", async ({ page, fakeFor, probe }) => {
+  const fake = await fakeFor("micro:mixed"), hash = VIEW + "&mode=cascade";
+  await ready(page, fake, probe, hash);
+  const p = await point(page); await page.mouse.move(p.x, p.y);
+  await expect(page.locator("#ol-tip")).toHaveAttribute("data-presentation", "cell");
+  const observation = await page.locator("#ol-tip").evaluate((node) => JSON.parse(node.dataset.observation));
+  // Independent fixture arithmetic: child 300 USDT; parent contains 300 + 50.25 + 100.5 USDT.
+  expect(observation.result.tag).toBe("finite");
+  expect(observation.result.value).toBeCloseTo(Math.log2(4 * 300 / 450.75), 12);
+  expect(observation.denominators.find((d) => d.formula === "cells.cascade.parent-volume@1").time).toEqual([0, 2]);
+  await addMenu(page, p); const capture = (await saved(page)).captures[0], original = capture.originatingObservation;
+  expect(original.result).toEqual(observation.result);
+  expect(original.denominatorIds).toHaveLength(1);
+  const parent = capture.context.supports[original.denominatorIds[0]];
+  expect(parent.supportEnd).toBe(EPOCH + 112500); expect(parent.knownThrough).toBe(EPOCH + 112500);
+  expect(capture.context.supports[original.supportId].knownThrough).toBe(EPOCH + 56250);
+  const history = capture.context.histories.find((h) => h.id === "cascade");
+  expect(history.slots[11].denominatorIds).toEqual(original.denominatorIds);
+  expect(history.slots[11].result).toEqual(original.result);
+  const details = page.locator(`${WORK} .ol-comparison-details`); await details.locator("summary").click();
+  const originRow = details.locator("dl > div").filter({ has: page.getByText("Original captured reading", { exact: true }) }).locator("dd");
+  const lastHistory = details.locator('[data-history="cascade"] li').last();
+  await clipboard(page);
+  expect(await copyFocused(page)).toContain(`Original captured reading: cells.cascade.log2@1; log2-ratio; log2; ${original.result.value}`);
+  await page.evaluate((next) => { location.hash = next; }, hash + "&replay=1&at=2021-01-01T00:00:56.250Z");
+  await expect(page.locator("#ol-replay-at")).toHaveText("1 Jan 00:00:56.250");
+  await expect(page.locator(`${WORK} .ol-comparison-focus [data-metric="volume"]`)).toHaveAttribute("data-canonical", "300");
+  await expect(originRow).toHaveText("Unavailable in replay");
+  await expect(lastHistory).toHaveAttribute("data-canonical", "hidden");
+  const hidden = await copyFocused(page);
+  expect(hidden).toContain("Original captured reading: Unavailable in replay");
+  expect(hidden).not.toContain(String(original.result.value));
+  await page.evaluate((next) => { location.hash = next; }, hash + "&replay=1&at=2021-01-01T00:01:52.500Z");
+  await expect(page.locator("#ol-replay-at")).toHaveText("1 Jan 00:01:52.500");
+  await expect(originRow).toContainText("cells.cascade.log2@1");
+  await expect(lastHistory).toHaveAttribute("data-canonical", String(original.result.value));
+  expect(await copyFocused(page)).toContain(`Original captured reading: cells.cascade.log2@1; log2-ratio; log2; ${original.result.value}`);
+  expect((await saved(page)).captures).toEqual([capture]);
+});
+
 test("loaded POC choice and sort issue no reads; its price and period remain frozen after live data", async ({ page, fakeFor, probe }) => {
   const fake = await fakeFor("micro:mixed"); await ready(page, fake, probe, VIEW + "1d"); await addTable(page, 0, 200, 1);
   const select = page.locator(`${WORK} [data-comparison-control="poc"]`);
@@ -374,12 +414,16 @@ test("captured Cascade original and history wait for their complete parent in re
   const capture=(await saved(page)).captures[0], C=require("../../src/comparison.js");
   expect(capture.originatingObservation.formula).toBe("cells.cascade.log2@1");
   const support=capture.context.supports[capture.originatingObservation.supportId];
-  expect(support.knownThrough).toBe(EPOCH+112500);
-  expect(support.knownThrough).toBeGreaterThan(capture.observed.t1);
+  expect(support.knownThrough).toBe(EPOCH+56250);
+  expect(capture.originatingObservation.denominatorIds.length).toBeGreaterThan(0);
+  const dependencies=capture.originatingObservation.denominatorIds.map(id=>capture.context.supports[id]);
+  expect(dependencies.some(reference=>reference.supportEnd===EPOCH+112500&&reference.knownThrough===EPOCH+112500)).toBe(true);
+  const knownThrough=Math.max(support.supportEnd,support.knownThrough,...dependencies.map(reference=>Math.max(reference.supportEnd,reference.knownThrough)));
+  expect(knownThrough).toBeGreaterThan(capture.observed.t1);
   const history=capture.context.histories.find(h=>h.id==="cascade");
   expect(history.slots.at(-1).denominatorIds.length).toBeGreaterThan(0);
   expect(C.originating(capture,capture.observed.t1).tag).toBe("hidden");
   expect(C.frozenHistory(capture,"cascade",capture.observed.t1).slots.at(-1).result.tag).toBe("hidden");
   expect(C.captureText(capture,{edge:capture.observed.t1})).toContain("Original captured reading: Unavailable in replay");
-  expect(C.originating(capture,support.knownThrough).value).toBe(capture.originatingObservation.result.value);
+  expect(C.originating(capture,knownThrough).value).toBe(capture.originatingObservation.result.value);
 });

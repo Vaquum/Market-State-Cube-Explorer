@@ -11103,6 +11103,7 @@
       const displacement = E.measure.normalized(bar.close - bar.open, atr), range = E.measure.normalized(bar.high - bar.low, atr);
       const observation = cardObservation(E.result.finite(bar.close), "candles.close@1", "usdt", [bar.start, bar.through], null, {
         level: { n, m: null }, history: series((v) => v.close),
+        completeness: bar.state === "so-far" ? "open" : CANON !== null && bar.through > CANON ? "provisional" : "complete",
         denominators: [{ ...displacement, time: [bar.start, bar.through], source: "Prior completed UTC day · Wilder ATR(14)" }],
       });
       coreCardPresentation(tip, {

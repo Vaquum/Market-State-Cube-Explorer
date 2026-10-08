@@ -218,3 +218,17 @@ test("failed seasonal and column-context reads keep their actual failure reason"
   const record = JSON.parse(await card.getAttribute("data-observation"));
   expect(record.history.filter((x) => x.result.tag === "failed").every((x) => x.result.reason === "column context rejected")).toBe(true);
 });
+
+// A 15-minute candle can be unfinished even when every retained 56.25s interval is complete.
+test("forming higher-level candle keeps open status after excluding the forming base interval", async ({ page, fakeFor, probe }) => {
+  const fake = await fakeFor({ trades: [{ t_ms: 1000, price: 2500000, qty: 100000000, takerBuy: true }, { t_ms: 300000, price: 2500100, qty: 100000000, takerBuy: false }], cutoffIso: "2021-01-01T00:10:00Z" });
+  await page.goto(`${fake.url}/#t=2021-01-01T00:00Z~2021-01-01T00:15Z&p=24875~25250&r=4,0&auto=0&mode=candles`); await probe.waitForReady();
+  await page.keyboard.press("e"); await page.locator('button[data-surface="cells"]').click();
+  await page.locator("#ol-inspect").focus(); await page.keyboard.press("Home");
+  const card = page.locator("#ol-inspect-readout");
+  await expect(card).toHaveAttribute("data-presentation", "core");
+  await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).completeness).toBe("open");
+  const record = JSON.parse(await card.getAttribute("data-observation"));
+  expect(record.time[1]).toBeLessThanOrEqual(Math.floor(600 / 56.25));
+  await expect(card).toContainText(/So far/);
+});

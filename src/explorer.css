@@ -3386,3 +3386,9 @@
 }
 #origo-lens .ol-event-inventory { font-size: 14px; overflow-wrap: anywhere; }
 #origo-lens .ol-event-inventory dd { font-size: 18px; margin-bottom: var(--sp-2); }
+
+/* P7-S3 evidence: intervals remain distinct from historical outcome boxes. */
+.ol-evidence-intervals { font-size: .75rem; line-height: 1.45; }
+.ol-evidence-interval { margin: .5rem 0; }
+.ol-evidence-interval span { display: block; font-variant-numeric: tabular-nums; }
+.ol-ledger-content { max-height: 24rem; overflow: auto; }

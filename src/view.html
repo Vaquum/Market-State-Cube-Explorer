@@ -1356,11 +1356,11 @@
               <label for="ol-case-filter">Cases</label
               ><select id="ol-case-filter" title="Which cases to list">
                 <option value="all">Matching states</option>
-                <option value="failure">Opposite / failed</option>
+                <option value="failure">Non-modal POC outcomes</option>
                 <option value="up">Higher / upper</option>
                 <option value="flat">Same / neither</option>
                 <option value="down">Lower / lower</option>
-                <option value="reference">All states</option>
+                <option value="reference">All seasonally eligible states</option>
               </select>
               <span class="ol-muted" id="ol-case-definition"></span>
               <div class="ol-pager">
@@ -1382,6 +1382,7 @@
                 </button>
               </div>
             </div>
+            <details id="ol-cases-ledger"><summary>Every candidate: eligibility and outcome ledger</summary></details>
             <table class="ol-table ol-cases-table">
               <thead>
                 <tr>
@@ -1817,9 +1818,10 @@
               ></span>
             </button>
           </div>
+          <div id="ol-evidence-intervals" class="ol-evidence-intervals"></div>
           <div class="ol-evidence-legend">
             <span><i class="ol-match-key"></i>Matching states</span
-            ><span><i class="ol-all-key"></i>All states</span
+            ><span><i class="ol-all-key"></i>All seasonally eligible states</span
             ><span>Boxes: the middle 80% and 50% of outcomes</span>
           </div>
           <div class="ol-rule"></div>
@@ -1855,6 +1857,7 @@
             >
               <div class="ol-evidence-note" id="ol-evidence-provenance"></div>
               <div class="ol-evidence-note" id="ol-evidence-note"></div>
+              <details id="ol-evidence-ledger"><summary>Candidate eligibility and outcome ledger</summary><div id="ol-evidence-ledger-content"></div></details>
             </div>
           </div>
           <button

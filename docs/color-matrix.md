@@ -56,7 +56,7 @@ Testing it: `tests/unit/color-matrix.test.js` (U60) fails when this file is not 
 | comparison.negative | Comparison negative bar | area | #b3624b | #d89777 | label, number, position | signed net-volume number or labeled share below midpoint, shared domain (U95, B63) |
 | comparison.midpoint | Comparison midpoint bar | area | #b9c2bc | #5f6b64 | label, number, position | explicit zero or 50-percent number, shared domain (U95, B63) |
 | comparison.reference | Comparison reference tick | stroke | #20392b | #e0eee4 | label, position | Against control names Set median or pinned cell; unit difference alongside the bar (U95, B63) |
-| card.history | Core card history stroke | stroke | #20392b | #e0eee4 | label, number, position | Named metric, accessible interval values and typed gap reasons on an opaque card (B66) |
+| card.history | Core card history stroke | stroke | #20392b | #e0eee4 | label, number, position | Named metric, accessible interval values and typed gap reasons on an opaque card; frozen comparison histories and pointwise estimation context (B66, B68) |
 | card.profile | Core card volume profile bins | area | #84928a | #859189 | label, number, position | Declared price/amount domains and accessible bin values; named POC/value boundaries (B66) |
 
 ## Contexts
@@ -260,7 +260,3 @@ Each cell is the least CIEDE2000 over the eight conditions, with the condition t
 | comparison.negative and comparison.reference | comparison | 43.7 | 21.5 (protan-1) | separated | 32.9 | 16.9 (gray) | separated |
 | comparison.midpoint and comparison.reference | comparison | 56.6 | 55.6 (protan-1) | separated | 38.5 | 38.2 (protan-0.5) | separated |
 | card.history and card.profile | core-cards | 33.9 | 33.3 (deutan-0.5) | separated | 24.5 | 24.3 (protan-1) | separated |
-
-P7-S3 introduces no hue family: estimation ranges, candidate ledger, frozen histories,
-signed context and Query provenance use existing neutral text/REF/STATE tokens.
-Signed numbers, explicit units and typed gaps carry meaning independently of hue.

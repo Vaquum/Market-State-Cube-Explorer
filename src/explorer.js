@@ -16811,9 +16811,11 @@
     const end = Math.min(activeCutoff(), S.anchor === null ? bounds()[1] : S.anchor);
     return Math.floor(end / stepT()) - 1;
   }
+  const evidenceSources = new WeakMap(); let evidenceSourceSerial=0;
+  function evidenceSourceIdentity(source) { if(!source)return "absent";if(!evidenceSources.has(source))evidenceSources.set(source,++evidenceSourceSerial);return evidenceSources.get(source); }
   function evidenceKey() {
-    return ["seasonal-state@1", live.generation, comparisonSourceRevision, PACK.state_token, renderN(), renderM(), evidenceAnchor(), S.barrier || 1, S.horizon, S.evidenceKind, CUT, CANON, S.replay ? activeCutoff() : null,
-      TIERS.map((id) => `${id}:${sources[id]?.cells.length ?? "-"}`).join(","), histories.size, [...cube.failed.entries()].map(([k,v]) => k + v).join("|")].join("|");
+    return ["seasonal-state@1", live.generation, PACK.state_token, renderN(), renderM(), evidenceAnchor(), S.barrier || 1, S.horizon, S.evidenceKind, CUT, CANON, S.replay ? activeCutoff() : null,
+      TIERS.map((id) => `${id}:${evidenceSourceIdentity(sources[id])}`).join(","), ...[historyKey(renderN(),renderM()),historyKey(Math.min(renderN(),9),0)].map((id)=>evidenceSourceIdentity(histories.get(id))), [...cube.failed.entries()].map(([k,v]) => k + v).join("|")].join("|");
   }
   let gestureAt = 0;
   const evidence = { ready: null, last: null, timer: 0, job: null },
@@ -16821,7 +16823,7 @@
   // No old study survives a changed requested edge, pack, fit, horizon or source.
   function settledEvidence() {
     const key = evidenceKey();
-    if (evidenceCache.has(key)) { evidence.ready = evidence.last = evidenceCache.get(key); return evidence.ready; }
+    if (evidenceCache.has(key)) { if(evidence.job)evidence.job.cancelled=true; clearTimeout(evidence.timer); evidence.ready = evidence.last = evidenceCache.get(key); evidence.job={key,cancelled:false,output:evidence.ready}; return evidence.ready; }
     if (evidence.job?.key !== key) {
       if (evidence.job) evidence.job.cancelled = true;
       evidence.ready = evidence.last = null;
@@ -16837,7 +16839,7 @@
           evidence.ready = evidence.last = out; job.output = out; requestDraw();
         } catch (error) {
           if (job.cancelled || evidenceKey() !== key) return;
-          job.output = { a: evidenceAnchor(), n: renderN(), m: renderM(), barrier: S.barrier || 1, error: `Evidence calculation unavailable: ${error.message}` }; requestDraw();
+          job.output = { a: evidenceAnchor(), n: renderN(), m: renderM(), barrier: S.barrier || 1, error: `Evidence calculation unavailable: ${error.message}` }; evidence.ready=evidence.last=job.output; requestDraw();
         }
       }, gesturing() ? 220 : 0);
     }
@@ -16850,10 +16852,11 @@
     const failed = keys.find((key) => cube.failed.has(key));
     if (failed) return { ...shared, error: `History unavailable: ${cube.failed.get(failed)}` };
     if (PACK.live && keys.some((key) => !histories.has(key))) return { ...shared, loading: true, error: "Reading this level's history from the cube…" };
-    const history = evidenceColumns(n, m, end), index = seasonalSource(n), p = PACK.provenance ?? {};
+    const history = evidenceColumns(n, m, end), recordedSeasonal = PACK.live ? null : n===9 && m===0 ? history : evidenceColumns(Math.min(n,9),0,end), index = PACK.live ? seasonalSource(n) : E.measure.seasonalIndex({cols:recordedSeasonal.cols,n:Math.min(n,9),b0:recordedSeasonal.b0,b1:recordedSeasonal.b1,precision:"Observed recorded values / Float64 aggregation",source:"Recorded covered tiers"}), p = PACK.provenance ?? {};
     const seasonalHeld = PACK.live ? histories.get(historyKey(Math.min(n, 9), 0)) : null;
     const tuples = history.cols.map((c) => [c.source, c.c, c.v, c.bv, c.poc, c.covered ? "covered" : "missing", (c.c + 1) * ts, "complete"]);
     // Denominator records are dependencies too. Tail beyond the fixed anchor is excluded.
+    if (recordedSeasonal) for(const c of recordedSeasonal.cols) tuples.push(["recorded-seasonal",c.c,c.v,c.bv,c.poc,c.covered?"covered":"missing",(c.c+1)*2**Math.min(n,9),"complete"]);
     if (seasonalHeld) for (const c of seasonalHeld.cols) if ((c.c + 1) * 2 ** seasonalHeld.n <= end) tuples.push(["seasonal-history", c.c, c.v, c.bv, c.poc, c.v > 0 || c.covered === true ? "covered" : "missing", (c.c + 1) * 2 ** seasonalHeld.n, "complete"]);
     tuples.sort((x, y) => (String(x[0]) < String(y[0]) ? -1 : String(x[0]) > String(y[0]) ? 1 : 0) || x[1] - y[1]);
     const packKey = p.packKey ?? PACK.packKey ?? [PACK.source, T0, BASE, PR], revision = p.revision ?? null;
@@ -17340,7 +17343,7 @@
     el("case-filter").addEventListener("change", () => {
       S.caseFilter = el("case-filter").value;
       S.casePage = 0;
-      evidenceCases(calcEvidence());
+      evidenceCases(settledEvidence());
       save();
     });
     for (const [id, step] of [
@@ -17349,7 +17352,7 @@
     ])
       el(id).addEventListener("click", () => {
         S.casePage = (S.casePage || 0) + step;
-        evidenceCases(calcEvidence());
+        evidenceCases(settledEvidence());
       });
     for (const button of qsa("[data-case-sort]"))
       button.addEventListener("click", () => {
@@ -17360,7 +17363,7 @@
           S.caseDir = -1;
         }
         S.casePage = 0;
-        evidenceCases(calcEvidence());
+        evidenceCases(settledEvidence());
         save();
       });
   }

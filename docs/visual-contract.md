@@ -791,6 +791,8 @@ Unit tests run with `npm test`; browser specs with `npm run test:browser`. `U46`
 | B66 | `tests/browser/core-cards.spec.js` | Nine core canonical values, four readable figures, seasonal precision/sharing, abort/retry/focus, profile/support, both themes and narrow view | #84 |
 | U99 | `tests/unit/reference-context.test.js` | Hand vectors for signed causal location, native slope, unclamped Fibonacci, signed weekend percentages and retrospective prior-cycle boundary | #85 |
 | B67 | `tests/browser/reference-cards.spec.js` | Served synthetic close/ATR arithmetic, native reference hierarchy/history, calendar identity, Fibonacci and MA facts; themes and narrow readout | #85 |
+| U100 | `tests/unit/evidence-context.test.js` | Literal seed/Type-7 streams, ledger first failures, full horizons and independent bootstrap floors | #86 |
+| B68 | `tests/browser/evidence-cards.spec.js` | Long-source interval qualification, short-source withholding, ledger reconciliation and rewind suppression | #86 |
 
 ## 10. Migration status per slice
 

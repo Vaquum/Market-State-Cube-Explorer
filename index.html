@@ -23256,6 +23256,7 @@
     });
   }
   const coreBarContexts = new Map();
+  const coreBarCompatible = (x) => x.generation === live.generation && (x.completed || x.pack === PACK.state_token && x.cut === activeCutoff());
   function coreBarTarget() {
     const target = coreContextTarget();
     if (target) return target;
@@ -23266,18 +23267,22 @@
       ? { n, c: Math.ceil(time[1] / step) - 1 } : null;
   }
   function aggregateBarResponse(n, time) {
-    const step = 2 ** n, held = [...coreBarContexts.values()].find((x) => x.pack === PACK.state_token && x.n === n && x.a <= time[0] && x.b >= Math.floor(time[1]) && x.key.endsWith("|" + activeCutoff()));
-    const range = candleRange(n, ...time), bars = held?.bars.filter((x) => x.c * step >= time[0] && x.c * step < time[1]) ?? range.bars;
-    const end = Math.min(time[1], held?.end ?? range.end ?? time[0]);
+    const step = 2 ** n, held = [...coreBarContexts.values()].find((x) => coreBarCompatible(x) && x.n === n && x.a <= time[0] && x.b >= Math.floor(time[1]));
+    const range = candleRange(n, ...time), sourceEnd = held?.end ?? range.end ?? time[0];
+    const candidates = (held?.bars ?? range.bars).filter((x) => x.c * step >= time[0] && x.c * step < time[1]);
+    const bars = candidates.filter((x) => Math.min((x.c + 1) * step, sourceEnd) <= time[1]);
+    const end = bars.length ? Math.min((bars.at(-1).c + 1) * step, sourceEnd) : time[0];
     const actualTime = bars.length ? [Math.max(time[0], bars[0].c * step), Math.max(time[0], end)] : time;
     const paired = time[0] % step === 0 && time[1] % step === 0 && end === time[1] && actualTime[0] === time[0];
     const result = !held && range.state !== "ready" ? E.result.make(range.state === "failed" ? "failed" : "unsupported", { reason: range.reason ?? "All-price bars unavailable; expand to request bounded context" })
-      : !bars.length ? E.result.make("empty-population", { denominator: "all-price reported trades" }) : E.result.finite(bars.at(-1).close - bars[0].open);
+      : !bars.length ? candidates.length ? E.result.make("unsupported", { reason: "All-price bars do not tile this measured span" }) : E.result.make("empty-population", { denominator: "all-price reported trades" }) : E.result.finite(bars.at(-1).close - bars[0].open);
     return { result, time: actualTime, paired, close: result.tag === "finite" ? bars.at(-1).close : null, atr: contextATR(actualTime[0]) };
   }
   function coreBarSpec(n, c) {
     const step = 2 ** n, a = Math.max(0, (c - 11) * step), b = Math.min((c + 1) * step, Math.floor(activeCutoff()));
-    return { n, a, b, pack: PACK.state_token, key: ["card-bars", live.generation, PACK.state_token, n, a, b, activeCutoff()].join("|") };
+    const completed = (c + 1) * step <= activeCutoff(), cut = activeCutoff();
+    return { n, a, b, completed, cut, generation: live.generation, pack: PACK.state_token,
+      key: ["card-bars", live.generation, completed ? "completed" : PACK.state_token, n, a, b, completed ? b : cut].join("|") };
   }
   function coreBarsWant() {
     const target = coreBarTarget();
@@ -23289,7 +23294,7 @@
       apply: (value) => { coreBarContexts.set(s.key, { ...s, ...value }); while (coreBarContexts.size > 12) coreBarContexts.delete(coreBarContexts.keys().next().value); } };
   }
   function coreBarResponse(n, c, support) {
-    const s = coreBarSpec(n, c), step = 2 ** n, held = coreBarContexts.get(s.key) ?? [...coreBarContexts.values()].find((x) => x.pack === PACK.state_token && x.n === n && x.a <= c * step && x.b >= support[1] && x.key.endsWith("|" + activeCutoff()));
+    const s = coreBarSpec(n, c), step = 2 ** n, held = coreBarContexts.get(s.key) ?? [...coreBarContexts.values()].find((x) => coreBarCompatible(x) && x.n === n && x.a <= c * step && x.b >= support[1]);
     const range = candleRange(n, c * step, (c + 1) * step), bar = held?.bars.find((x) => x.c === c) ?? range.bars.find((x) => x.c === c);
     const stop = held ? Math.min((c + 1) * step, held.end) : bar?.through;
     const result = bar ? E.result.finite(bar.close - bar.open)

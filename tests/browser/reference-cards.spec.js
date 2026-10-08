@@ -63,7 +63,9 @@ test("Moving average preserves native filter and shows price location plus causa
   await expect(card).toContainText("Average slope / daily ATR per native bar");
   await expect(card).toContainText("EMA(21)");
   const record = JSON.parse(await card.getAttribute("data-observation"));
-  expect(record.result.value).toBeCloseTo(13670, 10);
+  // Completed day 45 close 14570; EMA(21) lags this 100/day ramp by 1000.
+  expect(record.time).toEqual([45 * 1536, 46 * 1536]);
+  expect(record.result.value).toBeCloseTo(13570, 10);
   const stats = card.locator(".ol-core-stats > .ol-cell-stat dd");
   expect(Number(await stats.nth(1).getAttribute("data-canonical"))).toBeCloseTo(1000 / 120, 10);
   expect(Number(await stats.nth(2).getAttribute("data-canonical"))).toBeCloseTo(100 / 120, 10);

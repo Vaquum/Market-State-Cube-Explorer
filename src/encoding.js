@@ -1053,7 +1053,7 @@
       dwell: "was ranked share of column time; now a linear 0-100% share of covered column time",
       geometry: "was a green outline at low opacity; now a neutral occupancy outline",
       rows: "was the square root of the share of the peak among rows in view; now Value over all measured rows of the period, Explore",
-      relvol: "was rectangle share over whole-period share with -2 for no current volume; now version 2 on matched support with a tagged −∞",
+      relvol: "Historical rows=relvol now selects rows.relvol@3: row volume versus mean traded row. The original formula of an unversioned token is unknown; no earlier meaning is reconstructed",
       pane: "was scaled to the bars in view at every draw; now a registered Auto axis",
       efficiency: "was compared with \"0.70 expected\"; now with the recorded model reference and its provenance",
     },
@@ -1741,6 +1741,131 @@
     return out;
   }
 
+  // E.measure.normalized: a contextual quotient retains its raw numerator and named denominator.
+  // Absent ATR is unsupported, zero ATR undefined; neither changes the raw price unit.
+  function msrNormalized(value, denominator) {
+    const result = !Number.isFinite(value) ? API.result.make("unsupported", { reason: "Numerator unavailable" })
+      : denominator === null || denominator === undefined ? API.result.make("unsupported", { reason: "Prior completed-day ATR unavailable" })
+      : !Number.isFinite(denominator) || denominator < 0 ? API.result.make("invalid-input", { reason: "Invalid ATR" })
+      : denominator === 0 ? API.result.make("undefined", { denominator: "daily ATR" }) : API.result.finite(value / denominator);
+    return { formula: "context.daily-atr@1", unit: "daily-atr", numerator: msrNumber(value), denominator: msrNumber(denominator), result };
+  }
+
+  // E.measure.dailyATR: Wilder(14) on completed contiguous UTC days, keyed by day index.
+  // A missing/incomplete day restarts the warmup; this accessor does not redefine native indicator ATR.
+  function msrDailyATR(days, length = 14) {
+    const out = new Map();
+    let previous = null, sum = 0, count = 0, atr = null;
+    for (const day of days) {
+      if (!day.whole || ![day.k, day.high, day.low, day.close].every(Number.isFinite) || day.high < day.low) {
+        previous = null; sum = 0; count = 0; atr = null; continue;
+      }
+      if (previous && day.k !== previous.k + 1) { previous = null; sum = 0; count = 0; atr = null; }
+      const tr = previous ? Math.max(day.high - day.low, Math.abs(day.high - previous.close), Math.abs(day.low - previous.close)) : day.high - day.low;
+      count++;
+      if (atr === null) { sum += tr; if (count === length) atr = sum / length; }
+      else atr = ((length - 1) * atr + tr) / length;
+      if (atr !== null) out.set(day.k, atr);
+      previous = day;
+    }
+    return out;
+  }
+
+  // E.measure.seasonalIndex: one bounded prefix index of delivered all-price quote volumes.
+  // Positive emitted records establish observations; omitted or unqualified zero records remain gaps.
+  function msrSeasonalIndex({ cols, n, b0, b1, precision = "Float64", source = "recorded" }) {
+    const step = 2 ** n, first = Math.ceil(b0 / step), last = Math.floor(b1 / step), size = Math.max(0, last - first);
+    if (!Number.isInteger(n) || n < 0 || n > 20 || ![b0, b1].every(Number.isFinite) || size > 100000) throw new RangeError("Invalid seasonal support");
+    const values = new Float64Array(size), valid = new Uint8Array(size), seen = new Set();
+    for (const col of cols) {
+      const i = col.c - first;
+      if (!Number.isInteger(i) || i < 0 || i >= size) continue;
+      if (seen.has(i)) throw new RangeError("Duplicate seasonal column");
+      seen.add(i);
+      if (Number.isFinite(col.v) && (col.v > 0 || (col.v === 0 && col.covered === true))) { values[i] = col.v; valid[i] = 1; }
+    }
+    const sums = new Float64Array(size + 1), missing = new Uint32Array(size + 1);
+    for (let i = 0; i < size; i++) { sums[i + 1] = sums[i] + values[i]; missing[i + 1] = missing[i] + (valid[i] ? 0 : 1); }
+    const at = (start, end) => {
+      const a = start / step - first, b = end / step - first;
+      if (!Number.isInteger(a) || !Number.isInteger(b) || b <= a) return API.result.make("unsupported", { reason: "Support does not tile source intervals exactly" });
+      if (a < 0 || b > size) return API.result.make("outside-support", { reason: "Weekly match outside served history" });
+      if (missing[b] !== missing[a]) return API.result.make("unsupported", { reason: "Weekly match has missing coverage" });
+      return API.result.finite(sums[b] - sums[a]);
+    };
+    return Object.freeze({ at, n, b0: first * step, b1: last * step, precision, source, size });
+  }
+
+  // E.measure.seasonalActivity: six fixed UTC weekly offsets, at least four exactly covered matches.
+  // Matches end no later than target start. Constituent support/reasons survive insufficient cohorts.
+  function msrSeasonalActivity({ index, numerator, start, end, cutoff, week = 10752 }) {
+    const matches = [];
+    for (let j = 1; j <= 6; j++) {
+      const a = start - j * week, b = end - j * week;
+      const result = b > start ? API.result.make("unsupported", { reason: "Weekly match overlaps target" })
+        : b > cutoff ? API.result.make("hidden", { reason: "Weekly match beyond replay edge" })
+        : !index ? API.result.make("unsupported", { reason: "Weekly history unavailable" }) : index.at(a, b);
+      matches.push({ offset: j, time: [a, b], result });
+    }
+    const eligible = matches.filter((x) => x.result.tag === "finite");
+    const mean = eligible.length ? eligible.reduce((sum, x) => sum + x.result.value, 0) / eligible.length : null;
+    const result = ![start, end, cutoff].every(Number.isFinite) || numerator < 0 || end <= start
+      ? API.result.make("invalid-input", { reason: "Invalid seasonal observation" })
+      : !Number.isFinite(numerator) ? API.result.make("unsupported", { reason: "All-price target volume unavailable" })
+      : end > cutoff ? API.result.make("hidden", { reason: "Target beyond replay edge" })
+      : eligible.length < 4 ? API.result.make("unsupported", { reason: "Fewer than four covered weekly matches" })
+      : mean === 0 ? API.result.make("undefined", { denominator: "mean weekly quote volume" }) : API.result.finite(numerator / mean);
+    return { formula: "context.seasonal-volume@1", unit: "ratio", numerator: msrNumber(numerator), denominator: mean, count: eligible.length,
+      time: [start, end], cutoff, precision: index?.precision ?? null, source: index?.source ?? null, matches, result };
+  }
+
+  // E.measure.weightedBins: centred compensated variance using quote/row-centre estimated base weights.
+  // True VWAP is supplied from matching quote/base sums; this is explicitly not exact tick dispersion.
+  function msrWeightedBins({ rows, rowWidth, vwap, close }) {
+    const invalid = ![rowWidth, vwap, close].every(Number.isFinite) || rowWidth <= 0 || vwap <= 0;
+    if (invalid) return { result: API.result.make("invalid-input", { reason: "Invalid weighted-bin inputs" }), sigma: null, approximation: "quote volume / bin centre", rowWidth: msrNumber(rowWidth) };
+    const sum = (items) => { let total = 0, correction = 0; for (const x of items) { const y = x - correction, t = total + y; correction = (t - total) - y; total = t; } return total; };
+    const bins = rows.filter((x) => Number.isFinite(x.r) && Number.isFinite(x.v) && x.v > 0 && (x.r + .5) * rowWidth > 0)
+      .map((x) => { const centre = (x.r + .5) * rowWidth; return { centre, weight: x.v / centre }; });
+    const weight = sum(bins.map((x) => x.weight)), variance = weight > 0 ? sum(bins.map((x) => x.weight * (x.centre - vwap) ** 2)) / weight : null;
+    const sigma = variance === null ? null : Math.sqrt(variance);
+    const result = sigma === null ? API.result.make("empty-population", { denominator: "estimated base volume" })
+      : sigma === 0 ? API.result.make("undefined", { denominator: "weighted-bin dispersion" }) : API.result.finite((close - vwap) / sigma);
+    return { result, sigma, approximation: "quote volume / bin centre", rowWidth, bins: bins.length };
+  }
+
+  // Context for P7-S2 references. These helpers qualify delivered facts; detector inputs stay unchanged.
+  function msrReferenceLocation({ close, reference, atr, observedAt, knownAt = null, candidate = false }) {
+    const normalized = msrNormalized(close === null || reference === null ? null : close - reference, atr);
+    if (candidate || knownAt !== null && observedAt < knownAt) normalized.result = API.result.make("unsupported", { reason: "Retrospective comparison before reference confirmation" });
+    return normalized;
+  }
+  // E.measure.referenceSlope: one adjacent completed native-bar change, optionally normalized by prior daily ATR.
+  function msrReferenceSlope({ value, previous, adjacent, complete, atr, native = false }) {
+    if (!adjacent || !complete || !Number.isFinite(value) || !Number.isFinite(previous)) return { result: API.result.make("unsupported", { reason: "Slope needs adjacent completed native bars" }), numerator: null, denominator: msrNumber(atr) };
+    return native ? { result: API.result.finite(value - previous), numerator: value - previous, denominator: 1 } : msrNormalized(value - previous, atr);
+  }
+  // E.measure.fibonacciDepth: continuous unclamped retracement, with zero impulse explicitly undefined.
+  function msrFibDepth({ earlier, later, close }) {
+    return ![earlier, later, close].every(Number.isFinite) ? API.result.make("unsupported", { reason: "Fibonacci anchors or completed close unavailable" })
+      : later === earlier ? API.result.make("undefined", { denominator: "Fibonacci impulse" }) : API.result.finite((later - close) / (later - earlier));
+  }
+  // E.measure.weekendPercent: signed Sunday-minus-Friday spot percentage on the Friday denominator.
+  function msrWeekend({ friday, sunday, stale = false }) {
+    return stale || ![friday, sunday].every(Number.isFinite) || friday <= 0 ? API.result.make("unsupported", { reason: "Missing or stale boundary spot price" }) : API.result.finite(100 * (sunday - friday) / friday);
+  }
+  // Identity is only recognized after a completed deep-low input AND a later completed exceedance.
+  function msrPriorCycleKnown({ bars, price, lowStart, step, edge }) {
+    let lowEnd = null;
+    for (const bar of bars) {
+      const start = bar.c * step, end = (bar.c + 1) * step;
+      if (start < lowStart || end > edge) continue;
+      if (lowEnd === null && bar.low < price * .5) lowEnd = end;
+      else if (lowEnd !== null && start >= lowEnd && bar.high > price) return end;
+    }
+    return null;
+  }
+
   // Price bands are intervals: their center cannot establish containment or overlap.
   function msrBandLocation({ low, high, poc, valueLow, valueHigh }) {
     if (![low, high, poc, valueLow, valueHigh].every(Number.isFinite) || high <= low || valueHigh <= valueLow) return null;
@@ -1765,6 +1890,16 @@
     cellMeasurement: msrCellMeasurement,
     cellComposition: msrCellComposition,
     bandLocation: msrBandLocation,
+    normalized: msrNormalized,
+    dailyATR: msrDailyATR,
+    seasonalIndex: msrSeasonalIndex,
+    seasonalActivity: msrSeasonalActivity,
+    weightedBins: msrWeightedBins,
+    referenceLocation: msrReferenceLocation,
+    referenceSlope: msrReferenceSlope,
+    fibonacciDepth: msrFibDepth,
+    weekendPercent: msrWeekend,
+    priorCycleKnown: msrPriorCycleKnown,
     columnValue: msrColumnValue,
     dwellCheck: msrDwellCheck,
     dwellResidual: msrDwellResidual,
@@ -8260,11 +8395,20 @@
     ["rsiDivergence", "RSI divergence", "The compared swings' locations", "The later swing's confirmation; the RSI extrema were known earlier and do not date it"],
     ["cross", "Moving-average or MACD crossing", "The crossing bar's end", "That complete bar's end; a crossing seen on a bar still forming is a candidate, labelled so far, not confirmed"],
     ["squeeze", "Bollinger squeeze", "The interval of the qualifying bars", "Each bar's available close, final at the bar's completion; a fill drawn from the preceding point is keyed as retrospective interpolation"],
-    ["cmeGap", "CME spot gap", "The reopen and the spot prices at the boundaries", "The gap at the reopen, given the available closes; its fill no earlier than the end of the source bar that establishes the crossing"],
+    ["cmeGap", "Binance spot weekend proxy", "The reopen and the spot prices at the boundaries", "The gap at the reopen, given the available closes; its fill no earlier than the end of the source bar that establishes the crossing"],
     ["period", "Period POC and value area", "The stated period's span", "A retrospective summary as of its measurement cutoff, not known when the period started"],
     ["untested", "Untested level", "The original POC's period", "A status as of the current or replay edge; a later test cannot rewrite an earlier replay status"],
     ["continuation", "Historical continuation range", "The anchor and the horizon", "An empirical sample summary available at the anchor under the existing sample rules, not a forecast later observed"],
     ["clock", "Clock", "The scheduled calendar time", "A calendar definition, not a measured trade event"],
+    ["ath", "Source-limited all-time high", "The extreme's supported 8-hour bar", "Highest so far at the effective edge; a completed extreme is known at its input bar's end"],
+    ["priorCycle", "Prior cycle high", "The old peak's supported bar", "Retrospective identity recognized only after the qualifying deep low and later exceedance, at the last required completed input"],
+    ["fibonacci", "Fibonacci reference", "The earlier and later anchors", "Swing confirmation for swing anchors; rolling extremes develop as of the cutoff"],
+    ["vwap", "Anchored VWAP", "The anchor and measured interval", "As of its quote/base sums' cutoff; swing-anchor identity is retrospective before confirmation"],
+    ["session", "Session reference", "The named UTC session", "Open from the first observed trade's available bar bound; prior-day OHLC only after session completion"],
+    ["drawing", "Authored drawing", "Authored A and B or level coordinates", "Authorship time not recorded; user drawings may include later analysis"],
+    ["fundingClock", "Assumed funding schedule", "00:00, 08:00 and 16:00 UTC", "An assumed schedule, not measured funding rates or flow"],
+    ["weekendClock", "Spot weekend proxy boundaries", "Fixed Friday/Sunday Chicago calendar boundaries", "Historical closure convention; after 2026-05-29 not a current CME closure model"],
+    ["usOpenClock", "US equity opening schedule", "Weekdays 09:30 New York time", "Calendar schedule without a holiday model, not observed opening flow"],
   ];
   const rdoEvTable = Object.freeze(rdoEvRows.map(([kind, name, location, knownAt]) => Object.freeze({ kind, name, location, knownAt })));
   const rdoEvByKind = Object.freeze(Object.fromEntries(rdoEvTable.map((r) => [r.kind, r])));
@@ -8509,9 +8653,22 @@
       knownAtReason: "a summary of the period as of the cutoff it was measured at, not known when the period started",
     };
   }
+  // Existing reference adapters share the event table, including unknown authored timing.
+  function rdoEvReference({ kind, start, end = start, knownAt = null, edge, candidate = false, final = false, granularity = "existing cube inputs" }) {
+    if (!rdoEvByKind[kind] || ![start, end, edge].every(Number.isFinite) || end < start) return null;
+    const authored = kind === "drawing", calendar = ["clock", "fundingClock", "weekendClock", "usOpenClock"].includes(kind);
+    const available = knownAt !== null && knownAt <= edge && !candidate;
+    return rdoEvRecord(kind, { eventStart: start, eventEnd: end, knownAt: authored || calendar || !available ? null : knownAt,
+      candidate: !authored && !calendar && !available, final: available && final, measured: !authored && !calendar,
+      retrospective: authored || knownAt !== null && start < knownAt,
+      label: authored ? "authored" : calendar ? "calendar" : available ? final ? "confirmed" : "as of" : "so far",
+      reason: rdoEvByKind[kind].knownAt, source: rdoEvSource(granularity, null, edge) });
+  }
+
   // E.readout.events: the table, the records of each annotation and the readout's `when` for a measured interval.
   const rdoEvents = Object.freeze({
     TABLE: rdoEvTable,
+    reference: rdoEvReference,
     swing: rdoEvSwing,
     equalSwings: rdoEvEqual,
     rsiDivergence: rdoEvDivergence,
@@ -8526,7 +8683,18 @@
     summary: rdoEvSummary,
   });
 
+  // E.readout.observation: JSON-safe card-observation@1 at the measurement boundary.
+  // Result tags are unchanged. Each denominator/history point carries its own observation support.
+  function rdoCardObservation({ formula, unit, result, time, price = null, level, exposure = null, source, pack = null,
+    precision = "Float64", measuredThrough, completeness = "complete", visibility = "visible", denominators = [], history = [] }) {
+    if (typeof formula !== "string" || typeof unit !== "string" || !Array.isArray(time) || time.length !== 2 ||
+      !time.every(Number.isFinite) || time[1] < time[0] || !Number.isFinite(measuredThrough)) throw new TypeError("Invalid card observation support");
+    return API.result.assertJsonSafe({ version: "card-observation@1", formula, unit, result, time, price, level, exposure,
+      source, pack, precision, measuredThrough, completeness, visibility, denominators, history });
+  }
+
   API.readout = Object.freeze({
+    observation: rdoCardObservation,
     ROLE: rdoRole,
     cellsFrame: rdoCellsFrame,
     rowsFrame: rdoRowsFrame,

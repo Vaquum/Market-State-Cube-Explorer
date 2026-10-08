@@ -19,10 +19,11 @@ const EDGES = Array.from({ length: 301 }, (_, i) => i);
 
 // ---- the table ---------------------------------------------------------------------------------------------------------
 
-test("the table has the PRD's ten annotations, in its order, each with where it is and from when it is known", () => {
-  const PRD = ["Confirmed swing", "Equal swing pair", "RSI divergence", "Moving-average or MACD crossing", "Bollinger squeeze", "CME spot gap", "Period POC and value area", "Untested level", "Historical continuation range", "Clock"];
-  assert.deepEqual(EV.TABLE.map((r) => r.name), PRD);
-  assert.deepEqual(EV.TABLE.map((r) => r.kind), ["swing", "equalSwings", "rsiDivergence", "cross", "squeeze", "cmeGap", "period", "untested", "continuation", "clock"]);
+test("the table has the original annotations and PRD-0007 reference extension, in order, each with where it is and from when it is known", () => {
+  const PRD = ["Confirmed swing", "Equal swing pair", "RSI divergence", "Moving-average or MACD crossing", "Bollinger squeeze", "Binance spot weekend proxy", "Period POC and value area", "Untested level", "Historical continuation range", "Clock"];
+  assert.deepEqual(EV.TABLE.slice(0, 10).map((r) => r.name), PRD);
+  assert.deepEqual(EV.TABLE.slice(10).map((r) => r.kind), ["ath", "priorCycle", "fibonacci", "vwap", "session", "drawing", "fundingClock", "weekendClock", "usOpenClock"]);
+  assert.deepEqual(EV.TABLE.slice(0, 10).map((r) => r.kind), ["swing", "equalSwings", "rsiDivergence", "cross", "squeeze", "cmeGap", "period", "untested", "continuation", "clock"]);
   for (const r of EV.TABLE) {
     assert.ok(r.location.length > 8, `${r.kind} says where it is`);
     assert.ok(r.knownAt.length > 8, `${r.kind} says from when it is known`);
@@ -283,4 +284,21 @@ test("a Rows band's when: the period it summarises, known as of the cutoff it wa
   assert.equal(EV.summary({ fromBase: 1000, throughBase: 2000 }, { cutoffMs: ms(900) }).knownAtMs, null, "a cutoff before the period began has no summary");
   assert.equal(EV.summary(null, { cutoffMs: ms(2500) }).eventStartMs, null);
   assert.equal(EV.summary({ fromBase: NaN, throughBase: 5 }, null).knownAtMs, null);
+});
+
+// S2 reference timing, independent boundary vectors rather than detector reconstruction.
+test("reference identities withhold pre-confirmation location and preserve unknown authorship", () => {
+  for (const edge of [99, 100, 101]) {
+    const r = EV.reference({ kind: "priorCycle", start: 10, end: 20, knownAt: 100, edge, final: true });
+    assert.equal(r.knownAt, edge < 100 ? null : 100);
+    assert.equal(r.final, edge >= 100);
+    assert.equal(r.retrospective, true);
+  }
+  const drawn = EV.reference({ kind: "drawing", start: 20, end: 40, edge: 100 });
+  assert.equal(drawn.knownAt, null); assert.equal(drawn.label, "authored"); assert.equal(drawn.measured, false);
+  assert.match(drawn.reason, /Authorship time not recorded/);
+  for (const kind of ["fundingClock", "weekendClock", "usOpenClock"]) {
+    const r = EV.reference({ kind, start: 200, edge: 100 });
+    assert.equal(r.knownAt, null); assert.equal(r.label, "calendar"); assert.equal(r.measured, false);
+  }
 });

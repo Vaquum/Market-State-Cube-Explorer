@@ -40,7 +40,7 @@ const SPEC = {
   hash: { sha256: F(1), canonical: F(1), id96: F(1), b64urlEncode: F(1), b64urlDecode: F(1), hex: F(1, 2), utf8: F(1), fromUtf8: F(1), f64ToB64: F(1), b64ToF64: F(2) },
   measure: {
     FORMULAS: "object", MODES: "object", ROWS: "object", close: "object", exposure: F(7, 8), usesOf: F(2), isShort: F(2), cellValue: F(2),
-    cellMeasurement: F(1), cellComposition: F(1), bandLocation: F(1), columnValue: F(3, 4), dwellCheck: F(2), dwellResidual: F(2), cellState: F(7),
+    cellMeasurement: F(1), cellComposition: F(1), bandLocation: F(1), normalized: F(2), dailyATR: F(1, 2), seasonalIndex: F(1), seasonalActivity: F(1), weightedBins: F(1), referenceLocation: F(1), referenceSlope: F(1), fibonacciDepth: F(1), weekendPercent: F(1), priorCycleKnown: F(1), columnValue: F(3, 4), dwellCheck: F(2), dwellResidual: F(2), cellState: F(7),
   },
   ratio: { cascade: F(1), efficiency: F(1), coordinate: F(3), TICKS: "array", ratioTicks: F(1), classify: F(1) },
   relvol: { compute: F(1), profile: F(1) },
@@ -61,7 +61,7 @@ const SPEC = {
   axis: { CATALOGUE: "object", domain: F(2), registry: F(0, 1), coordinate: F(2, 3), ticks: F(2), profile: F(1) },
   warn: { tally: F(0), evaluate: F(1, 2), bandOf: F(1) },
   model: { PROVENANCE: "object", status: F(1), fit: F(2), describe: F(3) },
-  readout: { ROLE: "object", cellsFrame: F(1), rowsFrame: F(1), paneFrame: F(1), events: "object" },
+  readout: { observation: F(1), ROLE: "object", cellsFrame: F(1), rowsFrame: F(1), paneFrame: F(1), events: "object" },
   legend: { build: F(4), chip: F(1), details: F(1), marker: F(2), barPixels: F(2), keyOf: F(1) },
   notice: { create: F(1) },
   codec: {

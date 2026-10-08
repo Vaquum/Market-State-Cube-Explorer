@@ -175,7 +175,7 @@ test("a scale fitted in replay before 2026-09-24 carries the retrospective model
   expect(Number(cells.fitThrough), "on observations up to the edge").toBeLessThanOrEqual(edgeOf(to));
   const words = await page.evaluate(() => JSON.parse(JSON.stringify(window.explorerEncoding.text.model)));
   const frame = await pane.last();
-  const label = frame.texts.filter((t) => t.align === "left" && t.text.startsWith("Efficiency"));
+  const label = frame.texts.filter((t) => t.align === "left" && t.text.startsWith("Volume per touched row"));
   expect(label.length, "the Efficiency pane drew its label").toBe(1);
   expect(label[0].text, "the replay edge is before the model was estimated").toContain(words.retrospective);
 });

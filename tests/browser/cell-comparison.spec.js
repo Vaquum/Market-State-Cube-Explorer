@@ -3,7 +3,7 @@
 // Oracles: pre-action address/history, canonical Cells fields, source intervals and fake request log.
 const {test,expect}=require("./fixtures.js");
 const {atRest}=require("./rows-support.js");
-const KEY="market-state-cube-explorer:comparison:v1:BTC/USDT";
+const KEY="market-state-cube-explorer:comparison:v2:BTC/USDT";
 async function open(page,fake,probe,extra="") {
   await page.goto(`${fake.url}/#w=24h&vis=2&n=4&m=0&auto=0&poc=0&lines=${extra}`);
   await atRest(page,fake,probe);await probe.waitForQuiet({quietMs:300,timeout:60000});

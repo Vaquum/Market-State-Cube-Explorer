@@ -111,8 +111,8 @@ test("candle displacement and range use prior daily ATR; price stays USDT and la
   await page.goto(fake.url + "/#t=2021-01-16T00:00Z~2021-01-16T08:00Z&p=24500~26000&r=9,0&mode=candles");
   await probe.waitForReady(); await page.keyboard.press("e"); await probe.waitForReady();
   const stats = page.locator("#ol-inspect-readout .ol-cell-stats");
-  await expect(stats.locator(".ol-cell-stat").filter({ hasText: "Net move" }).locator("dd")).toContainText("+1.00");
-  await expect(stats.locator(".ol-cell-stat").filter({ hasText: "High − low" }).locator("dd")).toContainText("2.50");
+  await expect(stats.locator(".ol-cell-stat").filter({ hasText: "Net move" }).locator("dd")).toHaveAttribute("data-canonical", "1");
+  await expect(stats.locator(".ol-cell-stat").filter({ hasText: "High − low" }).locator("dd")).toHaveAttribute("data-canonical", "2.5");
   await expect(stats.locator(".ol-cell-stat").filter({ hasText: "Net move" }).locator(".ol-reading-unit")).toHaveText("daily ATR");
   await expect(stats.locator(".ol-cell-stat").first().locator(".ol-reading-unit")).toHaveText("USDT");
 });

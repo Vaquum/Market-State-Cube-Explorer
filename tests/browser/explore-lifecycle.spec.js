@@ -204,10 +204,16 @@ test("an evicted context is initialised again and says so", async ({ page, fakeF
   await page.locator("#ol-reference-topic").selectOption("scales");
   const ctx = { page, fake, probe, surface };
   let data = await calm(ctx);
-  expect(data.fitSeq, "the 24h context was calibrated").toBe("1");
+  const startup = await calibratedContexts(probe);
+  expect(startup.has(first), "startup never revisited the cache entry being evicted").toBe(false);
+  expect(Number(data.fitSeq), "each actual startup context calibrated once").toBe(startup.size);
+  for (const ids of startup.values()) expect(ids.size).toBe(1);
   // The 7d context is found no more: it is initialised again and the details say so.
   data = await gotoWindow(ctx, "7d");
   expect(data.mappingId, "the cache's 7d mapping (a stand-in) is gone, not shown").not.toBe(E.scale.fitValue([1, 2, 3, 4], {}).descriptor.id);
-  expect(Number(data.fitSeq), "the evicted context is calibrated again").toBe(2);
+  const revisited = await calibratedContexts(probe);
+  expect(revisited.has(first), "the evicted context is actually revisited").toBe(true);
+  expect(Number(data.fitSeq), "each distinct context, including the evicted one, calibrates once").toBe(revisited.size);
+  for (const ids of revisited.values()) expect(ids.size).toBe(1);
   expect(field(await surface.details("cells"), "evicted")).toBe("true");
 });

@@ -90,17 +90,19 @@ test.describe("B34 summaries, statuses, definitions and samples say from when th
     await expect(tip).toContainText(/Status\s*As of this edge/);
   });
 
-  // The same on a stream of two days, where the anchored column has fewer than 30 matching cases, and on the standard one, where it has more.
-  for (const profile of ["mini", "standard"])
+  // Seasonal conditioning needs six covered prior weeks. Controlled 180/1800-day sources straddle the unchanged 30-case floor.
+  for (const profile of ["short seasonal", "long seasonal"])
   test(`a continuation is known at its anchor and says when its sample is below the floor (${profile})`, async ({ page, probe, fakeFor }) => {
-    const fake = await fakeFor(profile);
+    test.setTimeout(90000);
+    const { evidenceFixture } = await import("../../tools/benchmark/evidence-fixture.mjs");
+    const fake = await fakeFor(evidenceFixture(profile === "short seasonal" ? 180 : 1800));
     await page.setViewportSize({ width: 1500, height: 950 });
-    await page.goto(`${fake.url}/#w=24h&vis=2`);
+    await page.goto(`${fake.url}/#w=30d&r=9,0&auto=0&vis=2`);
     await S.atRest(page, fake, probe);
     const layout = await layoutOf(page),
       box = await page.locator("#ol-canvas").boundingBox();
     await page.mouse.click(box.x + layout[0] + layout[2] * 0.5, box.y + layout[1] + layout[3] * 0.5);
-    await expect.poll(async () => (await page.locator("#ol-case-n").textContent()) !== "—", { message: "the anchored column's cases are counted", timeout: 20000 }).toBe(true);
+    await expect.poll(async () => (await page.locator("#ol-case-n").textContent()) !== "—", { message: "the anchored column's cases are counted", timeout: 60000 }).toBe(true);
     const time = page.locator("#ol-anchor-time");
     const cases = Number((await page.locator("#ol-case-n").textContent()).replace(/[^0-9]/g, ""));
     expect(Number.isFinite(cases)).toBe(true);
@@ -108,10 +110,10 @@ test.describe("B34 summaries, statuses, definitions and samples say from when th
     await expect(time, "withheld exactly below 30 cases").toHaveAttribute("data-withheld", String(cases < 30));
     await expect(time).toHaveAttribute("title", cases < 30 ? /Fewer than 30 cases/ : /An empirical sample summary as it stood at the anchor, not a forecast/);
     await expect(time).toHaveAttribute("title", /^At its anchor: /);
-    expect(cases < 30, `the ${profile} stream's sample is ${profile === "mini" ? "under" : "over"} the floor (${cases} cases)`).toBe(profile === "mini");
+    expect(cases < 30, `the ${profile} stream's sample is ${profile === "short seasonal" ? "under" : "over"} the floor (${cases} cases)`).toBe(profile === "short seasonal");
     // sample withholding and the counts survive: below the floor the shares are the counts of cases and the note says why; above it they are percentages
     const shares = await Promise.all(["up", "flat", "down"].map((k) => page.locator(`#ol-prob-${k}`).textContent()));
-    if (profile === "mini") {
+    if (profile === "short seasonal") {
       for (const share of shares) expect(share, "a count of cases, not a percentage").toMatch(/^\d+ cases$/);
       await expect(page.locator("#ol-evidence-note")).toContainText("Below 30 matches: percentages and matching boxes withheld.");
     } else {

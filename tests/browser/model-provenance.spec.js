@@ -40,7 +40,7 @@ async function atRest(page, fake, probe) {
 // The pane's label line as drawn (the left-aligned text at the pane's top left), and the plane status line.
 async function paneLabel(pane) {
   const frame = await pane.last();
-  const label = frame.texts.filter((t) => t.align === "left" && t.text.startsWith("Efficiency"));
+  const label = frame.texts.filter((t) => t.align === "left" && t.text.startsWith("Volume per touched row"));
   expect(label.length, "the Efficiency pane drew its label").toBe(1);
   return label[0].text;
 }

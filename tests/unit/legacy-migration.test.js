@@ -70,7 +70,7 @@ test("migrateLegacy: Rows and the panes", () => {
     ["rows", "volume", "rows", /square root of the share of the peak/, /Value over all measured rows/],
     ["rows", "delta", "rows", /square root of the share of the peak/, /Explore/],
     ["rows", "time", "rows", /square root of the share of the peak/, /Explore/],
-    ["rows", "relvol", "relvol", /-2 for no current volume/, /version 2 on matched support/],
+    ["rows", "relvol", "relvol", /original formula.*unknown/, /rows.relvol@3/],
   ];
   for (const [param, value, key, oldPhrase, newPhrase] of cases) {
     const r = C.migrateLegacy(view({ rows: value }));

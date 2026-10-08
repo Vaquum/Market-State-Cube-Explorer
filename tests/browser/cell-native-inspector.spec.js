@@ -3,7 +3,7 @@ const { test, expect } = require("./fixtures.js");
 const { addRecorder, lastDraw, rectOf, boxOf } = require("./cells-support.js");
 const FROM = "2021-01-01T00:00Z", TO = "2021-01-01T00:20Z";
 const VIEW = `#t=${FROM}~${TO}&p=24800~25500&r=0,0&auto=0&vis=2&lines=`;
-const KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT";
+const KEY = "market-state-cube-explorer:comparison:v2:BTC/USDT";
 const amounts = [100000, 100000, 100000, 225000, 225000];
 const trades = Array.from({ length: 20 }, (_, c) => [
   ...amounts.map((qty, i) => ({ t_ms: c * 56250 + 1000 + i, price: 2500000, qty, takerBuy: i < 3 })),
@@ -34,7 +34,13 @@ for (const mode of ["volume", "flow", "path"]) test(`${mode}: a scaled 4K deskto
   await expect(field(page, "imbalance")).toHaveAttribute("data-canonical", "-0.2");
   const inspector = page.locator("#ol-inspect");
   const movement = page.locator('#ol-inspect-readout [data-group="movement"]');
-  const pane = await inspector.boundingBox(), section = await movement.boundingBox();
+  await expect(movement).toBeVisible();
+  // Measure one complete DOM frame; optional context can replace the readout
+  // between separate locator boundingBox calls.
+  const { pane, section } = await inspector.evaluate(n => {
+    const bounds = node => { const r = node.getBoundingClientRect(); return { y: r.y, height: r.height }; };
+    return { pane: bounds(n), section: bounds(n.querySelector('[data-group="movement"]')) };
+  });
   await testInfo.attach("profile geometry", { body: JSON.stringify(await inspector.evaluate(n => ({
     panel: { height: n.clientHeight, scroll: n.scrollHeight },
     groups: Array.from(n.querySelectorAll('[data-group]')).map(e => ({ group: e.dataset.group, top: e.getBoundingClientRect().top, bottom: e.getBoundingClientRect().bottom })),

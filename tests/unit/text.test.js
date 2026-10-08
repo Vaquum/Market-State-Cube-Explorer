@@ -238,7 +238,7 @@ const D11 = {
   "migrate.dwell": "was ranked share of column time; now a linear 0-100% share of covered column time",
   "migrate.geometry": "was a green outline at low opacity; now a neutral occupancy outline",
   "migrate.rows": "was the square root of the share of the peak among rows in view; now Value over all measured rows of the period, Explore",
-  "migrate.relvol": "was rectangle share over whole-period share with -2 for no current volume; now version 2 on matched support with a tagged −∞",
+  "migrate.relvol": "Historical rows=relvol now selects rows.relvol@3: row volume versus mean traded row. The original formula of an unversioned token is unknown; no earlier meaning is reconstructed",
   "migrate.pane": "was scaled to the bars in view at every draw; now a registered Auto axis",
   "migrate.efficiency": "was compared with \"0.70 expected\"; now with the recorded model reference and its provenance",
 };

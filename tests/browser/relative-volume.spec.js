@@ -19,7 +19,7 @@ async function reading(page, row, viewRows) {
   await page.mouse.move(box.x + layout[4] + 6, box.y + y);
   await expect(page.locator("#ol-tip")).toBeVisible();
   return page.locator("#ol-tip").evaluate((el) => {
-    const dt = [...el.querySelectorAll("dt")].find((x) => x.textContent.startsWith("Relative volume"));
+    const dt = [...el.querySelectorAll("dt")].find((x) => x.textContent.startsWith("Row volume versus mean traded row"));
     return { value: dt?.nextElementSibling.dataset.canonical, text: el.textContent };
   });
 }

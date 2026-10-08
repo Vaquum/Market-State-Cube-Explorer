@@ -7,7 +7,7 @@ const { atRest } = require("./rows-support.js");
 const reference = require("../reference/index.js");
 const { resolveProfile } = require("../support/profiles.js");
 const wire = require("../support/wire.js");
-const KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT", EPOCH = wire.T0 * 1000;
+const KEY = "market-state-cube-explorer:comparison:v2:BTC/USDT", EPOCH = wire.T0 * 1000;
 const VIEW = "#t=2021-01-01T00:00Z~2021-01-01T00:06Z&p=24800~25500&r=0,0&auto=0&vis=2&marks=none&lines=";
 const WORK = "#ol-comparisonWorkspace";
 const saved = (page) => page.evaluate((key) => JSON.parse(sessionStorage.getItem(key)), KEY);
@@ -142,6 +142,47 @@ test("capture uses the current replay portion; backward gating hides DOM and cop
   await expect(volume).toHaveAttribute("data-canonical", "100.5"); expect((await saved(page)).captures).toEqual([capture]);
 });
 
+test("real Cascade capture retains the parent support and hides original/history until the parent is known", async ({ page, fakeFor, probe }) => {
+  const fake = await fakeFor("micro:mixed"), hash = VIEW + "&mode=cascade";
+  await ready(page, fake, probe, hash);
+  const p = await point(page); await page.mouse.move(p.x, p.y);
+  await expect(page.locator("#ol-tip")).toHaveAttribute("data-presentation", "cell");
+  const observation = await page.locator("#ol-tip").evaluate((node) => JSON.parse(node.dataset.observation));
+  // Independent fixture arithmetic: child 300 USDT; parent contains 300 + 50.25 + 100.5 USDT.
+  expect(observation.result.tag).toBe("finite");
+  expect(observation.result.value).toBeCloseTo(Math.log2(4 * 300 / 450.75), 12);
+  expect(observation.denominators.find((d) => d.formula === "cells.cascade.parent-volume@1").time).toEqual([0, 2]);
+  expect(observation.history.at(-1).denominators[0].time).toEqual([0, 2]);
+  await addMenu(page, p); const capture = (await saved(page)).captures[0], original = capture.originatingObservation;
+  expect(original.result).toEqual(observation.result);
+  expect(original.denominatorIds).toHaveLength(1);
+  const parent = capture.context.supports[original.denominatorIds[0]];
+  expect(parent.supportEnd).toBe(EPOCH + 112500); expect(parent.knownThrough).toBe(EPOCH + 112500);
+  expect(capture.context.supports[original.supportId].knownThrough).toBe(EPOCH + 56250);
+  const history = capture.context.histories.find((h) => h.id === "cascade");
+  expect(history.slots[11].denominatorIds).toEqual(original.denominatorIds);
+  expect(history.slots[11].result).toEqual(original.result);
+  const details = page.locator(`${WORK} .ol-comparison-details`); await details.locator("summary").click();
+  const originRow = details.locator("dl > div").filter({ has: page.getByText("Original captured reading", { exact: true }) }).locator("dd");
+  const lastHistory = details.locator('[data-history="cascade"] li').last();
+  await clipboard(page);
+  expect(await copyFocused(page)).toContain(`Original captured reading: cells.cascade.log2@1; log2-ratio; log2; ${original.result.value}`);
+  await page.evaluate((next) => { location.hash = next; }, hash + "&replay=1&at=2021-01-01T00:00:56.250Z");
+  await expect(page.locator("#ol-replay-at")).toHaveText("1 Jan 00:00:56.250");
+  await expect(page.locator(`${WORK} .ol-comparison-focus [data-metric="volume"]`)).toHaveAttribute("data-canonical", "300");
+  await expect(originRow).toHaveText("Unavailable in replay");
+  await expect(lastHistory).toHaveAttribute("data-canonical", "hidden");
+  const hidden = await copyFocused(page);
+  expect(hidden).toContain("Original captured reading: Unavailable in replay");
+  expect(hidden).not.toContain(String(original.result.value));
+  await page.evaluate((next) => { location.hash = next; }, hash + "&replay=1&at=2021-01-01T00:01:52.500Z");
+  await expect(page.locator("#ol-replay-at")).toHaveText("1 Jan 00:01:52.500");
+  await expect(originRow).toContainText("cells.cascade.log2@1");
+  await expect(lastHistory).toHaveAttribute("data-canonical", String(original.result.value));
+  expect(await copyFocused(page)).toContain(`Original captured reading: cells.cascade.log2@1; log2-ratio; log2; ${original.result.value}`);
+  expect((await saved(page)).captures).toEqual([capture]);
+});
+
 test("loaded POC choice and sort issue no reads; its price and period remain frozen after live data", async ({ page, fakeFor, probe }) => {
   const fake = await fakeFor("micro:mixed"); await ready(page, fake, probe, VIEW + "1d"); await addTable(page, 0, 200, 1);
   const select = page.locator(`${WORK} [data-comparison-control="poc"]`);
@@ -175,6 +216,9 @@ test("a covered known-zero cell is numeric while its empty ratios retain typed r
   const fake = await fakeFor("micro:mixed"); await ready(page, fake, probe);
   await addMenu(page, await point(page, 28125, 25312.5)); const capture = (await saved(page)).captures[0];
   expect([capture.c, capture.r]).toEqual([0, 202]);
+  expect(Buffer.byteLength(JSON.stringify(capture.context))).toBeLessThanOrEqual(16384);
+  expect(Object.keys(capture.context.supports).length).toBeLessThanOrEqual(14);
+  expect(capture.context.histories.length).toBeLessThanOrEqual(4);
   for (const key of ["volume.amount", "volume.intensity", "trades.amount", "delta.amount"]) {
     expect(capture.metrics[key].tag).toBe("finite"); expect(capture.metrics[key].value).toBe(0);
   }
@@ -188,7 +232,7 @@ test("a background capture retains its clicked period price band across coarser 
   await addMenu(page, await point(page, 28125, 25187.5));
   const native = (await saved(page)).captures[0],
     band = (capture) => capture.detail.find((detail) => detail.label === "Period row band"),
-    relative = (capture) => capture.detail.find((detail) => detail.label.startsWith("Relative volume · ") && detail.label.endsWith(" · captured context"));
+    relative = (capture) => capture.detail.find((detail) => detail.label.startsWith("Row volume versus mean traded row · ") && detail.label.endsWith(" · captured context"));
   expect(band(native).value).toBe("25125–25250");
   expect(relative(native).tag).toBe("finite");
   await page.evaluate((next) => { location.hash = next; }, hash.replace("r=0,0", "r=0,2"));
@@ -282,10 +326,10 @@ for (const rows of ["volume", "relvol"]) test(`${rows === "relvol" ? "Period rel
   await expect.poll(async () => (await saved(page))?.captures.length).toBe(1);
   const capture = (await saved(page)).captures[0];
   const relative = capture.detail.find((detail) => rows === "relvol"
-    ? detail.label.startsWith("Relative volume · ") && detail.label.endsWith(" · captured context")
-    : detail.label === "View vs period · captured context");
-  const rectangle = capture.detail.find((detail) => detail.label === "Relative volume rectangle through");
-  const period = capture.detail.find((detail) => detail.label === (rows === "relvol" ? "Relative volume period through" : "Relative volume reference through"));
+    ? detail.label.startsWith("Row volume versus mean traded row · ") && detail.label.endsWith(" · captured context")
+    : detail.label === "Profile-share log₂ ratio · captured context");
+  const rectangle = capture.detail.find((detail) => detail.label === "Profile-share rectangle through");
+  const period = capture.detail.find((detail) => detail.label === (rows === "relvol" ? "Row concentration period through" : "Profile-share reference through"));
   expect(relative, "the real row comparison remains finite while the next period read is held").toBeTruthy();
   expect(relative.tag).toBe("finite"); expect(Number.isFinite(relative.value)).toBe(true);
   const rewind = Date.parse("2026-09-24T12:30:00Z");
@@ -330,7 +374,8 @@ test("Add refuses a near-cap collection when revealing its new cell requires pag
       metrics: { "volume.amount": { tag: "finite", value: index + 1, formula: "cells.volume.amount@1", unit: "usdt", supportEnd: t1, knownThrough: t1 } }, detail: [] };
   });
   captures[0].metrics["volume.amount"].audit = "";
-  const before = { comparisonVersion: 1, instrument: "BTC/USDT", captures, focus: "prior-0", reference: null, basis: "amount",
+  for (const capture of captures) Object.assign(capture, { contextOrigin: "legacy-structural", context: { supports: {}, histories: [], originatingObservation: null }, originatingObservation: null });
+  const before = { comparisonVersion: 2, selectedMetric: "volume", instrument: "BTC/USDT", captures, focus: "prior-0", reference: null, basis: "amount",
     sort: { key: "added", direction: "asc" }, view: "grid", page: 0, poc: null, expanded: false, restoreLayout: null };
   const oldPreflight = { ...before, captures: [...captures, sample], focus: sample.id };
   captures[0].metrics["volume.amount"].audit = "x".repeat(cap - Buffer.byteLength(JSON.stringify(oldPreflight)));
@@ -355,3 +400,60 @@ test("Add refuses a near-cap collection when revealing its new cell requires pag
   expect(await page.evaluate((key) => sessionStorage.getItem(key), KEY)).toBe(raw);
   expect(await saved(page)).toEqual(before);
 });
+
+
+test("captured Cascade original and history wait for their complete parent in replay", async ({page,fakeFor,probe}) => {
+  const fake=await fakeFor("micro:mixed"); await ready(page,fake,probe,VIEW+"&mode=cascade");
+  const p=await point(page);await page.mouse.move(p.x,p.y);await page.keyboard.press("e");
+  await page.getByRole("tab", {name:"Cells", exact:true}).click();
+  const card=page.locator("#ol-inspect-readout");
+  await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).result.tag).toBe("finite");
+  await probe.waitForQuiet({quietMs:300,timeout:30000});
+  await page.locator("#ol-inspect").focus();await page.keyboard.press("Enter");
+  await page.locator("#ol-inspect-detail-body").getByRole("button",{name:"Add to comparison"}).click();
+  await expect.poll(async () => (await saved(page))?.captures.length).toBe(1);
+  const capture=(await saved(page)).captures[0], C=require("../../src/comparison.js");
+  expect(capture.originatingObservation.formula).toBe("cells.cascade.log2@1");
+  const support=capture.context.supports[capture.originatingObservation.supportId];
+  expect(support.knownThrough).toBe(EPOCH+56250);
+  expect(capture.originatingObservation.denominatorIds.length).toBeGreaterThan(0);
+  const dependencies=capture.originatingObservation.denominatorIds.map(id=>capture.context.supports[id]);
+  expect(dependencies.some(reference=>reference.supportEnd===EPOCH+112500&&reference.knownThrough===EPOCH+112500)).toBe(true);
+  const knownThrough=Math.max(support.supportEnd,support.knownThrough,...dependencies.map(reference=>Math.max(reference.supportEnd,reference.knownThrough)));
+  expect(knownThrough).toBeGreaterThan(capture.observed.t1);
+  const history=capture.context.histories.find(h=>h.id==="cascade");
+  expect(history.slots.at(-1).denominatorIds.length).toBeGreaterThan(0);
+  expect(C.originating(capture,capture.observed.t1).tag).toBe("hidden");
+  expect(C.frozenHistory(capture,"cascade",capture.observed.t1).slots.at(-1).result.tag).toBe("hidden");
+  expect(C.captureText(capture,{edge:capture.observed.t1})).toContain("Original captured reading: Unavailable in replay");
+  expect(C.originating(capture,knownThrough).value).toBe(capture.originatingObservation.result.value);
+});
+
+for (const mode of ["flow", "volume"]) {
+  test(`measured zero-denominator ${mode} capture preserves canonical non-values in frozen histories and Copy`, async ({ page, fakeFor, probe }) => {
+    const fake = await fakeFor("micro:mixed"); await ready(page, fake, probe, VIEW + "&mode=" + mode);
+    // Column 1, row 203 and its preceding cell are covered by the mixed fixture, with no trades.
+    const p = await point(page, 84375, 25437.5); await page.mouse.move(p.x, p.y); await page.keyboard.press("e");
+    await page.getByRole("tab", { name: "Cells", exact: true }).click();
+    const card = page.locator("#ol-inspect-readout");
+    await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).result.tag).toBe(mode === "flow" ? "empty-population" : "finite");
+    await probe.waitForQuiet({ quietMs: 300, timeout: 30000 });
+    await page.locator("#ol-inspect").focus(); await page.keyboard.press("Enter");
+    await page.locator("#ol-inspect-detail-body").getByRole("button", { name: "Add to comparison" }).click();
+    await expect.poll(async () => (await saved(page))?.captures.length).toBe(1);
+    const capture = (await saved(page)).captures[0]; expect([capture.c, capture.r]).toEqual([1, 203]);
+    const key = mode === "flow" ? "flow" : "imbalance", denominator = mode === "flow" ? "total volume" : "cell volume";
+    const history = capture.context.histories.find((h) => h.id === key);
+    const result = mode === "flow" ? { tag: "empty-population", reason: "total volume is 0", denominator } : { tag: "undefined", denominator };
+    expect(history.slots.slice(-2).map((slot) => slot.result)).toEqual([result, result]);
+    expect(history.slots[0].result.tag).toBe("unsupported");
+    if (mode === "flow") expect(capture.originatingObservation.result).toEqual(history.slots.at(-1).result);
+    else expect(capture.originatingObservation.result).toEqual({ tag: "finite", value: 0 });
+    await clipboard(page);
+    const copied = await copyFocused(page), label = mode === "flow" ? "Taker-buy volume share" : "Net taker imbalance";
+    const line = copied.split("\n").find((line) => line.startsWith(label + " frozen history:"));
+    expect(line).toMatch(mode === "flow" ? /; total volume is 0; total volume is 0$/ : /; undefined; undefined$/);
+    const details = page.locator(`${WORK} .ol-comparison-details`); await details.locator("summary").click();
+    await expect(details.locator(`[data-history="${key}"] li`).last()).toHaveAttribute("data-canonical", result.tag);
+  });
+}

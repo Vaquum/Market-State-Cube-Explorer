@@ -121,7 +121,7 @@ test.describe("B47 Inspect and touch", () => {
     await probe.waitForQuiet({ quietMs: 500, timeout: 30000 });
     expect((await where(page)).surface, "on its outline: the gap is read").toBe("references");
     await expect(page.locator("#ol-inspect-readout")).toContainText("Friday close");
-    expect(await page.locator("#ol-inspect-position").textContent()).toMatch(/^CME gap · /);
+    expect(await page.locator("#ol-inspect-position").textContent()).toMatch(/^Binance spot weekend proxy · /);
   });
   test("a CME gap is not found by its inside: a tap well inside it reads the cell", async ({ page, probe, fakeFor, pane }) => {
     const { box, gap } = await openGap(page, await fakeFor("standard"), probe, pane);

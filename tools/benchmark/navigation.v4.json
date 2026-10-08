@@ -321,5 +321,12 @@
       "maxMountedEntries": 24
     },
     "note": "Budgets committed before candidate measurement; candidate-only local diagnostics, not paired navigation or a precision certificate."
+  },
+  "evidence": {
+    "longDays": 1800,
+    "withheldDays": 420,
+    "n": 9,
+    "m": 0,
+    "note": "Candidate-only existing fake interval diagnostics: qualifying common matched-block/valid-draw/nondegenerate intervals versus short-source withholding. Retain existing navigation and comparison budgets; no CI timing acceptance gate."
   }
 }

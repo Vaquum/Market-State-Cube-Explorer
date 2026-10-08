@@ -179,9 +179,9 @@
               200
             ],
             "contains": [
-              "Buy − sell | 0 USDT",
+              "Delta · taker-buy minus taker-sell USDT | 0 USDT",
               "Trades | 2",
-              "Buy − sell | 0 USDT"
+              "Delta · taker-buy minus taker-sell USDT | 0 USDT"
             ]
           }
         ]

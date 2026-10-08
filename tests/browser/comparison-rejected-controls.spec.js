@@ -2,7 +2,7 @@
 // Native selects change before their transaction is measured. A refusal must restore the committed record every time.
 const { test, expect } = require("./fixtures.js");
 test.use({ reducedMotion: "reduce" });
-const KEY = "market-state-cube-explorer:comparison:v1:BTC/USDT", CAP = 4 * 1024 * 1024;
+const KEY = "market-state-cube-explorer:comparison:v2:BTC/USDT", CAP = 4 * 1024 * 1024;
 const HASH = "#t=2026-09-23T12:00Z~2026-09-24T12:00Z&p=24600~25400&r=4,0&vis=2&marks=none&lines=";
 const panel = (page) => page.locator("#ol-comparisonWorkspace");
 const control = (page, name) => panel(page).locator(`[data-comparison-control="${name}"]`);

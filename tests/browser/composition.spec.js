@@ -51,7 +51,7 @@ test.describe("B27 the event strip", () => {
     const [x, y, w, h, , , , , , ey, eh, collapsed] = layout;
     expect(collapsed, "the lanes fit on this chart").toBe(0);
     expect(eh, "three lanes of 14 px").toBe(42);
-    const names = ["4h squeeze", "1D squeeze", "CME gap"];
+    const names = ["4h squeeze", "1D squeeze", "Spot gap"];
     names.forEach((name, i) => {
       const t = frame.texts.find((f) => f.text === name);
       expect(t, `the lane ${name} is named`).toBeTruthy();
@@ -89,7 +89,7 @@ test.describe("B27 the event strip", () => {
       [x, , w, , , , , , , ey, eh] = await layoutOf(page);
     await page.mouse.move(box.x + x + w * 0.5, box.y + ey + eh / 2);
     await expect(page.locator("#ol-tip")).toBeVisible();
-    await expect(page.locator("#ol-tip")).toContainText("CME gap");
+    await expect(page.locator("#ol-tip")).toContainText("Binance spot weekend proxy");
   });
 
   test("where the chart is too short for its lanes the strip is one line with the counts, and the lanes are not drawn", async ({ page, probe, fakeFor, pane }) => {
@@ -104,7 +104,7 @@ test.describe("B27 the event strip", () => {
     expect(eh, "one line").toBe(14);
     const line = frame.texts.find((t) => /lanes need a taller chart$/.test(t.text));
     expect(line, "the disclosure").toBeTruthy();
-    expect(line.text).toMatch(/^4h squeeze \d+ · 1D squeeze \d+ · CME gap \d+ · lanes need a taller chart$/);
+    expect(line.text).toMatch(/^4h squeeze \d+ · 1D squeeze \d+ · Spot gap \d+ · lanes need a taller chart$/);
     expect(frame.texts.some((t) => t.text === "4h squeeze" && t.align === "right"), "no lane name").toBe(false);
     expect(line.y).toBeCloseTo(ey + 7, 0);
   });
@@ -158,7 +158,7 @@ test.describe("B27 reference strokes and the occlusion budget", () => {
       const own = casing.find((c) => c.width === 3.5 && JSON.stringify(c.dash) === JSON.stringify(k.dash) && JSON.stringify(c.path) === JSON.stringify(k.path));
       expect(own, "each calendar line's casing has its pattern and its path").toBeTruthy();
     }
-    expect(frame.texts.some((t) => /^CME gap/.test(t.text)), "the gap is named on the plot").toBe(true);
+    expect(frame.texts.some((t) => /^Weekend gap/.test(t.text)), "the gap is named on the plot").toBe(true);
   });
 
   // PR #52 review: the swings, their equal pairs, the crosses and the CME gaps are persistent marks of the lines that are on, so they count
@@ -178,7 +178,7 @@ test.describe("B27 reference strokes and the occlusion budget", () => {
     const without = await count(base);
     const withMarks = await count(`${base},swing4h,swing1d,gdcross,cme`);
     // what the frame drew of these marks: each swing's triangle, each equal pair's and each cross's and gap's label (a mark that was held back is not drawn at all)
-    const drawn = withMarks.frame.fills.filter((f) => f.path.length === 3).length + withMarks.frame.texts.filter((x) => /(EQH|EQL|golden|death|^CME gap)/.test(x.text)).length;
+    const drawn = withMarks.frame.fills.filter((f) => f.path.length === 3).length + withMarks.frame.texts.filter((x) => /(EQH|EQL|golden|death|^Weekend gap)/.test(x.text)).length;
     expect(drawn, "the view draws these marks").toBeGreaterThanOrEqual(8);
     expect(withMarks.eligible - without.eligible, `every mark drawn was eligible: ${drawn} drawn, ${withMarks.eligible - without.eligible} more eligible`).toBeGreaterThanOrEqual(drawn);
     // and what was held back is held back from the canvas too: the triangles drawn are not more than the marks the plan shows

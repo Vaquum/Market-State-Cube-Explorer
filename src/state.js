@@ -457,7 +457,7 @@
 
   // Comparison captures are owned by this tab. Their schema is independent of visual versions,
   // named views and chart history; rejected text stays in its original slot until explicit discard.
-  const comparisonRoot = "comparison:v1:", comparisonMaxBytes = 4 * 1024 * 1024;
+  const comparisonRoot = "comparison:v2:", comparisonLegacyRoot = "comparison:v1:", comparisonLegacy = new Map(), comparisonMaxBytes = 4 * 1024 * 1024;
   const comparisonRejected = new Map(), comparisonVerifiedRaw = new Map(), comparisonUnread = new Set(), comparisonCaptures = new WeakMap(), comparisonSerialized = new WeakSet();
   const comparisonTags = new Set(["finite", "negative-infinite", "no-reference", "empty-both", "empty-population", "undefined", "no-coarser-parent", "waiting-for-complete-parent", "outside-support", "hidden", "pending", "failed", "unsupported", "invalid-input"]);
   const comparisonSorts = new Set(["time", "added", "volume", "trades", "delta", "intensity", "size", "flow", "poc"]);
@@ -499,10 +499,41 @@
     comparisonAssert(comparisonTime(record.supportEnd) && comparisonTime(record.knownThrough), reason + " support must be finite or null");
     comparisonAssert(record.supportEnd === null || record.knownThrough === null || record.supportEnd <= record.knownThrough, reason + " support extends beyond its snapshot cutoff");
   };
+  const comparisonMetricKeys = ["volume", "trades", "size", "flow", "flowtrades", "delta", "path", "dwell", "poc"];
+  const comparisonJSONSafe = (value, ancestors = []) => {
+    if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+    if (typeof value === "number") return Number.isFinite(value);
+    if ((!Array.isArray(value) && !comparisonObject(value)) || ancestors.includes(value) || ancestors.length >= 24) return false;
+    if (Reflect.ownKeys(value).some((key) => typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key))) return false;
+    if (Array.isArray(value) && Array.from({length:value.length},(_,i)=>i).some((i)=>!Object.prototype.hasOwnProperty.call(value,i))) return false;
+    return Object.values(value).every((v) => comparisonJSONSafe(v, [...ancestors, value]));
+  };
+  const comparisonContext = (context) => {
+    comparisonAssert(comparisonKeys(context, ["supports", "histories", "originatingObservation"]) && comparisonJSONSafe(context), "invalid frozen context");
+    comparisonAssert(comparisonBytes(JSON.stringify(context)) <= 16384, "frozen context exceeds 16 KiB");
+    comparisonAssert(comparisonObject(context.supports) && Object.keys(context.supports).every(comparisonText), "invalid context support IDs");
+    for (const support of Object.values(context.supports)) {
+      comparisonAssert(comparisonObject(support), "invalid context support"); comparisonSupport(support, "frozen context");
+    }
+    const supported = (id) => typeof id === "string" && Object.prototype.hasOwnProperty.call(context.supports, id);
+    comparisonAssert(Array.isArray(context.histories) && context.histories.length <= 4, "more than four frozen histories");
+    const ids = new Set();
+    for (const history of context.histories) {
+      comparisonAssert(comparisonKeys(history, ["id", "formula", "unit", "slots"]) && [history.id, history.formula, history.unit].every(comparisonText) && !ids.has(history.id), "invalid frozen history descriptor"); ids.add(history.id);
+      comparisonAssert(Array.isArray(history.slots) && history.slots.length <= 12, "more than twelve frozen history slots");
+      for (const slot of history.slots) {
+        comparisonAssert(comparisonKeys(slot, ["result", "supportId", "denominatorIds"], ["reason"]) && supported(slot.supportId) && Array.isArray(slot.denominatorIds) && slot.denominatorIds.every(supported), "unknown frozen support reference");
+        comparisonAssert(comparisonObject(slot.result) && comparisonTags.has(slot.result.tag) && (slot.result.tag === "finite" ? Number.isFinite(slot.result.value) : slot.result.value === null || slot.result.value === undefined), "invalid frozen slot result");
+      }
+    }
+    const origin = context.originatingObservation;
+    comparisonAssert(origin === null || comparisonObject(origin) && [origin.formula, origin.unit, origin.basis].every(comparisonText) && supported(origin.supportId) && (origin.denominatorIds === undefined || Array.isArray(origin.denominatorIds) && origin.denominatorIds.every(supported)) && Array.isArray(origin.historyIds) && origin.historyIds.every((id) => ids.has(id)) && (origin.comparisonMetric === null || comparisonMetricKeys.includes(origin.comparisonMetric)) && comparisonObject(origin.result) && comparisonTags.has(origin.result.tag) && (origin.result.tag === "finite" ? Number.isFinite(origin.result.value) : origin.result.value === null || origin.result.value === undefined), "invalid originating observation");
+  };
+  const comparisonUpgrade = (value) => ({ ...value, comparisonVersion: 2, selectedMetric: value.selectedMetric ?? "volume", captures: value.captures.map((capture) => capture.contextOrigin ? capture : { ...capture, contextOrigin: "legacy-structural", originatingObservation: null, context: { supports: {}, histories: [], originatingObservation: null } }) });
   const comparisonCapture = (capture, instrument) => {
     const cached = comparisonCaptures.get(capture);
     if (cached) { comparisonAssert(capture.instrument === instrument, "capture instrument does not match its collection"); return; }
-    comparisonAssert(comparisonKeys(capture, ["id", "instrument", "level", "origin", "c", "r", "nominal", "observed", "capturedAt", "measuredThrough", "source", "completeness", "metrics", "detail"], ["when", "shortExposure", "originalScale"]), "invalid capture fields");
+    comparisonAssert(comparisonKeys(capture, ["id", "instrument", "level", "origin", "c", "r", "nominal", "observed", "capturedAt", "measuredThrough", "source", "completeness", "metrics", "detail"], ["when", "shortExposure", "originalScale", "contextOrigin", "context", "originatingObservation"]), "invalid capture fields");
     comparisonAssert(comparisonText(capture.id) && capture.instrument === instrument, "invalid capture identity or instrument");
     comparisonAssert(comparisonKeys(capture.level, ["n", "m"]) && [capture.level.n, capture.level.m].every((v) => Number.isSafeInteger(v) && v >= 0 && v <= 52), "invalid original cell level");
     comparisonAssert(Number.isFinite(capture.origin) && capture.origin >= 0 && [capture.c, capture.r].every((v) => Number.isSafeInteger(v) && v >= 0), "invalid original cell origin or coordinates");
@@ -538,18 +569,25 @@
     }
     comparisonAssert(capture.shortExposure === undefined || typeof capture.shortExposure === "boolean", "invalid short exposure flag");
     comparisonAssert(capture.originalScale === undefined || typeof capture.originalScale === "string", "invalid original chart scale");
+    if (capture.contextOrigin !== undefined) {
+      comparisonAssert(["legacy-structural", "frame-v2"].includes(capture.contextOrigin), "invalid frozen context origin");
+      comparisonContext(capture.context);
+      comparisonAssert(JSON.stringify(capture.originatingObservation) === JSON.stringify(capture.context.originatingObservation), "originating observation disagreement");
+    }
     if (comparisonDeepFrozen(capture)) comparisonCaptures.set(capture, { raw: null, bytes: 0 });
   };
   const comparisonValidate = (record) => {
     try {
       comparisonAssert(comparisonObject(record), "comparison record is not an object");
-      if (record.comparisonVersion !== 1) return comparisonFailure("unknown-version", "unsupported comparison version " + JSON.stringify(record.comparisonVersion));
-      comparisonAssert(comparisonKeys(record, comparisonFields), "invalid comparison record fields");
+      if (![1, 2].includes(record.comparisonVersion)) return comparisonFailure("unknown-version", "unsupported comparison version " + JSON.stringify(record.comparisonVersion));
+      comparisonAssert(comparisonKeys(record, comparisonFields, record.comparisonVersion === 2 ? ["selectedMetric"] : []), "invalid comparison record fields");
+      if (record.comparisonVersion === 2) comparisonAssert(comparisonMetricKeys.includes(record.selectedMetric), "invalid selected comparison metric");
       comparisonAssert(record.instrument === "BTC/USDT", "unsupported comparison instrument");
       comparisonAssert(Array.isArray(record.captures), "comparison captures are not a list");
       const ids = new Set(), identities = new Set();
       for (const capture of record.captures) {
         comparisonCapture(capture, record.instrument);
+        if (record.comparisonVersion === 2) comparisonAssert(capture.contextOrigin !== undefined, "v2 capture has no frozen context origin");
         const identity = JSON.stringify([capture.instrument, capture.level.n, capture.level.m, capture.origin, capture.c, capture.r, capture.nominal.t0, capture.nominal.t1, capture.nominal.low, capture.nominal.high]);
         comparisonAssert(!ids.has(capture.id) && !identities.has(identity), "duplicate comparison capture identity");
         ids.add(capture.id); identities.add(identity);
@@ -587,23 +625,42 @@
   };
   const comparisonRead = (instrument) => {
     if (instrument !== "BTC/USDT") return { ...comparisonFailure("unreadable", "unsupported comparison instrument"), value: null, raw: null };
+    try {
+      const area = window.sessionStorage;
+      for (let i = 0; i < area.length; i++) {
+        const key = area.key(i), match = key?.match(/comparison:v(\d+):BTC\/USDT$/);
+        if (key?.startsWith(prefix) && match && Number(match[1]) > 2) {
+          comparisonRejected.set(instrument, { status: "unknown-version", raw: area.getItem(key), key });
+          return { ...comparisonFailure("unknown-version", "newer comparison storage retained"), value: null, raw: area.getItem(key) };
+        }
+      }
+    } catch { comparisonUnread.add(instrument); return { ...comparisonFailure("unreadable", "comparison storage is unavailable"), value: null, raw: null }; }
     const got = fetchText("sessionStorage", comparisonRoot + instrument);
     if (!got.ok) {
       if (!comparisonVerifiedRaw.has(instrument)) comparisonUnread.add(instrument);
       return { ...comparisonFailure("unreadable", "storage is unavailable (" + describe(got.error) + ")"), value: null, raw: null };
     }
+    const legacy = fetchText("sessionStorage", comparisonLegacyRoot + instrument);
     if (got.text === null) {
+      if (!legacy.ok) { comparisonUnread.add(instrument); return { ...comparisonFailure("unreadable", "legacy comparison storage unavailable"), value: null, raw: null }; }
       comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, null);
+      if (legacy.text === null) return { ok: true, status: "absent", value: null, raw: null, reason: null };
+      const parsed = comparisonParse(legacy.text, instrument);
+      if (!parsed.ok || parsed.value.comparisonVersion !== 1) {
+        comparisonRejected.set(instrument, parsed); return parsed.ok ? { ...comparisonFailure("unknown-version", "invalid legacy slot version"), value: null, raw: legacy.text } : parsed;
+      }
       if (comparisonRejected.get(instrument)?.status === "not-loaded") comparisonRejected.delete(instrument);
-      return { ok: true, status: "absent", value: null, raw: null, reason: null };
+      comparisonLegacy.set(instrument, legacy.text);
+      return { ...parsed, value: comparisonUpgrade(parsed.value), migration: "legacy-structural" };
     }
     const parsed = comparisonParse(got.text, instrument);
-    if (!parsed.ok) comparisonRejected.set(instrument, parsed);
-    else {
-      comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, parsed.raw);
-      if (comparisonRejected.get(instrument)?.status === "not-loaded") comparisonRejected.delete(instrument);
+    if (!parsed.ok || parsed.value.comparisonVersion !== 2) {
+      const rejected = parsed.ok ? { ...comparisonFailure("unreadable", "v2 slot has an invalid version"), value: null, raw: got.text } : parsed;
+      comparisonRejected.set(instrument, rejected); return rejected;
     }
-    return parsed;
+    comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, parsed.raw);
+    if (comparisonRejected.get(instrument)?.status === "not-loaded") comparisonRejected.delete(instrument);
+    return { ...parsed, legacyNotice: legacy.ok && legacy.text !== null ? "Legacy/rollback record retained separately; no automatic reconciliation" : null };
   };
   const comparisonPrepare = (record) => {
     const checked = comparisonValidate(record);
@@ -638,16 +695,19 @@
     if (!prepared.ok) return prepared;
     const { envelope, marker, at, bytes, chunks } = prepared;
     const raw = envelope.slice(0, at) + '"captures":[' + chunks.join(",") + "]" + envelope.slice(at + marker.length);
-    const serialized = Object.freeze({ ok: true, status: "ok", raw, bytes, instrument: record.instrument, reason: null });
+    const serialized = Object.freeze({ ok: true, status: "ok", raw, bytes, instrument: record.instrument, comparisonVersion: record.comparisonVersion, reason: null });
     comparisonSerialized.add(serialized);
     return serialized;
   };
   const comparisonWrite = (instrument, record) => {
     if (instrument !== "BTC/USDT") return comparisonFailure("unreadable", "unsupported comparison instrument");
     let serialized;
-    if (typeof record === "string") serialized = comparisonParse(record, instrument);
-    else if (record && comparisonSerialized.has(record)) serialized = record;
-    else serialized = comparisonSerialize(record);
+    if (typeof record === "string") {
+      const parsed = comparisonParse(record, instrument);
+      serialized = parsed.ok && parsed.value.comparisonVersion === 1 ? comparisonSerialize(comparisonUpgrade(parsed.value)) : parsed;
+    }
+    else if (record && comparisonSerialized.has(record)) serialized = record.comparisonVersion === 1 ? comparisonSerialize(comparisonUpgrade(comparisonParse(record.raw, instrument).value)) : record;
+    else serialized = comparisonSerialize(record?.comparisonVersion === 1 ? comparisonUpgrade(record) : record);
     if (!serialized.ok) return serialized;
     if (serialized.instrument !== undefined && serialized.instrument !== instrument) return comparisonFailure("unreadable", "comparison instrument does not match its slot");
     const got = fetchText("sessionStorage", comparisonRoot + instrument);
@@ -672,13 +732,26 @@
       area.setItem(key, serialized.raw);
       if (area.getItem(key) !== serialized.raw) return comparisonFailure("unsaved", "comparison storage write could not be verified");
       comparisonUnread.delete(instrument); comparisonVerifiedRaw.set(instrument, serialized.raw);
-      return { ok: true, status: "ok", bytes: serialized.bytes, reason: null };
+      // Retire only the byte-identical v1 copied by this loaded session, after verified v2 success.
+      const legacyRaw = comparisonLegacy.get(instrument), legacyKey = prefix + comparisonLegacyRoot + instrument;
+      let legacyNotice = null;
+      if (legacyRaw !== undefined) {
+        try {
+          if (area.getItem(legacyKey) === legacyRaw) { area.removeItem(legacyKey); if (area.getItem(legacyKey) !== null) legacyNotice = "Legacy record retained; retirement could not be verified"; }
+          else if (area.getItem(legacyKey) !== null) legacyNotice = "Changed rollback record retained separately; no automatic reconciliation";
+          comparisonLegacy.delete(instrument);
+        } catch { legacyNotice = "Verified v2 saved; legacy record retained"; }
+      }
+      return { ok: true, status: "ok", bytes: serialized.bytes, reason: null, legacyNotice };
     } catch (error) { return comparisonFailure("unsaved", "comparison storage failed (" + describe(error) + ")"); }
   };
   const comparisonDiscard = (instrument) => {
     if (instrument !== "BTC/USDT") return comparisonFailure("unreadable", "unsupported comparison instrument");
     try {
       const area = window.sessionStorage, key = prefix + comparisonRoot + instrument;
+      const legacy = comparisonLegacy.get(instrument), rejected = comparisonRejected.get(instrument);
+      if (rejected?.key) { if (area.getItem(rejected.key) !== rejected.raw) return comparisonFailure("retained", "newer record changed; reopen before discarding"); area.removeItem(rejected.key); if (area.getItem(rejected.key) !== null) return comparisonFailure("unsaved", "newer stored comparison could not be discarded"); }
+      if (rejected?.raw && area.getItem(prefix + comparisonLegacyRoot + instrument) === rejected.raw && area.getItem(key) === null) area.removeItem(prefix + comparisonLegacyRoot + instrument);
       area.removeItem(key);
       if (area.getItem(key) !== null) return comparisonFailure("unsaved", "stored comparison could not be discarded");
       comparisonRejected.delete(instrument); comparisonUnread.delete(instrument); comparisonVerifiedRaw.delete(instrument);

@@ -7,7 +7,7 @@ for(const days of [1800,420]) test(`${days} days: shared calendar intervals qual
   test.setTimeout(90000);
   const {evidenceFixture}=await import('../../tools/benchmark/evidence-fixture.mjs');
   const fake=await fakeFor(evidenceFixture(days));
-  await page.goto(`${fake.url}/#w=30d&r=9,0&auto=0&vis=2&tab=evidence`); await probe.waitForReady();
+  await page.goto(`${fake.url}/#w=30d&r=9,0&auto=0&vis=2&tab=continuations`); await probe.waitForReady();
   await page.locator('#ol-evidence-tab').click();
   const host=page.locator('#ol-evidence-intervals');
   await expect.poll(()=>host.getAttribute('data-bootstrap'),{timeout:60000}).not.toBeNull();
@@ -20,9 +20,31 @@ for(const days of [1800,420]) test(`${days} days: shared calendar intervals qual
   expect(Object.values(counts.firstFailures).reduce((a,b)=>a+b,0)+counts.stateEligible).toBe(counts.starts);
   expect(counts.matching+counts.nonmatching).toBe(counts.stateEligible);
   expect(counts.baselineCompleted+counts.missingHorizon+counts.unfinished).toBe(counts.stateEligible);
+  if(days===1800){
+    // Filter/sort/page handlers consume the settled study, never its Promise.
+    await page.locator('#ol-open-cases').click();
+    await page.locator('#ol-case-filter').selectOption('reference');
+    const rows=page.locator('#ol-case-list tr'); await expect(rows).toHaveCount(50);
+    const first=await rows.first().textContent(); await page.locator('#ol-case-next').click();
+    await expect(rows.first()).not.toHaveText(first);
+    await page.locator('[data-case-sort="date"]').click(); await expect(rows).toHaveCount(50);
+    await page.locator('#ol-case-filter').selectOption('failure');
+    await expect(page.locator('#ol-case-definition')).toContainText('Non-modal POC outcomes');
+    await expect(rows).not.toHaveCount(0);
+    await page.locator('#ol-tab-cases').click();
+    // A cached horizon must relinquish a cancelled in-flight job for another horizon.
+    await page.locator('#ol-horizon').selectOption('4');
+    await expect(page.locator('#ol-evidence')).toHaveAttribute('aria-busy','true');
+    await page.locator('#ol-horizon').selectOption('1');
+    await expect(page.locator('#ol-evidence')).toHaveAttribute('aria-busy','false');
+    await page.locator('#ol-horizon').selectOption('4');
+    await expect.poll(async()=>{const raw=await host.getAttribute('data-bootstrap');return raw?JSON.parse(raw).key[15]:null;},{timeout:60000}).toBe(4);
+    await expect(page.locator('#ol-evidence')).toHaveAttribute('aria-busy','false');
+  }
   const old=await host.getAttribute('data-bootstrap');
-  await page.evaluate(()=>{location.hash='#t=2026-09-20T00:00Z~2026-09-21T00:00Z&r=9,0&auto=0&vis=2&tab=evidence&replay=1&at=2026-09-20T08:00Z';});
+  await page.evaluate(()=>{location.hash='#t=2026-09-20T00:00Z~2026-09-21T00:00Z&r=9,0&auto=0&vis=2&tab=continuations&replay=1&at=2026-09-20T08:00Z';});
   await expect.poll(()=>host.getAttribute('data-bootstrap')).not.toBe(old);
   await expect(page.locator('#ol-evidence')).toHaveAttribute('aria-busy','false',{timeout:60000});
+  await expect.poll(()=>host.getAttribute('data-bootstrap'),{timeout:60000}).not.toBeNull();
   const after=JSON.parse(await host.getAttribute('data-bootstrap'));expect(after.key[8]).toBeLessThan(data.key[8]);
 });

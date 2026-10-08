@@ -95,10 +95,10 @@ This is one complete implementation slice. The original parent's outstanding ope
 
 | Original requirement | Implementation | Evidence | Status |
 |---|---|---|---|
-| D1 compact hierarchy, profiles and causal histories | Shared core card renderer; Measures companions; native Rows/profile support; nine core Columns; retained cell/candle geometry | B66, B28, cell-native-inspector and inspector-presentation specs | Implemented; verification recorded on PR #89 |
-| D2 canonical observation/support and D3 composition/context | `card-observation@1`, existing canonical helpers, daily ATR, six-offset seasonal index, real MSCC precision, zero/gap/cutoff disclosures | U98, B66, readout-agreement and comparison-capture specs | Implemented; verification recorded on PR #89 |
-| D5 causal availability/model exception and bounded reads | Per-point prior ATR, fixed support, complete parent, retrospective touched-row model; Inspect/expansion demand and cancellation | B66, model-provenance and read-priority specs | Implemented; verification recorded on PR #89 |
-| Labels and construction across shared consumers | Row concentration/profile-share/touched-row names; historical-token disclosure; profile bins, ties, area and independent axes | relative-volume, legacy-migration, text, rows-strip and capture specs; System reference | Implemented; verification recorded on PR #89 |
+| D1 compact hierarchy, profiles and causal histories | Shared core card renderer; Measures companions; native Rows/profile support; nine core Columns; retained cell/candle geometry | B66, B28, cell-native-inspector and inspector-presentation specs | Implemented; verification and delivery: [PR #87](https://github.com/Vaquum/Market-State-Cube-Explorer/pull/87) |
+| D2 canonical observation/support and D3 composition/context | `card-observation@1`, existing canonical helpers, daily ATR, six-offset seasonal index, real MSCC precision, zero/gap/cutoff disclosures | U98, B66, readout-agreement and comparison-capture specs | Implemented; verification and delivery: [PR #87](https://github.com/Vaquum/Market-State-Cube-Explorer/pull/87) |
+| D5 causal availability/model exception and bounded reads | Per-point prior ATR, fixed support, complete parent, retrospective touched-row model; Inspect/expansion demand and cancellation | B66, model-provenance and read-priority specs | Implemented; verification and delivery: [PR #87](https://github.com/Vaquum/Market-State-Cube-Explorer/pull/87) |
+| Labels and construction across shared consumers | Row concentration/profile-share/touched-row names; historical-token disclosure; profile bins, ties, area and independent axes | relative-volume, legacy-migration, text, rows-strip and capture specs; System reference | Implemented; verification and delivery: [PR #87](https://github.com/Vaquum/Market-State-Cube-Explorer/pull/87) |
 | Existing cube only | Explorer client helpers and existing delivered routes; no Origo, bridge, reader or wire change | Source diff; protocol oracles | Design constraint retained; real-host/designated-machine evidence not claimed |
 | P7-S2/P7-S3 acceptance | Covered by the following slice sections | Issues #85/#86 | Tracked separately below |
 
@@ -107,9 +107,9 @@ This is one complete implementation slice. The original parent's outstanding ope
 
 | Requirement | Implementation | Evidence | Status |
 |---|---|---|---|
-| D4 reference location/construction, causal ATR and indicator context | S1 core renderer extended with reference tracks, native shared plots, profiles and explicit unavailable context | U99, U55, B67 plus existing B33/B34/B55 | Implemented; verification recorded on PR #89 |
-| D5 occurrence/confirmation, authored limits and strip access | Event-table extension, prior-cycle completed-input recognition, nearest Clock occurrence, individually selectable existing squeeze records | U99, U55, B67, events-known-at and Inspect/touch regression inventory | Implemented; verification recorded on PR #89 |
-| Existing-data and geometry constraints | Existing detectors, routes, controls and three event lanes retained; exactly matched profile approximation or unavailable | reference-regression, focus-inventory, keyboard-matrix, text-contrast and benchmark protocol | Verification pending; no performance/host certification claimed |
+| D4 reference location/construction, causal ATR and indicator context | S1 core renderer extended with reference tracks, native shared plots, profiles and explicit unavailable context | U99, U55, B67 plus existing B33/B34/B55 | Implemented; verification and delivery: [PR #88](https://github.com/Vaquum/Market-State-Cube-Explorer/pull/88) |
+| D5 occurrence/confirmation, authored limits and strip access | Event-table extension, prior-cycle completed-input recognition, nearest Clock occurrence, individually selectable existing squeeze records | U99, U55, B67, events-known-at and Inspect/touch regression inventory | Implemented; verification and delivery: [PR #88](https://github.com/Vaquum/Market-State-Cube-Explorer/pull/88) |
+| Existing-data and geometry constraints | Existing detectors, routes, controls and three event lanes retained; exactly matched profile approximation or unavailable | reference-regression, focus-inventory, keyboard-matrix, text-contrast and benchmark protocol | Verification and delivery: [PR #88](https://github.com/Vaquum/Market-State-Cube-Explorer/pull/88); no performance/host certification claimed |
 
 
 ## PRD-0007 — historical evidence and frozen comparison, P7-S3 (#86)

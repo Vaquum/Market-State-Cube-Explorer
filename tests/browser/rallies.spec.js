@@ -25,16 +25,20 @@ test("editing the next discovery leaves the retained result's definition and ana
  await expect(page.locator("#ol-rally-rows tr")).toHaveCount(4);
  expect(fake.log().filter(e=>e.path==="/cube/rallies" && e.method==="POST")).toHaveLength(1);
 });
-test("discovery, exact members, deadline and zoom reuse one canonical result without moving the camera",async({page,fakeFor})=>{
+test("discovery, exact members, deadline and zoom reuse one canonical result without moving the camera",async({page,fakeFor,probe})=>{
  const fake=await fakeFor("mini");await discover(page,fake);const before=camera(page.url());
  await page.locator("#ol-rally-rows button").first().click();const inspector=page.locator("#ol-rally-inspector");
  await expect(inspector).toContainText("9,792");await expect(inspector).toContainText("6453964086 → 6453973877");
  await expect(inspector).toContainText("29.98 USDT");expect(camera(page.url())).toEqual(before);
+ // The inspector can already show a coarse n12/m3 projection while the requested n0/m0 tile loads.
+ // Let the finer projection and final draw finish before counting requests attributable to local filtering.
+ await probe.waitForReady();
  const viewsBefore=fake.log().filter(e=>e.path==="/cube/rallies/view").length;
  await page.locator("#ol-rally-deadline").fill("4");await page.locator("#ol-rally-deadline").dispatchEvent("change");
  await expect(page.locator("#ol-rally-rows tr")).toHaveCount(2);await expect(inspector).toContainText("Hidden by replay or time-to-target filter");
+ await probe.waitForReady();expect(fake.log().filter(e=>e.path==="/cube/rallies/view")).toHaveLength(viewsBefore);
  await page.locator("#ol-rally-deadline").fill("240");await page.locator("#ol-rally-deadline").dispatchEvent("change");
- await expect(inspector).toContainText("9,792");expect(fake.log().filter(e=>e.path==="/cube/rallies/view")).toHaveLength(viewsBefore);
+ await expect(inspector).toContainText("9,792");await probe.waitForReady();expect(fake.log().filter(e=>e.path==="/cube/rallies/view")).toHaveLength(viewsBefore);
  await page.locator("#ol-tab-rallies").focus();await page.keyboard.press("]");await expect(inspector).toContainText("9,792");
  expect(fake.log().filter(e=>e.path==="/cube/rallies" && e.method==="POST")).toHaveLength(1);
 });

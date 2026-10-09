@@ -17074,18 +17074,24 @@
     host.dataset.study = e.error ? "unavailable" : e.provenance?.sourceDigest ?? "pending";
     const title = document.createElement("p"); title.textContent = "Approximate pointwise 95% estimation intervals · fixed anchor thresholds"; host.append(title);
     // Each outcome's intervals sit in its own row, under the Matching, All and Diff columns they qualify.
-    for (const kind of ["up", "flat", "down"]) el("label-" + kind).closest("button").querySelector(".ol-outcome-interval")?.remove();
+    for (const kind of ["up", "flat", "down"]) { const button = el("label-" + kind).closest("button"); button.querySelector(".ol-outcome-interval")?.remove(); button.removeAttribute("aria-describedby"); }
     if (!e.uncertainty) { host.append(document.createTextNode(e.error ?? "Computing intervals…")); return; }
     const withheld = new Set();
     for (const kind of ["up", "flat", "down"]) {
-      const line = document.createElement("span"); line.className = "ol-outcome-interval";
-      for (const component of ["conditional", "baseline", "difference"]) {
+      const line = document.createElement("span"); line.className = "ol-outcome-interval"; line.id = `ol-interval-${kind}`;
+      const spoken = [];
+      for (const [component, label] of [["conditional", "Matching"], ["baseline", "All"], ["difference", "Difference"]]) {
         const record = e.uncertainty.intervals[kind][component], span = document.createElement("span"), result = record.result;
         span.dataset.component = component; span.dataset.direction = kind; span.dataset.canonical = JSON.stringify(result);
         if (result.tag !== "finite") withheld.add(result.reason);
         span.textContent = result.tag === "finite" ? result.value.map((v) => v.toFixed(2).replace("-", "−")).join(" to ") + (component === "difference" ? " pp" : "%") : "—"; line.append(span);
+        spoken.push(`${label} ${result.tag === "finite" ? span.textContent : "withheld"}`);
       }
+      // The outcome button is named by its own label; the intervals are its description, so they are heard too.
+      line.setAttribute("aria-label", `95% intervals: ${spoken.join(", ")}`);
+      const button = el("label-" + kind).closest("button");
       el("label-" + kind).closest(".ol-outcome").after(line);
+      button.setAttribute("aria-describedby", line.id);
     }
     // A withheld interval says why once, here, rather than in every cell of the rows.
     if (withheld.size) host.append(Object.assign(document.createElement("p"), { textContent: [...withheld].join("; ") }));

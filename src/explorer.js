@@ -4991,8 +4991,10 @@
         }) });
       }
       const spark = readingSparkline(values, metric.label, { signed: metric.signed, share: metric.share, fixed: metric.fixed, provisional: open });
-      row.append(term, value, spark);
-      if (detailed && values.slice(0, -1).every((v) => !Number.isFinite(v))) {
+      // A region with no earlier windows in loaded support says so once, above its sections, not on every row.
+      const noHistory = Boolean(region) && !(metric.movement ? moving : rowHistory).samples.slice(0, -1).some(Boolean);
+      row.append(term, value, ...(noHistory ? [] : [spark]));
+      if (detailed && !noHistory && values.slice(0, -1).every((v) => !Number.isFinite(v))) {
         const note = document.createElement("small"); note.className = "ol-history-note";
         note.textContent = rowHistory.samples.slice(0, -1).some(Boolean) ? "No earlier defined values" : "Earlier intervals unavailable";
         row.append(note);

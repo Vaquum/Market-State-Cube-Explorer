@@ -58,7 +58,9 @@ test("Rows right-click completes from each step without resetting other settings
   await menu.locator('[data-rows="off"]').click();
   await expect(menu).toBeHidden();
   await page.locator("#ol-rows").click();
-  await expect(menu.locator("[data-rows-step]")).toHaveCount(1);
+  // Rows off has one step: the menu is a plain list, without a stepper.
+  await expect(menu).toHaveAttribute("data-step", "dataset");
+  await expect(menu.locator("[data-rows-step]")).toHaveCount(0);
 });
 
 test("Rows custom day validates, keeps native editing keys and supports immediate completion", async ({ page, fakeFor, probe }) => {

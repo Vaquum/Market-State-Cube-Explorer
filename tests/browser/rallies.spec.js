@@ -9,6 +9,22 @@ async function setup(page,fake){
  await page.locator("#ol-rally-start").fill("2026-06-27T11:39");await page.locator("#ol-rally-end").fill("2026-06-27T11:55");
 }
 async function discover(page,fake){await setup(page,fake);await page.locator("#ol-rally-discover").click();await expect(page.locator("#ol-rally-rows tr")).toHaveCount(4);}
+test("editing the next discovery leaves the retained result's definition and analysis window explicit",async({page,fakeFor})=>{
+ const fake=await fakeFor("mini");await discover(page,fake);
+ const definition=page.locator("#ol-rally-definition"),inspector=page.locator("#ol-rally-inspector");
+ await expect(definition).toContainText("First passage · target 30 bps · anchors every 1 min");
+ await expect(definition).toContainText("2026-06-27T11:39:00.000000Z → 2026-06-27T11:55:00.000000Z");
+ await expect(definition).toContainText("Retained until Refresh discovery; form edits apply only to the next discovery");
+ const retained=await definition.textContent();await page.locator("#ol-rally-rows button").first().click();
+ await expect(inspector).toContainText("target 30 bps · anchors every 1 min");
+ await page.locator("#ol-rally-mode").selectOption("controlled_advance");await page.locator("#ol-rally-scale").selectOption("atr");
+ await page.locator("#ol-rally-target").fill("2");await page.locator("#ol-rally-pullback").fill("0.25");await page.locator("#ol-rally-cadence").fill("5");
+ await page.locator("#ol-rally-start").fill("2026-06-27T11:40");
+ await expect(page.locator("#ol-rally-scale-note")).toContainText("Chart context uses Wilder ATR(14)");
+ await expect(definition).toHaveText(retained);await expect(inspector).toContainText("target 30 bps · anchors every 1 min");
+ await expect(page.locator("#ol-rally-rows tr")).toHaveCount(4);
+ expect(fake.log().filter(e=>e.path==="/cube/rallies" && e.method==="POST")).toHaveLength(1);
+});
 test("discovery, exact members, deadline and zoom reuse one canonical result without moving the camera",async({page,fakeFor})=>{
  const fake=await fakeFor("mini");await discover(page,fake);const before=camera(page.url());
  await page.locator("#ol-rally-rows button").first().click();const inspector=page.locator("#ol-rally-inspector");

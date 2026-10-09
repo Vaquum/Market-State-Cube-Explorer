@@ -25,7 +25,7 @@ const PRD = [
   { id: "vwap", role: "VWAP", hue: "rust", identification: ["Session or the exact anchor"] },
   { id: "clock", role: "Clock", hue: "neutral", identification: ["calendar-event label", "vertical geometry", "keyed event pattern"] },
   { id: "user", role: "User Level", hue: "ink", identification: ["Level label", "endpoint diamond", "long dash-dot"] },
-  { id: "compare", role: "Historical comparison", hue: "neutral", identification: ["Matching states or All states", "square or circle median marker", "labelled interval track"] },
+  { id: "compare", role: "Historical comparison", hue: "neutral", identification: ["Matching states or All eligible", "square or circle median marker", "labelled interval track"] },
 ];
 
 test("the table has the seven roles of the PRD, each with its hue and its redundant identification", () => {

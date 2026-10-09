@@ -20,7 +20,7 @@ test("one drawer entry opens a wide docked reference; settings live in their top
   await expect(page.locator('header #ol-reference-toggle')).toHaveCount(0);
   await expect(page.locator('.ol-chart #ol-legend, .ol-chart #ol-rows-legend, .ol-chart #ol-profile-chip, .ol-chart #ol-axis-chip')).toHaveCount(0);
   const options = await page.locator("#ol-reference-topic option").evaluateAll(elements => elements.map(element => element.value));
-  expect(options).toEqual(["grid", "window", "resolution", "measures", "candles", "movement", "scales", "rows", "profiles", "columns", "states", "selection", "inspect", "lens", "references", "drawings", "evidence", "replay", "tables", "compare", "views"]);
+  expect(options).toEqual(["grid", "window", "resolution", "measures", "candles", "movement", "scales", "rows", "profiles", "columns", "states", "selection", "inspect", "lens", "references", "drawings", "evidence", "rallies", "replay", "tables", "compare", "views"]);
   for (const topic of options) {
     await page.locator("#ol-reference-topic").selectOption(topic);
     await expect(page.locator("#ol-reference-article dt")).toHaveText(["Purpose", "Read", "Use"]);

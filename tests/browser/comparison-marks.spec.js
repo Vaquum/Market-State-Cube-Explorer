@@ -4,9 +4,9 @@
 // What is asserted, on the standard fake cube with a column anchored (an empirical sample far over the floor of 30):
 //   1. no mark of the chart is drawn in the violet of the retired evidence token (#7664a9 and #b4a1df): the cone's boxes and medians, the anchor line and
 //      the label use the neutral comparison hue (the muted ink of the page), the same hue as the Lines menu's neutral family;
-//   2. the matching states' median is marked by a filled square and all states' by a ring, one pair at each horizon that has a sample of 30 or more, and
-//      the two sets are named in words beside the last box: "Matching states" and "All states";
-//   3. the inspector's legend carries the same two shapes (a square, a ring) beside the same words, and its outcome tracks are the neutral hue, not a violet;
+//   2. the matching states' median is marked by a filled square and all eligible states' by a ring, one pair at each horizon that has a sample of 30 or more, and
+//      the two sets are named in words beside the last box: "Matching states" and "All eligible";
+//   3. the inspector's legend carries the same two shapes (a square, a ring), spells out seasonal eligibility, and its outcome tracks are the neutral hue, not a violet;
 //   4. the anchor line is dashed [3,4] in the comparison hue, one pixel wide, behind nothing else of the family.
 // Oracles (none is the code under test): the design tokens read back through a canvas, the hexes of the retired token written out here, the marker
 // geometry of the PRD (a square and a ring, 6 px across), and the computed style of the legend's keys.
@@ -23,7 +23,7 @@ const test = base.extend({
 
 const RETIRED_VIOLET = ["#7664a9", "#b4a1df"];
 
-test.describe("B41 the historical comparison is neutral: a square for the matching states, a ring for all states", () => {
+test.describe("B41 the historical comparison is neutral: a square for the matching states, a ring for all eligible states", () => {
   test("the cone, its medians, its anchor line and its legend use the neutral hue and the two shapes", async ({ page, probe, fakeFor, pane }) => {
     const fake = await fakeFor("standard");
     await page.setViewportSize({ width: 1500, height: 950 });
@@ -53,13 +53,13 @@ test.describe("B41 the historical comparison is neutral: a square for the matchi
     ]);
     for (const violet of RETIRED_VIOLET) expect(colours.has(violet), `${violet} is not drawn`).toBe(false);
     expect(c.compare, "the comparison hue is the muted ink of the page, a neutral").not.toBe(c.line);
-    // 2. the shapes: filled squares for the matching states and rings for all states, 6 px across; the casing under each is the surface
+    // 2. the shapes: filled squares for the matching states and rings for all eligible states, 6 px across; the casing under each is the surface
     const squares = frame.fills.filter((f) => f.fill === c.compare && f.path.length === 4 && Math.abs(Math.max(...f.path.map((p) => p[0])) - Math.min(...f.path.map((p) => p[0])) - 6) < 1e-6);
     const rings = frame.arcs.filter((a) => a.r === 3);
     expect(squares.length, "a square median for each matching set shown").toBeGreaterThan(0);
-    expect(rings.length, "a ring median for each all-states set shown").toBeGreaterThanOrEqual(squares.length);
+    expect(rings.length, "a ring median for each eligible-states set shown").toBeGreaterThanOrEqual(squares.length);
     const words = frame.texts.map((t) => t.text);
-    expect(words.includes("Matching states") && words.includes("All states"), "the two sets are named").toBe(true);
+    expect(words.includes("Matching states") && words.includes("All eligible"), "the two sets are named").toBe(true);
     // 4. the anchor line: dashed [3,4], one pixel, in the comparison hue, the full height of the plot
     const anchors = frame.strokes.filter((k) => k.stroke === c.compare && JSON.stringify(k.dash) === JSON.stringify([3, 4]) && k.width === 1 && k.path.length === 2 && k.path[0][0] === k.path[1][0]);
     expect(anchors.length, "the anchor's dashed line").toBe(1);
@@ -84,7 +84,7 @@ test.describe("B41 the historical comparison is neutral: a square for the matchi
     expect(shapes.match.width, "the matching key's square is 7 px across").toBe("7px");
     expect(shapes.match.radius, "with square corners").toBe("0px");
     expect(shapes.all.width).toBe("7px");
-    expect(shapes.all.radius, "the all-states key is a ring").toBe("50%");
+    expect(shapes.all.radius, "the eligible-states key is a ring").toBe("50%");
     expect(shapes.track, "the outcome track is the neutral hue").toBe(c.compare);
     await expect(page.locator(".ol-evidence-legend")).toContainText("Matching states");
     await expect(page.locator(".ol-evidence-legend")).toContainText("All seasonally eligible states");

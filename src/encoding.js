@@ -4856,8 +4856,8 @@
       colour: "compare",
       token: "--ol-line-compare",
       hue: "neutral",
-      groups: Object.freeze(["Matching states", "All states"]),
-      identification: Object.freeze(["Matching states or All states", "square or circle median marker", "labelled interval track"]),
+      groups: Object.freeze(["Matching states", "All eligible"]),
+      identification: Object.freeze(["Matching states or All eligible", "square or circle median marker", "labelled interval track"]),
       glyph: Object.freeze({ matching: "square", all: "circle" }),
     }),
   ]);

@@ -65,7 +65,7 @@ test.describe("B53 the view summary", () => {
       if (field === "vintage" || field === "limit") continue;
       expect(view[field], `the view section has ${field}`).toBeTruthy();
     }
-    expect(view.replay.text, "the replay edge is named").toMatch(/^At 2026-09-24T06:00Z/);
+    expect(view.replay.text, "the replay edge is named, in the page's own time format").toMatch(/^At 24 Sep 06:00 UTC/);
     expect(view.dataCutoff.value, "and it is the cutoff of the data the page draws").toBe(String(Date.parse("2026-09-24T06:00:00Z")));
     expect(view.appearance.text).toContain("version 2");
     expect(view.appearance.text).toContain(P.AP.split("-")[0]);

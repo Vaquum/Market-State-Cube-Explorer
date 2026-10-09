@@ -1544,84 +1544,84 @@
 }
 /* Keep the hover card spacious; the persistent pane aligns supporting readings
    in one row so label, value and history can be scanned down fixed columns. */
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-stats {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-stats {
   margin-top: var(--sp-2);
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-state,
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-context {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-state,
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-context {
   margin-top: var(--sp-1);
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-context {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-context {
   line-height: 1.4;
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-tip-sub,
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-state {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-tip-sub,
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-state {
   display: inline;
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-state {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-state {
   margin: 0 0 0 var(--sp-2);
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-headline .ol-cell-stat {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-headline .ol-cell-stat {
   padding-bottom: var(--sp-1);
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-group {
   margin-top: var(--sp-1);
   padding-top: var(--sp-1);
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group h3 {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-group h3 {
   margin-bottom: var(--sp-1);
   line-height: 1.4;
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-cell-stat {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-group .ol-cell-stat {
   grid-template-columns: minmax(0, 1fr) 96px 56px;
   column-gap: var(--sp-2);
   padding: 2px 0;
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-cell-stat dt {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-group .ol-cell-stat dt {
   grid-column: 1;
   grid-row: 1;
   line-height: 1.3;
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-cell-stat dd {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-group .ol-cell-stat dd {
   grid-column: 2;
   grid-row: 1;
   margin: 0;
   line-height: 1.3;
   text-align: right;
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-reading-unit {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-group .ol-reading-unit {
   display: inline-block;
   max-width: 100%;
   line-height: 1.2;
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group :is(dd[data-field="buySize"], dd[data-field="sellSize"], dd[data-field="size"], dd[data-field="imbalance"]) .ol-reading-unit {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-group :is(dd[data-field="buySize"], dd[data-field="sellSize"], dd[data-field="size"], dd[data-field="imbalance"]) .ol-reading-unit {
   display: block;
   margin-left: 0;
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-sparkline {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-group .ol-sparkline {
   grid-column: 3;
   grid-row: 1;
   width: 56px;
   height: 26px;
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-flow-balance,
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-details {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-flow-balance,
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-details {
   margin-top: var(--sp-2);
 }
-#origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-details {
+#origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-details {
   padding-top: var(--sp-2);
 }
 /* A resized narrow pane keeps the stacked labels instead of squeezing numbers. */
 @container inspection (width < 260px) {
-  #origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-cell-stat {
+  #origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-group .ol-cell-stat {
     grid-template-columns: minmax(0, 1fr) 56px;
   }
-  #origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-cell-stat dd {
+  #origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-group .ol-cell-stat dd {
     grid-column: 1;
     grid-row: 2;
     text-align: left;
   }
-  #origo-lens .ol-inspect [data-presentation="cell"] .ol-cell-group .ol-sparkline {
+  #origo-lens :is(.ol-inspect [data-presentation="cell"], .ol-selection-card[data-presentation="cell"]) .ol-cell-group .ol-sparkline {
     grid-column: 2;
     grid-row: 1 / 3;
   }
@@ -3429,6 +3429,10 @@
 .ol-comparison-frozen-history { padding:8px 0; font-size:14px; }
 .ol-comparison-frozen-history svg { display:block; }
 .ol-comparison-frozen-history ol { display:flex; flex-wrap:wrap; gap:8px; padding-left:20px; }
+
+/* Selection uses the same readable cell sections; raw rectangle diagnostics remain in the DOM. */
+#origo-lens .ol-selection-card { container: inspection / inline-size; }
+#origo-lens #ol-context[data-selection-card="true"] > :is(.ol-metrics, .ol-rule, .ol-measure-profile, .ol-metric, #ol-motion-to-row, .ol-diag) { display: none; }
 
     </style>
   </head>
@@ -21807,7 +21811,7 @@
     activity(shown, cut, mv, full, sc);
     paintEvents(cut);
     crosshair(ro);
-    querySummary(meas, mv);
+    const selectionContext = querySummary(meas, mv);
     // The legends: the chips when the DOM package has registered them; none after a fault, which turns the
     // scale display off.
     if (sc !== INERT_SC) {
@@ -21848,6 +21852,7 @@
       sourceVersion:sourcesKey(), sourceRevision:comparisonSourceRevision, contextBarsVersion:barsVersion,
       camera:[S.tA,S.tB,S.pA,S.pB,S.n,S.m,S.replay,S.anchor],
       motionEnd:mv?.src?.end ?? null, canon:CANON, dataCut:CUT };
+    selectionPresentation(meas, mv, selectionContext.seasonal, selectionContext.response);
     comparisonRefresh();
     if (transition) {
       if (u >= 1) transition = null;
@@ -23085,9 +23090,10 @@
     el("key-open").hidden = openRows === 0 && !unfinishedShown;
     el("key-unavailable").hidden = !coverageGap;
     el("data-coarse").hidden = !(renderN() > S.n || renderM() > S.m);
-    measuresPresentation(meas, mv);
+    const context = measuresPresentation(meas, mv);
     queryUI(meas);
     renderCells(measuring ? null : query, b, mv);
+    return context;
   }
   function readingProfile(query, rowWidth, selected = null) {
     const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg"), rows = query.rows.filter((x) => x.v > 0);
@@ -23185,6 +23191,58 @@
     const normalized = E.measure.normalized(refusal || response.close === null || poc === null ? NaN : response.close - poc, response.atr);
     const text = `All-price close versus this profile's POC: ${normalized.result.tag === "finite" ? cardValue(normalized.result.value, "daily-atr").text + " daily ATR" : E.result.describe(normalized.result).long}. Raw POC and value boundaries remain USDT; this is location, not a direction forecast.`;
     if (location.textContent !== text) location.textContent = text;
+    return { seasonal, response };
+  }
+  // A selection is one measured region, not an average of its cells. Reuse the cell
+  // renderer; histories use the same price band and equal-duration, non-overlapping windows.
+  function selectionPresentation(meas, mv, seasonal, response) {
+    const host = el("context"); host.dataset.selectionCard = String(Boolean(S.selection));
+    let tip = host.querySelector(".ol-selection-card");
+    if (!S.selection) { tip?.remove(); return; }
+    if (!tip) { tip = document.createElement("div"); tip.className = "ol-selection-card"; tip.id = "ol-selection-card"; el("bounds").after(tip); }
+    const q = meas.query, ts = 2 ** q.n, ps = 2 ** q.m;
+    const time = [meas.b[0], Math.max(meas.b[0], Math.min(meas.b[1], meas.end ?? activeCutoff(), activeCutoff()))], band = meas.b.slice(2);
+    const refusal = ["pending", "failed"].includes(meas.state) ? { state: meas.state, reason: meas.error ?? "Measuring this selection" } : time[1] <= time[0] || band[1] <= band[0] ? { state: "unsupported", reason: "No measured support inside this selection" } : null;
+    const motionQuery = mv?.rect?.query ? motionTotals(mv.rect.query) : null;
+    const motionTime = [time[0], Math.max(time[0], Math.min(time[1], mv?.rect?.end ?? time[0]))];
+    const duration = time[1] - time[0];
+    const histories = (moving = false) => {
+      const samples = Array.from({ length: 12 }, (_, i) => {
+        const span = [time[0] - (11 - i) * duration, time[1] - (11 - i) * duration];
+        if (i === 11) return moving && !motionQuery ? null : { z: moving ? motionQuery : q, time: moving ? motionTime : time, end: moving ? motionTime[1] : time[1], column: allPriceAmount(q.n, time) };
+        if (duration <= 0 || span[0] < 0) return null;
+        const area = [...span, ...band], src = moving ? motionExact(area, q.n, q.m) : exactSource(area, q.n, q.m);
+        if (!src || moving && src.end < span[1]) return null;
+        const z = moving ? motionTotals(boundedMotion(src, q.n, q.m, area)) : aggregate(src, q.n, q.m, area);
+        return { z: { ...z, support: span }, time: span, end: span[1], column: allPriceAmount(q.n, span) };
+      });
+      return { samples, state: samples.slice(0, -1).every(Boolean) ? "ready" : "unsupported" };
+    };
+    const region = { time, band, history: histories(), moving: histories(true), motionTime, refusal,
+      column: allPriceAmount(q.n, time), seasonal, response, query: q,
+      measure(mode, value, basis = "amount", pathBasis = "spans", end = Infinity) {
+        const span = value.support ?? (mode === "path" || mode === "dwell" ? motionTime : time), width = band[1] - band[0], length = span[1] - span[0];
+        const read = refusal ?? ((mode === "path" || mode === "dwell") && !motionQuery ? { state: mv?.rect?.state === "failed" ? "failed" : "unsupported", reason: mv?.rect?.error ?? "Movement support not loaded for this selection" } : null);
+        // The canonical kernel accepts explicit steps. Local coordinates make this
+        // region's actual duration/width its exposure without inventing a lattice cell.
+        return E.measure.cellMeasurement({ mode, basis, pathBasis, z: { ...value, c: 0, r: 0 }, geom: { BASE, PR }, level: { n: q.n, m: q.m },
+          ts: length, ps: width, bounds: [0, length, 0, width], cut: length, end: Math.min(length, end - span[0]), CUT: length, replay: false, read, measured: null, cascade: null });
+      },
+    };
+    const mode = ["geometry", "cascade", "candles"].includes(S.mode) ? "volume" : S.mode;
+    const basis = last.sc?.cells?.basis ?? "amount", pathBasis = last.sc?.cells?.pathBasis ?? "spans";
+    const value = ["path", "dwell"].includes(mode) ? motionQuery ?? { p: 0, w: 0 } : q;
+    const measure = region.measure(mode, value, basis, pathBasis);
+    const support = ["path", "dwell"].includes(mode) ? motionTime : time;
+    const readout = { typed: measure.result, measure, support: { time: support, portion: meas.b.some((v, i) => v !== meas.r[i]) }, exposure: measure.exposure };
+    const signature = JSON.stringify([mode, nav.shift, PACK.state_token, meas.state, q.rows.map(x => [x.r,x.v,x.bv]), measure, region.history.samples.map(x => x && [x.time,x.z.v,x.z.bv,x.z.ct,x.z.bt,x.column?.v]), region.moving.samples.map(x => x?.z && [x.time,x.z.p,x.z.w]), band, refusal, seasonal, response, cellLocation(0,0,ts,ps,time[0],band)]);
+    if (tip.dataset.signature === signature) return;
+    const opened = Boolean(tip.querySelector(".ol-cell-details")?.open), focused = tip.querySelector("summary") === document.activeElement;
+    tip.replaceChildren(Object.assign(document.createElement("dl"), { className: "ol-tip-rows" }));
+    tip.dataset.signature = signature;
+    cellPresentation(tip, { c: Math.floor(time[0] / ts), r: Math.floor(band[0] / ps), ts, ps, z: q, readout, bounds: meas.b, detailed: true, region });
+    const details = tip.querySelector(".ol-cell-details"); details.classList.add("ol-core-details"); details.open = opened;
+    if (focused) details.querySelector("summary").focus({ preventScroll: true });
   }
   function allPriceAmount(n, time) {
     const src = exactSource([time[0], time[1], 0, 2 ** 32], n, 0);
@@ -24024,13 +24082,13 @@
       },
     };
   }
-  function cellLocation(c, r, ts, ps) {
-    const d = Math.floor(c * ts / DAYS) - 1;
+  function cellLocation(c, r, ts, ps, observedStart = c * ts, band = null) {
+    const d = Math.floor(observedStart / DAYS) - 1;
     if (d < 0) return { state: "none", label: "No prior UTC session in cube history" };
     const profile = dayProfile(d), label = `Prior UTC session · ${day(d * DAYS)} · final`;
     if (profile.state !== "ready") return { ...profile, label };
     if (!profile.whole || !profile.exact || profile.poc === null || !profile.va) return { state: "undefined", label, reason: "No complete session profile" };
-    const low = r * ps * PR, high = (r + 1) * ps * PR;
+    const low = (band?.[0] ?? r * ps) * PR, high = (band?.[1] ?? (r + 1) * ps) * PR;
     return { state: "ready", label, through: (d + 1) * DAYS, poc: (profile.poc + .5) * PR,
       valueLow: profile.va.r0 * PR, valueHigh: profile.va.r1 * PR,
       ...E.measure.bandLocation({ low, high, poc: (profile.poc + .5) * PR, valueLow: profile.va.r0 * PR, valueHigh: profile.va.r1 * PR }) };
@@ -24072,32 +24130,32 @@
     if (Number.isFinite(values.at(-1))) make("circle", { cx: 69, cy: y(values.at(-1)), r: 2.5, fill: provisional || !enough ? "var(--ol-surface)" : "currentColor", stroke: "currentColor", "stroke-width": 1.4 });
     return svg;
   }
-  function cellPresentation(tip, { c, r, ts, ps, z, readout, frame = last?.sc?.cells, cells = last?.shown, motionCells = last?.mv?.shown, bounds = last?.b, detailed = false }) {
+  function cellPresentation(tip, { c, r, ts, ps, z, readout, frame = last?.sc?.cells, cells = last?.shown, motionCells = last?.mv?.shown, bounds = last?.b, detailed = false, region = null }) {
     const raw = tip.querySelector(".ol-tip-rows");
     if (!raw) return;
-    const hidden = readout?.typed?.tag === "hidden" || c * ts >= last.cut;
+    const hidden = readout?.typed?.tag === "hidden" || !region && c * ts >= last.cut;
     if (hidden) {
       tipRows(tip, tip.querySelector(".ol-tip-head")?.textContent, tip.querySelector(".ol-tip-sub")?.textContent, [], S.replay ? "Hidden in replay" : "After the data cutoff");
       return;
     }
-    const exact = nav.shift, atr = readingATR(c * ts), open = (c + 1) * ts > last.cut;
+    const exact = nav.shift, atr = readingATR(region?.time[0] ?? c * ts), open = region ? bounds[1] > last.cut : (c + 1) * ts > last.cut;
     const field = (name) => raw.querySelector(`dd[data-field="${name}"]`);
     const number = (v) => exact ? usdt(v) : compact(v), count = (v) => exact ? integer(v) : compact(v);
     const share = (v) => ({ text: (v * 100).toFixed(exact ? 2 : 1), unit: "%" });
     const money = (v, unit = "USDT") => ({ text: number(v), unit });
     const delta = (v) => ({ text: signed(v, number), unit: "USDT" });
     const current = z ?? { c, r, v: 0, bv: 0, ct: 0, bt: 0 };
-    const n = Math.round(Math.log2(ts)), m = Math.round(Math.log2(ps)), rowHistory = cellHistory(n, m, c, r, last.cut);
+    const n = Math.round(Math.log2(ts)), m = Math.round(Math.log2(ps)), rowHistory = region?.history ?? cellHistory(n, m, c, r, last.cut);
     const history = rowHistory.samples.map((sample) => sample?.z ?? null);
-    const moving = cellHistory(n, m, c, r, last.cut, true);
+    const moving = region?.moving ?? cellHistory(n, m, c, r, last.cut, true);
     const partial = Boolean(readout?.support?.portion);
-    const moved = partial ? motionCells?.map?.get(cellKey(c, r)) : moving.samples.at(-1)?.z;
-    const movementEnd = partial ? last.mv?.end : moving.samples.at(-1)?.end;
+    const moved = region ? moving.samples.at(-1)?.z : partial ? motionCells?.map?.get(cellKey(c, r)) : moving.samples.at(-1)?.z;
+    const movementEnd = region ? region.motionTime[1] : partial ? last.mv?.end : moving.samples.at(-1)?.end;
     const time = readout?.support?.time ?? [Math.max(c * ts, bounds[0]), Math.min((c + 1) * ts, bounds[1], last.cut)];
-    const column = cellColumn(n, m, c, last.cut, time, rowHistory);
-    const composition = E.measure.cellComposition({ z: current, column, hidden });
+    const column = region ? region.column : cellColumn(n, m, c, last.cut, time, rowHistory);
+    const composition = E.measure.cellComposition({ z: current, column, hidden, read: region?.refusal });
     const finite = (record) => record?.result.tag === "finite" ? record.result.value : null;
-    const measure = (mode, value, basis = "amount", pathBasis = "spans", end = Infinity, area = null) => E.measure.cellMeasurement({
+    const measure = (mode, value, basis = "amount", pathBasis = "spans", end = Infinity, area = null) => region ? region.measure(mode, value, basis, pathBasis, end) : E.measure.cellMeasurement({
       mode, basis, pathBasis, z: value, geom: { BASE, PR }, level: { n, m },
       bounds: area ?? [value.c * ts, (value.c + 1) * ts, r * ps, (r + 1) * ps], cut: last.cut, end, CUT, replay: S.replay,
       read: null, measured: null, cascade: mode === "cascade" ? (v, out) => {
@@ -24126,6 +24184,13 @@
         const sample = moving.samples[i]; return sample ? finite(measure("dwell", sample.z, "share", "spans", sample.end)) : null;
       }, share: true },
     };
+    if (region) {
+      for (const [key, metric] of Object.entries(metrics)) {
+        metric.value = finite(composition[key] ?? measure(key, metric.movement ? moved ?? { p: 0, w: 0 } : current, key === "size" ? "mean" : key === "dwell" ? "share" : "amount", "spans", movementEnd));
+      }
+      metrics.columnShare.label = "Share of all-price volume · same time";
+      metrics.imbalance.format = (v) => ({ text: signed(v * 100, (x) => x.toFixed(exact ? 2 : 1)), unit: "% of selection volume" });
+    }
     for (const [key, record] of Object.entries(composition)) {
       const term = document.createElement("dt"), value = document.createElement("dd");
       term.textContent = metrics[key]?.label ?? "Seller / buyer mean";
@@ -24170,10 +24235,13 @@
       const row = document.createElement("div"); row.className = "ol-cell-stat";
       row.dataset.primary = String(main);
       const term = document.createElement("dt"); term.textContent = metric.label;
+      const metricKey = main ? selected : Object.keys(metrics).find((key) => metrics[key] === metric);
+      row.dataset.measure = metricKey;
       const old = metric.field ? field(metric.field) : null;
       const value = old ?? document.createElement("dd");
       if (old) old.previousElementSibling?.remove();
-      const present = Number.isFinite(metric.value) ? metric.format(metric.value) : { text: "—", unit: "" };
+      const currentResult = region ? main ? readout.typed : (composition[metricKey] ?? measure(metricKey, metric.movement ? moved ?? {p:0,w:0} : current, metricKey === "size" ? "mean" : "amount", "spans", movementEnd)).result : null;
+      const present = Number.isFinite(metric.value) ? metric.format(metric.value) : { text: currentResult ? E.result.describe(currentResult).short : "—", unit: "" };
       if (main && old && !Number.isFinite(metric.value)) present.text = old.textContent;
       if (!old && metric.field) { value.dataset.field = metric.field; value.dataset.canonical = String(metric.value ?? "undefined"); }
       if (Number.isFinite(metric.value)) value.dataset.canonical = String(metric.value);
@@ -24186,7 +24254,7 @@
       const values = history.map((v, i) => v || metric.movement ? metric.pick(v, i) : null);
       // The selected point describes the current readout, including an explicitly labelled portion.
       values[11] = Number.isFinite(metric.value) ? metric.value : null;
-      const metricKey = main ? selected : Object.keys(metrics).find((key) => metrics[key] === metric);
+      if (region) value.dataset.canonical = String(currentResult.tag === "finite" ? currentResult.value : currentResult.tag);
       const descriptor = main || compactKeys.includes(metricKey) ? composition[metricKey] ?? measure(metricKey, current, main ? basis : metricKey === "size" ? "mean" : "amount") : null;
       // A measured zero denominator is undefined. Only absent source coverage is unsupported.
       // Keep the canonical result for the selected point and derive earlier non-values from counters.
@@ -24200,15 +24268,20 @@
       }) : null;
       if (main) {
         const selectedResult = typedHistory[11];
-        const observation = cardObservation(selectedResult, readout?.measure?.formula ?? "cells.volume.amount@1", readout?.measure?.unit ?? "usdt", time, [r * ps * PR, (r + 1) * ps * PR], {
+        if (region) {
+          value.dataset.canonical = String(selectedResult.tag === "finite" ? selectedResult.value : selectedResult.tag);
+          if (selectedResult.tag !== "finite") value.textContent = E.result.describe(selectedResult).short;
+        }
+        const observation = cardObservation(selectedResult, readout?.measure?.formula ?? "cells.volume.amount@1", readout?.measure?.unit ?? "usdt", time, region ? region.band.map(v => v * PR) : [r * ps * PR, (r + 1) * ps * PR], {
           level: { n, m }, denominators: [{ formula: "context.daily-atr@1", numerator: null, denominator: atr, time: [Math.max(0, (Math.floor(c * ts / DAYS) - 1) * DAYS), Math.floor(c * ts / DAYS) * DAYS], source: "Prior completed UTC day · Wilder ATR(14)" }, ...measurementDenominators(selected, time)],
-          history: values.map((value, i) => ({ time: [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: [r * ps * PR, (r + 1) * ps * PR], denominators: measurementDenominators(selected, [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))]), result: typedHistory[i] })),
+          history: values.map((value, i) => ({ time: region ? (metric.movement ? moving : rowHistory).samples[i]?.time ?? [0,0] : [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))], price: region ? region.band.map(v => v * PR) : [r * ps * PR, (r + 1) * ps * PR], denominators: measurementDenominators(selected, [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))]), result: typedHistory[i] })),
         });
+        if (region) observation.denominators = [region.seasonal, { ...E.measure.normalized(region.response.result.tag === "finite" ? region.response.result.value : NaN, region.response.atr), time: region.response.time }];
         tip.dataset.observation = JSON.stringify(observation);
       }
       if (compactKeys.includes(metricKey)) {
         compactHistories.push({ id: metricKey, formula: descriptor.formula, unit: descriptor.unit, slots: values.map((v, i) => {
-          const time = i === 11 && main ? readout?.support?.time ?? [c * ts, Math.min((c + 1) * ts, last.cut)] : [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))];
+          const time = region ? (metric.movement ? moving : rowHistory).samples[i]?.time ?? [0, 0] : i === 11 ? readout?.support?.time ?? [c * ts, Math.min((c + 1) * ts, last.cut)] : [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))];
           return { time, result: typedHistory[i], denominators: measurementDenominators(metricKey, time) };
         }) });
       }
@@ -24244,7 +24317,7 @@
     } else {
       const activity = section("Activity", ["volume", "trades", "columnShare"]);
       const scope = document.createElement("div"); scope.className = "ol-cell-context";
-      scope.textContent = column ? "Interval denominator: all price bands · same measured time" : "Interval share unavailable: complete all-price denominator not loaded for this time support";
+      scope.textContent = column ? region ? "Selection denominator: all price bands · same measured time" : "Interval denominator: all price bands · same measured time" : "Interval share unavailable: complete all-price denominator not loaded for this time support";
       activity.append(scope);
       aggression = section("Aggression", ["delta", "imbalance"]);
       section("Reported trade size", ["buySize", "sellSize", "size", "flowtrades", "sizeRatio"]);
@@ -24252,7 +24325,7 @@
       const movementNote = document.createElement("div"); movementNote.className = "ol-cell-context";
       movementNote.textContent = moved ? "Accumulated travel and attributed time in this band" : !PACK.live ? "Path and dwell unavailable in recorded snapshot; live cube required" : moving.state === "failed" ? `Path and dwell unavailable: ${moving.error}` : open ? "Path and dwell measured when this interval completes" : partial ? "Path and dwell unavailable for this partial cell support" : "Path and dwell not measured here yet";
       movement.append(movementNote);
-      const location = section("Location", []), reference = cellLocation(c, r, ts, ps);
+      const location = section("Location", []), reference = cellLocation(c, r, ts, ps, region?.time[0] ?? c * ts, region?.band);
       location.dataset.state = reference.state;
       const referenceName = document.createElement("div"); referenceName.className = "ol-cell-context"; referenceName.textContent = reference.label;
       const relation = document.createElement("p"); relation.className = "ol-band-relation";
@@ -24267,17 +24340,17 @@
       }
     }
     const head = tip.querySelector(".ol-tip-head"), sub = tip.querySelector(".ol-tip-sub");
-    if (sub) sub.textContent = `${price(r * ps * PR)}–${price((r + 1) * ps * PR)} USDT`;
+    if (sub) sub.textContent = `${price((region?.band[0] ?? r * ps) * PR)}–${price((region?.band[1] ?? (r + 1) * ps) * PR)} USDT`;
     const originalNotes = [...tip.querySelectorAll(".ol-tip-note")];
     const state = document.createElement("div"); state.className = "ol-cell-state";
-    state.textContent = [open ? "Still open" : "Complete", readout?.support?.portion ? "Partial cell" : "", CANON !== null && (c + 1) * ts > CANON ? "Provisional" : "", !z ? "No trades in this cell" : "", readout?.exposure?.short ? "Short exposure" : ""].filter(Boolean).join(" · ");
+    state.textContent = [region?.refusal ? E.result.describe(E.result.make(region.refusal.state, { reason: region.refusal.reason })).short : open ? "Still open" : "Complete", readout?.support?.portion ? region ? "Clipped support" : "Partial cell" : "", CANON !== null && (region ? region.time[1] : (c + 1) * ts) > CANON ? "Provisional" : "", region ? !region.refusal && current.ct === 0 ? "No trades in this selection" : "" : !z ? "No trades in this cell" : "", readout?.exposure?.short ? "Short exposure" : ""].filter(Boolean).join(" · ");
     const details = document.createElement("details"); details.className = "ol-cell-details";
     const summary = document.createElement("summary"); summary.textContent = "Measurement details";
     details.append(summary, raw, ...originalNotes);
     details.hidden = !detailed;
     const context = document.createElement("div"); context.className = "ol-cell-context";
-    const historyWindow = `Same price band · previous 11 intervals and this interval · ${range((c - 11) * ts, Math.min((c + 1) * ts, last.cut))} UTC`;
-    context.textContent = detailed ? "Same price band · 12 intervals" : historyWindow;
+    const historyWindow = region ? `Same price band · previous 11 windows and this selection · ${(region.time[1] - region.time[0]) * BASE} seconds per window` : `Same price band · previous 11 intervals and this interval · ${range((c - 11) * ts, Math.min((c + 1) * ts, last.cut))} UTC`;
+    context.textContent = region ? "Same price band · 12 equal-duration windows · loaded support only" : detailed ? "Same price band · 12 intervals" : historyWindow;
     context.dataset.historyFrom = String((c - 11) * ts); context.dataset.historyTo = String(Math.min((c + 1) * ts, last.cut));
     context.title = `${historyWindow}. Fully measured intervals without trades are zero activity; undefined ratios and missing coverage break the line. Amount miniatures have independent vertical scales.`;
     if (detailed) {
@@ -24287,13 +24360,13 @@
     }
     if (detailed && rowHistory.state !== "ready") {
       const missing = document.createElement("div"); missing.className = "ol-history-note";
-      missing.textContent = rowHistory.state === "failed" ? `Earlier intervals unavailable: ${rowHistory.error}` : rowHistory.state === "unsupported" ? PACK.live ? "Earlier intervals unavailable: cube returned incomplete coverage" : "Earlier intervals unavailable in this recorded snapshot" : "Reading earlier intervals from the cube…";
+      missing.textContent = rowHistory.state === "failed" ? `Earlier intervals unavailable: ${rowHistory.error}` : rowHistory.state === "unsupported" ? region ? "Earlier equal-duration windows unavailable in loaded support" : PACK.live ? "Earlier intervals unavailable: cube returned incomplete coverage" : "Earlier intervals unavailable in this recorded snapshot" : "Reading earlier intervals from the cube…";
       context.append(missing);
     }
     if (detailed) stats.insertBefore(context, stats.children[1]);
     const balance = document.createElement("div"); balance.className = "ol-flow-balance";
     balance.setAttribute("role", "img");
-    balance.setAttribute("aria-label", current.v > 0 ? `Buyer-initiated ${share(current.bv / current.v).text} percent; seller-initiated ${share(1 - current.bv / current.v).text} percent of cell volume` : "No traded volume");
+    balance.setAttribute("aria-label", current.v > 0 ? `Buyer-initiated ${share(current.bv / current.v).text} percent; seller-initiated ${share(1 - current.bv / current.v).text} percent of ${region ? "selection" : "cell"} volume` : "No traded volume");
     const buy = document.createElement("span"); buy.style.width = current.v > 0 ? `${100 * current.bv / current.v}%` : "0%";
     balance.append(buy); balance.hidden = !(current.v > 0);
     if (detailed && current.v > 0) {
@@ -24305,8 +24378,17 @@
     }
     if (detailed && atr) {
       const volatility = document.createElement("div"); volatility.className = "ol-cell-context";
-      volatility.textContent = `Location distances: daily ATR(14) ${price(atr)} USDT · completed days before this cell`;
+      volatility.textContent = `Location distances: daily ATR(14) ${price(atr)} USDT · completed days before this ${region ? "selection" : "cell"}`;
       details.append(volatility);
+    }
+    if (region) {
+      const info = document.createElement("p"); info.className = "ol-cell-context";
+      info.textContent = `Half-open selection ${range(...region.time)} UTC; ${region.band.map(v => price(v * PR)).join("–")} USDT. Counters are summed before ratios; reported trades are not orders or participants. Seasonal activity: ${E.result.describe(region.seasonal.result).long}. All-price close − open on ${range(...region.response.time)} UTC: ${E.result.describe(region.response.result).long}.${region.response.paired ? "" : " Different measured-through boundaries; no paired interpretation."}`;
+      details.append(info);
+      const profile = section("Selection profile", []);
+      profile.append(readingProfile(region.query, PR * ps));
+      const motion = stats.querySelector('[data-group="movement"]');
+      if (!moved && !region.refusal) motion.remove();
     }
     tip.replaceChildren(...[head, sub, state, stats, ...(!detailed ? [balance, context] : []), details].filter(Boolean));
     tip.dataset.presentation = "cell";

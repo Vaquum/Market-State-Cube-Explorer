@@ -8,7 +8,7 @@ const CARD = "#ol-selection-card";
 async function open(page, fakeFor, probe, suffix = SEL) {
   const fake = await fakeFor("micro:mixed"); await page.goto(fake.url + "/" + VIEW + suffix); await probe.waitForReady(); return fake;
 }
-const field = (page, key) => page.locator(`${CARD} dd[data-field="${key}"]`);
+const field = (page, key) => page.locator(`${CARD} .ol-cell-stat[data-measure="${({countShare:"flowtrades",dwellShare:"dwell"})[key] ?? key}"] dd`);
 async function canonical(page, key, expected) { await expect.poll(async () => Number(await field(page, key).getAttribute("data-canonical"))).toBeCloseTo(expected, 10); }
 
 test("area selection uses the cell sections and summed counters instead of mean cell ratios", async ({ page, fakeFor, probe }) => {

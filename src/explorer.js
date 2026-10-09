@@ -3866,14 +3866,14 @@
     if (!tip) { tip = document.createElement("div"); tip.className = "ol-selection-card"; tip.id = "ol-selection-card"; el("bounds").after(tip); }
     const q = meas.query, ts = 2 ** q.n, ps = 2 ** q.m;
     const time = [meas.b[0], Math.max(meas.b[0], Math.min(meas.b[1], meas.end ?? activeCutoff(), activeCutoff()))], band = meas.b.slice(2);
-    const refusal = ["pending", "failed"].includes(meas.state) ? { state: meas.state, reason: meas.error ?? "Measuring this selection" } : null;
+    const refusal = ["pending", "failed"].includes(meas.state) ? { state: meas.state, reason: meas.error ?? "Measuring this selection" } : time[1] <= time[0] || band[1] <= band[0] ? { state: "unsupported", reason: "No measured support inside this selection" } : null;
     const motionQuery = mv?.rect?.query ? motionTotals(mv.rect.query) : null;
     const motionTime = [time[0], Math.max(time[0], Math.min(time[1], mv?.rect?.end ?? time[0]))];
     const duration = time[1] - time[0];
     const histories = (moving = false) => {
       const samples = Array.from({ length: 12 }, (_, i) => {
         const span = [time[0] - (11 - i) * duration, time[1] - (11 - i) * duration];
-        if (i === 11) return { z: moving ? motionQuery : q, time: moving ? motionTime : time, end: moving ? motionTime[1] : time[1], column: allPriceAmount(q.n, time) };
+        if (i === 11) return moving && !motionQuery ? null : { z: moving ? motionQuery : q, time: moving ? motionTime : time, end: moving ? motionTime[1] : time[1], column: allPriceAmount(q.n, time) };
         if (duration <= 0 || span[0] < 0) return null;
         const area = [...span, ...band], src = moving ? motionExact(area, q.n, q.m) : exactSource(area, q.n, q.m);
         if (!src || moving && src.end < span[1]) return null;
@@ -4797,7 +4797,7 @@
   function cellPresentation(tip, { c, r, ts, ps, z, readout, frame = last?.sc?.cells, cells = last?.shown, motionCells = last?.mv?.shown, bounds = last?.b, detailed = false, region = null }) {
     const raw = tip.querySelector(".ol-tip-rows");
     if (!raw) return;
-    const hidden = readout?.typed?.tag === "hidden" || c * ts >= last.cut;
+    const hidden = readout?.typed?.tag === "hidden" || !region && c * ts >= last.cut;
     if (hidden) {
       tipRows(tip, tip.querySelector(".ol-tip-head")?.textContent, tip.querySelector(".ol-tip-sub")?.textContent, [], S.replay ? "Hidden in replay" : "After the data cutoff");
       return;
@@ -4814,7 +4814,7 @@
     const moving = region?.moving ?? cellHistory(n, m, c, r, last.cut, true);
     const partial = Boolean(readout?.support?.portion);
     const moved = region ? moving.samples.at(-1)?.z : partial ? motionCells?.map?.get(cellKey(c, r)) : moving.samples.at(-1)?.z;
-    const movementEnd = partial ? last.mv?.end : moving.samples.at(-1)?.end;
+    const movementEnd = region ? region.motionTime[1] : partial ? last.mv?.end : moving.samples.at(-1)?.end;
     const time = readout?.support?.time ?? [Math.max(c * ts, bounds[0]), Math.min((c + 1) * ts, bounds[1], last.cut)];
     const column = region ? region.column : cellColumn(n, m, c, last.cut, time, rowHistory);
     const composition = E.measure.cellComposition({ z: current, column, hidden, read: region?.refusal });
@@ -4900,6 +4900,7 @@
       row.dataset.primary = String(main);
       const term = document.createElement("dt"); term.textContent = metric.label;
       const metricKey = main ? selected : Object.keys(metrics).find((key) => metrics[key] === metric);
+      row.dataset.measure = metricKey;
       const old = metric.field ? field(metric.field) : null;
       const value = old ?? document.createElement("dd");
       if (old) old.previousElementSibling?.remove();

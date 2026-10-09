@@ -3925,7 +3925,7 @@
     const measure = region.measure(mode, value, basis, pathBasis);
     const support = ["path", "dwell"].includes(mode) ? motionTime : time;
     const readout = { typed: measure.result, measure, support: { time: support, portion: meas.b.some((v, i) => v !== meas.r[i]) }, exposure: measure.exposure };
-    const signature = JSON.stringify([mode, nav.shift, PACK.state_token, meas.state, q.rows.map(x => [x.r,x.v,x.bv]), measure, region.history.samples.map(x => x && [x.time,x.z.v,x.z.bv,x.z.ct,x.z.bt,x.column?.v]), region.moving.samples.map(x => x?.z && [x.time,x.z.p,x.z.w]), band, refusal, seasonal, response, cellLocation(0,0,ts,ps,time[0],band)]);
+    const signature = JSON.stringify([scope, mode, nav.shift, PACK.state_token, meas.state, q.rows.map(x => [x.r,x.v,x.bv]), measure, region.history.samples.map(x => x && [x.time,x.z.v,x.z.bv,x.z.ct,x.z.bt,x.column?.v]), region.moving.samples.map(x => x?.z && [x.time,x.z.p,x.z.w]), band, refusal, seasonal, response, cellLocation(0,0,ts,ps,time[0],band)]);
     if (tip.dataset.signature === signature) return;
     const opened = Boolean(tip.querySelector(".ol-cell-details")?.open), focused = tip.querySelector("summary") === document.activeElement;
     tip.replaceChildren(Object.assign(document.createElement("dl"), { className: "ol-tip-rows" }));

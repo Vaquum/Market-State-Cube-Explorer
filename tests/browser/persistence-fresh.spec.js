@@ -82,8 +82,8 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     // a setting changes the address and keeps the two fixed parameters in their place
     await page.keyboard.press("m");
     await expect.poll(async () => (await S.where(page)).hash).toMatch(/^#w=24h&vis=2&ap=slate2-8f7890f7&mode=/);
-    // one neutral version notice for a browser with nothing stored (no other)
-    expect(await S.noticeCodes(page)).toEqual(["version-default"]);
+    // a browser with nothing stored is new: nothing changed for it, so no notice
+    expect(await S.noticeCodes(page)).toEqual([]);
   });
 
   test("a customised view (Path, Intensity, Comparison lock, Rows), copied as a link and as a code, restores byte for byte in a fresh context", async ({ page, context, fakeFor, freshContext }) => {
@@ -312,8 +312,18 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     expect((await S.storage(page)).local["view:v5"]).toContain("visualVersion");
   });
 
-  test("the bare root: nothing stored gives the default view and one neutral notice, once per browser", async ({ page, context, fakeFor }) => {
+  test("the bare root: nothing stored gives the default view and no notice, and the flag is written so a later visit stays quiet", async ({ page, fakeFor }) => {
     const fake = await fakeFor("mini");
+    await page.goto(fake.url + "/");
+    await fake.idle();
+    expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=24h&vis=2&ap=" + S.AP);
+    expect(await S.noticeCodes(page)).toEqual([]);
+    expect((await S.storage(page)).local["notice:v2"]).toBeTruthy();
+  });
+
+  test("the bare root: a browser used before, with no view stored, gets the default view and one neutral notice, once", async ({ page, context, fakeFor }) => {
+    const fake = await fakeFor("mini");
+    await seed(context, { "views:v1": [] });
     await page.goto(fake.url + "/");
     await fake.idle();
     expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=24h&vis=2&ap=" + S.AP);

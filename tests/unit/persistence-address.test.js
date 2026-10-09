@@ -31,7 +31,7 @@ const isError = (name) => (e) => typeof e === "object" && e !== null && e.name =
 // A view at its defaults, the way checkView returns one.
 const base = (patch) => ({
   window: "24h", tA: NaN, tB: NaN, pA: NaN, pB: NaN, auto: true, n: null, m: null, selection: null, anchor: null, replay: false,
-  follow: "refit", mode: "volume", pane: "cells", rows: "off", period: "90d", level: null, poc: true, area: false, untested: false,
+  follow: "refit", mode: "volume", pane: "cells", rows: "off", period: "90d", level: null, poc: false, area: false, untested: false,
   lines: [], tab: "context", evidenceKind: "poc", horizon: 1, barrier: 1, profileCmp: "independent", profileOpen: false,
   scale: { basis: "amount", pathBasis: "spans", transform: "value", curve: "log", rowsTransform: "value", cells: "explore", rows: "explore", local: false, window: null, lock: false },
   appearance: AP, scales: [], axes: [],
@@ -88,7 +88,7 @@ const SAMPLES = {
 };
 const DEFAULTS = {
   follow: { follow: "refit" }, mode: { mode: "volume" }, pane: { pane: "cells" }, rows: { rows: "off" }, period: { period: "90d" }, level: { level: null },
-  marks: { poc: true, area: false, untested: false }, lines: { lines: [] }, tab: { tab: "context" }, evidenceKind: { evidenceKind: "poc" }, horizon: { horizon: 1 },
+  marks: { poc: false, area: false, untested: false }, lines: { lines: [] }, tab: { tab: "context" }, evidenceKind: { evidenceKind: "poc" }, horizon: { horizon: 1 },
   barrier: { barrier: 1 }, "scale.basis": { "scale.basis": "amount" }, "scale.pathBasis": { "scale.pathBasis": "spans" }, "scale.transform": { "scale.transform": "value" },
   "scale.curve": { "scale.curve": "log" }, "scale.rowsTransform": { "scale.rowsTransform": "value" }, "scale.cells": { "scale.cells": "explore" },
   "scale.rows": { "scale.rows": "explore" }, "scale.local": { "scale.local": false }, "scale.window": { "scale.window": null }, "scale.lock": { "scale.lock": false },

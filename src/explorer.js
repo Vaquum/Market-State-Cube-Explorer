@@ -3045,8 +3045,8 @@
   // object with the view as raw state. The workspace always comes back. The view comes back only at a
   // bare root (`skipView` false): a link owns the view, so the stored one is neither applied nor migrated
   // nor reported. At a bare root a stored version-2 view restores silently, a stored legacy one restores
-  // with the legacy notice, and with nothing usable stored the default view shows with the one-time
-  // version-change notice (DR-14).
+  // with the legacy notice, and with nothing usable stored the default view shows, with the one-time
+  // version-change notice only in a browser that used the explorer before (DR-14).
   function restore(x, { skipView = false } = {}) {
     if (!x || (x.version !== 4 && x.version !== 5)) {
       if (!skipView) noteFirstVisit();

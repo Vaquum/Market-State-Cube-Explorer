@@ -214,6 +214,20 @@ test.describe("B01 live mode on the mini profile", () => {
     await expect(page.locator("#ol-fresh")).toContainText("no new data for");
   });
 
+  test("in replay the state pill says REPLAY and the replay time, and LIVE again after", async ({ page, fakeFor, probe }) => {
+    const fake = await fakeFor("mini");
+    await page.goto(`${fake.url}/#w=24h`);
+    await atRest(page, fake, probe);
+    await page.locator("#ol-replay").click();
+    await expect(page.locator("#ol-market")).toHaveText("REPLAY");
+    await expect(page.locator("#ol-snapshot")).toHaveText(await page.locator("#ol-replay-at").textContent());
+    await expect(page.locator("#ol-fresh")).toBeHidden();
+    await page.locator("#ol-replay").click();
+    await expect(page.locator("#ol-market")).toHaveText("LIVE");
+    await expect(page.locator("#ol-snapshot")).toHaveText("");
+    await expect(page.locator("#ol-fresh")).toBeVisible();
+  });
+
   test("a bridge that stops answering is stopped after 45 s, and the loading line says so", async ({ page, fakeFor, allowConsole }) => {
     // The clock goes in BEFORE the page loads (S's finding, see the header): the page's own stamps then come from the same clock.
     await page.clock.install({ time: new Date("2026-09-24T12:00:00Z") });

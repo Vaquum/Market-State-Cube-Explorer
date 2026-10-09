@@ -16,7 +16,7 @@ async function defaults(page) {
   await expect(page.locator('[data-tool="pan"]')).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#ol-trend")).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator("#ol-drawing-toolbar")).toBeHidden();
-  await expect(page.locator("#ol-poc")).toBeChecked();
+  await expect(page.locator("#ol-poc")).not.toBeChecked();
   await expect(page.locator("#ol-area")).not.toBeChecked();
   await expect(page.locator("#ol-untested")).not.toBeChecked();
   await expect(page.locator("#ol-clear")).toBeHidden();

@@ -15,10 +15,12 @@
   // loaded, before anything here wrote one. A browser without any has nothing a version change altered.
   const returning = (() => {
     try {
-      return Object.keys(window.localStorage).some((key) => key.startsWith(prefix));
+      const area = window.localStorage;
+      for (let i = 0; i < area.length; i++) if (String(area.key(i)).startsWith(prefix)) return true;
     } catch {
-      return false;
+      /* storage that cannot be read holds nothing from before */
     }
+    return false;
   })();
   // The one version this build writes (visualVersion, DR-14). A stored payload without it is legacy and
   // is still read; one that names a version other than this is a newer build's and is never overwritten.

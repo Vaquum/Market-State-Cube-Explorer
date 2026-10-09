@@ -24,7 +24,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
 function view(over = {}) {
   return {
     window: "24h", tA: NaN, tB: NaN, pA: NaN, pB: NaN, auto: true, n: null, m: null, selection: null, anchor: null, replay: false,
-    follow: "refit", mode: "volume", pane: "cells", rows: "off", period: "90d", level: null, poc: true, area: false, untested: false,
+    follow: "refit", mode: "volume", pane: "cells", rows: "off", period: "90d", level: null, poc: false, area: false, untested: false,
     lines: [], tab: "context", evidenceKind: "poc", horizon: 1, barrier: 1, appearance: AP, scales: [], axes: [],
     scale: plain(E.policy.persisted(plain(E.policy.DEFAULTS))),
     ...over,

@@ -2300,6 +2300,14 @@
       lensRight = G.x + 4 + bar.offsetWidth;
       labelsTaken.push([G.x + 4, 16, lensRight, 20 + bar.offsetHeight]);
     }
+    // Trend's controls take the same place while it is the tool.
+    if (!el("drawing-toolbar").hidden) {
+      const bar = el("drawing-toolbar");
+      bar.style.left = G.x + 4 + "px";
+      bar.style.maxWidth = Math.max(0, G.w - 8) + "px";
+      lensRight = Math.max(lensRight, G.x + 4 + bar.offsetWidth);
+      labelsTaken.push([G.x + 4, 16, G.x + 4 + bar.offsetWidth, 20 + bar.offsetHeight]);
+    }
     if (S.replay) {
       // The transport stays inside the plot: where one row is too wide for it
       // (a phone's touch targets), it wraps onto a second. It keeps clear of

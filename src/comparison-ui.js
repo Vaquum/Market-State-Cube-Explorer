@@ -30,7 +30,7 @@
   let display = null;
   function utc(value, exact = false) {
     if (!finite(value)) return "Unknown";
-    if (!exact && display) return display.when(value);
+    if (!exact && display) return display.when(Math.floor(value / 1000) * 1000);
     const date = new Date(value);
     if (!Number.isFinite(date.getTime())) return "Unknown";
     return exact ? date.toISOString() : date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");

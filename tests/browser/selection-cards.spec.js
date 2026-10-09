@@ -137,3 +137,15 @@ for (const state of ["pending","failed"]) test(`${state}: missing motion still r
     if(state==="failed") await expect(page.locator(CARD)).toContainText("selection motion rejected");
   } finally {for(const g of gates) g.open();}
 });
+
+test("selection details retain the earlier movement cutoff alongside activity", async ({page,fakeFor,probe}) => {
+  await open(page,fakeFor,probe,"&sel=2021-01-01T00:00Z~2021-01-01T00:05Z,25000~25375&mode=path");
+  await canonical(page,"path",1000/375);
+  const details=page.locator(`${CARD} .ol-cell-details`); await details.locator("summary").click();
+  await expect(details).toContainText("Movement support 1 Jan 00:00–1 Jan 00:04:41.250 UTC");
+  await expect(details).toContainText("281.25 covered seconds; 375 USDT price width");
+  await expect(details).toContainText("Raw path 1000 USDT; raw dwell 163.75 seconds");
+  await expect(details).toContainText("Movement ends before activity.");
+  const record=await page.locator(CARD).evaluate(n=>JSON.parse(n.dataset.observation));
+  expect(record.time).toEqual([0,5]);
+});

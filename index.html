@@ -24387,6 +24387,11 @@
       const info = document.createElement("p"); info.className = "ol-cell-context";
       info.textContent = `Half-open selection ${range(...region.time)} UTC; ${region.band.map(v => price(v * PR)).join("–")} USDT. Counters are summed before ratios; reported trades are not orders or participants. Seasonal activity: ${E.result.describe(region.seasonal.result).long}. All-price close − open on ${range(...region.response.time)} UTC: ${E.result.describe(region.response.result).long}.${region.response.paired ? "" : " Different measured-through boundaries; no paired interpretation."}`;
       details.append(info);
+      if (moved && !region.refusal) {
+        const movement = document.createElement("p"); movement.className = "ol-cell-context";
+        movement.textContent = `Movement support ${range(...region.motionTime)} UTC; ${(region.motionTime[1] - region.motionTime[0]) * BASE} covered seconds; ${(region.band[1] - region.band[0]) * PR} USDT price width. Raw path ${moved.p} USDT; raw dwell ${moved.w} seconds.${region.motionTime[1] < region.time[1] ? " Movement ends before activity." : ""}`;
+        details.append(movement);
+      }
       const profile = section("Selection profile", []);
       profile.append(region.refusal ? Object.assign(document.createElement("p"), { textContent: E.result.describe(E.result.make(region.refusal.state, { reason: region.refusal.reason })).long }) : readingProfile(region.query, PR * ps));
       const motion = stats.querySelector('[data-group="movement"]');

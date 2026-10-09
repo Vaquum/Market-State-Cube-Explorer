@@ -110,9 +110,11 @@ test("candle displacement and range use prior daily ATR; price stays USDT and la
   fake.overrideBars(9, Array.from({ length: 60 }, (_, col) => ({ col, open: 25000, close: col === 45 ? 25200 : 25000, high: col === 45 ? 25300 : col < 45 ? 25100 : 50000, low: col === 45 ? 24800 : col < 45 ? 24900 : 10000, volume: 100, takerBuyVolume: 50, baseVolume: .004, trades: 1 })));
   await page.goto(fake.url + "/#t=2021-01-16T00:00Z~2021-01-16T08:00Z&p=24500~26000&r=9,0&mode=candles");
   await probe.waitForReady(); await page.keyboard.press("e"); await probe.waitForReady();
-  const stats = page.locator("#ol-inspect-readout .ol-cell-stats");
-  await expect(stats.locator(".ol-cell-stat").filter({ hasText: "Net move" }).locator("dd")).toHaveAttribute("data-canonical", "1");
-  await expect(stats.locator(".ol-cell-stat").filter({ hasText: "High − low" }).locator("dd")).toHaveAttribute("data-canonical", "2.5");
-  await expect(stats.locator(".ol-cell-stat").filter({ hasText: "Net move" }).locator(".ol-reading-unit")).toHaveText("daily ATR");
+  // The candle leads with its prices; the ATR-normalised movement is in the card's details.
+  const card = page.locator("#ol-inspect-readout"), stats = card.locator(".ol-cell-stats");
+  const stat = (label) => card.locator(".ol-cell-stat").filter({ has: page.locator("dt", { hasText: new RegExp(`^${label}$`) }) });
+  await expect(stat("Net move / prior daily ATR").locator("dd")).toHaveAttribute("data-canonical", "1");
+  await expect(stat("High − low / prior daily ATR").locator("dd")).toHaveAttribute("data-canonical", "2.5");
+  await expect(stat("Net move / prior daily ATR").locator(".ol-reading-unit")).toHaveText("daily ATR");
   await expect(stats.locator(".ol-cell-stat").first().locator(".ol-reading-unit")).toHaveText("USDT");
 });

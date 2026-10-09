@@ -17,7 +17,7 @@ test("discovery, exact members, deadline and zoom reuse one canonical result wit
  await page.locator("#ol-rally-deadline").fill("4");await page.locator("#ol-rally-deadline").dispatchEvent("change");
  await expect(page.locator("#ol-rally-rows tr")).toHaveCount(2);await expect(inspector).toContainText("Hidden by replay or time-to-target filter");
  await page.locator("#ol-rally-deadline").fill("240");await page.locator("#ol-rally-deadline").dispatchEvent("change");
- await expect(inspector).toContainText("9,792");await page.locator("#ol-tplus").click();await expect(inspector).toContainText("9,792");
+ await expect(inspector).toContainText("9,792");await page.locator("#ol-tab-rallies").focus();await page.keyboard.press("]");await expect(inspector).toContainText("9,792");
  expect(fake.log().filter(e=>e.path==="/cube/rallies" && e.method==="POST")).toHaveLength(1);
 });
 test("recorded page declares native discovery unavailable",async({page,fakeFor})=>{

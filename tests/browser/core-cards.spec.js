@@ -103,8 +103,11 @@ for (const theme of ["light", "dark"]) test(`${theme}: compact card remains read
   await page.screenshot({ path: `reports/core-cards-${theme}.png` });
   await page.setViewportSize({ width: 960, height: 540 });
   await expect(card.locator(".ol-core-stats > .ol-cell-stat")).toHaveCount(4);
-  const sizes = await card.locator(".ol-core-stats dt").evaluateAll((nodes) => nodes.map((n) => parseFloat(getComputedStyle(n).fontSize)));
-  expect(sizes.every((n) => n >= 14)).toBe(true);
+  // Resize can replace the readout after resolving the locator. Read live
+  // labels again until all four retain the required minimum size.
+  await expect.poll(() => card.locator(".ol-core-stats dt").evaluateAll((nodes) =>
+    nodes.length === 4 && nodes.every((n) => n.isConnected && parseFloat(getComputedStyle(n).fontSize) >= 14)))
+    .toBe(true);
   await page.screenshot({ path: `reports/core-cards-${theme}-narrow.png` });
   await testInfo.attach("narrow", { path: `reports/core-cards-${theme}-narrow.png`, contentType: "image/png" });
 });

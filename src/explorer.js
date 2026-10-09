@@ -17066,15 +17066,19 @@
     // Each outcome's intervals sit in its own row, under the Matching, All and Diff columns they qualify.
     for (const kind of ["up", "flat", "down"]) el("label-" + kind).closest("button").querySelector(".ol-outcome-interval")?.remove();
     if (!e.uncertainty) { host.append(document.createTextNode(e.error ?? "Computing intervals…")); return; }
+    const withheld = new Set();
     for (const kind of ["up", "flat", "down"]) {
       const line = document.createElement("span"); line.className = "ol-outcome-interval";
       for (const component of ["conditional", "baseline", "difference"]) {
         const record = e.uncertainty.intervals[kind][component], span = document.createElement("span"), result = record.result;
         span.dataset.component = component; span.dataset.direction = kind; span.dataset.canonical = JSON.stringify(result);
-        span.textContent = result.tag === "finite" ? result.value.map((v) => v.toFixed(2).replace("-", "−")).join(" to ") + (component === "difference" ? " pp" : "%") : result.reason; line.append(span);
+        if (result.tag !== "finite") withheld.add(result.reason);
+        span.textContent = result.tag === "finite" ? result.value.map((v) => v.toFixed(2).replace("-", "−")).join(" to ") + (component === "difference" ? " pp" : "%") : "—"; line.append(span);
       }
       el("label-" + kind).closest(".ol-outcome").after(line);
     }
+    // A withheld interval says why once, here, rather than in every cell of the rows.
+    if (withheld.size) host.append(Object.assign(document.createElement("p"), { textContent: [...withheld].join("; ") }));
     const limits = document.createElement("p"); limits.textContent = `${e.uncertainty.fullMatched} full matched calendar blocks of ${dur(e.blockLength * stepT() * BASE)}; ${e.uncertainty.calendarBlocks} sampled calendar blocks including empty/partial. ${e.uncertainty.qualification}`; host.append(limits);
     host.dataset.bootstrap = JSON.stringify({ key: e.uncertainty.key, resamples: e.uncertainty.resamples, seed: e.uncertainty.seed, fullMatched: e.uncertainty.fullMatched, calendarBlocks: e.uncertainty.calendarBlocks, intervals: e.uncertainty.intervals });
   }

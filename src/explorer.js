@@ -160,7 +160,7 @@
       mode: "volume",
       // The pane under the prices: Same as cells, or a measure of its own.
       pane: "cells",
-      poc: true,
+      poc: false,
       area: false,
       untested: false,
       // The row underlay behind the cells (Rows, U), over a period of its own.
@@ -6943,7 +6943,10 @@
       `${Object.keys(sources).length}/${Object.keys(PACK.blocks).length} ${PACK.live ? "live cube" : "recorded"} blocks ready · ${when(displaySource().b0)} onward`;
     el("cutoff").textContent = `Cutoff ${when(CUT)} UTC`;
     // A recorded page names its day; a live one says how fresh it is instead.
-    el("snapshot").textContent = PACK.live ? "" : day(CUT);
+    // The state pill says when the chart is a replay, and to when; otherwise live or recorded.
+    el("market").textContent = S.replay ? "REPLAY" : PACK.live ? "LIVE" : "RECORDED";
+    el("fresh").hidden = !PACK.live || S.replay;
+    el("snapshot").textContent = S.replay ? when(activeCutoff()) : PACK.live ? "" : day(CUT);
     // Latest appears when the cutoff is out of view, beside the price profile.
     el("latest").hidden = S.replay || (S.tA < CUT && S.tB >= CUT);
     el("latest").style.right =
@@ -19448,8 +19451,10 @@
         code: "import-rejected",
         text: E.text.fill(PERSIST_TEXT.storedKept, { what: "view", reason: stored.reason }),
       });
-    if (state?.notice?.().status === "ok" || !scaleRt.notices.mark("version-default")) return;
-    postNotice({ code: "version-default" });
+    if (state?.notice?.().status === "ok") return;
+    // Only a browser that used the explorer before has seen what changed; a new one owes no notice, and
+    // the flag is written either way so a later visit does not raise it.
+    if (state?.returning?.() && scaleRt.notices.mark("version-default")) postNotice({ code: "version-default" });
     state?.saveNotice?.();
   }
   // The browser-wide cache of the live calibrations (scales:v1) is read ONCE, here, when the page loads,

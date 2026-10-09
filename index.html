@@ -1686,6 +1686,15 @@
 }
 
 /* Drawer: cells, cases and the query, under the chart; the chart gives up height. */
+#origo-lens .ol-rally-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: end; padding-top: var(--sp-3); }
+#origo-lens .ol-rally-form label { display: grid; gap: var(--sp-1); font-size: var(--fs-s); }
+#origo-lens .ol-rally-form :is(input, select) { max-width: 210px; min-height: var(--h-m); }
+#origo-lens .ol-rally-form input[type="number"], #origo-lens #ol-rally-deadline { width: 90px; }
+#origo-lens .ol-rally-table-wrap { overflow-x: auto; }
+#origo-lens .ol-rally-inspector { border-bottom: 1px solid var(--ol-line); padding-bottom: var(--sp-3); }
+#origo-lens .ol-rally-profile { max-height: 200px; overflow: auto; margin: var(--sp-2) 0; }
+#origo-lens .ol-rally-profile .ol-row { background: linear-gradient(to right, var(--ol-on) var(--rally-share), transparent var(--rally-share)); }
+#origo-lens .ol-rally-panel [hidden] { display: none; }
 #origo-lens .ol-drawer {
   flex: none;
   display: flex;
@@ -4676,6 +4685,9 @@
           </button>
           <span class="ol-drawer-divider" aria-hidden="true"></span>
           <div class="ol-drawer-tabs" role="group" aria-label="Bottom panels">
+            <button type="button" id="ol-tab-rallies" class="ol-icon-button cursor-interaction" data-drawer="rallies" aria-label="Rallies" aria-controls="ol-panel-rallies" aria-expanded="false" aria-pressed="false" data-hint="Observed upward price moves from native trades">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12 6 8 9 10 14 3M10 3h4v4" /></svg><span class="ol-label">Rallies</span>
+            </button>
             <button type="button" id="ol-tab-cells" class="ol-icon-button cursor-interaction" data-drawer="cells" aria-label="Cells" aria-controls="ol-panel-cells" aria-expanded="false" aria-pressed="false" data-hint="Measured cells in the bottom panel">
               <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" /><path d="M2.5 8h11M8 2.5v11" /></svg><span id="ol-tab-cells-label" class="ol-label">Cells</span>
             </button>
@@ -4691,6 +4703,30 @@
           </div>
         </div>
         <div class="ol-drawer-body" id="ol-drawer-body">
+          <section class="ol-panel ol-rally-panel" id="ol-panel-rallies" aria-labelledby="ol-tab-rallies" hidden>
+            <form id="ol-rally-form" class="ol-rally-form">
+              <label>Mode<select id="ol-rally-mode"><option value="first_hit">First hit</option><option value="controlled_advance">Controlled advance</option><option value="swing">Swing</option></select></label>
+              <label>Scale<select id="ol-rally-scale"><option value="bps">Basis points</option><option value="atr">ATR</option></select></label>
+              <label>Target<input id="ol-rally-target" type="number" min="0.001" max="10000" step="any" value="30" required></label>
+              <label id="ol-rally-pullback-label" hidden>Max pullback<input id="ol-rally-pullback" type="number" min="0.001" max="10000" step="any" value="10" required></label>
+              <label id="ol-rally-reversal-label" hidden>Confirming reversal<input id="ol-rally-reversal" type="number" min="0.001" max="9999.999" step="any" value="10" required></label>
+              <label id="ol-rally-cadence-label">Anchor every · minutes<input id="ol-rally-cadence" type="number" min="1" max="1440" step="1" value="1" required></label>
+              <label>Analysis start · UTC<input id="ol-rally-start" type="datetime-local" step="1" required></label>
+              <label>Analysis end · UTC<input id="ol-rally-end" type="datetime-local" step="1" required></label>
+              <button id="ol-rally-window" type="button" class="ol-action cursor-interaction">Use visible time · max 24h</button>
+              <button id="ol-rally-discover" type="submit" class="ol-action cursor-interaction">Discover</button>
+            </form>
+            <p class="ol-muted" id="ol-rally-scale-note">Thresholds in basis points of the frozen reference price.</p>
+            <p class="ol-muted">A rally is an observed upward move. Thresholds are your operational definition. Confirmation does not imply reversal, durability or future gains. Spot data cannot establish short covering or derivatives leadership.</p>
+            <div class="ol-panel-head">
+              <label id="ol-rally-deadline-label">Time to target · minutes, exclusive<input id="ol-rally-deadline" type="number" min="0.001" max="240" step="any" value="240" aria-describedby="ol-rally-deadline-note"></label>
+              <span id="ol-rally-deadline-note" class="ol-muted">Local filter · at most 240 minutes. Swing ends on a reversal. Grid, replay and filters reuse the discovery.</span>
+              <button id="ol-rally-clear" type="button" class="ol-action ol-s cursor-interaction">Clear rally</button>
+              <div class="ol-pager"><button id="ol-rally-previous" type="button" class="ol-action ol-s cursor-interaction">Previous</button><span id="ol-rally-page">0 confirmed · 1/1</span><button id="ol-rally-next" type="button" class="ol-action ol-s cursor-interaction">Next</button></div>
+            </div>
+            <p id="ol-rally-status" role="status" class="ol-muted">Choose the analysis window, then Discover. Maximum span: 48h; ATR includes 3h45 warmup within that budget.</p>
+            <div class="ol-rally-table-wrap"><table class="ol-table"><thead><tr><th>Start · UTC</th><th>Confirmed · UTC</th><th>Return</th><th>Duration</th><th>USDT volume</th><th>Trades</th></tr></thead><tbody id="ol-rally-rows"></tbody></table></div>
+          </section>
           <div
             class="ol-panel ol-comparison-panel"
             id="ol-panel-compare"
@@ -5089,6 +5125,7 @@
         </button>
       </div>
       <div class="ol-side-body" id="ol-side-body">
+        <section id="ol-rally-inspector" class="ol-side-context ol-rally-inspector" aria-label="Selected rally" hidden></section>
         <div class="ol-side-context" id="ol-context">
           <div class="ol-section-row">
             <div class="ol-section-heading" id="ol-focus-title">In view</div>
@@ -6221,7 +6258,7 @@
       }
       if (record.restoreLayout !== null) {
         const layout = record.restoreLayout;
-        comparisonAssert(comparisonKeys(layout, ["sideOpen", "sideWidth", "drawerHeight", "drawerOpen", "drawer"]) && typeof layout.sideOpen === "boolean" && typeof layout.drawerOpen === "boolean" && Number.isFinite(layout.sideWidth) && layout.sideWidth > 0 && Number.isFinite(layout.drawerHeight) && layout.drawerHeight > 0 && ["cells", "cases", "query", "compare"].includes(layout.drawer), "invalid comparison restoration layout");
+        comparisonAssert(comparisonKeys(layout, ["sideOpen", "sideWidth", "drawerHeight", "drawerOpen", "drawer"]) && typeof layout.sideOpen === "boolean" && typeof layout.drawerOpen === "boolean" && Number.isFinite(layout.sideWidth) && layout.sideWidth > 0 && Number.isFinite(layout.drawerHeight) && layout.drawerHeight > 0 && ["cells", "cases", "query", "compare", "rallies"].includes(layout.drawer), "invalid comparison restoration layout");
       }
       comparisonAssert(!record.expanded || record.restoreLayout !== null, "expanded comparison has no restoration layout");
       return { ok: true, status: "ok", reason: null };
@@ -19334,6 +19371,170 @@
   window.explorerReference = Object.freeze({ create });
 })();
 </script>
+    <script>/* Observed native rallies. Detection belongs to Origo; this controller retains its result. */
+(function (scope) {
+  "use strict";
+  const PAGE = 25;
+  function visible(events, edgeUs, deadline, swing) {
+    return events.filter(e => e.confirmed_at_us < edgeUs && (swing || deadline === null || e.duration_seconds < deadline * 60));
+  }
+  function iso(us) {
+    const whole = Math.floor(us / 1000000), fraction = us - whole * 1000000;
+    return new Date(whole * 1000).toISOString().slice(0, 19) + "." + String(fraction).padStart(6, "0") + "Z";
+  }
+  function create({root, context, changed, inspect}) {
+    const el = id => root.querySelector("#ol-rally-" + id);
+    const fmt = (n, digits = 2) => Number(n).toLocaleString("en-US", {maximumFractionDigits:digits});
+    const time = us => iso(us).slice(0, 19).replace("T", " ");
+    let result = null, projection = null, selectedId = null, busy = false, page = 0;
+    let key = null, inFlight = null, stale = false, initialized = false, epoch = 0, errorMessage = "";
+    let deadlineMinutes = 240;
+    const deadline = () => deadlineMinutes;
+    const swing = () => result?.metadata.normalized_definition.mode === "swing";
+    const known = () => Math.min(context().edgeUs, result ? Date.parse(result.metadata.observation_ceiling) * 1000 : Infinity);
+    const shown = () => result && !stale ? visible(result.events, known(), deadline(), swing()) : [];
+    function status(words) { el("status").textContent = words; }
+    function controls() {
+      const mode = el("mode").value, atr = el("scale").value === "atr";
+      el("cadence-label").hidden = mode === "swing";
+      el("pullback-label").hidden = mode !== "controlled_advance";
+      el("reversal-label").hidden = mode !== "swing";
+      el("deadline-label").hidden = (result ? swing() : mode === "swing");
+      el("scale-note").textContent = atr ? "ATR14-SMA · native UTC 15m bars; frozen at anchor or trough. The book uses Wilder ATR." : "Thresholds in basis points of the frozen reference price.";
+      for (const name of ["target", "pullback", "reversal"]) el(name).max = atr ? 100 : name === "reversal" ? 9999.999 : 10000;
+      el("discover").disabled = busy || !context().live;
+      el("discover").textContent = busy ? "Discovering…" : result ? "Refresh discovery" : "Discover";
+      el("window").disabled = busy;
+      for (const node of el("form").querySelectorAll("input, select")) node.disabled = busy;
+    }
+    function useWindow() {
+      const c = context(), end = Math.min(c.viewEndUs, c.edgeUs), start = Math.max(c.viewStartUs, end - 24 * 3600e6);
+      el("start").value = iso(start).slice(0, 19);
+      el("end").value = iso(end).slice(0, 19);
+    }
+    function row(label, value) {
+      const node = document.createElement("div"); node.className = "ol-row";
+      const name = document.createElement("span"), text = document.createElement("span");
+      name.textContent = label; text.textContent = value; node.append(name, text); return node;
+    }
+    function renderInspector() {
+      const box = el("inspector"); box.replaceChildren(); box.hidden = !selectedId;
+      if (!selectedId) return;
+      const title = document.createElement("div"); title.className = "ol-section-heading"; title.textContent = "Selected rally · native members"; box.append(title);
+      const event = projection?.selected;
+      if (!event) {
+        box.append(row("State", stale ? "Source changed · refresh discovery" : errorMessage || (inFlight ? "Reading membership…" : "Hidden by replay or time-to-target filter")));
+        return;
+      }
+      const d = result.metadata.normalized_definition;
+      box.append(row("Definition", `${d.mode.replaceAll("_", " ")} · ${d.target} ${d.scale}`),
+        row("Reference", `${fmt(event.reference_price)} USDT`), row("Return", `${fmt(event.return_bps)} bps`),
+        row("Duration", `${fmt(event.duration_seconds)} s`), row("Max drawdown", `${fmt(event.max_drawdown)} USDT`),
+        row("USDT volume", fmt(event.volume)), row("Trades", fmt(event.trade_count, 0)),
+        row("Taker-buy USDT", fmt(event.taker_buy_volume)),
+        row("Normalized delta", event.volume ? `${fmt(100 * (2 * event.taker_buy_volume - event.volume) / event.volume)}%` : "Unavailable"),
+        row("Start · UTC", time(event.start_at_us)), row("End · UTC", time(event.end_at_us)), row("Confirmed · UTC", time(event.confirmed_at_us)));
+      const p = projection.profile, total = p.reduce((sum, r) => sum + r.volume, 0);
+      const poc = p.reduce((best, r) => !best || r.volume > best.volume ? r : best, null);
+      if (poc) box.append(row("Member POC centre", `${fmt((poc.r + .5) * 125)} USDT · 125 USDT bins`));
+      const profile = document.createElement("div"); profile.className = "ol-rally-profile"; profile.setAttribute("aria-label", "Native member volume profile");
+      for (const r of p) {
+        const entry = row(`${fmt(r.r * 125)}–${fmt((r.r + 1) * 125)}`, `${fmt(r.volume)} USDT`);
+        entry.style.setProperty("--rally-share", `${total ? r.volume / total * 100 : 0}%`); profile.append(entry);
+      }
+      box.append(profile, row("Native IDs", `${event.start_trade_id} → ${event.end_trade_id}`));
+      const note = document.createElement("p"); note.className = "ol-muted";
+      note.textContent = "Outlines mark cells containing members; other trades may share them. Profile and totals use members only. Event path, dwell and indicators are unavailable. Surrounding auction context remains in the regular inspector.";
+      box.append(note);
+      box.dataset.rallyId = event.rally_id;
+    }
+    function render() {
+      controls();
+      const events = shown(), pages = Math.max(1, Math.ceil(events.length / PAGE)); page = Math.min(page, pages - 1);
+      const body = el("rows"); body.replaceChildren();
+      for (const e of events.slice(page * PAGE, (page + 1) * PAGE)) {
+        const tr = document.createElement("tr"), td = document.createElement("td"), button = document.createElement("button");
+        button.type = "button"; button.className = "ol-action ol-s cursor-interaction";
+        button.textContent = time(e.start_at_us); button.setAttribute("aria-pressed", String(e.rally_id === selectedId));
+        button.title = e.rally_id; button.dataset.rallyId = e.rally_id;
+        button.onclick = () => select(e.rally_id); td.append(button); tr.append(td);
+        for (const value of [time(e.confirmed_at_us), fmt(e.return_bps) + " bps", fmt(e.duration_seconds) + " s", fmt(e.volume), fmt(e.trade_count, 0)]) {
+          const cell = document.createElement("td"); cell.textContent = value; tr.append(cell);
+        }
+        body.append(tr);
+      }
+      el("page").textContent = `${events.length} confirmed · ${page + 1}/${pages}`;
+      el("previous").disabled = page === 0; el("next").disabled = page + 1 >= pages;
+      if (!context().live) status("Discovery requires the live Origo cube. The recorded page has no native rally endpoint.");
+      else if (result && !busy && !errorMessage) {
+        const c = context(), ceiling = Date.parse(result.metadata.observation_ceiling) * 1000;
+        const prefix = stale ? "Source changed · refresh discovery." : `${events.length} confirmed rallies visible. Overlapping events remain separate.`;
+        const counts = result.metadata.diagnostic_counts;
+        const diagnostics = c.edgeUs >= ceiling ? ` ${counts.right_censored_count} unfinished · ${counts.left_censored_count} left-censored · ${counts.unknown_context_count} unknown context.` : " Ceiling diagnostics hidden during earlier replay.";
+        status(prefix + diagnostics + (c.pack !== result.pack ? " New pack available; Refresh discovery to scan again." : ""));
+      }
+      renderInspector();
+    }
+    async function post(path, body) {
+      const response = await fetch(path + "?proto=2", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body), cache:"no-store"});
+      const reply = await response.json();
+      if (!response.ok) { const error = new Error(reply.detail ? (typeof reply.detail === "string" ? reply.detail : JSON.stringify(reply.detail)) : reply.error); error.status = response.status; throw error; }
+      return reply;
+    }
+    async function discover(event) {
+      event.preventDefault(); if (busy) return;
+      const c = context(), definition = {mode:el("mode").value, scale:el("scale").value, target:Number(el("target").value)};
+      if (definition.mode === "swing") definition.reversal = Number(el("reversal").value);
+      else definition.anchor_minutes = Number(el("cadence").value);
+      if (definition.mode === "controlled_advance") definition.pullback = Number(el("pullback").value);
+      const analysis = {start:el("start").value + "Z", end:el("end").value + "Z"};
+      busy = true; epoch++; projection = null; selectedId = null; result = null; key = null; stale = false; errorMessage = ""; changed(); render(); status("Discovering native trades once; cube reads pause until the result returns.");
+      try { result = {...await post("/cube/rallies", {pack:c.pack, definition, analysis}), pack:c.pack}; page = 0; }
+      catch (error) { errorMessage = `${error.status ?? "Network"}: ${error.message}`; status(errorMessage); }
+      finally { busy = false; render(); sync(); changed(); }
+    }
+    function select(id) { selectedId = id; projection = null; key = null; errorMessage = ""; inspect(); sync(); render(); changed(); }
+    function sync() {
+      const c = context(); if (!c.ready) return;
+      if (!initialized) { useWindow(); initialized = true; controls(); render(); }
+      if (!result || busy || stale) return;
+      const signature = [result.result_id, c.pack, c.n, c.m, c.edgeUs, deadline(), selectedId].join("|");
+      if (key === signature || inFlight === signature) return;
+      key = signature; projection = null; render();
+      // Superseded view replies are discarded; detection is never called here.
+      const generation = epoch, capturedResult = result; inFlight = signature;
+      post("/cube/rallies/view", {pack:c.pack, result_id:result.result_id, rally_id:selectedId, n:c.n, m:c.m,
+        known_at:iso(c.edgeUs), deadline_minutes:swing() ? null : deadline()})
+        .then(answer => { if (epoch !== generation || key !== signature || result !== capturedResult) return; projection = answer; errorMessage = ""; })
+        .catch(error => { if (epoch !== generation || key !== signature) return; stale = error.status === 409 || error.status === 410; errorMessage = `${error.status ?? "Network"}: ${error.message}`; status(errorMessage); })
+        .finally(() => { if (inFlight === signature) inFlight = null; if (key === signature) { render(); changed(); } });
+    }
+    function current() { const c = context(); return projection && !stale && projection.pack === c.pack && projection.n === c.n && projection.m === c.m && shown().some(e => e.rally_id === projection.selected?.rally_id) ? projection : null; }
+    function paint(ctx, G, colors) {
+      const view = current(); if (!view?.selected) return;
+      ctx.save(); ctx.beginPath(); ctx.rect(G.x, G.y, G.w, G.h); ctx.clip();
+      const ts = 2 ** view.n, ps = 2 ** view.m;
+      for (const cell of view.cells) {
+        const x = G.X(cell.c * ts), y = G.Y((cell.r + 1) * ps), w = G.X((cell.c + 1) * ts) - x, h = G.Y(cell.r * ps) - y;
+        if (x + w < G.x || x > G.x + G.w || y + h < G.y || y > G.y + G.h) continue;
+        ctx.strokeStyle = colors.surface; ctx.lineWidth = 3; ctx.strokeRect(x + 1, y + 1, Math.max(1, w - 2), Math.max(1, h - 2));
+        ctx.strokeStyle = colors.state; ctx.lineWidth = 1; ctx.strokeRect(x + 1, y + 1, Math.max(1, w - 2), Math.max(1, h - 2));
+      }
+      ctx.restore();
+    }
+    el("form").addEventListener("submit", discover);
+    el("window").onclick = useWindow;
+    el("clear").onclick = () => { selectedId = null; projection = null; key = null; sync(); render(); changed(); };
+    for (const name of ["mode", "scale"]) el(name).addEventListener("change", controls);
+    el("scale").addEventListener("change", () => { const atr = el("scale").value === "atr"; el("target").value = atr ? 1 : 30; el("pullback").value = el("reversal").value = atr ? .5 : 10; });
+    el("deadline").addEventListener("change", () => { if (!el("deadline").checkValidity()) { el("deadline").reportValidity(); return; } deadlineMinutes = el("deadline").value === "" ? null : Number(el("deadline").value); page = 0; key = null; sync(); render(); changed(); });
+    el("previous").onclick = () => { page--; render(); }; el("next").onclick = () => { page++; render(); };
+    return {sync, paint, get busy(){return busy;}, get events(){return projection && !stale && projection.pack === context().pack ? shown().filter(e => projection.visible_ids.includes(e.rally_id)) : [];}, get selectedId(){return selectedId;}, get enabled(){return !!result && !stale;}};
+  }
+  scope.explorerRallies = {create, visible, iso};
+  if (typeof module !== "undefined") module.exports = scope.explorerRallies;
+})(typeof window === "undefined" ? globalThis : window);
+</script>
     <script>(async () => {
   "use strict";
   const root = document.getElementById("origo-lens"),
@@ -19555,6 +19756,13 @@
     last = null,
     raf = 0,
     ready = false;
+  const rallyController = window.explorerRallies.create({root,
+    context: () => ({ready, live:!!PACK.live, pack:PACK.state_token, n:renderN(), m:renderM(),
+      edgeUs:Math.round((T0 + Math.min(CUT, S.replay && S.anchor !== null ? S.anchor : CUT) * BASE) * 1000000),
+      viewStartUs:Math.round((T0 + S.tA * BASE) * 1000000), viewEndUs:Math.round((T0 + S.tB * BASE) * 1000000)}),
+    changed: () => { if (ready) { requestDraw(); scheduleCube(); scheduleMotion(); } },
+    inspect: () => { S.sideOpen = true; applyPanels(); requestDraw(); }
+  });
   const groups = new Map(),
     evidenceCache = new Map();
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)),
@@ -21803,6 +22011,7 @@
     drawResolutionLens(sc);
     drawingFrameCommit();
     inspectPaint();
+    rallyController.paint(ctx, G, colors);
     ctx.restore();
     const ro = readouts(cut);
     axes(ro);
@@ -21854,6 +22063,7 @@
       motionEnd:mv?.src?.end ?? null, canon:CANON, dataCut:CUT };
     selectionPresentation(meas, mv, selectionContext.seasonal, selectionContext.response);
     comparisonRefresh();
+    rallyController.sync();
     if (transition) {
       if (u >= 1) transition = null;
       else requestDraw();
@@ -24001,7 +24211,8 @@
     return events.reduce((best, e) => !best || Math.abs(e.t - t) < Math.abs(best.t - t) || Math.abs(e.t - t) === Math.abs(best.t - t) && e.t < best.t ? e : best, null);
   }
   function stripReferencePresentation(tip, h) {
-    const all = h.lane === "all" ? h.lanes.flatMap((l) => l.events) : h.span.events;
+    if (h.lane === "rallies") return;
+    const all = (h.lane === "all" ? h.lanes.flatMap((l) => l.events) : h.span.events).filter(e => !e.rally);
     const e = [...all].sort((a, b) => Math.abs(a.t0 - (hover?.t ?? activeCutoff())) - Math.abs(b.t0 - (hover?.t ?? activeCutoff())) || a.t0 - b.t0)[0];
     if (!e) return;
     if (e.gap) calendarReferencePresentation(tip, { gap: e.gap });
@@ -34361,12 +34572,14 @@
   // Which event kinds have a lane: the squeeze of each Bollinger timeframe that is on, and the CME spot gap.
   function eventKinds() {
     const kinds = [];
+    if (rallyController.enabled) kinds.push("rallies");
     if (S.lines.includes("bb4h")) kinds.push("squeeze4h");
     if (S.lines.includes("bb1d")) kinds.push("squeeze1d");
     if (S.lines.includes("cme") && PACK.live) kinds.push("cmegap");
     return kinds;
   }
   const EVENT_NAMES = {
+    rallies: { name: "Rallies", long: "Confirmed upward moves · native trades" },
     squeeze4h: { name: "4h squeeze", long: "Bollinger squeeze on 4-hour bars" },
     squeeze1d: { name: "1D squeeze", long: "Bollinger squeeze on daily bars" },
     cmegap: { name: "Spot gap", long: "Binance spot weekend proxy" },
@@ -34379,6 +34592,12 @@
     if (!kinds.length) return [];
     const lanes = kinds.map((id) => ({ id, events: [], spans: [], pending: false }));
     const lane = (id) => lanes.find((l) => l.id === id);
+    const rallyLane = lane("rallies");
+    if (rallyLane) for (const e of rallyController.events) {
+      const base = us => (us / 1000000 - T0) / BASE;
+      rallyLane.events.push({t0:base(e.start_at_us), t1:base(e.end_at_us), confirmed:base(e.confirmed_at_us),
+        open:false, what:"Rally", rally:e, rec:{kind:"rally", label:"confirmed", final:true}});
+    }
     const fills = S.lines.length ? lineItems(cut).fills || [] : [];
     for (const f of fills) {
       const l = f.squeeze && lane(f.key === "bb4h" ? "squeeze4h" : f.key === "bb1d" ? "squeeze1d" : "");
@@ -34434,6 +34653,10 @@
         ctx.fillRect(Math.max(G.x, x0), y + 3, Math.max(2, Math.min(G.x + G.w, x1) - Math.max(G.x, x0)), EVENT_LANE - 6);
         eventHits.push({ lane: l.id, box: [x0, y, Math.max(x1, x0 + 2), y + EVENT_LANE], span });
       }
+      if (l.id === "rallies") for (const event of l.events) {
+        const x = G.X(event.confirmed);
+        line(x, y + 1, x, y + EVENT_LANE - 1, colors.state, 1);
+      }
       ctx.restore();
     });
     ctx.restore();
@@ -34445,6 +34668,12 @@
     return eventHits.find((h) => p.x >= h.box[0] && p.x <= h.box[2] && p.y >= h.box[1] && p.y <= h.box[3]) || null;
   }
   function eventTip(tip, h) {
+    if (h.lane === "rallies") {
+      tipRows(tip, "Confirmed rallies", `${h.span.events.length} separate events in this interval`,
+        h.span.events.map(e => [e.rally.rally_id, `${when(e.t0)} → ${when(e.t1)} UTC · confirmed ${when(e.confirmed)} UTC`]),
+        "Select a row in Rallies to inspect native members. Marks merge overlapping intervals; measurements remain separate.");
+      return;
+    }
     if (h.lane === "all") {
       tipRows(tip, "Events", "The chart is too short to show its lanes", h.lanes.map((l) => [EVENT_NAMES[l.id].name, String(l.events.length)]), "");
       return;
@@ -37204,7 +37433,7 @@
     return null;
   }
   async function pumpCube() {
-    if (!PACK.live || !ready || comparisonModel.expanded || cube.busy || cube.stale) return;
+    if (!PACK.live || !ready || comparisonModel.expanded || cube.busy || cube.stale || rallyController.busy) return;
     const want = cubeWant();
     if (!want) return;
     const generation = live.generation;
@@ -37602,7 +37831,7 @@
   // One path and dwell read at a time, beside the cube's other reads. An answer
   // for a pack the page replaced meanwhile is dropped, as theirs are.
   async function pumpMotion() {
-    if (!PACK.live || !ready || comparisonModel.expanded || motion.busy) return;
+    if (!PACK.live || !ready || comparisonModel.expanded || motion.busy || rallyController.busy) return;
     const want = motionWant();
     if (!want) return;
     const generation = live.generation,
@@ -38458,7 +38687,7 @@
     for (const entry of E.codec.VISUAL_KEYS)
       for (const path of entry.fields) {
         if (path.startsWith("scale.")) out.scale[path.slice(6)] = S.scale[path.slice(6)];
-        else out[path] = path === "follow" ? followMode() : path === "drawer" && S.drawer === "compare" ? "cells" : S[path];
+        else out[path] = path === "follow" ? followMode() : path === "drawer" && ["compare", "rallies"].includes(S.drawer) ? "cells" : S[path];
       }
     return out;
   }
@@ -40692,6 +40921,7 @@
   }
   async function pollLive() {
     if (live.busy) return;
+    if (rallyController.busy) { scheduleLive(5); return; }
     live.busy = true;
     clearTimeout(live.timer);
     let next;

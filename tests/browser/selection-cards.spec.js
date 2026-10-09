@@ -21,8 +21,18 @@ test("area selection uses the cell sections and summed counters instead of mean 
   await expect(page.locator(`${CARD} .ol-flow-labels`)).toContainText("50.1%");
   expect(await page.locator(`${CARD} h3`).allTextContents()).toEqual(["Activity", "Aggression", "Reported trade size", "Location", "Selection profile"]);
   await expect(page.locator(`${CARD} .ol-card-profile`)).toBeVisible();
-  await page.locator("#ol-clear").click(); await expect(page.locator(CARD)).toHaveCount(0);
-  await expect(page.locator("#ol-vol")).toBeVisible(); await expect(page.locator("#ol-vol")).toHaveAttribute("data-canonical", "953.375");
+  // Clearing the selection leaves the same card reading the view.
+  await page.locator("#ol-clear").click(); await canonical(page, "volume", 953.375);
+  await expect(page.locator(`${CARD} [data-group="view-profile"]`)).toHaveCount(1);
+});
+
+test("clearing a selection with the view's own bounds relabels the card as the view", async ({ page, fakeFor, probe }) => {
+  // A selection over the whole fixture leaves the cell scale uncalibrated (as on main), so wait for the card, not for readiness.
+  const fake = await fakeFor("micro:mixed"); await page.goto(fake.url + "/" + VIEW + "&sel=2021-01-01T00:00Z~2021-01-01T00:06Z,24800~25500");
+  await expect(page.locator(`${CARD} [data-group="selection-profile"]`)).toHaveCount(1);
+  await page.locator("#ol-clear").click();
+  await expect(page.locator(`${CARD} [data-group="view-profile"]`)).toHaveCount(1);
+  await expect(page.locator(`${CARD} [data-group="selection-profile"]`)).toHaveCount(0);
 });
 
 test("one-cell selection and Cell share canonical composition and section styling", async ({ page, fakeFor, probe }) => {
@@ -88,8 +98,7 @@ test("Select drag displays the shared area card and Escape restores the view", a
   await page.mouse.move(...xy(112.5,25000), {steps:5}); await page.mouse.up();
   await canonical(page,"volume",602.25); await canonical(page,"size",602.25/9);
   await expect(page.locator(CARD)).toHaveAttribute("data-presentation","cell");
-  await canvas.focus(); await page.keyboard.press("Escape"); await expect(page.locator(CARD)).toHaveCount(0);
-  await expect(page.locator("#ol-vol")).toBeVisible();
+  await canvas.focus(); await page.keyboard.press("Escape"); await expect(page.locator(`${CARD} [data-group="view-profile"]`)).toHaveCount(1);
 });
 
 test("replay clips selection values and histories to their actual support", async ({page,fakeFor,probe}) => {

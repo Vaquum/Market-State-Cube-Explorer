@@ -4393,8 +4393,8 @@
   }
   // A value that could not be measured reads as its state at label size; its reason stays one hover away.
   function cardState(result) {
-    const { short, long } = E.result.describe(result);
-    return { text: short.split(": ")[0], reason: long };
+    const described = E.result.describe(result);
+    return { text: described.short.split(": ")[0], reason: described.long };
   }
   function coreCardPresentation(tip, { primary, companions = [], groups = [], observation, profile = null, detailed = false }) {
     const raw = tip.querySelector(".ol-tip-rows") ?? Object.assign(document.createElement("dl"), { className: "ol-tip-rows" });

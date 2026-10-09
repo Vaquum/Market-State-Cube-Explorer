@@ -27,7 +27,8 @@ test("area selection uses the cell sections and summed counters instead of mean 
 });
 
 test("clearing a selection with the view's own bounds relabels the card as the view", async ({ page, fakeFor, probe }) => {
-  await open(page, fakeFor, probe, "&sel=2021-01-01T00:00Z~2021-01-01T00:06Z,24800~25500");
+  // A selection over the whole fixture leaves the cell scale uncalibrated (as on main), so wait for the card, not for readiness.
+  const fake = await fakeFor("micro:mixed"); await page.goto(fake.url + "/" + VIEW + "&sel=2021-01-01T00:00Z~2021-01-01T00:06Z,24800~25500");
   await expect(page.locator(`${CARD} [data-group="selection-profile"]`)).toHaveCount(1);
   await page.locator("#ol-clear").click();
   await expect(page.locator(`${CARD} [data-group="view-profile"]`)).toHaveCount(1);

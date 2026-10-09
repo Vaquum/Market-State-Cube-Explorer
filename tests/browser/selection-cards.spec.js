@@ -75,3 +75,42 @@ for (const theme of ["light", "dark"]) test(`${theme}: narrow selection preserve
   await expect.poll(() => field(page, "size").evaluate(n => n.isConnected && parseFloat(getComputedStyle(n).fontSize) >= 18 && n.getBoundingClientRect().width > 0)).toBe(true);
   await page.screenshot({ path: `reports/selection-card-${theme}.png` });
 });
+
+test("Select drag displays the shared area card and Escape restores the view", async ({ page, fakeFor, probe }) => {
+  await open(page, fakeFor, probe, "");
+  const canvas = page.locator("#ol-canvas"), box = await canvas.boundingBox(), l = (await canvas.getAttribute("data-layout")).split(",").map(Number);
+  const xy = (t,p) => [box.x + l[0] + l[2]*t/360, box.y+l[1]+l[3]*(25500-p)/700];
+  await canvas.focus(); await page.keyboard.press("s");
+  await page.mouse.move(...xy(1,25375)); await page.mouse.down();
+  await page.mouse.move(...xy(112.5,25000), {steps:5}); await page.mouse.up();
+  await canonical(page,"volume",602.25); await canonical(page,"size",602.25/9);
+  await expect(page.locator(CARD)).toHaveAttribute("data-presentation","cell");
+  await canvas.focus(); await page.keyboard.press("Escape"); await expect(page.locator(CARD)).toHaveCount(0);
+  await expect(page.locator("#ol-vol")).toBeVisible();
+});
+
+test("replay clips selection values and histories to their actual support", async ({page,fakeFor,probe}) => {
+  await open(page,fakeFor,probe);
+  await canonical(page,"volume",602.25);
+  await page.evaluate(hash => {location.hash=hash;}, VIEW+SEL+"&replay=1&at=2021-01-01T00:00:56.250Z");
+  await canonical(page,"volume",350.25); await canonical(page,"size",350.25/5);
+  const record=await page.locator(CARD).evaluate(n=>JSON.parse(n.dataset.observation));
+  expect(record.time).toEqual([0,1]); expect(record.history.at(-1).time).toEqual([0,1]);
+  expect(record.result.value).toBe(350.25);
+});
+
+for (const state of ["pending","failed"]) test(`${state}: area card refuses fabricated counters and profile`, async ({page,fakeFor,allowConsole}) => {
+  if(state==="failed") allowConsole(/Failed to load resource/);
+  const fake=await fakeFor("standard",{next:300}), rule=fake.on({route:"/cube/query",when:q=>"r0" in q});
+  const gate=state==="pending"?rule.gate():null;
+  if(state==="failed") rule.fail({status:503,body:{error:"selection measurement rejected"}});
+  try {
+    await page.goto(`${fake.url}/#t=2026-09-16T12:07Z~2026-09-25T05:00Z&p=15000~45000&sel=2026-09-16T12:07Z~2026-09-25T05:00Z,15000~45000`);
+    if(gate) await gate.arrived();
+    await expect(field(page,"volume")).toHaveAttribute("data-canonical",state);
+    await expect(field(page,"size")).toHaveAttribute("data-canonical",state);
+    await expect(page.locator(`${CARD} [data-group="selection-profile"] svg`)).toHaveCount(0);
+    await expect(page.locator(`${CARD} [data-group="selection-profile"]`)).toContainText(state==="pending"?/Measuring|Reading/:"selection measurement rejected");
+    await expect(page.locator(CARD)).not.toContainText("No trades in this selection");
+  } finally {gate?.open();}
+});

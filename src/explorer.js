@@ -3886,7 +3886,7 @@
       column: allPriceAmount(q.n, time), seasonal, response, query: q,
       measure(mode, value, basis = "amount", pathBasis = "spans", end = Infinity) {
         const span = value.support ?? (mode === "path" || mode === "dwell" ? motionTime : time), width = band[1] - band[0], length = span[1] - span[0];
-        const read = refusal ?? ((mode === "path" || mode === "dwell") && !motionQuery ? { state: mv?.rect?.state === "failed" ? "failed" : "unsupported", reason: mv?.rect?.error ?? "Movement support not loaded for this selection" } : null);
+        const read = refusal ?? ((mode === "path" || mode === "dwell") && !motionQuery ? { state: ["pending", "failed"].includes(mv?.rect?.state) ? mv.rect.state : "unsupported", reason: mv?.rect?.error ?? "Movement support not loaded for this selection" } : null);
         // The canonical kernel accepts explicit steps. Local coordinates make this
         // region's actual duration/width its exposure without inventing a lattice cell.
         return E.measure.cellMeasurement({ mode, basis, pathBasis, z: { ...value, c: 0, r: 0 }, geom: { BASE, PR }, level: { n: q.n, m: q.m },
@@ -5050,7 +5050,7 @@
       info.textContent = `Half-open selection ${range(...region.time)} UTC; ${region.band.map(v => price(v * PR)).join("–")} USDT. Counters are summed before ratios; reported trades are not orders or participants. Seasonal activity: ${E.result.describe(region.seasonal.result).long}. All-price close − open on ${range(...region.response.time)} UTC: ${E.result.describe(region.response.result).long}.${region.response.paired ? "" : " Different measured-through boundaries; no paired interpretation."}`;
       details.append(info);
       const profile = section("Selection profile", []);
-      profile.append(readingProfile(region.query, PR * ps));
+      profile.append(region.refusal ? Object.assign(document.createElement("p"), { textContent: E.result.describe(E.result.make(region.refusal.state, { reason: region.refusal.reason })).long }) : readingProfile(region.query, PR * ps));
       const motion = stats.querySelector('[data-group="movement"]');
       if (!moved && !region.refusal) motion.remove();
     }

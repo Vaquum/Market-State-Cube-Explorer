@@ -54,7 +54,8 @@ test.describe("B47 Inspect and touch", () => {
     const before = await state(page),
       start = await where(page);
     ({ layout, box } = await plot(page));
-    await page.touchscreen.tap(...at(0.7, 0.3));
+    // clear of the 7-day line: a tap within a finger's reach of a reference reads the reference
+    await page.touchscreen.tap(...at(0.7, 0.6));
     await probe.waitForQuiet({ quietMs: 500, timeout: 30000 });
     const moved = await where(page);
     expect(moved.c !== start.c || moved.r !== start.r, "the cursor went where the tap landed").toBe(true);

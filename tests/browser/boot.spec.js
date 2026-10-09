@@ -105,7 +105,7 @@ test.describe("B01 the page under test", () => {
 });
 
 test.describe("B01 no production test hook (DD-T04, S1-003)", () => {
-  test("a page loaded without the probe has exactly the seven production globals and no test global", async ({ freshContext, fakeFor }) => {
+  test("a page loaded without the probe has exactly the eight production globals and no test global", async ({ freshContext, fakeFor }) => {
     const fake = await fakeFor("mini");
     const context = await freshContext({ probe: false });
     const page = await context.newPage();
@@ -125,7 +125,7 @@ test.describe("B01 no production test hook (DD-T04, S1-003)", () => {
         test: Object.getOwnPropertyNames(window).filter((name) => /^__|test|hook|debug|probe/i.test(name) && !blank.has(name)),
       };
     });
-    expect(seen.added).toEqual(["d3", "explorerComparison", "explorerComparisonUI", "explorerEncoding", "explorerEvidence", "explorerReference", "explorerState"]);
+    expect(seen.added).toEqual(["d3", "explorerComparison", "explorerComparisonUI", "explorerEncoding", "explorerEvidence", "explorerRallies", "explorerReference", "explorerState"]);
     expect(seen.probe).toBe("undefined");
     expect(seen.fake).toBe("undefined");
     expect(seen.test).toEqual([]);

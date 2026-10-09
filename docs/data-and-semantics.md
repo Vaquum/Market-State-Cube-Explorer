@@ -275,3 +275,7 @@ actual observation end is disclosed as retrospective; missing timing stays unkno
 Cells keep raw accumulated travel USDT and dwell seconds. Candles keep canonical
 OHLC and add net move/range plus supported ATR companions. Query discloses requested,
 measured and shown levels/bounds, source/canonical/replay edges and frozen provenance.
+
+### Selection card parity
+
+Area selection uses the cell presentation adapter over the rectangle's own measured sums, support and price band. Mean size and aggressor shares divide summed counters, never average cell ratios. Native intensity uses the rectangle's covered seconds and price width. Movement uses its separately measured-through time and is omitted when unavailable. History windows have the same duration and price band as the effective selection, end at its current observation edge, and use only held sources that tile each window; missing windows break the stroke. Location uses the price-band relation to the completed UTC session before the selection starts. The selection's own profile remains separate from that prior-session reference. No arbitrary regional Cascade parent is constructed.

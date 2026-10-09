@@ -164,3 +164,5 @@ withheld independently when support fails and do not calibrate forecast odds.
 Compare preserves one selected metric/basis and the original frozen reading.
 Legacy captures retain unrecorded context explicitly; migration verifies a v2 tab
 record before retiring unchanged copied v1 text. Query names actual source edges.
+
+Selecting an area uses the same Activity, Aggression, Reported trade size and Location sections as a cell. Ratios use summed counters. Movement appears when the selected area's motion is available; sparklines compare equal-duration windows over the same price band using loaded support. Selection profile and actual support remain disclosed; single-cell parent comparisons are omitted.

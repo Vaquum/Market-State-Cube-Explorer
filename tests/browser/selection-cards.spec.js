@@ -114,3 +114,26 @@ for (const state of ["pending","failed"]) test(`${state}: area card refuses fabr
     await expect(page.locator(CARD)).not.toContainText("No trades in this selection");
   } finally {gate?.open();}
 });
+
+test("a selection after the replay edge retains an unsupported card without interrupting draw", async ({page,fakeFor,probe}) => {
+  await open(page,fakeFor,probe,"&sel=2021-01-01T00:01:52.500Z~2021-01-01T00:03:45Z,25000~25375");
+  await page.evaluate(hash=>{location.hash=hash;}, VIEW+"&sel=2021-01-01T00:01:52.500Z~2021-01-01T00:03:45Z,25000~25375&replay=1&at=2021-01-01T00:00:56.250Z");
+  await expect(field(page,"volume")).toHaveAttribute("data-canonical","unsupported");
+  await expect(page.locator(`${CARD} .ol-cell-details > summary`)).toBeVisible();
+  await expect(page.locator(CARD)).toContainText("No measured support inside this selection");
+});
+
+for (const state of ["pending","failed"]) test(`${state}: missing motion still renders area activity and details`, async ({page,fakeFor,allowConsole}) => {
+  if(state==="failed") allowConsole(/Failed to load resource/);
+  const fake=await fakeFor("micro:mixed");
+  const rules=[fake.on({route:"/cube/motion"}),fake.on({route:"/cube/query",when:q=>q.motion==="1"})];
+  const gates=state==="pending"?rules.map(r=>r.gate()):[];
+  if(state==="failed") for(const r of rules) r.fail({status:503,body:{error:"selection motion rejected"}});
+  try {
+    await page.goto(fake.url+"/"+VIEW+SEL+"&mode=path");
+    await expect(field(page,"volume")).toHaveAttribute("data-canonical","602.25");
+    await expect(page.locator(`${CARD} .ol-cell-details > summary`)).toBeVisible();
+    await expect(field(page,"path")).toHaveAttribute("data-canonical",state);
+    if(state==="failed") await expect(page.locator(CARD)).toContainText("selection motion rejected");
+  } finally {for(const g of gates) g.open();}
+});

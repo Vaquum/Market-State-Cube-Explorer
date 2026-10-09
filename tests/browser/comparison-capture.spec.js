@@ -474,3 +474,16 @@ test("clipped cell companion histories retain their actual current time support"
     expect(C.frozenHistory(capture, history.id, EPOCH + 112500).slots.at(-1).result).toEqual(last.result);
   }
 });
+
+test("Path cell activity histories retain the data boundary separately from motion", async ({page,fakeFor,probe}) => {
+  const fake=await fakeFor("micro:mixed"), view=VIEW.replace("r=0,0","r=2,0")+"&mode=path";
+  await ready(page,fake,probe,view);
+  const p=await point(page,260000,25062.5); await page.mouse.move(p.x,p.y); await page.keyboard.press("e");
+  await page.getByRole("tab",{name:"Cells",exact:true}).click();
+  const histories=await page.locator("#ol-inspect-readout").evaluate(n=>JSON.parse(n.dataset.compactHistories));
+  expect(histories.find(h=>h.id==="path").slots.at(-1).time).toEqual([4,5]);
+  for(const key of ["volume","trades","imbalance"]) {
+    expect(histories.find(h=>h.id===key).slots.at(-1).time).toEqual([4,16/3]);
+  }
+  expect(histories.find(h=>h.id==="volume").slots.at(-1).result).toEqual({tag:"finite",value:125});
+});

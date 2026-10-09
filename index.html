@@ -23239,10 +23239,10 @@
     if (tip.dataset.signature === signature) return;
     const opened = Boolean(tip.querySelector(".ol-cell-details")?.open), focused = tip.querySelector("summary") === document.activeElement;
     tip.replaceChildren(Object.assign(document.createElement("dl"), { className: "ol-tip-rows" }));
-    tip.dataset.signature = signature;
     cellPresentation(tip, { c: Math.floor(time[0] / ts), r: Math.floor(band[0] / ps), ts, ps, z: q, readout, bounds: meas.b, detailed: true, region });
     const details = tip.querySelector(".ol-cell-details"); details.classList.add("ol-core-details"); details.open = opened;
     if (focused) details.querySelector("summary").focus({ preventScroll: true });
+    tip.dataset.signature = signature;
   }
   function allPriceAmount(n, time) {
     const src = exactSource([time[0], time[1], 0, 2 ** 32], n, 0);
@@ -24151,8 +24151,9 @@
     const partial = Boolean(readout?.support?.portion);
     const moved = region ? moving.samples.at(-1)?.z : partial ? motionCells?.map?.get(cellKey(c, r)) : moving.samples.at(-1)?.z;
     const movementEnd = region ? region.motionTime[1] : partial ? last.mv?.end : moving.samples.at(-1)?.end;
-    const time = readout?.support?.time ?? [Math.max(c * ts, bounds[0]), Math.min((c + 1) * ts, bounds[1], last.cut)];
-    const column = region ? region.column : cellColumn(n, m, c, last.cut, time, rowHistory);
+    const activityTime = region?.time ?? [Math.max(c * ts, bounds[0]), Math.min((c + 1) * ts, bounds[1], last.cut)];
+    const time = readout?.support?.time ?? activityTime;
+    const column = region ? region.column : cellColumn(n, m, c, last.cut, activityTime, rowHistory);
     const composition = E.measure.cellComposition({ z: current, column, hidden, read: region?.refusal });
     const finite = (record) => record?.result.tag === "finite" ? record.result.value : null;
     const measure = (mode, value, basis = "amount", pathBasis = "spans", end = Infinity, area = null) => region ? region.measure(mode, value, basis, pathBasis, end) : E.measure.cellMeasurement({
@@ -24281,7 +24282,8 @@
       }
       if (compactKeys.includes(metricKey)) {
         compactHistories.push({ id: metricKey, formula: descriptor.formula, unit: descriptor.unit, slots: values.map((v, i) => {
-          const time = region ? (metric.movement ? moving : rowHistory).samples[i]?.time ?? [0, 0] : i === 11 ? readout?.support?.time ?? [c * ts, Math.min((c + 1) * ts, last.cut)] : [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))];
+          const currentTime = main || metric.movement ? readout?.support?.time ?? activityTime : activityTime;
+          const time = region ? (metric.movement ? moving : rowHistory).samples[i]?.time ?? [0, 0] : i === 11 ? currentTime : [Math.max(0, (c - 11 + i) * ts), Math.max(0, Math.min((c - 10 + i) * ts, last.cut))];
           return { time, result: typedHistory[i], denominators: measurementDenominators(metricKey, time) };
         }) });
       }
@@ -24343,7 +24345,7 @@
     if (sub) sub.textContent = `${price((region?.band[0] ?? r * ps) * PR)}–${price((region?.band[1] ?? (r + 1) * ps) * PR)} USDT`;
     const originalNotes = [...tip.querySelectorAll(".ol-tip-note")];
     const state = document.createElement("div"); state.className = "ol-cell-state";
-    state.textContent = [region?.refusal ? E.result.describe(E.result.make(region.refusal.state, { reason: region.refusal.reason })).short : open ? "Still open" : "Complete", readout?.support?.portion ? region ? "Clipped support" : "Partial cell" : "", CANON !== null && (region ? region.time[1] : (c + 1) * ts) > CANON ? "Provisional" : "", region ? !region.refusal && current.ct === 0 ? "No trades in this selection" : "" : !z ? "No trades in this cell" : "", readout?.exposure?.short ? "Short exposure" : ""].filter(Boolean).join(" · ");
+    state.textContent = [region?.refusal ? E.result.describe(E.result.make(region.refusal.state, { reason: region.refusal.reason })).short : region && ["pending", "failed"].includes(readout?.typed?.tag) ? E.result.describe(readout.typed).long : open ? "Still open" : "Complete", readout?.support?.portion ? region ? "Clipped support" : "Partial cell" : "", CANON !== null && (region ? region.time[1] : (c + 1) * ts) > CANON ? "Provisional" : "", region ? !region.refusal && current.ct === 0 ? "No trades in this selection" : "" : !z ? "No trades in this cell" : "", readout?.exposure?.short ? "Short exposure" : ""].filter(Boolean).join(" · ");
     const details = document.createElement("details"); details.className = "ol-cell-details";
     const summary = document.createElement("summary"); summary.textContent = "Measurement details";
     details.append(summary, raw, ...originalNotes);

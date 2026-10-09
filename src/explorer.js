@@ -219,6 +219,13 @@
     last = null,
     raf = 0,
     ready = false;
+  const rallyController = window.explorerRallies.create({root,
+    context: () => ({ready, live:!!PACK.live, pack:PACK.state_token, n:renderN(), m:renderM(),
+      edgeUs:Math.round((T0 + Math.min(CUT, S.replay && S.anchor !== null ? S.anchor : CUT) * BASE) * 1000000),
+      viewStartUs:Math.round((T0 + S.tA * BASE) * 1000000), viewEndUs:Math.round((T0 + S.tB * BASE) * 1000000)}),
+    changed: () => { if (ready) { requestDraw(); scheduleCube(); scheduleMotion(); } },
+    inspect: () => { S.sideOpen = true; applyPanels(); requestDraw(); }
+  });
   const groups = new Map(),
     evidenceCache = new Map();
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)),
@@ -2467,6 +2474,7 @@
     drawResolutionLens(sc);
     drawingFrameCommit();
     inspectPaint();
+    rallyController.paint(ctx, G, colors);
     ctx.restore();
     const ro = readouts(cut);
     axes(ro);
@@ -2518,6 +2526,7 @@
       motionEnd:mv?.src?.end ?? null, canon:CANON, dataCut:CUT };
     selectionPresentation(meas, mv, selectionContext.seasonal, selectionContext.response);
     comparisonRefresh();
+    rallyController.sync();
     if (transition) {
       if (u >= 1) transition = null;
       else requestDraw();
@@ -4668,7 +4677,8 @@
     return events.reduce((best, e) => !best || Math.abs(e.t - t) < Math.abs(best.t - t) || Math.abs(e.t - t) === Math.abs(best.t - t) && e.t < best.t ? e : best, null);
   }
   function stripReferencePresentation(tip, h) {
-    const all = h.lane === "all" ? h.lanes.flatMap((l) => l.events) : h.span.events;
+    if (h.lane === "rallies") return;
+    const all = (h.lane === "all" ? h.lanes.flatMap((l) => l.events) : h.span.events).filter(e => !e.rally);
     const e = [...all].sort((a, b) => Math.abs(a.t0 - (hover?.t ?? activeCutoff())) - Math.abs(b.t0 - (hover?.t ?? activeCutoff())) || a.t0 - b.t0)[0];
     if (!e) return;
     if (e.gap) calendarReferencePresentation(tip, { gap: e.gap });
@@ -15031,12 +15041,14 @@
   // Which event kinds have a lane: the squeeze of each Bollinger timeframe that is on, and the CME spot gap.
   function eventKinds() {
     const kinds = [];
+    if (rallyController.enabled) kinds.push("rallies");
     if (S.lines.includes("bb4h")) kinds.push("squeeze4h");
     if (S.lines.includes("bb1d")) kinds.push("squeeze1d");
     if (S.lines.includes("cme") && PACK.live) kinds.push("cmegap");
     return kinds;
   }
   const EVENT_NAMES = {
+    rallies: { name: "Rallies", long: "Confirmed upward moves · native trades" },
     squeeze4h: { name: "4h squeeze", long: "Bollinger squeeze on 4-hour bars" },
     squeeze1d: { name: "1D squeeze", long: "Bollinger squeeze on daily bars" },
     cmegap: { name: "Spot gap", long: "Binance spot weekend proxy" },
@@ -15049,6 +15061,12 @@
     if (!kinds.length) return [];
     const lanes = kinds.map((id) => ({ id, events: [], spans: [], pending: false }));
     const lane = (id) => lanes.find((l) => l.id === id);
+    const rallyLane = lane("rallies");
+    if (rallyLane) for (const e of rallyController.events) {
+      const base = us => (us / 1000000 - T0) / BASE;
+      rallyLane.events.push({t0:base(e.start_at_us), t1:base(e.end_at_us), confirmed:base(e.confirmed_at_us),
+        open:false, what:"Rally", rally:e, rec:{kind:"rally", label:"confirmed", final:true}});
+    }
     const fills = S.lines.length ? lineItems(cut).fills || [] : [];
     for (const f of fills) {
       const l = f.squeeze && lane(f.key === "bb4h" ? "squeeze4h" : f.key === "bb1d" ? "squeeze1d" : "");
@@ -15104,6 +15122,10 @@
         ctx.fillRect(Math.max(G.x, x0), y + 3, Math.max(2, Math.min(G.x + G.w, x1) - Math.max(G.x, x0)), EVENT_LANE - 6);
         eventHits.push({ lane: l.id, box: [x0, y, Math.max(x1, x0 + 2), y + EVENT_LANE], span });
       }
+      if (l.id === "rallies") for (const event of l.events) {
+        const x = G.X(event.confirmed);
+        line(x, y + 1, x, y + EVENT_LANE - 1, colors.state, 1);
+      }
       ctx.restore();
     });
     ctx.restore();
@@ -15115,6 +15137,12 @@
     return eventHits.find((h) => p.x >= h.box[0] && p.x <= h.box[2] && p.y >= h.box[1] && p.y <= h.box[3]) || null;
   }
   function eventTip(tip, h) {
+    if (h.lane === "rallies") {
+      tipRows(tip, "Confirmed rallies", `${h.span.events.length} separate events in this interval`,
+        h.span.events.map(e => [e.rally.rally_id, `${when(e.t0)} → ${when(e.t1)} UTC · confirmed ${when(e.confirmed)} UTC`]),
+        "Select a row in Rallies to inspect native members. Marks merge overlapping intervals; measurements remain separate.");
+      return;
+    }
     if (h.lane === "all") {
       tipRows(tip, "Events", "The chart is too short to show its lanes", h.lanes.map((l) => [EVENT_NAMES[l.id].name, String(l.events.length)]), "");
       return;
@@ -17877,7 +17905,7 @@
     return null;
   }
   async function pumpCube() {
-    if (!PACK.live || !ready || comparisonModel.expanded || cube.busy || cube.stale) return;
+    if (!PACK.live || !ready || comparisonModel.expanded || cube.busy || cube.stale || rallyController.busy) return;
     const want = cubeWant();
     if (!want) return;
     const generation = live.generation;
@@ -18275,7 +18303,7 @@
   // One path and dwell read at a time, beside the cube's other reads. An answer
   // for a pack the page replaced meanwhile is dropped, as theirs are.
   async function pumpMotion() {
-    if (!PACK.live || !ready || comparisonModel.expanded || motion.busy) return;
+    if (!PACK.live || !ready || comparisonModel.expanded || motion.busy || rallyController.busy) return;
     const want = motionWant();
     if (!want) return;
     const generation = live.generation,
@@ -19131,7 +19159,7 @@
     for (const entry of E.codec.VISUAL_KEYS)
       for (const path of entry.fields) {
         if (path.startsWith("scale.")) out.scale[path.slice(6)] = S.scale[path.slice(6)];
-        else out[path] = path === "follow" ? followMode() : path === "drawer" && S.drawer === "compare" ? "cells" : S[path];
+        else out[path] = path === "follow" ? followMode() : path === "drawer" && ["compare", "rallies"].includes(S.drawer) ? "cells" : S[path];
       }
     return out;
   }
@@ -21366,6 +21394,7 @@
   }
   async function pollLive() {
     if (live.busy) return;
+    if (rallyController.busy) { scheduleLive(5); return; }
     live.busy = true;
     clearTimeout(live.timer);
     let next;

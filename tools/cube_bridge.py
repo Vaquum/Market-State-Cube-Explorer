@@ -95,6 +95,7 @@ from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from market_state_reader import MarketStateError, query, read_table  # noqa: E402
+from rally_bridge import RallyStore  # noqa: E402
 
 T0 = 1609459200
 BASE_SECONDS = 56.25
@@ -510,6 +511,7 @@ class Explorer:
         # The page this server serves: an open page from an earlier deploy learns that it is
         # older than the server it asks, and offers a reload.
         self.version = hashlib.sha256(page.read_bytes()).hexdigest()[:12]
+        self.rallies = RallyStore(self, CUBE_URL, (CUBE_SLOT, MOTION_SLOT))
 
     def current_pack(self) -> tuple[dict, float]:
         """The current pack and its age in seconds; rebuilt once it is older than a minute, or
@@ -898,6 +900,48 @@ def merged_summary(
 
 class Handler(BaseHTTPRequestHandler):
     explorer: Explorer
+
+    def do_POST(self) -> None:
+        url = urlsplit(self.path)
+        if url.path not in ("/cube/rallies", "/cube/rallies/view"):
+            self.json({"error": "not_found"}, 404)
+            return
+        try:
+            if parse_qs(url.query).get("proto") != [PROTOCOL]:
+                self.json({"error": OUTDATED, "reload": True}, 409)
+                return
+            origin = self.headers.get("Origin")
+            if origin and origin not in ("https://cube.vaquum.fi", "http://" + self.headers.get("Host", "")):
+                self.json({"error": "invalid_origin"}, 403)
+                return
+            if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+                raise ValueError("Content-Type must be application/json")
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 65536:
+                self.json({"error": "request_too_large"}, 413)
+                return
+            def unique(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError("duplicate JSON field")
+                    result[key] = value
+                return result
+            def invalid_constant(value):
+                raise ValueError(f"nonfinite JSON number: {value}")
+            body = json.loads(self.rfile.read(length), object_pairs_hook=unique, parse_constant=invalid_constant)
+            operation = self.explorer.rallies.view if url.path.endswith("/view") else self.explorer.rallies.discover
+            self.json(operation(body))
+        except (ValueError, TypeError, KeyError) as error:
+            self.json({"error": "invalid_rally_request", "detail": str(error)}, 400)
+        except CubeChanged as error:
+            self.json({"error": "cube_changed", "detail": str(error)}, 409)
+        except FileNotFoundError:
+            self.json({"error": "rally_result_expired", "detail": "Canonical files expired; refresh discovery."}, 410)
+        except MarketStateError as error:
+            self.json(dict(error.body), error.status)
+        except Exception as error:
+            self.json({"error": "rally_bridge_failed", "detail": f"{type(error).__name__}: {error}"}, 502)
 
     def do_GET(self) -> None:
         url = urlsplit(self.path)

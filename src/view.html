@@ -1237,6 +1237,9 @@
           </button>
           <span class="ol-drawer-divider" aria-hidden="true"></span>
           <div class="ol-drawer-tabs" role="group" aria-label="Bottom panels">
+            <button type="button" id="ol-tab-rallies" class="ol-icon-button cursor-interaction" data-drawer="rallies" aria-label="Rallies" aria-controls="ol-panel-rallies" aria-expanded="false" aria-pressed="false" data-hint="Observed upward price moves from native trades">
+              <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12 6 8 9 10 14 3M10 3h4v4" /></svg><span class="ol-label">Rallies</span>
+            </button>
             <button type="button" id="ol-tab-cells" class="ol-icon-button cursor-interaction" data-drawer="cells" aria-label="Cells" aria-controls="ol-panel-cells" aria-expanded="false" aria-pressed="false" data-hint="Measured cells in the bottom panel">
               <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" /><path d="M2.5 8h11M8 2.5v11" /></svg><span id="ol-tab-cells-label" class="ol-label">Cells</span>
             </button>
@@ -1252,6 +1255,30 @@
           </div>
         </div>
         <div class="ol-drawer-body" id="ol-drawer-body">
+          <section class="ol-panel ol-rally-panel" id="ol-panel-rallies" aria-labelledby="ol-tab-rallies" hidden>
+            <form id="ol-rally-form" class="ol-rally-form">
+              <label>Mode<select id="ol-rally-mode"><option value="first_hit">First hit</option><option value="controlled_advance">Controlled advance</option><option value="swing">Swing</option></select></label>
+              <label>Scale<select id="ol-rally-scale"><option value="bps">Basis points</option><option value="atr">ATR</option></select></label>
+              <label>Target<input id="ol-rally-target" type="number" min="0.001" max="10000" step="any" value="30" required></label>
+              <label id="ol-rally-pullback-label" hidden>Max pullback<input id="ol-rally-pullback" type="number" min="0.001" max="10000" step="any" value="10" required></label>
+              <label id="ol-rally-reversal-label" hidden>Confirming reversal<input id="ol-rally-reversal" type="number" min="0.001" max="9999.999" step="any" value="10" required></label>
+              <label id="ol-rally-cadence-label">Anchor every · minutes<input id="ol-rally-cadence" type="number" min="1" max="1440" step="1" value="1" required></label>
+              <label>Analysis start · UTC<input id="ol-rally-start" type="datetime-local" step="1" required></label>
+              <label>Analysis end · UTC<input id="ol-rally-end" type="datetime-local" step="1" required></label>
+              <button id="ol-rally-window" type="button" class="ol-action cursor-interaction">Use visible time · max 24h</button>
+              <button id="ol-rally-discover" type="submit" class="ol-action cursor-interaction">Discover</button>
+            </form>
+            <p class="ol-muted" id="ol-rally-scale-note">Thresholds in basis points of the frozen reference price.</p>
+            <p class="ol-muted">A rally is an observed upward move. Thresholds are your operational definition. Confirmation does not imply reversal, durability or future gains. Spot data cannot establish short covering or derivatives leadership.</p>
+            <div class="ol-panel-head">
+              <label id="ol-rally-deadline-label">Time to target · minutes, exclusive<input id="ol-rally-deadline" type="number" min="0.001" max="240" step="any" value="240" aria-describedby="ol-rally-deadline-note"></label>
+              <span id="ol-rally-deadline-note" class="ol-muted">Local filter · at most 240 minutes. Swing ends on a reversal. Grid, replay and filters reuse the discovery.</span>
+              <button id="ol-rally-clear" type="button" class="ol-action ol-s cursor-interaction">Clear rally</button>
+              <div class="ol-pager"><button id="ol-rally-previous" type="button" class="ol-action ol-s cursor-interaction">Previous</button><span id="ol-rally-page">0 confirmed · 1/1</span><button id="ol-rally-next" type="button" class="ol-action ol-s cursor-interaction">Next</button></div>
+            </div>
+            <p id="ol-rally-status" role="status" class="ol-muted">Choose the analysis window, then Discover. Maximum span: 48h; ATR includes 3h45 warmup within that budget.</p>
+            <div class="ol-rally-table-wrap"><table class="ol-table"><thead><tr><th>Start · UTC</th><th>Confirmed · UTC</th><th>Return</th><th>Duration</th><th>USDT volume</th><th>Trades</th></tr></thead><tbody id="ol-rally-rows"></tbody></table></div>
+          </section>
           <div
             class="ol-panel ol-comparison-panel"
             id="ol-panel-compare"
@@ -1650,6 +1677,7 @@
         </button>
       </div>
       <div class="ol-side-body" id="ol-side-body">
+        <section id="ol-rally-inspector" class="ol-side-context ol-rally-inspector" aria-label="Selected rally" hidden></section>
         <div class="ol-side-context" id="ol-context">
           <div class="ol-section-row">
             <div class="ol-section-heading" id="ol-focus-title">In view</div>

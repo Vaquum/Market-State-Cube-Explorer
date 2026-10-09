@@ -1678,6 +1678,15 @@
 }
 
 /* Drawer: cells, cases and the query, under the chart; the chart gives up height. */
+#origo-lens .ol-rally-form { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: end; padding-top: var(--sp-3); }
+#origo-lens .ol-rally-form label { display: grid; gap: var(--sp-1); font-size: var(--fs-s); }
+#origo-lens .ol-rally-form :is(input, select) { max-width: 210px; min-height: var(--h-m); }
+#origo-lens .ol-rally-form input[type="number"], #origo-lens #ol-rally-deadline { width: 90px; }
+#origo-lens .ol-rally-table-wrap { overflow-x: auto; }
+#origo-lens .ol-rally-inspector { border-bottom: 1px solid var(--ol-line); padding-bottom: var(--sp-3); }
+#origo-lens .ol-rally-profile { max-height: 200px; overflow: auto; margin: var(--sp-2) 0; }
+#origo-lens .ol-rally-profile .ol-row { background: linear-gradient(to right, var(--ol-on) var(--rally-share), transparent var(--rally-share)); }
+#origo-lens .ol-rally-panel [hidden] { display: none; }
 #origo-lens .ol-drawer {
   flex: none;
   display: flex;

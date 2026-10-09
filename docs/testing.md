@@ -1,12 +1,14 @@
 # Testing
 
-How the explorer is tested, what the tests can and cannot show, and how a push to `main` becomes a deploy. The explorer itself runs and builds without npm; everything here is development tooling and is never copied into the image: the Dockerfile copies `index.html`, `vendor/` and the two bridge Python files, and `tests/unit/repo.test.js` pins that list.
+How the explorer is tested, what the tests can and cannot show, and how a push to `main` becomes a deploy. The explorer itself runs and builds without npm; everything here is development tooling and is never copied into the image: the Dockerfile copies `index.html`, `vendor/` and the three bridge Python files (cube bridge, public reader and rally adapter), and `tests/unit/repo.test.js` pins that list.
 
 ## What the tests are evidence of
 
 The tests check the page against a **fake** of the bridge's HTTP boundary, filled with **synthetic** trades, and against independent calculations of what the page should show. That is evidence about the front end: its arithmetic, its mappings, its state handling, its reads and their order, its reactions to faults. It is not evidence about the real cube service. The fake cannot validate Origo's own rules for path, dwell, highs and lows or gaps, real latency and load, real block sizes and counts, the host, TLS or the proxy, and the last bits of real float sums. The fake's own store is only as right as our reading of `docs/data-and-semantics.md`; the hand-computed and reference fixtures encode the same reading, so an error in that reading is invisible to every test.
 
 Three kinds of claim stay outside the repository's tests and are never stated as done by them: designated-machine performance, real-host behaviour and rollback on the host, and human judgement of the palette. They need the operator.
+
+Rally tests use recorded canonical Origo events and membership in `tests/fixtures/rallies/`, with published native Arrow hashes. The fake serves that recorded request only and supplies surrounding GUI geometry; it never detects or invents rallies. Independent additive sums verify projection, while explicit native timestamps verify exclusive replay and deadline boundaries. Real-service GUI checks are additional deployment evidence, not evidence supplied by the fake.
 
 ## Commands
 

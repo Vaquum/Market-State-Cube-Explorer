@@ -79,6 +79,7 @@ jobs:
       # module (its footer has a top-level return), so node --check cannot parse it alone.
       - run: git ls-files -- 'src/*.js' 'tests/*.js' 'tests/*.mjs' 'tools/*.js' 'tools/*.mjs' | grep -v '^tests/fixtures/' | grep -v '^tools/encoding-parts/' | xargs -r -n1 node --check
       - run: python3 -m py_compile tools/cube_bridge.py tools/market_state_reader.py tools/build.py
+      - run: python3 -m py_compile tools/rally_bridge.py
       # Only compares: a mismatch fails the job, nothing here rewrites a golden file to make itself pass.
       - run: npm run golden:check
       - run: docker compose config -q

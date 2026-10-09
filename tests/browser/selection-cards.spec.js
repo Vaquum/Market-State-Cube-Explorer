@@ -33,8 +33,11 @@ test("one-cell selection and Cell share canonical composition and section stylin
   await page.keyboard.press("e"); await page.getByRole("tab", { name: "Cells", exact: true }).click();
   for (const key of ["size", "imbalance", "buySize", "sellSize"]) {
     await expect(page.locator(`#ol-inspect-readout dd[data-field="${key}"]`)).toHaveAttribute("data-canonical", await field(page, key).getAttribute("data-canonical"));
-    const sizes = await page.locator(`#ol-inspect-readout dd[data-field="${key}"], ${CARD} dd[data-field="${key}"]`).evaluateAll(ns => ns.map(n => getComputedStyle(n).fontSize));
-    expect(new Set(sizes).size).toBe(1);
+    // Context reads can replace the inspector between locator resolution and
+    // style evaluation; detached nodes have no computed font size.
+    await expect.poll(() => page.locator(`#ol-inspect-readout dd[data-field="${key}"], ${CARD} dd[data-field="${key}"]`)
+      .evaluateAll(ns => ns.map(n => n.isConnected ? getComputedStyle(n).fontSize : null)))
+      .toEqual(["18px", "18px"]);
   }
 });
 

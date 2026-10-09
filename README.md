@@ -117,7 +117,7 @@ Empirical continuation shares are descriptive, not calibrated forecasts. Samples
 ## Develop
 
 ```sh
-python3 tools/build.py --out reports/page/index.html
+npm run build:tmp
 python3 tools/build.py --check
 node --check src/explorer.js
 node --check src/state.js

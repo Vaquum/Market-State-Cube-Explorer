@@ -303,8 +303,9 @@ test.describe("B14 persistence: fresh browser, round trips and migration", () =>
     await seed(context, { "view:v4": v4 });
     await page.goto(fake.url + "/");
     await fake.idle();
-    // the fixture's window, mode and level lock come back as a version-2 address, and the notice names the migrated mode
-    expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=7d&vis=2&ap=" + S.AP + "&mode=flow");
+    // the fixture's window, mode and level lock come back as a version-2 address, and the notice names the migrated mode;
+    // it stored Column POCs on, so they stay on
+    expect(S.withoutSc((await S.where(page)).hash)).toBe("#w=7d&vis=2&ap=" + S.AP + "&mode=flow&marks=poc");
     const list = await S.notices(page);
     expect(list.map((n) => n.code)).toEqual(["legacy-migrated"]);
     expect(S.said(list[0])).toContain("mode");

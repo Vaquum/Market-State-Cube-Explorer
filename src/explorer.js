@@ -65,6 +65,7 @@
       "buytrades",
       "path",
       "dwell",
+      "measure",
       "state",
     ],
     CASE_SORTS = ["date", "outcome", "change", "poc", "excursion", "buy"];
@@ -3876,13 +3877,14 @@
   // A selection is one measured region, not an average of its cells. Reuse the cell
   // renderer; histories use the same price band and equal-duration, non-overlapping windows.
   function selectionPresentation(meas, mv, seasonal, response) {
-    const host = el("context"); host.dataset.selectionCard = String(Boolean(S.selection));
+    // The view is a rectangle too: with no selection it reads the same way, as the view.
+    const host = el("context"); host.dataset.selectionCard = "true";
     let tip = host.querySelector(".ol-selection-card");
-    if (!S.selection) { tip?.remove(); return; }
+    const scope = S.selection ? "selection" : "view";
     if (!tip) { tip = document.createElement("div"); tip.className = "ol-selection-card"; tip.id = "ol-selection-card"; el("bounds").after(tip); }
     const q = meas.query, ts = 2 ** q.n, ps = 2 ** q.m;
     const time = [meas.b[0], Math.max(meas.b[0], Math.min(meas.b[1], meas.end ?? activeCutoff(), activeCutoff()))], band = meas.b.slice(2);
-    const refusal = ["pending", "failed"].includes(meas.state) ? { state: meas.state, reason: meas.error ?? "Measuring this selection" } : time[1] <= time[0] || band[1] <= band[0] ? { state: "unsupported", reason: "No measured support inside this selection" } : null;
+    const refusal = ["pending", "failed"].includes(meas.state) ? { state: meas.state, reason: meas.error ?? `Measuring this ${scope}` } : time[1] <= time[0] || band[1] <= band[0] ? { state: "unsupported", reason: `No measured support inside this ${scope}` } : null;
     const motionQuery = mv?.rect?.query ? motionTotals(mv.rect.query) : null;
     const motionTime = [time[0], Math.max(time[0], Math.min(time[1], mv?.rect?.end ?? time[0]))];
     const duration = time[1] - time[0];
@@ -3898,11 +3900,11 @@
       });
       return { samples, state: samples.slice(0, -1).every(Boolean) ? "ready" : "unsupported" };
     };
-    const region = { time, band, history: histories(), moving: histories(true), motionTime, refusal,
+    const region = { scope, time, band, history: histories(), moving: histories(true), motionTime, refusal,
       column: allPriceAmount(q.n, time), seasonal, response, query: q,
       measure(mode, value, basis = "amount", pathBasis = "spans", end = Infinity) {
         const span = value.support ?? (mode === "path" || mode === "dwell" ? motionTime : time), width = band[1] - band[0], length = span[1] - span[0];
-        const read = refusal ?? ((mode === "path" || mode === "dwell") && !motionQuery ? { state: ["pending", "failed"].includes(mv?.rect?.state) ? mv.rect.state : "unsupported", reason: mv?.rect?.error ?? "Movement support not loaded for this selection" } : null);
+        const read = refusal ?? ((mode === "path" || mode === "dwell") && !motionQuery ? { state: ["pending", "failed"].includes(mv?.rect?.state) ? mv.rect.state : "unsupported", reason: mv?.rect?.error ?? `Movement support not loaded for this ${scope}` } : null);
         // The canonical kernel accepts explicit steps. Local coordinates make this
         // region's actual duration/width its exposure without inventing a lattice cell.
         return E.measure.cellMeasurement({ mode, basis, pathBasis, z: { ...value, c: 0, r: 0 }, geom: { BASE, PR }, level: { n: q.n, m: q.m },
@@ -3995,6 +3997,7 @@
     clearTimeout(cellsTimer);
     cellsTimer = setTimeout(() => buildCells(query, b, mv), 80);
   }
+  const TABLE_FMT = { money: (x) => usdt(x) + " USDT", count: (x) => integer(x), share: (x) => (x * 100).toFixed(2) + "%", exact: true };
   function buildCells(query, b, mv) {
     // Keep a pressed native button attached until its release can activate it.
     if (el("table-body").contains(document.activeElement) && document.activeElement.matches("button:active")) {
@@ -4002,6 +4005,7 @@
       return;
     }
     el("table").hidden = S.mode === "candles";
+    el("table-measure").textContent = MODE_NAMES[S.mode] ?? S.mode;
     el("candle-table").hidden = S.mode !== "candles";
     if (S.mode === "candles") return buildCandleTable();
     for (const th of qsa(".ol-motion-col")) th.hidden = !mv;
@@ -4059,6 +4063,10 @@
         buytrades: (c) => c.bt ?? 0,
         path: (c) => moves(c)?.p ?? -1,
         dwell: (c) => moves(c)?.w ?? -1,
+        measure: (c) => {
+          const z = movementMode() ? moves(c) : c, typed = same && z ? cellReadout(z, null)?.typed : null;
+          return typed?.tag === "finite" ? typed.value : -Infinity;
+        },
         state: (c) => cellState(c, b, ts, ps),
       }[S.cellSort],
       // Cells the price moved through or held in without a trade: without one
@@ -4127,6 +4135,10 @@
                   [secondsMilli(mz?.w ?? 0), "dwell", mz?.w ?? 0],
                 ]
           : []),
+        // The chosen Cells measure, read as the tooltip reads it, exact.
+        readout?.typed
+          ? [readout.typed.tag === "finite" ? readoutRows(readout, TABLE_FMT)[0][1] : E.result.describe(readout.typed).short, "measure", readout.typed.tag === "finite" ? readout.typed.value : readout.typed.tag]
+          : ["—", "measure", same ? "pending" : "level-differs"],
         [state + (c.ct === 0 ? " · no trades" : ""), "state", state],
       ];
       for (const [text, field, canonical] of values) {
@@ -4881,7 +4893,7 @@
         metric.value = finite(composition[key] ?? measure(key, metric.movement ? moved ?? { p: 0, w: 0 } : current, key === "size" ? "mean" : key === "dwell" ? "share" : "amount", "spans", movementEnd));
       }
       metrics.columnShare.label = "Share of all-price volume · same time";
-      metrics.imbalance.format = (v) => ({ text: signed(v * 100, (x) => x.toFixed(exact ? 2 : 1)), unit: "% of selection volume" });
+      metrics.imbalance.format = (v) => ({ text: signed(v * 100, (x) => x.toFixed(exact ? 2 : 1)), unit: `% of ${region.scope} volume` });
     }
     for (const [key, record] of Object.entries(composition)) {
       const term = document.createElement("dt"), value = document.createElement("dd");
@@ -5010,7 +5022,7 @@
     } else {
       const activity = section("Activity", ["volume", "trades", "columnShare"]);
       const scope = document.createElement("div"); scope.className = "ol-cell-context";
-      scope.textContent = column ? region ? "Selection denominator: all price bands · same measured time" : "Interval denominator: all price bands · same measured time" : "Interval share unavailable: complete all-price denominator not loaded for this time support";
+      scope.textContent = column ? region ? `${region.scope === "view" ? "View" : "Selection"} denominator: all price bands · same measured time` : "Interval denominator: all price bands · same measured time" : "Interval share unavailable: complete all-price denominator not loaded for this time support";
       activity.append(scope);
       aggression = section("Aggression", ["delta", "imbalance"]);
       section("Reported trade size", ["buySize", "sellSize", "size", "flowtrades", "sizeRatio"]);
@@ -5036,13 +5048,13 @@
     if (sub) sub.textContent = `${price((region?.band[0] ?? r * ps) * PR)}–${price((region?.band[1] ?? (r + 1) * ps) * PR)} USDT`;
     const originalNotes = [...tip.querySelectorAll(".ol-tip-note")];
     const state = document.createElement("div"); state.className = "ol-cell-state";
-    state.textContent = [region?.refusal ? E.result.describe(E.result.make(region.refusal.state, { reason: region.refusal.reason })).short : region && ["pending", "failed"].includes(readout?.typed?.tag) ? E.result.describe(readout.typed).long : open ? "Still open" : "Complete", readout?.support?.portion ? region ? "Clipped support" : "Partial cell" : "", CANON !== null && (region ? region.time[1] : (c + 1) * ts) > CANON ? "Provisional" : "", region ? !region.refusal && current.ct === 0 ? "No trades in this selection" : "" : !z ? "No trades in this cell" : "", readout?.exposure?.short ? "Short exposure" : ""].filter(Boolean).join(" · ");
+    state.textContent = [region?.refusal ? E.result.describe(E.result.make(region.refusal.state, { reason: region.refusal.reason })).short : region && ["pending", "failed"].includes(readout?.typed?.tag) ? E.result.describe(readout.typed).long : open ? "Still open" : "Complete", readout?.support?.portion ? region ? "Clipped support" : "Partial cell" : "", CANON !== null && (region ? region.time[1] : (c + 1) * ts) > CANON ? "Provisional" : "", region ? !region.refusal && current.ct === 0 ? `No trades in this ${region.scope}` : "" : !z ? "No trades in this cell" : "", readout?.exposure?.short ? "Short exposure" : ""].filter(Boolean).join(" · ");
     const details = document.createElement("details"); details.className = "ol-cell-details";
     const summary = document.createElement("summary"); summary.textContent = "Measurement details";
     details.append(summary, raw, ...originalNotes);
     details.hidden = !detailed;
     const context = document.createElement("div"); context.className = "ol-cell-context";
-    const historyWindow = region ? `Same price band · previous 11 windows and this selection · ${(region.time[1] - region.time[0]) * BASE} seconds per window` : `Same price band · previous 11 intervals and this interval · ${range((c - 11) * ts, Math.min((c + 1) * ts, last.cut))} UTC`;
+    const historyWindow = region ? `Same price band · previous 11 windows and this ${region.scope} · ${(region.time[1] - region.time[0]) * BASE} seconds per window` : `Same price band · previous 11 intervals and this interval · ${range((c - 11) * ts, Math.min((c + 1) * ts, last.cut))} UTC`;
     context.textContent = region ? "Same price band · 12 equal-duration windows · loaded support only" : detailed ? "Same price band · 12 intervals" : historyWindow;
     context.dataset.historyFrom = String((c - 11) * ts); context.dataset.historyTo = String(Math.min((c + 1) * ts, last.cut));
     context.title = `${historyWindow}. Fully measured intervals without trades are zero activity; undefined ratios and missing coverage break the line. Amount miniatures have independent vertical scales.`;
@@ -5059,7 +5071,7 @@
     if (detailed) stats.insertBefore(context, stats.children[1]);
     const balance = document.createElement("div"); balance.className = "ol-flow-balance";
     balance.setAttribute("role", "img");
-    balance.setAttribute("aria-label", current.v > 0 ? `Buyer-initiated ${share(current.bv / current.v).text} percent; seller-initiated ${share(1 - current.bv / current.v).text} percent of ${region ? "selection" : "cell"} volume` : "No traded volume");
+    balance.setAttribute("aria-label", current.v > 0 ? `Buyer-initiated ${share(current.bv / current.v).text} percent; seller-initiated ${share(1 - current.bv / current.v).text} percent of ${region ? region.scope : "cell"} volume` : "No traded volume");
     const buy = document.createElement("span"); buy.style.width = current.v > 0 ? `${100 * current.bv / current.v}%` : "0%";
     balance.append(buy); balance.hidden = !(current.v > 0);
     if (detailed && current.v > 0) {
@@ -5071,19 +5083,18 @@
     }
     if (detailed && atr) {
       const volatility = document.createElement("div"); volatility.className = "ol-cell-context";
-      volatility.textContent = `Location distances: daily ATR(14) ${price(atr)} USDT · completed days before this ${region ? "selection" : "cell"}`;
+      volatility.textContent = `Location distances: daily ATR(14) ${price(atr)} USDT · completed days before this ${region ? region.scope : "cell"}`;
       details.append(volatility);
     }
     if (region) {
-      const info = document.createElement("p"); info.className = "ol-cell-context";
-      info.textContent = `Half-open selection ${range(...region.time)} UTC; ${region.band.map(v => price(v * PR)).join("–")} USDT. Counters are summed before ratios; reported trades are not orders or participants. Seasonal activity: ${E.result.describe(region.seasonal.result).long}. All-price close − open on ${range(...region.response.time)} UTC: ${E.result.describe(region.response.result).long}.${region.response.paired ? "" : " Different measured-through boundaries; no paired interpretation."}`;
-      details.append(info);
+      // One fact per line: the support, the counting rule, then each context and its own support.
+      for (const sentence of `Half-open ${region.scope} ${range(...region.time)} UTC; ${region.band.map(v => price(v * PR)).join("–")} USDT. Counters are summed before ratios; reported trades are not orders or participants. Seasonal activity: ${E.result.describe(region.seasonal.result).long}. All-price close − open on ${range(...region.response.time)} UTC: ${E.result.describe(region.response.result).long}.${region.response.paired ? "" : " Different measured-through boundaries; no paired interpretation."}`.split(/(?<=\.) (?=[A-Z])/)) details.append(Object.assign(document.createElement("p"), { className: "ol-cell-context", textContent: sentence }));
       if (moved && !region.refusal) {
         const movement = document.createElement("p"); movement.className = "ol-cell-context";
         movement.textContent = `Movement support ${range(...region.motionTime)} UTC; ${(region.motionTime[1] - region.motionTime[0]) * BASE} covered seconds; ${(region.band[1] - region.band[0]) * PR} USDT price width. Raw path ${moved.p} USDT; raw dwell ${moved.w} seconds.${region.motionTime[1] < region.time[1] ? " Movement ends before activity." : ""}`;
         details.append(movement);
       }
-      const profile = section("Selection profile", []);
+      const profile = section(region.scope === "view" ? "View profile" : "Selection profile", []);
       profile.append(region.refusal ? Object.assign(document.createElement("p"), { textContent: E.result.describe(E.result.make(region.refusal.state, { reason: region.refusal.reason })).long }) : readingProfile(region.query, PR * ps));
       const motion = stats.querySelector('[data-group="movement"]');
       if (!moved && !region.refusal) motion.remove();
@@ -11537,15 +11548,14 @@
       });
       coreCardPresentation(tip, {
         primary: { label: "Close", result: observation.result, unit: "price", history: observation.history },
-        companions: [
+        // A candle reads as its four prices; its movement and activity follow in the details.
+        companions: ["Open", "High", "Low"].map((label) => ({ label, result: E.result.finite(bar[label.toLowerCase()]), unit: "price", history: series((v) => v[label.toLowerCase()]) })),
+        groups: [{ name: "Movement and activity", metrics: [
           { label: "Net move / prior daily ATR", result: displacement.result, unit: "daily-atr", signed: true, history: series((v) => v.close - v.open, true) },
           { label: "High − low / prior daily ATR", result: range.result, unit: "daily-atr", history: series((v) => v.high - v.low, true) },
-          { label: "Reported quote volume", result: E.result.finite(bar.v), unit: "usdt", history: series((v) => v.v) },
-        ],
-        groups: [{ name: "Raw price and movement", metrics: [
-          ...["Open", "High", "Low"].map((label) => ({ label, result: E.result.finite(bar[label.toLowerCase()]), unit: "price" })),
           { label: "Signed close − open", result: E.result.finite(bar.close - bar.open), unit: "price" },
           { label: "High − low", result: E.result.finite(bar.high - bar.low), unit: "price" },
+          { label: "Reported quote volume", result: E.result.finite(bar.v), unit: "usdt", history: series((v) => v.v) },
         ] }], observation, detailed,
       });
       tip.dataset.presentation = "candle";
@@ -17051,16 +17061,17 @@
     const host = el("evidence-intervals"); host.replaceChildren(); delete host.dataset.bootstrap;
     host.dataset.study = e.error ? "unavailable" : e.provenance?.sourceDigest ?? "pending";
     const title = document.createElement("p"); title.textContent = "Approximate pointwise 95% estimation intervals · fixed anchor thresholds"; host.append(title);
+    // Each outcome's intervals sit in its own row, under the Matching, All and Diff columns they qualify.
+    for (const kind of ["up", "flat", "down"]) el("label-" + kind).closest("button").querySelector(".ol-outcome-interval")?.remove();
     if (!e.uncertainty) { host.append(document.createTextNode(e.error ?? "Computing intervals…")); return; }
     for (const kind of ["up", "flat", "down"]) {
-      const line = document.createElement("p"); line.className = "ol-evidence-interval";
-      line.append(Object.assign(document.createElement("strong"), { textContent: el("label-" + kind).textContent + ": " }));
-      for (const [component, label] of [["conditional", "Matching"], ["baseline", "All seasonally eligible states"], ["difference", "Difference"]]) {
+      const line = document.createElement("span"); line.className = "ol-outcome-interval";
+      for (const component of ["conditional", "baseline", "difference"]) {
         const record = e.uncertainty.intervals[kind][component], span = document.createElement("span"), result = record.result;
         span.dataset.component = component; span.dataset.direction = kind; span.dataset.canonical = JSON.stringify(result);
-        span.textContent = label + " " + (result.tag === "finite" ? result.value.map((v) => v.toFixed(2).replace("-", "−")).join(" to ") + (component === "difference" ? " pp" : "%") : result.reason) + "; "; line.append(span);
+        span.textContent = result.tag === "finite" ? result.value.map((v) => v.toFixed(2).replace("-", "−")).join(" to ") + (component === "difference" ? " pp" : "%") : result.reason; line.append(span);
       }
-      host.append(line);
+      el("label-" + kind).closest(".ol-outcome").after(line);
     }
     const limits = document.createElement("p"); limits.textContent = `${e.uncertainty.fullMatched} full matched calendar blocks of ${dur(e.blockLength * stepT() * BASE)}; ${e.uncertainty.calendarBlocks} sampled calendar blocks including empty/partial. ${e.uncertainty.qualification}`; host.append(limits);
     host.dataset.bootstrap = JSON.stringify({ key: e.uncertainty.key, resamples: e.uncertainty.resamples, seed: e.uncertainty.seed, fullMatched: e.uncertainty.fullMatched, calendarBlocks: e.uncertainty.calendarBlocks, intervals: e.uncertainty.intervals });

@@ -3425,8 +3425,16 @@
 
 /* P7-S3 evidence: intervals remain distinct from historical outcome boxes. */
 .ol-evidence-intervals { font-size: .75rem; line-height: 1.45; }
-.ol-evidence-interval { margin: .5rem 0; }
-.ol-evidence-interval span { display: block; font-variant-numeric: tabular-nums; }
+#origo-lens .ol-outcome-interval {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-1);
+  font-size: 14px;
+  color: var(--ol-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .ol-ledger-content { max-height: 24rem; overflow: auto; }
 
 /* P7-S3: readable provenance and frozen histories use the existing neutral palette. */

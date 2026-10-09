@@ -180,11 +180,11 @@ for (const state of ["pending", "failed"]) test(`${state}: Measures details do n
   try {
     await page.goto(`${fake.url}/#t=2026-09-16T12:07Z~2026-09-25T05:00Z&p=15000~45000`);
     if (gate) await gate.arrived();
-    const card = page.locator("#ol-vol").locator("..");
-    await expect(page.locator("#ol-vol")).toHaveAttribute("data-canonical", state);
-    await card.locator(".ol-core-details > summary").click();
-    await expect(card.locator(".ol-core-details")).toContainText(state === "pending" ? /Buyer-initiated Reading|Buyer-initiated Measuring/ : /Buyer-initiated Read failed: rectangle measurement rejected/);
-    await expect(card.locator(".ol-core-details")).not.toContainText(/initiated 0 USDT/);
+    // The view reads through the same card as a selection.
+    const card = page.locator("#ol-selection-card");
+    await expect(card.locator('.ol-cell-stat[data-measure="volume"] dd').first()).toHaveAttribute("data-canonical", state);
+    await expect(card).toContainText(state === "pending" ? /Reading|Measuring/ : /rectangle measurement rejected/);
+    await expect(card).not.toContainText(/initiated 0 USDT/);
     if (gate) { gate.open(); await fake.idle(); }
   } finally { gate?.open(); }
 });

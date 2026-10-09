@@ -279,3 +279,8 @@ measured and shown levels/bounds, source/canonical/replay edges and frozen prove
 ### Selection card parity
 
 Area selection uses the cell presentation adapter over the rectangle's own measured sums, support and price band. Mean size and aggressor shares divide summed counters, never average cell ratios. Native intensity uses the rectangle's covered seconds and price width. Movement uses its separately measured-through time and is omitted when unavailable. History windows have the same duration and price band as the effective selection, end at its current observation edge, and use only held sources that tile each window; missing windows break the stroke. Location uses the price-band relation to the completed UTC session before the selection starts. The selection's own profile remains separate from that prior-session reference. No arbitrary regional Cascade parent is constructed.
+
+
+### Continuations activation and chart focus
+
+A bare-root visit restores the last camera and display settings but starts on Measures, even if the stored last view had Continuations enabled. Explicit addresses, imported codes, named views and navigation history retain their encoded tab. Pan clicks/taps and comma/period can change an anchor only while Replay, Continuations or the Cases drawer is active; they never enable Continuations. The C toggle, tab button, historical-case action and drawing Anchor evidence here action remain explicit activation routes. Chart keyboard focus retains its tab stop and restoration behavior and is indicated by the underlined Chart focused cue in the header rather than an enclosing canvas outline.

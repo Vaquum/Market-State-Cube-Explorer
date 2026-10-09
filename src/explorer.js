@@ -3042,6 +3042,9 @@
         : legacyStored(checkView(legacyRaw(x)), x);
     if (view) {
       applyView(view);
+      // A bare-root visit restores the camera and settings, but Continuations is opt-in.
+      // Explicit addresses, named views and history still own their recorded tab.
+      S.tab = "context";
       reportView(view);
       // A legacy view is migrated once: it is stored as what it now is, so the next visit finds a
       // version-2 view and owes no notice.
@@ -6949,8 +6952,11 @@
     el("table-body").addEventListener("pointerover", (e) => {
       const tr = e.target.closest("tr");
       if (!tr) return;
-      const [n, m] = tr.dataset.level.split(":").map(Number);
-      tableHover = { c: Number(tr.dataset.c), r: Number(tr.dataset.r), n, m };
+      const [n, m] = tr.dataset.level.split(":").map(Number), c = Number(tr.dataset.c), r = Number(tr.dataset.r);
+      // Replacing a row re-enters its descendants under a stationary pointer. The same cell
+      // must not schedule another rebuild and keep its native buttons perpetually detaching.
+      if (tableHover?.c === c && tableHover.r === r && tableHover.n === n && tableHover.m === m) return;
+      tableHover = { c, r, n, m };
       rowMarker();
       requestDraw();
     });
@@ -17525,14 +17531,17 @@
     // The cause the next scale disclosure names (pin, lock, policy), set where the change is made.
     scaleCause: null,
   };
+  function anchorActive() {
+    return S.replay || S.tab === "evidence" || (S.drawerOpen && S.drawer === "cases");
+  }
   function stepAnchor(delta) {
+    if (!anchorActive()) return;
     S.anchor = clamp(
       (S.anchor || activeCutoff()) + delta * stepT(),
       stepT(),
       Math.floor(CUT / stepT()) * stepT(),
     );
-    // Outside replay the anchor is the continuations': they come into view.
-    if (!S.replay) S.tab = "evidence";
+    // Step only an active replay or continuation anchor; never enable the study implicitly.
     hover = null;
     el("tip").hidden = true;
     update();
@@ -20661,16 +20670,14 @@
       const p = at(e),
         held = drag.lens || nav.hold,
         click = !held && !drag.moved,
-        // A click with Select clears the selection; with Pan it anchors the
-        // column clicked, for the continuations.
+        // Select clears a selection; Pan anchors only an already active study or replay.
         cleared = click && S.select && S.selection !== null;
       // A tap with Inspect is a reading and nothing else: no anchor, no selection, no evidence tab, no replay edge, no history entry
       drawingKeyContext = false;
       if (click && inspect.on) inspectTap(p, e.pointerType === "touch");
       else if (click && S.select) S.selection = null;
-      else if (click && inPlot(p) && p.t < activeCutoff()) {
+      else if (click && anchorActive() && inPlot(p) && p.t < activeCutoff()) {
         S.anchor = (Math.floor(p.t / stepT()) + 1) * stepT();
-        S.tab = "evidence";
       }
       const label = held || (click && inspect.on)
         ? null
@@ -20682,7 +20689,9 @@
             ? cleared
               ? "Selection cleared"
               : null
-            : "Anchor";
+            : anchorActive() && inPlot(p) && p.t < activeCutoff()
+              ? "Anchor"
+              : null;
       drag = null;
       nav.hold = false;
       setCursor(p);
@@ -20895,6 +20904,7 @@
             ? e.code.slice(-1)
             : null,
         centre = { t: (S.tA + S.tB) / 2, p: (S.pA + S.pB) / 2 };
+      if ((k === "," || k === ".") && !anchorActive()) return;
       // A held key repeats like a gesture: the continuations wait for it to end.
       if (e.repeat) gestureAt = performance.now();
       if (step) noteGesture();

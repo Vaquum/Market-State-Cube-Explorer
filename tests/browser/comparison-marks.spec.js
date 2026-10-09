@@ -30,6 +30,7 @@ test.describe("B41 the historical comparison is neutral: a square for the matchi
     await page.goto(`${fake.url}/#w=24h&vis=2`);
     await S.atRest(page, fake, probe);
     const box = await page.locator("#ol-canvas").boundingBox();
+    await page.keyboard.press("c");
     // anchor a column of the plot: a click with the Pan tool
     await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.4);
     await expect.poll(async () => (await page.locator("#ol-case-n").textContent()) !== "—", { message: "the anchored column's cases are counted", timeout: 60000 }).toBe(true);

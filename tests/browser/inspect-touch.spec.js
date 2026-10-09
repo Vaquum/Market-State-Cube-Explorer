@@ -2,7 +2,7 @@
 // B47 inspect-touch.spec.js (PRD-0002 S3, #48 section 3, touch): synthesized coarse-pointer tests.
 //
 // A touch context (hasTouch, isMobile: `pointer: coarse`, `hover: none`), taps made as touches:
-//   1. outside Inspect a tap anchors the column it landed on, as before, and the evidence is read;
+//   1. outside Inspect, with Continuations enabled, a tap anchors the column it landed on and the evidence is read;
 //   2. inside Inspect a tap is a reading and nothing else: the cursor goes where it landed, and the address, the history, the anchor, the evidence tab, the selection
 //      and the replay edge are as they were; a long hold peeks the lens and, let go, returns to Inspect with the same absence of side effects;
 //   3. a tap with several references within a finger's reach moves no cursor and shows a chooser, a 44 px row for each; choosing one reads it;
@@ -36,10 +36,16 @@ test.describe("B47 Inspect and touch", () => {
     const fake = await fakeFor("standard");
     await open(page, fake, probe, "#w=24h&vis=2&lines=7d");
     expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "a coarse pointer").toBe(true);
-    const { layout, box } = await plot(page),
-      at = (fx, fy) => [box.x + layout[0] + layout[2] * fx, box.y + layout[1] + layout[3] * fy];
-    // 1. Pan's tap anchors the column: the evidence has its cases
-    expect((await state(page)).cases, "no anchor yet").toBe("—");
+    let { layout, box } = await plot(page);
+    const at = (fx, fy) => [box.x + layout[0] + layout[2] * fx, box.y + layout[1] + layout[3] * fy];
+    // 1. Pan's tap leaves the default off; explicitly enable Continuations to anchor.
+    const off = await state(page);
+    await page.touchscreen.tap(...at(0.4, 0.5));
+    expect(await state(page)).toEqual(off);
+    await page.keyboard.press("c");
+    await probe.waitForReady();
+    ({ layout, box } = await plot(page));
+    // Pan's tap now anchors the column: the evidence has its cases
     await page.touchscreen.tap(...at(0.4, 0.5));
     await expect.poll(async () => (await state(page)).cases, { message: "the tap anchored the column and its cases are counted", timeout: 60000 }).not.toBe("—");
     // 2. Inspect: a tap moves the cursor and changes nothing the page keeps
@@ -47,6 +53,7 @@ test.describe("B47 Inspect and touch", () => {
     await expect(page.locator("#ol-inspect")).toBeVisible();
     const before = await state(page),
       start = await where(page);
+    ({ layout, box } = await plot(page));
     await page.touchscreen.tap(...at(0.7, 0.3));
     await probe.waitForQuiet({ quietMs: 500, timeout: 30000 });
     const moved = await where(page);

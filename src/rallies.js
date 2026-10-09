@@ -14,7 +14,7 @@
     const fmt = (n, digits = 2) => Number(n).toLocaleString("en-US", {maximumFractionDigits:digits});
     const time = us => iso(us).slice(0, 19).replace("T", " ");
     let result = null, projection = null, selectedId = null, busy = false, page = 0;
-    let key = null, inFlight = null, stale = false, initialized = false, epoch = 0, errorMessage = "";
+    let key = null, inFlight = null, presentationKey = null, stale = false, initialized = false, epoch = 0, errorMessage = "";
     let deadlineMinutes = 240;
     const deadline = () => deadlineMinutes;
     const swing = () => result?.metadata.normalized_definition.mode === "swing";
@@ -33,6 +33,9 @@
       el("discover").textContent = busy ? "Discovering…" : result ? "Refresh discovery" : "Discover";
       el("window").disabled = busy;
       for (const node of el("form").querySelectorAll("input, select")) node.disabled = busy;
+      for (const [name, active] of [["cadence", mode !== "swing"], ["pullback", mode === "controlled_advance"], ["reversal", mode === "swing"]]) {
+        el(name).disabled = busy || !active; el(name).required = active;
+      }
     }
     function useWindow() {
       const c = context(), end = Math.min(c.viewEndUs, c.edgeUs), start = Math.max(c.viewStartUs, end - 24 * 3600e6);
@@ -48,7 +51,7 @@
       const box = el("inspector"); box.replaceChildren(); box.hidden = !selectedId;
       if (!selectedId) return;
       const title = document.createElement("div"); title.className = "ol-section-heading"; title.textContent = "Selected rally · native members"; box.append(title);
-      const event = projection?.selected;
+      const event = current()?.selected;
       if (!event) {
         box.append(row("State", stale ? "Source changed · refresh discovery" : errorMessage || (inFlight ? "Reading membership…" : "Hidden by replay or time-to-target filter")));
         return;
@@ -103,10 +106,17 @@
       renderInspector();
     }
     async function post(path, body) {
-      const response = await fetch(path + "?proto=2", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body), cache:"no-store"});
-      const reply = await response.json();
-      if (!response.ok) { const error = new Error(reply.detail ? (typeof reply.detail === "string" ? reply.detail : JSON.stringify(reply.detail)) : reply.error); error.status = response.status; throw error; }
-      return reply;
+      const controller = new AbortController(), timeout = path.endsWith("/view") ? 30000 : 330000;
+      const timer = setTimeout(() => controller.abort(), timeout);
+      try {
+        const response = await fetch(path + "?proto=2", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body), cache:"no-store", signal:controller.signal});
+        const reply = await response.json();
+        if (!response.ok) { const error = new Error(reply.detail ? (typeof reply.detail === "string" ? reply.detail : JSON.stringify(reply.detail)) : reply.error); error.status = response.status; throw error; }
+        return reply;
+      } catch (error) {
+        if (controller.signal.aborted) throw new Error(path.endsWith("/view") ? "Membership view timed out; select the rally again to retry." : "Request timed out. Discovery may still finish at the service; retry when the cube becomes available.");
+        throw error;
+      } finally { clearTimeout(timer); }
     }
     async function discover(event) {
       event.preventDefault(); if (busy) return;
@@ -125,18 +135,24 @@
       const c = context(); if (!c.ready) return;
       if (!initialized) { useWindow(); initialized = true; controls(); render(); }
       if (!result || busy || stale) return;
-      const signature = [result.result_id, c.pack, c.n, c.m, c.edgeUs, deadline(), selectedId].join("|");
-      if (key === signature || inFlight === signature) return;
-      key = signature; projection = null; render();
-      // Superseded view replies are discarded; detection is never called here.
-      const generation = epoch, capturedResult = result; inFlight = signature;
+      const presentation = [c.edgeUs, deadline(), selectedId, c.pack, c.n, c.m].join("|");
+      if (presentationKey !== presentation) { presentationKey = presentation; render(); }
+      // Replay and deadlines filter canonical events locally. Only pack, grid or selection needs a new projection.
+      const signature = [result.result_id, c.pack, c.n, c.m, selectedId].join("|");
+      if (key === signature || inFlight) return;
+      key = signature; projection = null;
+      const generation = epoch, capturedResult = result, flight = {signature}; inFlight = flight; render();
       post("/cube/rallies/view", {pack:c.pack, result_id:result.result_id, rally_id:selectedId, n:c.n, m:c.m,
-        known_at:iso(c.edgeUs), deadline_minutes:swing() ? null : deadline()})
-        .then(answer => { if (epoch !== generation || key !== signature || result !== capturedResult) return; projection = answer; errorMessage = ""; })
-        .catch(error => { if (epoch !== generation || key !== signature) return; stale = error.status === 409 || error.status === 410; errorMessage = `${error.status ?? "Network"}: ${error.message}`; status(errorMessage); })
-        .finally(() => { if (inFlight === signature) inFlight = null; if (key === signature) { render(); changed(); } });
+        known_at:result.metadata.observation_ceiling, deadline_minutes:null})
+        .then(answer => { if (epoch !== generation || result !== capturedResult) return; projection = answer; errorMessage = ""; })
+        .catch(error => {
+          const now = context();
+          if (epoch !== generation || [result?.result_id, now.pack, now.n, now.m, selectedId].join("|") !== signature) return;
+          stale = error.status === 409 || error.status === 410; errorMessage = `${error.status ?? "Network"}: ${error.message}`; status(errorMessage);
+        })
+        .finally(() => { if (inFlight === flight) inFlight = null; sync(); render(); changed(); });
     }
-    function current() { const c = context(); return projection && !stale && projection.pack === c.pack && projection.n === c.n && projection.m === c.m && shown().some(e => e.rally_id === projection.selected?.rally_id) ? projection : null; }
+    function current() { const c = context(); return projection && !stale && projection.pack === c.pack && projection.n === c.n && projection.m === c.m && selectedId === projection.selected?.rally_id && shown().some(e => e.rally_id === projection.selected?.rally_id) ? projection : null; }
     function paint(ctx, G, colors) {
       const view = current(); if (!view?.selected) return;
       ctx.save(); ctx.beginPath(); ctx.rect(G.x, G.y, G.w, G.h); ctx.clip();
@@ -154,7 +170,7 @@
     el("clear").onclick = () => { selectedId = null; projection = null; key = null; sync(); render(); changed(); };
     for (const name of ["mode", "scale"]) el(name).addEventListener("change", controls);
     el("scale").addEventListener("change", () => { const atr = el("scale").value === "atr"; el("target").value = atr ? 1 : 30; el("pullback").value = el("reversal").value = atr ? .5 : 10; });
-    el("deadline").addEventListener("change", () => { if (!el("deadline").checkValidity()) { el("deadline").reportValidity(); return; } deadlineMinutes = el("deadline").value === "" ? null : Number(el("deadline").value); page = 0; key = null; sync(); render(); changed(); });
+    el("deadline").addEventListener("change", () => { if (!el("deadline").checkValidity()) { el("deadline").reportValidity(); return; } deadlineMinutes = el("deadline").value === "" ? null : Number(el("deadline").value); page = 0; sync(); render(); changed(); });
     el("previous").onclick = () => { page--; render(); }; el("next").onclick = () => { page++; render(); };
     return {sync, paint, get busy(){return busy;}, get events(){return projection && !stale && projection.pack === context().pack ? shown().filter(e => projection.visible_ids.includes(e.rally_id)) : [];}, get selectedId(){return selectedId;}, get enabled(){return !!result && !stale;}};
   }

@@ -24,7 +24,7 @@ test("discovery, exact members, deadline and zoom reuse one canonical result wit
 });
 test("replay keeps member measurements while a view response takes longer than a tick",async({page,fakeFor})=>{
  const fake=await fakeFor("mini");await discover(page,fake);await fake.idle();
- fake.on("/cube/rallies/view").delay(1500);
+ fake.on({route:"/cube/rallies/view"}).delay(1500);
  const before=fake.log().filter(e=>e.path==="/cube/rallies/view").length;
  await page.locator("#ol-rally-rows button").first().click();await page.locator("#ol-replay").click();await page.locator("#ol-play").click();
  await expect(page.locator("#ol-rally-inspector")).toContainText("9,792");await expect(page.locator("#ol-play")).toHaveAttribute("aria-pressed","true");
@@ -36,14 +36,14 @@ test("inactive mode fields do not participate in native form validation",async({
  await page.locator("#ol-rally-mode").selectOption("controlled_advance");await page.locator("#ol-rally-pullback").fill("");await page.locator("#ol-rally-mode").selectOption("first_hit");
  await page.locator("#ol-rally-discover").click();await expect(page.locator("#ol-rally-rows tr")).toHaveCount(4);
  await page.locator("#ol-rally-cadence").fill("");await page.locator("#ol-rally-mode").selectOption("swing");
- fake.on("/cube/rallies").fail(503,{error:"recorded_boundary_busy"});
+ fake.on({route:"/cube/rallies"}).fail({status:503,body:{error:"recorded_boundary_busy"}});
  const request=page.waitForRequest(r=>new URL(r.url()).pathname==="/cube/rallies" && r.method()==="POST");
  await page.locator("#ol-rally-discover").click();expect((await request).postDataJSON().definition).toEqual({mode:"swing",scale:"bps",target:30,reversal:10});
  await expect(page.locator("#ol-rally-status")).toContainText("503");await expect(page.locator("#ol-rally-discover")).toBeEnabled();
 });
 test("a stalled discovery times out and releases the GUI read pause",async({page,fakeFor})=>{
  const fake=await fakeFor("mini");await setup(page,fake);await fake.idle();await page.clock.install();
- fake.on("/cube/rallies").hang();await page.locator("#ol-rally-discover").click();await expect(page.locator("#ol-rally-discover")).toBeDisabled();
+ fake.on({route:"/cube/rallies"}).hang();await page.locator("#ol-rally-discover").click();await expect(page.locator("#ol-rally-discover")).toBeDisabled();
  await page.clock.fastForward(330001);await expect(page.locator("#ol-rally-discover")).toBeEnabled();await expect(page.locator("#ol-rally-status")).toContainText("Request timed out");
 });
 test("recorded page declares native discovery unavailable",async({page,fakeFor})=>{

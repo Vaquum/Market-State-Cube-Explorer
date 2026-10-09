@@ -70,7 +70,7 @@ test("six named icon toggles keep the left reference independent of the bottom p
   await expect(page.locator("#ol-panel-query")).toBeVisible();
   await expect(page.locator("#ol-reference-toggle")).toHaveAttribute("aria-pressed", "false");
   await page.locator("#ol-reference-toggle").focus();
-  for (const name of ["cells", "cases", "query", "compare"]) {
+  for (const name of ["rallies", "cells", "cases", "query", "compare"]) {
     await page.keyboard.press("Tab");
     await expect(page.locator(`#ol-tab-${name}`)).toBeFocused();
   }

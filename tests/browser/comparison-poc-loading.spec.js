@@ -82,7 +82,11 @@ for (const [profile, hash, period] of [["micro:mixed", MIXED, "1d"], ["recorded"
     await page.locator("#ol-lines").click(); await page.locator(`input[data-line="${period}"]`).check();
     await page.keyboard.press("Escape"); await probe.waitForQuiet({ quietMs: 300 });
     await page.locator("#ol-tab-cells").click();
-    await page.locator("#ol-table-body tr").first().getByRole("button", { name: "Add to comparison" }).click();
+    const add = page.locator("#ol-table-body tr").first().getByRole("button", { name: "Add to comparison" });
+    // Hover must settle: replacing the same row must not restart its pointerover redraw forever.
+    await add.hover();
+    await probe.waitForQuiet({ quietMs: 300, timeout: 5000 });
+    await add.click();
     await expect.poll(async () => (await saved(page))?.captures.length).toBe(1);
     await expect(picker(page).locator("option")).toHaveCount(2);
     const id = await picker(page).locator("option").nth(1).getAttribute("value");

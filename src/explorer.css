@@ -170,14 +170,23 @@
   color: var(--ol-ink);
   box-shadow: 0 1px 2px var(--ol-shadow);
 }
-/* One focus style everywhere, the canvas included (inset, as it fills its box). */
+/* Controls keep their focus outlines. Chart focus is named in the header, outside the plot. */
 #origo-lens :is(button, select, input, textarea, summary, [tabindex]):focus-visible {
   outline: 2px solid var(--ol-accent);
   outline-offset: 2px;
 }
 #origo-lens canvas#ol-canvas:focus-visible {
-  outline: 2px solid var(--ol-accent);
-  outline-offset: -2px;
+  outline: none;
+}
+#origo-lens .ol-chart-focus {
+  visibility: hidden;
+  color: var(--ol-ink);
+  font-size: var(--fs-s);
+  white-space: nowrap;
+  border-bottom: 2px solid var(--ol-accent);
+}
+#origo-lens .ol-chart:has(#ol-canvas:focus-visible) .ol-chart-focus {
+  visibility: visible;
 }
 #origo-lens select {
   appearance: none;

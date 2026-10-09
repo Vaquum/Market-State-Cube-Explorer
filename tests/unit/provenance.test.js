@@ -42,7 +42,7 @@ const STUB_TEXT = `  // @part 04-text
       extrapolated: "Model extrapolated beyond fitted levels",
       exactUnknown: "Exact fit time and method version are unknown",
       applicability: "Range-derived model applied to touched rows; not proven neutral at every level",
-      diagonalUse: "The diagonal chooser uses the same fitted model (ISO_A -1.06, n = 6 to 13)",
+      diagonalUse: "The diagonal chooser uses the same fitted model",
     }),
     vintage: "Replay on currently available history; original vintages not guaranteed",
   });

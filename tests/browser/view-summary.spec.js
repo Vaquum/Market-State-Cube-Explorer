@@ -65,7 +65,7 @@ test.describe("B53 the view summary", () => {
       if (field === "vintage" || field === "limit") continue;
       expect(view[field], `the view section has ${field}`).toBeTruthy();
     }
-    expect(view.replay.text, "the replay edge is named").toMatch(/^At 2026-09-24T06:00Z/);
+    expect(view.replay.text, "the replay edge is named, in the page's own time format").toMatch(/^At 24 Sep 06:00 UTC/);
     expect(view.dataCutoff.value, "and it is the cutoff of the data the page draws").toBe(String(Date.parse("2026-09-24T06:00:00Z")));
     expect(view.appearance.text).toContain("version 2");
     expect(view.appearance.text).toContain(P.AP.split("-")[0]);
@@ -79,7 +79,7 @@ test.describe("B53 the view summary", () => {
     expect(cells.policy.text, "the held scale is named").toMatch(/comparison|lock/i);
     expect(cells.mappingId.text).toMatch(/^[A-Za-z0-9_-]{16}/);
     for (const field of ["cohortCount", "fitThrough", "clipHighFinite", "clipLowFinite", "obsCutoff"]) expect(cells[field], `Cells: ${field}`).toBeTruthy();
-    expect(cells.fitThrough.text, "the fit cutoff is an instant").toMatch(/^\d{4}-\d\d-\d\dT/);
+    expect(cells.fitThrough.text, "the fit cutoff is an instant, in the page's time format").toMatch(/^\d{1,2} [A-Z][a-z]{2}( \d{4})? \d\d:\d\d\S* UTC$/);
     const rows = await fieldsOf(section("rows"));
     for (const field of ["rowPeriod", "rowSize", "rowQuality"]) {
       expect(rows[field], `Rows: ${field}`).toBeTruthy();

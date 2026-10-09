@@ -12,9 +12,9 @@
     { key: "volume", label: "Volume", group: "Activity", unit: "USDT" },
     { key: "trades", label: "Trades", group: "Activity", unit: "trades" },
     { key: "size", label: "Mean trade size", group: "Activity", unit: "USDT/trade" },
-    { key: "flow", label: "Taker-buy volume share", group: "Flow", unit: "share", share: true },
-    { key: "flowtrades", label: "Taker-buy trade share", group: "Flow", unit: "share", share: true },
-    { key: "delta", label: "Net taker volume", group: "Flow", unit: "USDT", signed: true },
+    { key: "flow", label: "Buyer-initiated share", group: "Flow", unit: "share", share: true },
+    { key: "flowtrades", label: "Buyer-initiated count share", group: "Flow", unit: "share", share: true },
+    { key: "delta", label: "Delta", group: "Flow", unit: "USDT", signed: true },
     { key: "path", label: "Path / price span", group: "Movement", unit: "row spans" },
     { key: "dwell", label: "Dwell share", group: "Movement", unit: "share", share: true },
     { key: "poc", label: "POC distance", group: "Price context", unit: "USDT" },
@@ -26,8 +26,11 @@
     ? value.toLocaleString("en-US", { maximumFractionDigits })
     : "—";
   const signed = (value, digits = 2) => (value > 0 ? "+" : value < 0 ? "−" : "") + number(Math.abs(value), digits);
+  // The page's own time formats, when it supplies them; ISO otherwise.
+  let display = null;
   function utc(value, exact = false) {
     if (!finite(value)) return "Unknown";
+    if (!exact && display) return display.when(Math.floor(value / 1000) * 1000);
     const date = new Date(value);
     if (!Number.isFinite(date.getTime())) return "Unknown";
     return exact ? date.toISOString() : date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
@@ -37,6 +40,7 @@
     if (!finite(t0) || !finite(t1)) return "Time unavailable";
     const start = utc(t0, true), end = utc(t1, true);
     if (start === "Unknown" || end === "Unknown") return "Time unavailable";
+    if (display) return display.range(t0, t1);
     if (compact && start.slice(0, 10) === end.slice(0, 10))
       return `${start.slice(5, 10)} ${start.slice(11, 19)}–${end.slice(11, 19)} UTC`;
     return `${utc(t0)}–${utc(t1)}`;
@@ -64,7 +68,8 @@
     if (detail.value == null) return { label: detail.label, value: detail.reason || "Not measured" };
     return detail;
   }
-  function create({ root, dispatch }) {
+  function create({ root, dispatch, time = null }) {
+    display = time;
     if (!root || typeof dispatch !== "function") throw new TypeError("A comparison root and dispatch function are required");
     const document = root.ownerDocument;
     let state = null, options = {}, currentAnalysis = null, copyText = null;
@@ -213,7 +218,7 @@
       setOptions("selectedMetric", metrics(analysis).map((metric) => ({ value: metric.key, label: metric.label })), model.selectedMetric || "volume");
       setOptions("reference", [{ value: "", label: "Set median" }, ...captures.map((capture) => ({ value: capture.id, label: captureName(capture) }))], model.reference);
       const usedBasis = analysis?.basis || "amount", unit = usedBasis === "intensity" ? " · intensity" : " · amount";
-      setOptions("sort", [{ value: "time", label: "Market time" }, { value: "added", label: "Collection order" }, { value: "volume", label: "Volume" + unit }, { value: "trades", label: "Trades" + unit }, { value: "delta", label: "Net taker volume" + unit }, { value: "intensity", label: "Volume intensity" }, { value: "size", label: "Mean trade size · USDT/trade" }, { value: "flow", label: "Taker-buy volume share · %" }, { value: "poc", label: "POC distance · USDT" }], model.sort?.key || "time");
+      setOptions("sort", [{ value: "time", label: "Market time" }, { value: "added", label: "Collection order" }, { value: "volume", label: "Volume" + unit }, { value: "trades", label: "Trades" + unit }, { value: "delta", label: "Delta" + unit }, { value: "intensity", label: "Volume intensity" }, { value: "size", label: "Mean trade size · USDT/trade" }, { value: "flow", label: "Buyer-initiated share · %" }, { value: "poc", label: "POC distance · USDT" }], model.sort?.key || "time");
       const direction = model.sort?.direction || (model.sort?.key === "time" || model.sort?.key === "added" || model.sort?.key === "poc" ? "asc" : "desc");
       q('[data-comparison-action="direction"]').textContent = direction === "asc" ? "Ascending ↑" : "Descending ↓";
       q('[data-comparison-action="direction"]').setAttribute("aria-label", `Sort ${direction === "asc" ? "ascending; switch to descending" : "descending; switch to ascending"}`);

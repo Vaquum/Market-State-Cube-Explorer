@@ -2055,6 +2055,11 @@
   text-align: right;
   overflow-wrap: anywhere;
 }
+/* A value the source cannot support reads as that state, muted; the reason is its title. */
+#origo-lens :is(.ol-cell-stat, .ol-cell-stat[data-primary], .ol-measure-companions) dd[data-typed] {
+  font-weight: 400;
+  color: var(--ol-muted);
+}
 #origo-lens .ol-core-details {
   color: var(--ol-muted);
   font-size: 14px;

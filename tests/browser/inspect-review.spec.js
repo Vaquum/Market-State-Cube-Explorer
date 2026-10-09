@@ -456,7 +456,7 @@ async function holdLens(page, probe, fakeFor, pane, lines = "") {
     await holdLens(page, probe, fakeFor, pane);
     const readout = page.locator("#ol-inspect-readout");
     // the finer cell the lens starts on has trades in an hour that is not over
-    await expect(readout, "a measured finer cell").toContainText("Taker buys");
+    await expect(readout, "a measured finer cell").toContainText("Buyer-initiated USDT");
     const finerId = await readout.getAttribute("data-readout");
     expect(finerId, "the pinned lens profile retains its canonical readout identity").toMatch(/^\d+:\d+:\d+:\d+$/);
     const [n, m, c, r] = finerId.split(":").map(Number);
@@ -474,7 +474,7 @@ async function holdLens(page, probe, fakeFor, pane, lines = "") {
     await page.keyboard.press("ArrowLeft");
     const text = await readout.textContent();
     expect(text, "an earlier column is over").not.toMatch(/Still open/);
-    if (/Taker buys/.test(text)) expect(text).toMatch(/Column\s*Complete/);
+    if (/Buyer-initiated USDT/.test(text)) expect(text).toMatch(/Column\s*Complete/);
     else expect(text).toContain("No trades in this finer cell");
   });
 

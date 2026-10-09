@@ -95,14 +95,14 @@ const D11 = {
   "model.extrapolated": "Model extrapolated beyond fitted levels",
   "model.exactUnknown": "Exact fit time and method version are unknown",
   "model.applicability": "Range-derived model applied to touched rows; not proven neutral at every level",
-  "model.diagonalUse": "The diagonal chooser uses the same fitted model (ISO_A -1.06, n = 6 to 13)",
+  "model.diagonalUse": "The diagonal chooser uses the same fitted model",
   "vintage": "Replay on currently available history; original vintages not guaranteed",
   "revision.replaced": "Provisional minutes up to {t} were replaced by the archived day",
   "revision.unknown": "Data was refreshed; revision status unknown",
   "dwell.coverage": "Covered to the end of the data; interior gaps are unobservable",
   "dwell.residual": "Unattributed covered time: {seconds}",
   "dwell.notMeasurable": "Not measurable: rectangle rows only",
-  "rank.approx": "Relative rank: 257-knot Type-7 quantile approximation, not an exact empirical midrank",
+  "rank.approx": "Relative rank: a quantile approximation, not an exact rank",
   "lock.incompatible.family": "different formula family",
   "lock.incompatible.basis": "amount and intensity are different bases",
   "lock.incompatible.signed": "signed and unsigned measures differ",
@@ -364,7 +364,7 @@ test("every key of D.11 exists in E.text with the exact English, and E.text has 
 test("the keys are the nested names of D.11: groups, no flat aliases, functions beside the groups", () => {
   assert.equal(E.text.exposure.short, "Short exposure");
   assert.equal(E.text.dwell.coverage, "Covered to the end of the data; interior gaps are unobservable");
-  assert.equal(E.text.rank.approx, "Relative rank: 257-knot Type-7 quantile approximation, not an exact empirical midrank");
+  assert.equal(E.text.rank.approx, "Relative rank: a quantile approximation, not an exact rank");
   assert.equal(E.text.model.extrapolated, "Model extrapolated beyond fitted levels");
   assert.equal(E.text.state.autoPausedLock, "Auto paused: comparison lock");
   assert.equal(E.text.note.cause.resolution, "resolution");

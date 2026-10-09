@@ -70,7 +70,7 @@
         row("Reference", `${fmt(event.reference_price)} USDT`), row("Return", `${fmt(event.return_bps)} bps`),
         row("Duration", `${fmt(event.duration_seconds)} s`), row("Max drawdown", `${fmt(event.max_drawdown)} USDT`),
         row("USDT volume", fmt(event.volume)), row("Trades", fmt(event.trade_count, 0)),
-        row("Taker-buy USDT", fmt(event.taker_buy_volume)),
+        row("Buyer-initiated USDT", fmt(event.taker_buy_volume)),
         row("Normalized delta", event.volume ? `${fmt(100 * (2 * event.taker_buy_volume - event.volume) / event.volume)}%` : "Unavailable"),
         row("Start · UTC", time(event.start_at_us)), row("End · UTC", time(event.end_at_us)), row("Confirmed · UTC", time(event.confirmed_at_us)));
       const p = projection.profile, total = p.reduce((sum, r) => sum + r.volume, 0);

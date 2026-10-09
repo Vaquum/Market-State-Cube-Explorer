@@ -277,7 +277,7 @@ test.describe("B40 the reference language: one hue and one stroke for a family, 
     expect(frame.rects.filter((r) => track(r) && r.alpha === 0.85 && r.fill === c.ink).length, "the taker-buy inset is drawn in the ink").toBeGreaterThan(0);
     expect(frame.rects.filter((r) => track(r) && (r.fill === c.positive || r.fill === c.negative)), "and no bar of the track is a signed colour").toEqual([]);
     await expect(page.locator("#ol-key-buyinset")).toBeVisible();
-    await expect(page.locator("#ol-key-buyinset")).toContainText("Taker-buy volume");
+    await expect(page.locator("#ol-key-buyinset")).toContainText("Buyer-initiated volume");
     expect(await page.locator('[data-stroke-role="buyinset"] canvas').count(), "the key is painted").toBe(1);
   });
 });

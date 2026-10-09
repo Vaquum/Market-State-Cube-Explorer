@@ -118,7 +118,7 @@ for (const theme of ["light", "dark"])
       expect([...seen].sort(), "both signs of a mixed day are marked").toEqual(expect.arrayContaining(["minus", "plus"]));
       // the key says how many signed cells were left unmarked, and where their sign is
       const text = await page.locator("#ol-key-sign-text").textContent(),
-        left = /(\d[\d,]*) cells under 12 px unmarked/.exec(text);
+        left = /(\d[\d,]*) cells? under 12 px unmarked/.exec(text);
       expect(left, `the key counts the cells it could not mark: "${text}"`).toBeTruthy();
       expect(Number(left[1].replace(/,/g, "")), "at least the short cells of this view").toBeGreaterThanOrEqual(small.length);
       // nothing else is drawn as a mark: as many marks as cells that carry one, to within the cells at the limit

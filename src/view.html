@@ -311,7 +311,7 @@
                 role="group"
                 aria-labelledby="ol-lines-periods-head"
               ></div>
-              <div class="ol-list-head" id="ol-lines-days-head">Since a day</div>
+              <div class="ol-list-head" id="ol-lines-days-head">Since a UTC day</div>
               <div
                 class="ol-lines-list"
                 id="ol-lines-days"
@@ -476,7 +476,7 @@
                 Visible range VWAP is one level over the time in view, across
                 all prices. It updates after time pan or zoom.
               </p>
-              <div class="ol-list-head" id="ol-lines-vdays-head">From a day</div>
+              <div class="ol-list-head" id="ol-lines-vdays-head">From a UTC day</div>
               <div
                 class="ol-lines-list"
                 id="ol-lines-vdays"
@@ -944,8 +944,8 @@
               hidden
             ></div>
           </div>
-          <div class="ol-background-controls" role="group" aria-label="Canvas background" id="ol-background-controls">
-          <span class="ol-background-label">Background</span>
+          <div class="ol-background-controls" role="group" aria-label="Rows" id="ol-background-controls">
+          <span class="ol-background-label">Rows</span>
           <div class="ol-group ol-mode-group">
             <button
               type="button"
@@ -985,7 +985,7 @@
               aria-expanded="false"
               aria-controls="ol-period-pop"
               aria-label="Rows' period: 90 days"
-              data-hint="The period for the canvas background, independent of canvas zoom; up to the latest data or the replay's edge"
+              data-hint="The period for Rows, independent of canvas zoom; up to the latest data or the replay's edge"
             >
               <svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true">
                 <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
@@ -1052,7 +1052,7 @@
           ><label title="Each column's value area: the rows around its POC that hold 70% of its volume"
             ><input type="checkbox" id="ol-area" />70% area</label
           ><label title="Column POCs that no later column in view has traded at"
-            ><input type="checkbox" id="ol-untested" />Untested</label
+            ><input type="checkbox" id="ol-untested" />Untested in view</label
           >
         </div>
         <span id="ol-candle-legend" class="ol-candle-legend" role="group" aria-label="Candle direction" hidden></span>
@@ -1341,12 +1341,12 @@
                   </th>
                   <th>
                     <button type="button" class="cursor-interaction" data-sort="buyvol" title="Sort by buy USDT; again to reverse">
-                      Taker-buy USDT
+                      Buyer-initiated USDT
                     </button>
                   </th>
                   <th>
                     <button type="button" class="cursor-interaction" data-sort="buytrades" title="Sort by buy trades; again to reverse">
-                      Taker-buy trades
+                      Buyer-initiated trades
                     </button>
                   </th>
                   <th class="ol-motion-col" hidden>
@@ -1559,7 +1559,7 @@
             >Inspect focus</span
           ><span id="ol-keys-scale" class="ol-keys-scale"></span
           ><span id="ol-key-buyinset" hidden
-            ><i class="ol-data-key ol-glyph" data-stroke-role="buyinset" aria-hidden="true"></i>Taker-buy volume (inset)</span
+            ><i class="ol-data-key ol-glyph" data-stroke-role="buyinset" aria-hidden="true"></i>Buyer-initiated volume (inset)</span
           ><span id="ol-key-sign" hidden
             ><i class="ol-data-key ol-glyph" data-stroke-role="sign" aria-hidden="true"></i
             ><span id="ol-key-sign-text">+ above, − below, ring at the midpoint</span></span
@@ -1701,10 +1701,10 @@
               <label>Trades</label><strong id="ol-count">—</strong>
             </div>
             <div class="ol-metric">
-              <label>Taker-buy USDT</label><strong id="ol-buyvol">—</strong>
+              <label>Buyer-initiated USDT</label><strong id="ol-buyvol">—</strong>
             </div>
             <div class="ol-metric">
-              <label>Taker-buy trades</label><strong id="ol-buycount">—</strong>
+              <label>Buyer-initiated trades</label><strong id="ol-buycount">—</strong>
             </div>
             <div class="ol-metric" id="ol-path-metric" hidden>
               <label>Path · USDT</label><strong id="ol-path">—</strong>
@@ -1718,7 +1718,7 @@
             <div class="ol-row ol-profile-primary"><span>POC centre</span><span id="ol-poc-value">—</span></div>
             <div class="ol-row"><span>Buy POC centre</span><span id="ol-buypoc-value">—</span></div>
             <div class="ol-row"><span>Composite 70%</span><span id="ol-va-value">—</span></div>
-            <div class="ol-row"><span>Buy share · volume</span><span id="ol-share">—</span></div>
+            <div class="ol-row"><span>Buyer-initiated share</span><span id="ol-share">—</span></div>
           </section>
           <div class="ol-metric">
             <label>Delta · taker-buy minus taker-sell USDT</label><strong id="ol-delta-value">—</strong>

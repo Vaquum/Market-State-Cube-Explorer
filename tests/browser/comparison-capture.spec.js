@@ -133,7 +133,7 @@ test("capture uses the current replay portion; backward gating hides DOM and cop
   await expect(volume).toHaveAttribute("data-state", "hidden"); expect(await volume.getAttribute("data-canonical")).toBeNull();
   await expect(volume).toContainText("Unavailable in replay");
   const hidden = await copyFocused(page); expect(hidden).toContain("Volume: Unavailable in replay");
-  expect(hidden).not.toContain("Volume: 100.5 usdt"); expect(hidden).not.toContain("Taker buys: 100.5 usdt");
+  expect(hidden).not.toContain("Volume: 100.5 usdt"); expect(hidden).not.toContain("Buyer-initiated USDT: 100.5 usdt");
   expect((await saved(page)).captures).toEqual([capture]);
   await page.evaluate((hash) => { location.hash = hash; }, replay);
   await expect(volume).toHaveAttribute("data-canonical", "100.5");
@@ -450,7 +450,7 @@ for (const mode of ["flow", "volume"]) {
     if (mode === "flow") expect(capture.originatingObservation.result).toEqual(history.slots.at(-1).result);
     else expect(capture.originatingObservation.result).toEqual({ tag: "finite", value: 0 });
     await clipboard(page);
-    const copied = await copyFocused(page), label = mode === "flow" ? "Taker-buy volume share" : "Net taker imbalance";
+    const copied = await copyFocused(page), label = mode === "flow" ? "Buyer-initiated share" : "Net taker imbalance";
     const line = copied.split("\n").find((line) => line.startsWith(label + " frozen history:"));
     expect(line).toMatch(mode === "flow" ? /; total volume is 0; total volume is 0$/ : /; undefined; undefined$/);
     const details = page.locator(`${WORK} .ol-comparison-details`); await details.locator("summary").click();

@@ -872,7 +872,7 @@
       extrapolated: "Model extrapolated beyond fitted levels",
       exactUnknown: "Exact fit time and method version are unknown",
       applicability: "Range-derived model applied to touched rows; not proven neutral at every level",
-      diagonalUse: "The diagonal chooser uses the same fitted model (ISO_A -1.06, n = 6 to 13)",
+      diagonalUse: "The diagonal chooser uses the same fitted model",
     },
     vintage: "Replay on currently available history; original vintages not guaranteed",
     revision: {
@@ -885,7 +885,7 @@
       notMeasurable: "Not measurable: rectangle rows only",
     },
     rank: {
-      approx: "Relative rank: 257-knot Type-7 quantile approximation, not an exact empirical midrank",
+      approx: "Relative rank: a quantile approximation, not an exact rank",
     },
     lock: {
       incompatible: {

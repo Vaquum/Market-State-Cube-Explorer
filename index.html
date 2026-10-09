@@ -4536,7 +4536,7 @@
         </div>
         <div class="ol-marks" role="group" aria-label="Overlays">
           <label title="Each column's point of control, and the profile's (P and B) · Shift+P"
-            ><input type="checkbox" id="ol-poc" checked />Column POCs</label
+            ><input type="checkbox" id="ol-poc" />Column POCs</label
           ><label title="Each column's value area: the rows around its POC that hold 70% of its volume"
             ><input type="checkbox" id="ol-area" />70% area</label
           ><label title="Column POCs that no later column in view has traded at"
@@ -5709,6 +5709,17 @@
   // running state usable. This file cannot import the encoding module (it loads before it), so the few
   // rules it needs about versions are written here, in their smallest form.
   const prefix = "market-state-cube-explorer:";
+  // Whether this browser had used the explorer before this page: its keys were in storage when the page
+  // loaded, before anything here wrote one. A browser without any has nothing a version change altered.
+  const returning = (() => {
+    try {
+      const area = window.localStorage;
+      for (let i = 0; i < area.length; i++) if (String(area.key(i)).startsWith(prefix)) return true;
+    } catch {
+      /* storage that cannot be read holds nothing from before */
+    }
+    return false;
+  })();
   // The one version this build writes (visualVersion, DR-14). A stored payload without it is legacy and
   // is still read; one that names a version other than this is a newer build's and is never overwritten.
   const VISUAL_VERSION = 2;
@@ -6480,6 +6491,7 @@
     saveScales,
     notice: () => read("notice:v2"),
     saveNotice,
+    returning: () => returning,
   };
 })();
 </script>
@@ -16622,16 +16634,14 @@
       param: "marks",
       fields: ["poc", "area", "untested"],
       legacy: true,
-      defaults: { poc: true, area: false, untested: false },
+      // Column POCs are off by default: an address without marks has none ("none" still reads as none).
+      defaults: { poc: false, area: false, untested: false },
       read: (text) => {
-        const marks = String(text === undefined ? "poc" : text).split(",");
+        const marks = String(text === undefined ? "" : text).split(",");
         return { poc: marks.indexOf("poc") >= 0, area: marks.indexOf("area") >= 0, untested: marks.indexOf("untested") >= 0 };
       },
-      check: (raw) => ({ poc: raw.poc !== false, area: raw.area === true, untested: raw.untested === true }),
-      write: (view) => {
-        const marks = ["poc", "area", "untested"].filter((k) => (k === "poc" ? view.poc !== false : view[k] === true)).join(",");
-        return marks === "poc" ? null : marks || "none";
-      },
+      check: (raw) => ({ poc: raw.poc === true, area: raw.area === true, untested: raw.untested === true }),
+      write: (view) => ["poc", "area", "untested"].filter((k) => view[k] === true).join(",") || null,
     },
     {
       id: "lines",
@@ -19780,7 +19790,7 @@
       mode: "volume",
       // The pane under the prices: Same as cells, or a measure of its own.
       pane: "cells",
-      poc: true,
+      poc: false,
       area: false,
       untested: false,
       // The row underlay behind the cells (Rows, U), over a period of its own.
@@ -22665,8 +22675,8 @@
   // object with the view as raw state. The workspace always comes back. The view comes back only at a
   // bare root (`skipView` false): a link owns the view, so the stored one is neither applied nor migrated
   // nor reported. At a bare root a stored version-2 view restores silently, a stored legacy one restores
-  // with the legacy notice, and with nothing usable stored the default view shows with the one-time
-  // version-change notice (DR-14).
+  // with the legacy notice, and with nothing usable stored the default view shows, with the one-time
+  // version-change notice only in a browser that used the explorer before (DR-14).
   function restore(x, { skipView = false } = {}) {
     if (!x || (x.version !== 4 && x.version !== 5)) {
       if (!skipView) noteFirstVisit();
@@ -26563,7 +26573,10 @@
       `${Object.keys(sources).length}/${Object.keys(PACK.blocks).length} ${PACK.live ? "live cube" : "recorded"} blocks ready · ${when(displaySource().b0)} onward`;
     el("cutoff").textContent = `Cutoff ${when(CUT)} UTC`;
     // A recorded page names its day; a live one says how fresh it is instead.
-    el("snapshot").textContent = PACK.live ? "" : day(CUT);
+    // The state pill says when the chart is a replay, and to when; otherwise live or recorded.
+    el("market").textContent = S.replay ? "REPLAY" : PACK.live ? "LIVE" : "RECORDED";
+    el("fresh").hidden = !PACK.live || S.replay;
+    el("snapshot").textContent = S.replay ? when(activeCutoff()) : PACK.live ? "" : day(CUT);
     // Latest appears when the cutoff is out of view, beside the price profile.
     el("latest").hidden = S.replay || (S.tA < CUT && S.tB >= CUT);
     el("latest").style.right =
@@ -39068,8 +39081,10 @@
         code: "import-rejected",
         text: E.text.fill(PERSIST_TEXT.storedKept, { what: "view", reason: stored.reason }),
       });
-    if (state?.notice?.().status === "ok" || !scaleRt.notices.mark("version-default")) return;
-    postNotice({ code: "version-default" });
+    if (state?.notice?.().status === "ok") return;
+    // Only a browser that used the explorer before has seen what changed; a new one owes no notice, and
+    // the flag is written either way so a later visit does not raise it.
+    if (state?.returning?.() && scaleRt.notices.mark("version-default")) postNotice({ code: "version-default" });
     state?.saveNotice?.();
   }
   // The browser-wide cache of the live calibrations (scales:v1) is read ONCE, here, when the page loads,

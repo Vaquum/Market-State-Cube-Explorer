@@ -411,8 +411,20 @@
 #origo-lens .ol-background-controls .ol-period-group {
   border-left: 1px solid var(--ol-line);
 }
+/* Cells and Columns name themselves in the chart header, as the Rows group does. */
+#origo-lens :is(#ol-mode, #ol-pane) > .ol-label {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ol-muted);
+}
 @container (max-width: 1100px) {
   #origo-lens .ol-background-label { display: none; }
+  #origo-lens .ol-surfaces :is(#ol-mode, #ol-pane) > .ol-label { display: none; }
 }
 @container (max-width: 600px) {
   #origo-lens .ol-background-controls { flex-wrap: wrap; }
@@ -1642,7 +1654,7 @@
 /* The replay transport, at the top of the plot on the replay line, and the
    lens's own controls at its top left while the lens is the tool; both placed
    by the page, so the top bar never changes as modes do. */
-#origo-lens :is(.ol-transport, .ol-lensbar) {
+#origo-lens :is(.ol-transport, .ol-lensbar, .ol-drawing-toolbar) {
   position: absolute;
   top: calc(var(--sp-3) + var(--sp-2));
   z-index: 3;
@@ -1942,10 +1954,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The footer is the key. Its diagnostics (cell size in px, blocks read, cutoff) stay in the page,
+   not on it: the LIVE pill names the data's reach and the resolution plane the cell size. */
 #origo-lens .ol-status-meta {
-  display: flex;
-  gap: var(--sp-3);
-  margin-left: auto;
+  display: none;
+}
+/* With many line families on, the keys scroll instead of being cut off at the edge. */
+#origo-lens .ol-status-keys {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 #origo-lens .ol-data-key {
   display: inline-block;
@@ -3032,14 +3051,11 @@
 #origo-lens .ol-candle-legend canvas { width: 16px; height: 18px; }
 
 /* Authored trend lines use the chart's controls, Lines inventory and dialog surfaces. */
+/* On the plot at its top left while Trend is the tool, as the lens's controls are, so the plot never moves. */
 #origo-lens .ol-drawing-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  justify-content: flex-start;
   gap: var(--sp-2);
-  padding: var(--sp-1) var(--gutter);
-  border-bottom: 1px solid var(--ol-line);
-  background: var(--ol-surface);
+  padding: var(--sp-1) var(--sp-2);
   font-size: var(--fs-s);
 }
 #origo-lens :is(.ol-drawing-toolbar, .ol-drawing-sheet-group)[hidden] { display: none; }
@@ -4372,6 +4388,7 @@
                 <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
                 <path d="M2.5 8h11M8 2.5v11" />
               </svg>
+              <span class="ol-label">Cells:</span>
               <span id="ol-mode-text">Volume</span>
               <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
@@ -4544,16 +4561,6 @@
           </svg>
         </button>
       </div>
-      <div id="ol-drawing-toolbar" class="ol-drawing-toolbar" data-drawing-ui role="group" aria-label="Active drawing" hidden>
-        <i id="ol-drawing-toolbar-swatch" class="ol-drawing-swatch" aria-hidden="true"></i>
-        <span id="ol-drawing-toolbar-name" class="ol-drawing-toolbar-name"></span>
-        <span id="ol-drawing-toolbar-status" class="ol-drawing-status"></span>
-        <button type="button" id="ol-drawing-edit" class="ol-action cursor-interaction">Edit</button>
-        <div class="ol-group ol-drawing-more-group">
-          <button type="button" id="ol-drawing-more" class="ol-action cursor-interaction" aria-haspopup="menu" aria-expanded="false" aria-controls="ol-drawing-actions">More</button>
-          <div id="ol-drawing-actions" class="ol-pop ol-pop-end ol-menu ol-drawing-actions" data-temporary="popover" data-drawing-ui role="menu" aria-label="Drawing actions" hidden></div>
-        </div>
-      </div>
       <p id="ol-drawing-replay-status" class="ol-drawing-replay-note" role="status" aria-live="polite" hidden></p>
       <div class="ol-plot">
         <canvas
@@ -4691,6 +4698,16 @@
             <path d="M3 8h8M8 4.5 11.5 8 8 11.5M13.5 3.5v9" />
           </svg>
         </button>
+        <div id="ol-drawing-toolbar" class="ol-drawing-toolbar" data-drawing-ui role="group" aria-label="Active drawing" hidden>
+          <i id="ol-drawing-toolbar-swatch" class="ol-drawing-swatch" aria-hidden="true"></i>
+          <span id="ol-drawing-toolbar-name" class="ol-drawing-toolbar-name"></span>
+          <span id="ol-drawing-toolbar-status" class="ol-drawing-status"></span>
+          <button type="button" id="ol-drawing-edit" class="ol-action cursor-interaction">Edit</button>
+          <div class="ol-group ol-drawing-more-group">
+            <button type="button" id="ol-drawing-more" class="ol-action cursor-interaction" aria-haspopup="menu" aria-expanded="false" aria-controls="ol-drawing-actions">More</button>
+            <div id="ol-drawing-actions" class="ol-pop ol-pop-end ol-menu ol-drawing-actions" data-temporary="popover" data-drawing-ui role="menu" aria-label="Drawing actions" hidden></div>
+          </div>
+        </div>
       </div>
       <div class="ol-drawer" id="ol-drawer">
         <div
@@ -21896,12 +21913,22 @@
       labelsTaken.push([right - el("latest").offsetWidth, 16, right, 16 + el("latest").offsetHeight]);
     }
     // The lens's controls sit at the plot's top left while it is the tool.
-    let lensRight = 0;
+    let lensRight = 0, leftHeight = 0;
     if (S.lens || inspect.lens !== null) {
       const bar = el("lensbar");
       bar.style.left = G.x + 4 + "px";
       lensRight = G.x + 4 + bar.offsetWidth;
+      leftHeight = bar.offsetHeight;
       labelsTaken.push([G.x + 4, 16, lensRight, 20 + bar.offsetHeight]);
+    }
+    // Trend's controls take the same place while it is the tool.
+    if (!el("drawing-toolbar").hidden) {
+      const bar = el("drawing-toolbar");
+      bar.style.left = G.x + 4 + "px";
+      bar.style.maxWidth = Math.max(0, G.w - 8) + "px";
+      lensRight = Math.max(lensRight, G.x + 4 + bar.offsetWidth);
+      leftHeight = Math.max(leftHeight, bar.offsetHeight);
+      labelsTaken.push([G.x + 4, 16, G.x + 4 + bar.offsetWidth, 20 + bar.offsetHeight]);
     }
     if (S.replay) {
       // The transport stays inside the plot: where one row is too wide for it
@@ -21912,7 +21939,7 @@
       const w = bar.offsetWidth,
         beside = lensRight ? lensRight + 8 : G.x + 4,
         room = beside <= G.x + G.w - w - 4,
-        top = room ? 20 : 26 + el("lensbar").offsetHeight,
+        top = room ? 20 : 26 + leftHeight,
         left = clamp(G.X(cut) - w / 2, room ? beside : G.x + 4, G.x + G.w - w - 4);
       bar.style.left = left + "px";
       bar.style.top = top + "px";
@@ -21963,18 +21990,18 @@
     ctx.restore();
     if (S.mode !== "candles") markings(shown, cut);
     occlusionPlan(cut);
+    // The continuation boxes go under the reference lines, so the lines' tags stay readable over them.
+    const coneEvidence = S.tab === "evidence" ? settledEvidence() : null;
+    if (coneEvidence) drawCone(coneEvidence);
     drawClock(cut);
     drawLines(cut);
     occlusionNotice();
     referenceInventoryCommit();
     if (S.tab === "evidence") {
-      const ev = settledEvidence();
+      const ev = coneEvidence;
       // Busy until a result for this view is up: the panel may still show the last one.
       el("evidence").setAttribute("aria-busy", String(!ev || ev !== evidence.ready || Boolean(ev.loading)));
-      if (ev) {
-        drawCone(ev);
-        evidenceUI(ev);
-      }
+      if (ev) evidenceUI(ev);
     } else if (S.drawerOpen && S.drawer === "cases") {
       const ev = settledEvidence();
       if (ev) evidenceCases(ev);
@@ -28812,8 +28839,10 @@
     const selected = steps.slice(1).flatMap(entry => [...entry.group.querySelectorAll('[aria-checked="true"]')])
       .map(b => b.querySelector(".ol-item-text > span")?.textContent).filter(Boolean),
       datasetName = id === "mode" ? MODE_NAMES[S.mode] : id === "pane" ? (S.pane.startsWith("rsi") ? "RSI 14" : PANE_INFO[S.pane].name) : ROWS_INFO[S.rows].name;
-    header.append(uiEl("div", "ol-flow-caption", `${name} · Step ${at + 1} of ${steps.length}`), progress,
+    // A menu with one step is a plain list: no step count and no stepper.
+    if (steps.length > 1) header.append(uiEl("div", "ol-flow-caption", `${name} · Step ${at + 1} of ${steps.length}`), progress,
       uiEl("div", "ol-flow-summary", [datasetName, ...selected].join(" · ")));
+    else header.append(uiEl("div", "ol-flow-caption", name));
     const heading = uiEl("div", "ol-flow-title", step.title);
     heading.id = `ol-${id}-step-title`;
     body.setAttribute("role", "group");
@@ -36667,18 +36696,24 @@
     host.dataset.study = e.error ? "unavailable" : e.provenance?.sourceDigest ?? "pending";
     const title = document.createElement("p"); title.textContent = "Approximate pointwise 95% estimation intervals · fixed anchor thresholds"; host.append(title);
     // Each outcome's intervals sit in its own row, under the Matching, All and Diff columns they qualify.
-    for (const kind of ["up", "flat", "down"]) el("label-" + kind).closest("button").querySelector(".ol-outcome-interval")?.remove();
+    for (const kind of ["up", "flat", "down"]) { const button = el("label-" + kind).closest("button"); button.querySelector(".ol-outcome-interval")?.remove(); button.removeAttribute("aria-describedby"); }
     if (!e.uncertainty) { host.append(document.createTextNode(e.error ?? "Computing intervals…")); return; }
     const withheld = new Set();
     for (const kind of ["up", "flat", "down"]) {
-      const line = document.createElement("span"); line.className = "ol-outcome-interval";
-      for (const component of ["conditional", "baseline", "difference"]) {
+      const line = document.createElement("span"); line.className = "ol-outcome-interval"; line.id = `ol-interval-${kind}`;
+      const spoken = [];
+      for (const [component, label] of [["conditional", "Matching"], ["baseline", "All"], ["difference", "Difference"]]) {
         const record = e.uncertainty.intervals[kind][component], span = document.createElement("span"), result = record.result;
         span.dataset.component = component; span.dataset.direction = kind; span.dataset.canonical = JSON.stringify(result);
         if (result.tag !== "finite") withheld.add(result.reason);
         span.textContent = result.tag === "finite" ? result.value.map((v) => v.toFixed(2).replace("-", "−")).join(" to ") + (component === "difference" ? " pp" : "%") : "—"; line.append(span);
+        spoken.push(`${label} ${result.tag === "finite" ? span.textContent : "withheld"}`);
       }
+      // The outcome button is named by its own label; the intervals are its description, so they are heard too.
+      line.setAttribute("aria-label", `95% intervals: ${spoken.join(", ")}`);
+      const button = el("label-" + kind).closest("button");
       el("label-" + kind).closest(".ol-outcome").after(line);
+      button.setAttribute("aria-describedby", line.id);
     }
     // A withheld interval says why once, here, rather than in every cell of the rows.
     if (withheld.size) host.append(Object.assign(document.createElement("p"), { textContent: [...withheld].join("; ") }));
@@ -42377,6 +42412,8 @@
   function comparisonOpenMenu(event,target) {
     const capture=comparisonCapture(target);if(!capture)return;
     event.preventDefault();comparisonCloseMenu();closePop();
+    // The menu replaces the hover card at the pointer; the card does not sit under it.
+    hover=null;el("tip").hidden=true;
     const node=document.createElement("div");node.id="ol-cell-menu";node.className="ol-pop ol-cell-menu";node.setAttribute("role","menu");node.setAttribute("aria-label","Cell actions");
     comparisonMenu={node,owner:document.activeElement,target,capture,fingerprint:comparisonFingerprint(capture)};
     const existing=comparisonModel.captures.some(c=>c.id===capture.id);

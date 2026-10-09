@@ -394,8 +394,20 @@
 #origo-lens .ol-background-controls .ol-period-group {
   border-left: 1px solid var(--ol-line);
 }
+/* Cells and Columns name themselves in the chart header, as the Rows group does. */
+#origo-lens :is(#ol-mode, #ol-pane) > .ol-label {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ol-muted);
+}
 @container (max-width: 1100px) {
   #origo-lens .ol-background-label { display: none; }
+  #origo-lens .ol-surfaces :is(#ol-mode, #ol-pane) > .ol-label { display: none; }
 }
 @container (max-width: 600px) {
   #origo-lens .ol-background-controls { flex-wrap: wrap; }
@@ -1625,7 +1637,7 @@
 /* The replay transport, at the top of the plot on the replay line, and the
    lens's own controls at its top left while the lens is the tool; both placed
    by the page, so the top bar never changes as modes do. */
-#origo-lens :is(.ol-transport, .ol-lensbar) {
+#origo-lens :is(.ol-transport, .ol-lensbar, .ol-drawing-toolbar) {
   position: absolute;
   top: calc(var(--sp-3) + var(--sp-2));
   z-index: 3;
@@ -1925,10 +1937,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The footer is the key. Its diagnostics (cell size in px, blocks read, cutoff) stay in the page,
+   not on it: the LIVE pill names the data's reach and the resolution plane the cell size. */
 #origo-lens .ol-status-meta {
-  display: flex;
-  gap: var(--sp-3);
-  margin-left: auto;
+  display: none;
+}
+/* With many line families on, the keys scroll instead of being cut off at the edge. */
+#origo-lens .ol-status-keys {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 #origo-lens .ol-data-key {
   display: inline-block;
@@ -3015,14 +3034,11 @@
 #origo-lens .ol-candle-legend canvas { width: 16px; height: 18px; }
 
 /* Authored trend lines use the chart's controls, Lines inventory and dialog surfaces. */
+/* On the plot at its top left while Trend is the tool, as the lens's controls are, so the plot never moves. */
 #origo-lens .ol-drawing-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  justify-content: flex-start;
   gap: var(--sp-2);
-  padding: var(--sp-1) var(--gutter);
-  border-bottom: 1px solid var(--ol-line);
-  background: var(--ol-surface);
+  padding: var(--sp-1) var(--sp-2);
   font-size: var(--fs-s);
 }
 #origo-lens :is(.ol-drawing-toolbar, .ol-drawing-sheet-group)[hidden] { display: none; }

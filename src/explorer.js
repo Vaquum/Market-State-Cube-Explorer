@@ -2293,12 +2293,22 @@
       labelsTaken.push([right - el("latest").offsetWidth, 16, right, 16 + el("latest").offsetHeight]);
     }
     // The lens's controls sit at the plot's top left while it is the tool.
-    let lensRight = 0;
+    let lensRight = 0, leftHeight = 0;
     if (S.lens || inspect.lens !== null) {
       const bar = el("lensbar");
       bar.style.left = G.x + 4 + "px";
       lensRight = G.x + 4 + bar.offsetWidth;
+      leftHeight = bar.offsetHeight;
       labelsTaken.push([G.x + 4, 16, lensRight, 20 + bar.offsetHeight]);
+    }
+    // Trend's controls take the same place while it is the tool.
+    if (!el("drawing-toolbar").hidden) {
+      const bar = el("drawing-toolbar");
+      bar.style.left = G.x + 4 + "px";
+      bar.style.maxWidth = Math.max(0, G.w - 8) + "px";
+      lensRight = Math.max(lensRight, G.x + 4 + bar.offsetWidth);
+      leftHeight = Math.max(leftHeight, bar.offsetHeight);
+      labelsTaken.push([G.x + 4, 16, G.x + 4 + bar.offsetWidth, 20 + bar.offsetHeight]);
     }
     if (S.replay) {
       // The transport stays inside the plot: where one row is too wide for it
@@ -2309,7 +2319,7 @@
       const w = bar.offsetWidth,
         beside = lensRight ? lensRight + 8 : G.x + 4,
         room = beside <= G.x + G.w - w - 4,
-        top = room ? 20 : 26 + el("lensbar").offsetHeight,
+        top = room ? 20 : 26 + leftHeight,
         left = clamp(G.X(cut) - w / 2, room ? beside : G.x + 4, G.x + G.w - w - 4);
       bar.style.left = left + "px";
       bar.style.top = top + "px";
@@ -2360,18 +2370,18 @@
     ctx.restore();
     if (S.mode !== "candles") markings(shown, cut);
     occlusionPlan(cut);
+    // The continuation boxes go under the reference lines, so the lines' tags stay readable over them.
+    const coneEvidence = S.tab === "evidence" ? settledEvidence() : null;
+    if (coneEvidence) drawCone(coneEvidence);
     drawClock(cut);
     drawLines(cut);
     occlusionNotice();
     referenceInventoryCommit();
     if (S.tab === "evidence") {
-      const ev = settledEvidence();
+      const ev = coneEvidence;
       // Busy until a result for this view is up: the panel may still show the last one.
       el("evidence").setAttribute("aria-busy", String(!ev || ev !== evidence.ready || Boolean(ev.loading)));
-      if (ev) {
-        drawCone(ev);
-        evidenceUI(ev);
-      }
+      if (ev) evidenceUI(ev);
     } else if (S.drawerOpen && S.drawer === "cases") {
       const ev = settledEvidence();
       if (ev) evidenceCases(ev);
@@ -9209,8 +9219,10 @@
     const selected = steps.slice(1).flatMap(entry => [...entry.group.querySelectorAll('[aria-checked="true"]')])
       .map(b => b.querySelector(".ol-item-text > span")?.textContent).filter(Boolean),
       datasetName = id === "mode" ? MODE_NAMES[S.mode] : id === "pane" ? (S.pane.startsWith("rsi") ? "RSI 14" : PANE_INFO[S.pane].name) : ROWS_INFO[S.rows].name;
-    header.append(uiEl("div", "ol-flow-caption", `${name} · Step ${at + 1} of ${steps.length}`), progress,
+    // A menu with one step is a plain list: no step count and no stepper.
+    if (steps.length > 1) header.append(uiEl("div", "ol-flow-caption", `${name} · Step ${at + 1} of ${steps.length}`), progress,
       uiEl("div", "ol-flow-summary", [datasetName, ...selected].join(" · ")));
+    else header.append(uiEl("div", "ol-flow-caption", name));
     const heading = uiEl("div", "ol-flow-title", step.title);
     heading.id = `ol-${id}-step-title`;
     body.setAttribute("role", "group");
@@ -17064,18 +17076,24 @@
     host.dataset.study = e.error ? "unavailable" : e.provenance?.sourceDigest ?? "pending";
     const title = document.createElement("p"); title.textContent = "Approximate pointwise 95% estimation intervals · fixed anchor thresholds"; host.append(title);
     // Each outcome's intervals sit in its own row, under the Matching, All and Diff columns they qualify.
-    for (const kind of ["up", "flat", "down"]) el("label-" + kind).closest("button").querySelector(".ol-outcome-interval")?.remove();
+    for (const kind of ["up", "flat", "down"]) { const button = el("label-" + kind).closest("button"); button.querySelector(".ol-outcome-interval")?.remove(); button.removeAttribute("aria-describedby"); }
     if (!e.uncertainty) { host.append(document.createTextNode(e.error ?? "Computing intervals…")); return; }
     const withheld = new Set();
     for (const kind of ["up", "flat", "down"]) {
-      const line = document.createElement("span"); line.className = "ol-outcome-interval";
-      for (const component of ["conditional", "baseline", "difference"]) {
+      const line = document.createElement("span"); line.className = "ol-outcome-interval"; line.id = `ol-interval-${kind}`;
+      const spoken = [];
+      for (const [component, label] of [["conditional", "Matching"], ["baseline", "All"], ["difference", "Difference"]]) {
         const record = e.uncertainty.intervals[kind][component], span = document.createElement("span"), result = record.result;
         span.dataset.component = component; span.dataset.direction = kind; span.dataset.canonical = JSON.stringify(result);
         if (result.tag !== "finite") withheld.add(result.reason);
         span.textContent = result.tag === "finite" ? result.value.map((v) => v.toFixed(2).replace("-", "−")).join(" to ") + (component === "difference" ? " pp" : "%") : "—"; line.append(span);
+        spoken.push(`${label} ${result.tag === "finite" ? span.textContent : "withheld"}`);
       }
+      // The outcome button is named by its own label; the intervals are its description, so they are heard too.
+      line.setAttribute("aria-label", `95% intervals: ${spoken.join(", ")}`);
+      const button = el("label-" + kind).closest("button");
       el("label-" + kind).closest(".ol-outcome").after(line);
+      button.setAttribute("aria-describedby", line.id);
     }
     // A withheld interval says why once, here, rather than in every cell of the rows.
     if (withheld.size) host.append(Object.assign(document.createElement("p"), { textContent: [...withheld].join("; ") }));
@@ -22774,6 +22792,8 @@
   function comparisonOpenMenu(event,target) {
     const capture=comparisonCapture(target);if(!capture)return;
     event.preventDefault();comparisonCloseMenu();closePop();
+    // The menu replaces the hover card at the pointer; the card does not sit under it.
+    hover=null;el("tip").hidden=true;
     const node=document.createElement("div");node.id="ol-cell-menu";node.className="ol-pop ol-cell-menu";node.setAttribute("role","menu");node.setAttribute("aria-label","Cell actions");
     comparisonMenu={node,owner:document.activeElement,target,capture,fingerprint:comparisonFingerprint(capture)};
     const existing=comparisonModel.captures.some(c=>c.id===capture.id);

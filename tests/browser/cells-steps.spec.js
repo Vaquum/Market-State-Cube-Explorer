@@ -90,7 +90,9 @@ test("fixed scales skip Transform and Basis, geometry skips all scale steps, and
   await menu.locator('[data-mode="geometry"]').click();
   await expect(menu).toBeHidden();
   await page.locator("#ol-mode").click();
-  await expect(menu.locator("[data-mode-step]")).toHaveCount(1);
+  // Geometry has one step: the menu is a plain list, without a stepper.
+  await expect(menu).toHaveAttribute("data-step", "dataset");
+  await expect(menu.locator("[data-mode-step]")).toHaveCount(0);
   await page.keyboard.press("m");
   await expect(page.locator("#ol-mode-text")).toHaveText("Candles");
   await expect(menu.locator('[data-mode="geometry"]')).toBeFocused();

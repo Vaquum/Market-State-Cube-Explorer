@@ -901,6 +901,7 @@
                 <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
                 <path d="M2.5 8h11M8 2.5v11" />
               </svg>
+              <span class="ol-label">Cells:</span>
               <span id="ol-mode-text">Volume</span>
               <svg class="ol-icon ol-caret" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
@@ -1073,16 +1074,6 @@
           </svg>
         </button>
       </div>
-      <div id="ol-drawing-toolbar" class="ol-drawing-toolbar" data-drawing-ui role="group" aria-label="Active drawing" hidden>
-        <i id="ol-drawing-toolbar-swatch" class="ol-drawing-swatch" aria-hidden="true"></i>
-        <span id="ol-drawing-toolbar-name" class="ol-drawing-toolbar-name"></span>
-        <span id="ol-drawing-toolbar-status" class="ol-drawing-status"></span>
-        <button type="button" id="ol-drawing-edit" class="ol-action cursor-interaction">Edit</button>
-        <div class="ol-group ol-drawing-more-group">
-          <button type="button" id="ol-drawing-more" class="ol-action cursor-interaction" aria-haspopup="menu" aria-expanded="false" aria-controls="ol-drawing-actions">More</button>
-          <div id="ol-drawing-actions" class="ol-pop ol-pop-end ol-menu ol-drawing-actions" data-temporary="popover" data-drawing-ui role="menu" aria-label="Drawing actions" hidden></div>
-        </div>
-      </div>
       <p id="ol-drawing-replay-status" class="ol-drawing-replay-note" role="status" aria-live="polite" hidden></p>
       <div class="ol-plot">
         <canvas
@@ -1220,6 +1211,16 @@
             <path d="M3 8h8M8 4.5 11.5 8 8 11.5M13.5 3.5v9" />
           </svg>
         </button>
+        <div id="ol-drawing-toolbar" class="ol-drawing-toolbar" data-drawing-ui role="group" aria-label="Active drawing" hidden>
+          <i id="ol-drawing-toolbar-swatch" class="ol-drawing-swatch" aria-hidden="true"></i>
+          <span id="ol-drawing-toolbar-name" class="ol-drawing-toolbar-name"></span>
+          <span id="ol-drawing-toolbar-status" class="ol-drawing-status"></span>
+          <button type="button" id="ol-drawing-edit" class="ol-action cursor-interaction">Edit</button>
+          <div class="ol-group ol-drawing-more-group">
+            <button type="button" id="ol-drawing-more" class="ol-action cursor-interaction" aria-haspopup="menu" aria-expanded="false" aria-controls="ol-drawing-actions">More</button>
+            <div id="ol-drawing-actions" class="ol-pop ol-pop-end ol-menu ol-drawing-actions" data-temporary="popover" data-drawing-ui role="menu" aria-label="Drawing actions" hidden></div>
+          </div>
+        </div>
       </div>
       <div class="ol-drawer" id="ol-drawer">
         <div

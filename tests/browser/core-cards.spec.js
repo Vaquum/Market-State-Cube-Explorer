@@ -184,7 +184,9 @@ for (const state of ["pending", "failed"]) test(`${state}: Measures details do n
     const card = page.locator("#ol-selection-card");
     await expect(card.locator('.ol-cell-stat[data-measure="volume"] dd').first()).toHaveAttribute("data-canonical", state);
     await expect(card).toContainText(state === "pending" ? /Reading|Measuring/ : /rectangle measurement rejected/);
-    await expect(card).not.toContainText(/initiated 0 USDT/);
+    // No aggressor figure is invented: each reads the measurement's own state, never a zero.
+    for (const field of ["imbalance", "buySize", "sellSize"]) await expect(card.locator(`dd[data-field="${field}"]`).first()).toHaveAttribute("data-canonical", state);
+    await expect(card.locator(".ol-flow-labels")).toHaveCount(0);
     if (gate) { gate.open(); await fake.idle(); }
   } finally { gate?.open(); }
 });

@@ -299,7 +299,7 @@ test("completed Inspect bar context survives live tail updates", async ({ page, 
 test("Measures ending inside a completed bar excludes its later trades", async ({page,fakeFor,probe}) => {
   const fake=await fakeFor({trades:[{t_ms:1000,price:2500000,qty:100000000,takerBuy:true},{t_ms:50000,price:2510000,qty:100000000,takerBuy:false},{t_ms:130000,price:2520000,qty:100000000,takerBuy:true},{t_ms:200000,price:2700000,qty:100000000,takerBuy:false}],cutoffIso:"2021-01-01T00:10:00Z"});
   await page.goto(`${fake.url}/#t=2021-01-01T00:00Z~2021-01-01T00:10Z&p=24875~27250&r=1,0&vis=2&sel=2021-01-01T00:00Z~2021-01-01T00:02:30Z,25000~27125`); await probe.waitForReady();
-  const card=page.locator("#ol-vol").locator(".."); await card.locator(".ol-core-details > summary").click();
+  const card=page.locator("#ol-selection-card"); await card.locator(".ol-core-details > summary").click();
   await expect.poll(async () => JSON.parse(await card.getAttribute("data-observation")).denominators?.[1]?.time).toEqual([0,2]);
   const record=JSON.parse(await card.getAttribute("data-observation"));
   expect(record.denominators[1].numerator).toBe(100);

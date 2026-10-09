@@ -59,15 +59,19 @@ test("selection movement uses its own covered seconds and measured price width",
   expect(record.time).toEqual([0, 2]); expect(record.result.value).toBeCloseTo(500 / 375, 12);
 });
 
-for (const theme of ["light", "dark"]) test(`${theme}: narrow selection preserves readable groups and disclosure focus`, async ({ page, fakeFor, probe }) => {
+for (const theme of ["light", "dark"]) test(`${theme}: narrow selection preserves readable groups and disclosure focus`, async ({ page, fakeFor, probe, allowConsole }) => {
   await page.emulateMedia({ colorScheme: theme }); await page.setViewportSize({ width: 960, height: 700 });
   const fake = await open(page, fakeFor, probe);
+  // Superseding the pack deliberately conflicts with in-flight context reads.
+  // Allow only that expected 409, following the revision-recovery contract.
+  fake.on({ route: /^\/cube\/(query|tile|columns|bars|touched)/ }).delay(0);
+  allowConsole(/Failed to load resource.*409/);
   const summary = page.locator(`${CARD} .ol-cell-details > summary`); await summary.click();
   await expect(summary).toBeFocused();
   fake.revise({ day: "2021-01-01", factor: 2 });
   await expect.poll(async () => Number(await field(page, "volume").getAttribute("data-canonical"))).toBe(1204.5);
   await expect(page.locator(`${CARD} .ol-cell-details`)).toHaveAttribute("open", ""); await expect(summary).toBeFocused();
-  const geometry = await field(page, "size").evaluate(n => ({ font: parseFloat(getComputedStyle(n).fontSize), width: n.getBoundingClientRect().width }));
-  expect(geometry.font).toBeGreaterThanOrEqual(18); expect(geometry.width).toBeGreaterThan(0);
+  // Context reads can replace a resolved node; reacquire the live row.
+  await expect.poll(() => field(page, "size").evaluate(n => n.isConnected && parseFloat(getComputedStyle(n).fontSize) >= 18 && n.getBoundingClientRect().width > 0)).toBe(true);
   await page.screenshot({ path: `reports/selection-card-${theme}.png` });
 });

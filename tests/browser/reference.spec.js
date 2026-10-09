@@ -44,14 +44,14 @@ test("one drawer entry opens a wide docked reference; settings live in their top
   expect(restored.x).toBeLessThan(chart.x - 400);
 });
 
-test("five named icon toggles keep the left reference independent of the bottom panels", async ({ page, fakeFor, probe }) => {
+test("six named icon toggles keep the left reference independent of the bottom panels", async ({ page, fakeFor, probe }) => {
   await open(page, fakeFor, probe);
   const bar = page.locator(".ol-drawer-bar");
-  await expect(bar.locator("button")).toHaveCount(5);
+  await expect(bar.locator("button")).toHaveCount(6);
   await expect(bar.getByRole("group", { name: "Bottom panels" })).toBeVisible();
-  await expect(bar.locator("button > svg")).toHaveCount(5);
+  await expect(bar.locator("button > svg")).toHaveCount(6);
   await expect(page.locator("#ol-reference-toggle")).toHaveAttribute("aria-pressed", "true");
-  for (const name of ["cells", "cases", "query", "compare"]) {
+  for (const name of ["rallies", "cells", "cases", "query", "compare"]) {
     const toggle = page.locator(`#ol-tab-${name}`);
     await toggle.focus();
     await page.keyboard.press("Enter");

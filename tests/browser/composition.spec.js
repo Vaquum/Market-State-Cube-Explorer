@@ -129,9 +129,14 @@ test.describe("B27 reference strokes and the occlusion budget", () => {
     // focus: hover a line and the core grows by 1 px to the 2.5 px cap
     const layout = await layoutOf(page),
       box = await page.locator("#ol-canvas").boundingBox();
-    const y = rest.frame.strokes.find((k) => k.path.length === 2 && k.path[0][1] === k.path[1][1] && k.stroke !== colours.surface && k.width >= 1.5 && k.path[0][1] > layout[1] && k.path[0][1] < layout[1] + layout[3])?.path[0][1];
-    test.skip(y === undefined, "no horizontal reference line in this view");
-    await page.mouse.move(box.x + layout[0] + layout[2] * 0.5, box.y + y);
+    // a line's core is drawn as move-to/line-to pairs, one pair a segment: the first horizontal segment inside the plot, hovered at its middle
+    const seg = rest.frame.strokes
+      .filter((k) => k.stroke !== colours.surface && k.width >= 1.5)
+      .flatMap((k) => k.path.flatMap((p, i) => (i % 2 === 0 && i + 1 < k.path.length ? [[p, k.path[i + 1]]] : [])))
+      .find(([a, b]) => a[1] === b[1] && Math.abs(b[0] - a[0]) > 20 && a[1] > layout[1] && a[1] < layout[1] + layout[3]);
+    test.skip(seg === undefined, "no horizontal reference line in this view");
+    const y = seg[0][1];
+    await page.mouse.move(box.x + (seg[0][0] + seg[1][0]) / 2, box.y + y);
     await probe.waitForQuiet({ quietMs: 300 });
     const hot = await widths();
     for (const h of hot.halos) expect(h.width, `focused halo ${h.width}`).toBeLessThanOrEqual(4.5);

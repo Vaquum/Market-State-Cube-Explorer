@@ -26,6 +26,14 @@ test("area selection uses the cell sections and summed counters instead of mean 
   await expect(page.locator(`${CARD} [data-group="view-profile"]`)).toHaveCount(1);
 });
 
+test("clearing a selection with the view's own bounds relabels the card as the view", async ({ page, fakeFor, probe }) => {
+  await open(page, fakeFor, probe, "&sel=2021-01-01T00:00Z~2021-01-01T00:06Z,24800~25500");
+  await expect(page.locator(`${CARD} [data-group="selection-profile"]`)).toHaveCount(1);
+  await page.locator("#ol-clear").click();
+  await expect(page.locator(`${CARD} [data-group="view-profile"]`)).toHaveCount(1);
+  await expect(page.locator(`${CARD} [data-group="selection-profile"]`)).toHaveCount(0);
+});
+
 test("one-cell selection and Cell share canonical composition and section styling", async ({ page, fakeFor, probe }) => {
   await open(page, fakeFor, probe, "&sel=2021-01-01T00:00Z~2021-01-01T00:00:56.250Z,25000~25125");
   await canonical(page, "size", 150); await canonical(page, "imbalance", -1 / 3);

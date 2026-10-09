@@ -31,12 +31,12 @@ test("replay keeps member measurements while a view response takes longer than a
  expect(fake.log().filter(e=>e.path==="/cube/rallies/view")).toHaveLength(before+1);
  await page.locator("#ol-play").click();
 });
-test("inactive mode fields do not participate in native form validation",async({page,fakeFor})=>{
+test("inactive mode fields do not participate in native form validation",async({page,fakeFor,allowConsole})=>{
  const fake=await fakeFor("mini");await setup(page,fake);
  await page.locator("#ol-rally-mode").selectOption("controlled_advance");await page.locator("#ol-rally-pullback").fill("");await page.locator("#ol-rally-mode").selectOption("first_hit");
  await page.locator("#ol-rally-discover").click();await expect(page.locator("#ol-rally-rows tr")).toHaveCount(4);
  await page.locator("#ol-rally-cadence").fill("");await page.locator("#ol-rally-mode").selectOption("swing");
- fake.on({route:"/cube/rallies"}).fail({status:503,body:{error:"recorded_boundary_busy"}});
+ allowConsole(/Failed to load resource.*503/);fake.on({route:"/cube/rallies"}).fail({status:503,body:{error:"recorded_boundary_busy"}});
  const request=page.waitForRequest(r=>new URL(r.url()).pathname==="/cube/rallies" && r.method()==="POST");
  await page.locator("#ol-rally-discover").click();expect((await request).postDataJSON().definition).toEqual({mode:"swing",scale:"bps",target:30,reversal:10});
  await expect(page.locator("#ol-rally-status")).toContainText("503");await expect(page.locator("#ol-rally-discover")).toBeEnabled();

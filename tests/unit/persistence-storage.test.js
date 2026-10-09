@@ -239,7 +239,7 @@ test("the existing properties keep their shapes: saved (v5 or v4), views(), hist
   put(session, "history:v1", { entries: [{ id: "h1" }], index: 0 });
   assert.deepEqual(plain(state.views()), [{ name: "a" }]);
   assert.deepEqual(plain(state.history()), { entries: [{ id: "h1" }], index: 0 });
-  assert.deepEqual(Object.keys(state).sort(), ["backup", "comparison", "drawings", "history", "namedViews", "namedViewsStatus", "notice", "read", "save", "saveHistory", "saveNamedViews", "saveNotice", "saveScales", "saved", "saveViews", "scales", "views", "viewsKey"].sort(), "additive: seven baseline members and the new ones");
+  assert.deepEqual(Object.keys(state).sort(), ["backup", "comparison", "drawings", "history", "namedViews", "namedViewsStatus", "notice", "read", "returning", "save", "saveHistory", "saveNamedViews", "saveNotice", "saveScales", "saved", "saveViews", "scales", "views", "viewsKey"].sort(), "additive: seven baseline members and the new ones");
   // a newer build's view is not handed to the page as if it were its own; it stays in storage
   put(local, "view:v5", { version: 5, visualVersion: 3, prefs: {}, view: "#vis=3" });
   const { state: s2, warns } = load(win);

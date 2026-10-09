@@ -99,6 +99,7 @@ test.describe("B34 summaries, statuses, definitions and samples say from when th
     await page.setViewportSize({ width: 1500, height: 950 });
     await page.goto(`${fake.url}/#w=30d&r=9,0&auto=0&vis=2`);
     await S.atRest(page, fake, probe);
+    await page.keyboard.press("c");
     const layout = await layoutOf(page),
       box = await page.locator("#ol-canvas").boundingBox();
     await page.mouse.click(box.x + layout[0] + layout[2] * 0.5, box.y + layout[1] + layout[3] * 0.5);

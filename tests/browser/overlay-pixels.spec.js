@@ -185,6 +185,7 @@ const OVERLAYS = {
   },
 };
 async function clickAnchor(page, layout) {
+  await page.keyboard.press("c");
   const box = await page.locator("#ol-canvas").boundingBox();
   await page.mouse.click(box.x + layout[0] + layout[2] * 0.5, box.y + layout[1] + layout[3] * 0.5);
 }

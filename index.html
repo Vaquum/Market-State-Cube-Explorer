@@ -4727,7 +4727,8 @@
               <button id="ol-rally-discover" type="submit" class="ol-action cursor-interaction">Discover</button>
             </form>
             <p class="ol-muted" id="ol-rally-scale-note">Thresholds in basis points of the frozen reference price.</p>
-            <p class="ol-muted">A rally is an observed upward move. Thresholds are your operational definition. Confirmation does not imply reversal, durability or future gains. Spot data cannot establish short covering or derivatives leadership.</p>
+            <p class="ol-muted" id="ol-rally-definition" hidden></p>
+            <p class="ol-muted">A rally is an observed upward move. Thresholds are your operational definition. Confirmation does not predict reversal, durability or future gains. Spot data cannot establish short covering or derivatives leadership.</p>
             <div class="ol-panel-head">
               <label id="ol-rally-deadline-label">Time to target · minutes, exclusive<input id="ol-rally-deadline" type="number" min="0.001" max="240" step="any" value="240" aria-describedby="ol-rally-deadline-note"></label>
               <span id="ol-rally-deadline-note" class="ol-muted">Local filter · at most 240 minutes. Swing ends on a reversal. Grid, replay and filters reuse the discovery.</span>
@@ -11305,8 +11306,8 @@
       colour: "compare",
       token: "--ol-line-compare",
       hue: "neutral",
-      groups: Object.freeze(["Matching states", "All states"]),
-      identification: Object.freeze(["Matching states or All states", "square or circle median marker", "labelled interval track"]),
+      groups: Object.freeze(["Matching states", "All eligible"]),
+      identification: Object.freeze(["Matching states or All eligible", "square or circle median marker", "labelled interval track"]),
       glyph: Object.freeze({ matching: "square", all: "circle" }),
     }),
   ]);
@@ -19161,7 +19162,7 @@
       targets: [{ label: "Show resolution", selector: "#ol-res" }] },
     { id: "measures", group: "Read the market", title: "Cells: trading measures",
       purpose: "Choose what each cell measures; its tooltip and inspector report the same quantity.",
-      read: "Volume is traded USDT; Trades is the count; Trade size is USDT per trade. Taker flow is the buy share of volume; Taker trades is the buy share of trades. Delta is buy minus sell USDT. Cascade measures concentration within the cell's four-child parent: 0 means an even quarter, +2 means the whole parent. Geometry shows occupancy.",
+      read: "Volume is traded USDT; Trades is the count; Trade size is USDT per reported trade. Taker flow is the taker-buy share of volume; Taker trades is the taker-buy share of trades. Delta is taker-buy minus taker-sell USDT: the aggressive side, not net buying or participant intent. Cascade measures concentration within the cell's four-child parent: 0 means an even quarter, +2 means the whole parent; it does not identify liquidations. Geometry shows occupancy.",
       use: "Choose Cells. Use Amount for observed totals or Intensity for amounts per covered time and price. Read shares around 50%, Delta around zero, and Cascade around an even split.",
       targets: [{ label: "Show Cells menu", selector: "#ol-mode" }, { label: "Show grid", region: "cells" }] },
     { id: "candles", group: "Read the market", title: "Candles",
@@ -19216,7 +19217,7 @@
       targets: [{ label: "Show Lens tool", selector: "#ol-lens" }] },
     { id: "references", group: "Work with the view", title: "Reference lines & events",
       purpose: "Locate profile, session, structural, average, VWAP and calendar landmarks.",
-      read: "POC is the highest-volume row; Buy POC uses taker buys; a value area contains 70% of volume. Session and structure marks locate ranges, equal highs/lows, gaps and swings. Averages and VWAP trace price summaries. Clock events sit in lanes below the grid; each family has a distinct stroke and a key.",
+      read: "POC is the highest-volume row; Buy POC uses taker buys; a value area reaches at least 70% of volume in whole rows. These depend on the measured period and row width. Session and structure marks locate ranges, equal highs/lows, gaps and swings. Averages and VWAP trace price summaries. Clock schedules are vertical marks; squeezes and the spot weekend proxy occupy event lanes. A reference locates a hypothesis; it does not establish support, resistance or future direction.",
       use: "Open Lines to choose families, periods and dates. Click a reference to focus it; Show all restores the rest. Inspect References reads each enabled item by name. X places or clears your own horizontal price level.",
       targets: [{ label: "Show Lines menu", selector: "#ol-lines" }, { label: "Show event lanes", region: "events" }] },
     { id: "drawings", group: "Work with the view", title: "Trend drawings",
@@ -19224,19 +19225,24 @@
       read: "A drawing is your annotation. Its two anchors are UTC time and USDT price, so it remains tied to the market coordinates when the view changes.",
       use: "Choose the trend tool and place two anchors. Select a drawing to edit its coordinates, name, colour and label, or use its available lock, copy and delete actions. Undo restores drawing changes.",
       targets: [{ label: "Show drawing tool", selector: "#ol-trend" }] },
-    { id: "evidence", group: "Evaluate & retain", title: "Evidence & matching cases",
+    { id: "evidence", group: "Evaluate & retain", title: "Continuations & matching cases",
       purpose: "Compare historical outcomes after market states resembling an anchored column.",
-      read: "Evidence separates matching cases from all qualifying cases and shows their outcome rates and differences. Horizon determines how far ahead outcomes are read; barrier settings apply to barrier outcomes. These are historical comparisons, with their sample size and provenance shown.",
-      use: "Anchor a column using the chart's anchor action, then open Evidence. Choose outcome and horizon, read the matching-case count and explanation, and open Cases to inspect examples. A selected rectangle and an evidence anchor serve different purposes.",
-      targets: [{ label: "Show Evidence tab", selector: "#ol-evidence-tab" }, { label: "Show Cases panel", selector: "#ol-tab-cases" }] },
+      read: "Continuations separates matching cases from all seasonally eligible cases and shows their outcome rates and differences. Outcomes measure POC movement, not trade returns. Horizon determines how far ahead outcomes are read; barrier settings apply to POC-barrier outcomes. Historical rates and pointwise intervals do not calibrate forecast odds or establish a trading edge after costs.",
+      use: "Open Continuations or press C, then click a completed column with Pan to anchor it. Choose outcome and horizon, read the matching-case count and explanation, and open Cases to inspect examples. A selected rectangle and a continuation anchor serve different purposes.",
+      targets: [{ label: "Show Continuations tab", selector: "#ol-evidence-tab" }, { label: "Show Cases panel", selector: "#ol-tab-cases" }] },
+    { id: "rallies", group: "Evaluate & retain", title: "Rallies: observed upward moves",
+      purpose: "Discover upward price moves in native trades using an explicit operational definition.",
+      read: "First passage ends at the target; Controlled advance also limits pullback; Swing confirms after a reversal from a qualifying high. Thresholds use basis points or frozen ATR14-SMA on native UTC 15-minute bars. Confirmation describes an observed event, not future gains. Binance spot data cannot establish short covering or derivatives leadership.",
+      use: "Open Rallies, choose the definition and UTC analysis window, then Discover on the live cube. Select a confirmed event for member-only totals and profile. Grid, replay and time-to-target filters reuse the discovery; Refresh discovery applies changed definition or window settings. Cell outlines can include other trades alongside members.",
+      targets: [{ label: "Show Rallies panel", selector: "#ol-tab-rallies" }] },
     { id: "replay", group: "Evaluate & retain", title: "Replay & model timing",
       purpose: "Explore history with an explicit effective data cutoff.",
       read: "The replay edge limits measurements and reference periods. Scales fitted after that cutoff are invalidated, unless a deliberate comparison lock is disclosed as an external override. Replay uses currently available history; original data vintages are not guaranteed. Volume per touched row versus expected model timing has its own disclosure.",
       use: "Open Replay, set its edge, then step or play columns. Check data and model provenance before interpreting results. Exit Replay to restore the live workspace and its scales.",
       targets: [{ label: "Show Replay control", selector: "#ol-replay" }] },
-    { id: "tables", group: "Evaluate & retain", title: "Cells, Cases & Query drawer",
+    { id: "tables", group: "Evaluate & retain", title: "Rallies, Cells, Cases & Query drawer",
       purpose: "Inspect the underlying records and the exact configuration behind the chart.",
-      read: "Cells lists measured cells; Cases lists evidence examples; Query summarizes bounds, measures, scales, axes and provenance. Sorting changes table order, not the measurements.",
+      read: "Rallies lists confirmed native events; Cells lists measured cells; Cases lists continuation examples; Query summarizes bounds, measures, scales, axes and provenance. Sorting changes table order, not the measurements.",
       use: "Choose a bottom-panel icon to open it; choose it again to close. T toggles the current bottom panel. Move through Cells with arrows and Enter to inspect a record. Use Query when you need a precise account of how a view was produced.",
       targets: [{ label: "Show panel toggles", selector: ".ol-drawer-bar" }] },
     { id: "compare", group: "Evaluate & retain", title: "Compare captured cells",
@@ -19247,7 +19253,7 @@
     { id: "views", group: "Evaluate & retain", title: "History, saved views & sharing",
       purpose: "Return to a configuration or share how the chart was interpreted.",
       read: "History records this tab's navigation; saved views retain chosen settings. Links and portable view codes include active colour scales and frozen axes. A settings-only URL does not preserve exact calibration; a scale descriptor does not freeze the underlying market data.",
-      use: "Open Views to save, restore or copy a link or view code. Use Back and Forward for tab history. Keep the portable code when the URL is too large to carry exact scales. Reset canvas offers a choice of what to clear.",
+      use: "Open Views to save, restore or copy a link or view code. Use Back and Forward for tab history. Keep the portable code when the URL is too large to carry exact scales. Reset canvas restores the default chart, with confirmation when drawings or comparison captures exist.",
       targets: [{ label: "Show Views", selector: "#ol-hist" }, { label: "Show reset control", selector: "#ol-reset-canvas" }] },
   ];
 
@@ -19392,6 +19398,15 @@
     const whole = Math.floor(us / 1000000), fraction = us - whole * 1000000;
     return new Date(whole * 1000).toISOString().slice(0, 19) + "." + String(fraction).padStart(6, "0") + "Z";
   }
+  function definitionText(d) {
+    const unit = d.scale === "atr" ? "ATR14-SMA" : "bps";
+    const name = {first_hit: "First passage", controlled_advance: "Controlled advance", swing: "Swing"}[d.mode];
+    const parts = [name, `target ${d.target} ${unit}`];
+    if (d.mode === "swing") parts.push(`confirming reversal ${d.reversal} ${unit}`);
+    else parts.push(`anchors every ${d.anchor_minutes} min`);
+    if (d.mode === "controlled_advance") parts.push(`max pullback ${d.pullback} ${unit}`);
+    return parts.join(" · ");
+  }
   function create({root, context, changed, inspect}) {
     const el = id => root.querySelector("#ol-rally-" + id);
     const fmt = (n, digits = 2) => Number(n).toLocaleString("en-US", {maximumFractionDigits:digits});
@@ -19410,7 +19425,7 @@
       el("pullback-label").hidden = mode !== "controlled_advance";
       el("reversal-label").hidden = mode !== "swing";
       el("deadline-label").hidden = (result ? swing() : mode === "swing");
-      el("scale-note").textContent = atr ? "ATR14-SMA · native UTC 15m bars; frozen at anchor or trough. The book uses Wilder ATR." : "Thresholds in basis points of the frozen reference price.";
+      el("scale-note").textContent = atr ? "ATR14-SMA · native UTC 15m bars; frozen at anchor or trough. Chart context uses Wilder ATR(14)." : "Thresholds in basis points of the frozen reference price.";
       for (const name of ["target", "pullback", "reversal"]) el(name).max = atr ? 100 : name === "reversal" ? 9999.999 : 10000;
       el("discover").disabled = busy || !context().live;
       el("discover").textContent = busy ? "Discovering…" : result ? "Refresh discovery" : "Discover";
@@ -19439,8 +19454,8 @@
         box.append(row("State", stale ? "Source changed · refresh discovery" : errorMessage || (inFlight ? "Reading membership…" : "Hidden by replay or time-to-target filter")));
         return;
       }
-      const d = result.metadata.normalized_definition;
-      box.append(row("Definition", `${d.mode.replaceAll("_", " ")} · ${d.target} ${d.scale}`),
+      const {normalized_definition: d, analysis} = result.metadata;
+      box.append(row("Retained definition", definitionText(d)), row("Analysis · UTC", `${analysis.start} → ${analysis.end}`),
         row("Reference", `${fmt(event.reference_price)} USDT`), row("Return", `${fmt(event.return_bps)} bps`),
         row("Duration", `${fmt(event.duration_seconds)} s`), row("Max drawdown", `${fmt(event.max_drawdown)} USDT`),
         row("USDT volume", fmt(event.volume)), row("Trades", fmt(event.trade_count, 0)),
@@ -19463,6 +19478,8 @@
     }
     function render() {
       controls();
+      const definition = el("definition"); definition.hidden = !result;
+      definition.textContent = result ? `Retained discovery · ${definitionText(result.metadata.normalized_definition)}. Analysis · UTC: ${result.metadata.analysis.start} → ${result.metadata.analysis.end}. Retained until Refresh discovery; form edits apply only to the next discovery.` : "";
       const events = shown(), pages = Math.max(1, Math.ceil(events.length / PAGE)); page = Math.min(page, pages - 1);
       const body = el("rows"); body.replaceChildren();
       for (const e of events.slice(page * PAGE, (page + 1) * PAGE)) {
@@ -19557,7 +19574,7 @@
     el("previous").onclick = () => { page--; render(); }; el("next").onclick = () => { page++; render(); };
     return {sync, paint, get busy(){return busy;}, get events(){return projection && !stale && projection.pack === context().pack ? shown().filter(e => projection.visible_ids.includes(e.rally_id)) : [];}, get selectedId(){return selectedId;}, get enabled(){return !!result && !stale;}};
   }
-  scope.explorerRallies = {create, visible, iso};
+  scope.explorerRallies = {create, visible, iso, definitionText};
   if (typeof module !== "undefined") module.exports = scope.explorerRallies;
 })(typeof window === "undefined" ? globalThis : window);
 </script>
@@ -36754,7 +36771,7 @@
     el("evidence-note").textContent = e.loading
       ? ""
       : e.error
-      ? "Choose a completed column containing trades."
+      ? e.error
       : (supported
           ? "Empirical shares; overlapping cases, not calibrated odds."
           : "Below 30 matches: percentages and matching boxes withheld.") +
@@ -36764,9 +36781,9 @@
         " Every completed outcome ends by the anchor. " + (e.provenance?.reconstruction ?? "") +
         ` seasonal-state@1; fitted before anchor ${when((e.a + 1) * stepT())} UTC; shares ${JSON.stringify(e.thresholds?.share)}; seasonal ${JSON.stringify(e.thresholds?.seasonal)}; ${sample?.overlapping ?? 0} matching/${base?.overlapping ?? 0} baseline overlapping forward windows. Six-week denominators and fixed thresholds create additional dependence.`;
     el("evidence-brief").textContent = e.loading
-      ? "Reading history…"
+      ? e.error || "Reading history…"
       : e.error
-      ? "Choose a completed column containing trades."
+      ? e.error
       : supported
         ? "Empirical shares, not calibrated odds."
         : "Below 30 matches: percentages withheld.";
@@ -36846,7 +36863,7 @@
     el("case-definition").textContent =
       filter === "failure"
         ? `Non-modal POC outcomes: all matching completed cases except ${modal}. Neutral may qualify; ties choose lower, unchanged, higher. Sample mode; rates below 30 are withheld.`
-        : "Open a date to replay its recorded starting state. Excursions use column-end POCs.";
+        : "Open a date to replay its starting state from the currently loaded source. Excursions use column-end POCs.";
     const fragment = document.createDocumentFragment(),
       cell = (tr, content) => {
         const td = document.createElement("td");
@@ -36939,7 +36956,7 @@
   }
   // Continuations on the chart: for each column ahead, a box over the rows
   // where the POC landed, the middle 80% of outcomes light and the middle 50%
-  // darker, with the median row marked. All states are outlined across the
+  // darker, with the median row marked. All eligible states are outlined across the
   // column and matching states fill its middle, so the two read side by side.
   // Boxes cover whole rows, so an outcome that stayed in its row still shows.
   function drawCone(e) {
@@ -36984,7 +37001,7 @@
         ctx.globalAlpha = 1;
         line(left, median, left + width, median, color, chosen ? REFERENCE_STROKE + 1 : REFERENCE_STROKE, 0.9);
         // The two sets share the neutral hue and are told apart by the shape of the median's marker: a square for the matching states, a
-        // ring for all states (PRD-0002 S3 section 1); the legend and the inspector's tracks carry the same shapes.
+        // ring for all eligible states (PRD-0002 S3 section 1); the legend and the inspector's tracks carry the same shapes.
         medianMarker(ctx, key, left + width / 2, median, color);
         ends[key] = { x: xb, y: median };
       }
@@ -37006,7 +37023,7 @@
     ctx.restore();
     // Each set named beside its last box, at its median.
     if (ends.match) chartLabel("Matching states", ends.match.x + 6, ends.match.y);
-    if (ends.all) chartLabel("All states", ends.all.x + 6, ends.all.y);
+    if (ends.all) chartLabel("All eligible", ends.all.x + 6, ends.all.y);
   }
   function bindEvidence() {
     el("evidence").addEventListener("click", (event) => {

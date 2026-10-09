@@ -111,7 +111,7 @@
     { id: "views", group: "Evaluate & retain", title: "History, saved views & sharing",
       purpose: "Return to a configuration or share how the chart was interpreted.",
       read: "History records this tab's navigation; saved views retain chosen settings. Links and portable view codes include active colour scales and frozen axes. A settings-only URL does not preserve exact calibration; a scale descriptor does not freeze the underlying market data.",
-      use: "Open Views to save, restore or copy a link or view code. Use Back and Forward for tab history. Keep the portable code when the URL is too large to carry exact scales. Reset canvas offers a choice of what to clear.",
+      use: "Open Views to save, restore or copy a link or view code. Use Back and Forward for tab history. Keep the portable code when the URL is too large to carry exact scales. Reset canvas restores the default chart, with confirmation when drawings or comparison captures exist.",
       targets: [{ label: "Show Views", selector: "#ol-hist" }, { label: "Show reset control", selector: "#ol-reset-canvas" }] },
   ];
 

@@ -3826,7 +3826,7 @@
       const signature = JSON.stringify(metric.companions);
       if (companions.dataset.signature !== signature) {
         companions.replaceChildren(); companions.dataset.signature = signature;
-        for (const m of metric.companions) { const row = document.createElement("div"), state = m.result.tag === "finite" ? null : cardState(m.result), shown = state ? { text: state.text, unit: "" } : cardValue(m.result.value, m.unit);
+        for (const m of metric.companions) { const row = document.createElement("div"), state = cardState(m.result), shown = state ? { text: state.text, unit: "" } : m.result.tag === "finite" ? cardValue(m.result.value, m.unit) : { text: E.result.describe(m.result).short, unit: "" };
           row.append(Object.assign(document.createElement("dt"), { textContent: m.label }), Object.assign(document.createElement("dd"), { textContent: [shown.text, shown.unit].filter(Boolean).join(" "), title: state?.reason ?? "" }));
           if (state) row.lastElementChild.toggleAttribute("data-typed", true);
           companions.append(row); }
@@ -3867,8 +3867,8 @@
     const profileText = `Half-open profile ${range(...time)} UTC; ${2 ** q.m * PR} USDT rows. POC uses quote volume; Buy POC uses buyer-initiated quote volume and is unavailable with no buy population. Lower row wins ties. Value area grows contiguously in whole bins from POC: ${area && !refusal ? (area.share * 100).toPrecision(4) + "% actual volume" : "unavailable"}, nominal 70%. Independent amount domain. All-price close support ${range(...response.time)} UTC${response.paired ? "" : "; Different measured-through boundaries"}.`;
     if (profileDetails.lastElementChild.textContent !== profileText) profileDetails.lastElementChild.textContent = profileText;
     const normalized = E.measure.normalized(refusal || response.close === null || poc === null ? NaN : response.close - poc, response.atr);
-    const state = normalized.result.tag === "finite" ? null : cardState(normalized.result);
-    const text = `All-price close versus this profile's POC: ${state ? state.text : cardValue(normalized.result.value, "daily-atr").text + " daily ATR"}. Raw POC and value boundaries remain USDT; this is location, not a direction forecast.`;
+    const state = cardState(normalized.result);
+    const text = `All-price close versus this profile's POC: ${state ? state.text : normalized.result.tag === "finite" ? cardValue(normalized.result.value, "daily-atr").text + " daily ATR" : E.result.describe(normalized.result).long}. Raw POC and value boundaries remain USDT; this is location, not a direction forecast.`;
     if (location.textContent !== text) location.textContent = text;
     location.title = state?.reason ?? "";
     return { seasonal, response };
@@ -4391,8 +4391,9 @@
     const names = { usdt: "USDT", trades: "trades", "usdt-per-trade": "USDT / trade", ratio: "×", seconds: "seconds", "trades-per-minute": "trades / min", "row-spans": "row spans", "path-per-range": "path / range", "usdt-per-usdt-moved": "USDT / USDT moved" };
     return { text: exact ? usdt(value) : compact(value), unit: names[unit] ?? unit };
   }
-  // A value that could not be measured reads as its state at label size; its reason stays one hover away.
+  // A value the source cannot support reads as that state; its developer reason stays one hover away.
   function cardState(result) {
+    if (result.tag !== "unsupported") return null;
     const described = E.result.describe(result);
     return { text: described.short.split(": ")[0], reason: described.long };
   }
@@ -4414,10 +4415,10 @@
       value.dataset.canonical = String(result.tag === "finite" ? result.value : result.tag);
       if (metric.text !== undefined) value.dataset.fact = metric.text;
       value.dataset.formula = metric.formula ?? observation.formula;
-      const typed = metric.text === undefined && result.tag !== "finite" && parent === stats, state = typed ? cardState(result) : null;
-      const shown = metric.text !== undefined ? { text: metric.text, unit: "" } : result.tag === "finite" ? (metric.format ? metric.format(result.value) : cardValue(result.value, metric.unit)) : typed ? { text: state.text, unit: "" } : { text: E.result.describe(result).short, unit: "" };
-      value.toggleAttribute("data-typed", typed);
-      value.title = typed ? state.reason : "";
+      const state = metric.text === undefined && parent === stats ? cardState(result) : null;
+      const shown = metric.text !== undefined ? { text: metric.text, unit: "" } : result.tag === "finite" ? (metric.format ? metric.format(result.value) : cardValue(result.value, metric.unit)) : state ? { text: state.text, unit: "" } : { text: E.result.describe(result).short, unit: "" };
+      value.toggleAttribute("data-typed", Boolean(state));
+      value.title = state?.reason ?? "";
       if (result.tag === "finite" && metric.signed && result.value > 0) shown.text = "+" + shown.text;
       if (result.tag === "finite" && metric.signed) value.dataset.sign = result.value > 0 ? "positive" : result.value < 0 ? "negative" : "zero";
       value.replaceChildren(document.createTextNode(shown.text));

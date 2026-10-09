@@ -2055,11 +2055,9 @@
   text-align: right;
   overflow-wrap: anywhere;
 }
-/* A value that could not be measured reads as its state, at label size; the reason is its title. */
+/* A value the source cannot support reads as that state, muted; the reason is its title. */
 #origo-lens :is(.ol-cell-stat, .ol-cell-stat[data-primary], .ol-measure-companions) dd[data-typed] {
-  font-size: 14px;
   font-weight: 400;
-  letter-spacing: 0;
   color: var(--ol-muted);
 }
 #origo-lens .ol-core-details {

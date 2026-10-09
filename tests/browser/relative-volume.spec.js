@@ -85,7 +85,7 @@ test("background menus share a labelled group and changing the period changes th
   const stream = S.disjoint(), fake = await fakeFor({ name: stream.name, trades: stream.trades, cutoffIso: stream.cutoffIso });
   await page.goto(`${fake.url}/${S.address({ cols: [S.END_COL - S.DAY_COLS, S.END_COL], rows: [196, 214], rowsKind: "relvol", period: "1d", extra: "&r=0,0" })}`);
   await S.atRest(page, fake, probe);
-  const group = page.getByRole("group", { name: "Canvas background", exact: true });
+  const group = page.getByRole("group", { name: "Rows", exact: true });
   await expect(group.locator("#ol-rows")).toBeVisible();
   await expect(group.locator("#ol-period")).toBeVisible();
   const before = Number((await reading(page, 200, [196, 214])).value);

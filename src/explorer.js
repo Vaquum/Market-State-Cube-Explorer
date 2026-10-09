@@ -3801,8 +3801,8 @@
     const data = {
       vol: { result: finite(q.v), unit: "usdt", companions: [{ label: "Reported trades", result: finite(q.ct), unit: "trades" }, { label: "Buyer-initiated share", result: share(q.bv, q.v, "rectangle volume"), unit: "share" }, seasonalMetric] },
       count: { result: finite(q.ct), unit: "trades", companions: [{ label: "Covered-minute rate", result: share(q.ct * 60, (time[1] - time[0]) * BASE, "covered seconds"), unit: "trades-per-minute" }, { label: "Buyer-initiated count", result: finite(q.bt), unit: "trades" }, { label: "Seller-initiated count", result: finite(q.ct - q.bt), unit: "trades" }] },
-      buyvol: { result: finite(q.bv), unit: "usdt", companions: [{ label: "Seller-initiated USDT", result: finite(q.v - q.bv), unit: "usdt" }, { label: "Buyer-initiated share", result: share(q.bv, q.v, "rectangle volume"), unit: "share" }, { label: "Delta / volume", result: composition.imbalance.result, unit: "signed-share" }] },
-      "delta-value": { result: finite(2 * q.bv - q.v), unit: "usdt", companions: [{ label: "Delta / volume", result: composition.imbalance.result, unit: "signed-share" }, { label: "Quote volume", result: finite(q.v), unit: "usdt" }, { label: "All-price close − open / prior daily ATR", result: refusal ?? E.measure.normalized(response.result.tag === "finite" ? response.result.value : NaN, response.atr).result, unit: "daily-atr" }] },
+      buyvol: { result: finite(q.bv), unit: "usdt", companions: [{ label: "Seller-initiated USDT", result: finite(q.v - q.bv), unit: "usdt" }, { label: "Buyer-initiated share", result: share(q.bv, q.v, "rectangle volume"), unit: "share" }, { label: "Net taker imbalance", result: composition.imbalance.result, unit: "signed-share" }] },
+      "delta-value": { result: finite(2 * q.bv - q.v), unit: "usdt", companions: [{ label: "Net taker imbalance", result: composition.imbalance.result, unit: "signed-share" }, { label: "USDT volume", result: finite(q.v), unit: "usdt" }, { label: "All-price close − open / prior daily ATR", result: refusal ?? E.measure.normalized(response.result.tag === "finite" ? response.result.value : NaN, response.atr).result, unit: "daily-atr" }] },
       buycount: { result: finite(q.bt), unit: "trades", companions: [{ label: "Seller-initiated count", result: finite(q.ct - q.bt), unit: "trades" }, { label: "Buyer-initiated mean", result: composition.buySize.result, unit: "usdt-per-trade" }, { label: "Seller-initiated mean", result: composition.sellSize.result, unit: "usdt-per-trade" }] },
     };
     if (mv) {
@@ -3811,7 +3811,7 @@
       const seconds = (motionTime[1] - motionTime[0]) * BASE, dwell = motionQuery ? E.measure.dwellCheck(motionQuery.w, seconds) ?? (seconds > 0 ? E.result.finite(motionQuery.w / seconds) : E.result.make("undefined", { denominator: "covered seconds" })) : missing;
       data.path = { time: motionTime, level: motionQuery ? { n: motionQuery.n, m: motionQuery.m } : { n: q.n, m: q.m }, result: motionQuery ? E.result.finite(motionQuery.p) : missing, unit: "usdt", companions: [
         { label: "Measured row spans", result: motionQuery ? E.result.finite(motionQuery.p / (2 ** motionQuery.m * PR)) : missing, unit: "row-spans" },
-        { label: "Covered-time dwell share", result: dwell, unit: "share" }, { label: "Quote volume · activity cutoff", result: finite(q.v), unit: "usdt" },
+        { label: "Covered-time dwell share", result: dwell, unit: "share" }, { label: "USDT volume · activity cutoff", result: finite(q.v), unit: "usdt" },
       ] };
       data.dwell = { time: motionTime, level: data.path.level, result: motionQuery ? E.result.finite(motionQuery.w) : missing, unit: "seconds", companions: [
         { label: "Covered-time share", result: dwell, unit: "share" }, { label: "Covered seconds", result: E.result.finite(seconds), unit: "seconds" },
@@ -3826,15 +3826,17 @@
       const signature = JSON.stringify(metric.companions);
       if (companions.dataset.signature !== signature) {
         companions.replaceChildren(); companions.dataset.signature = signature;
-        for (const m of metric.companions) { const row = document.createElement("div"), shown = m.result.tag === "finite" ? cardValue(m.result.value, m.unit) : { text: E.result.describe(m.result).short, unit: "" };
-          row.append(Object.assign(document.createElement("dt"), { textContent: m.label }), Object.assign(document.createElement("dd"), { textContent: [shown.text, shown.unit].filter(Boolean).join(" ") })); companions.append(row); }
+        for (const m of metric.companions) { const row = document.createElement("div"), state = m.result.tag === "finite" ? null : cardState(m.result), shown = state ? { text: state.text, unit: "" } : cardValue(m.result.value, m.unit);
+          row.append(Object.assign(document.createElement("dt"), { textContent: m.label }), Object.assign(document.createElement("dd"), { textContent: [shown.text, shown.unit].filter(Boolean).join(" "), title: state?.reason ?? "" }));
+          if (state) row.lastElementChild.toggleAttribute("data-typed", true);
+          companions.append(row); }
       }
       let details = card.querySelector(".ol-core-details");
       if (!details) { details = document.createElement("details"); details.className = "ol-core-details"; details.append(Object.assign(document.createElement("summary"), { textContent: "Measurement details" }), document.createElement("div")); card.append(details); }
       const observation = cardObservation(metric.result, { vol: "cells.volume.amount@1", count: "cells.trades.amount@1", buyvol: "taker-buy.amount@1", buycount: "taker-buy-count.amount@1", "delta-value": "cells.delta.amount@1", path: "cells.path.usdt@1", dwell: "cells.dwell.seconds@1" }[id], metric.unit, metric.time ?? time, band, { level: metric.level ?? { n: q.n, m: q.m } });
       card.dataset.observation = JSON.stringify(observation);
       const info = details.lastElementChild;
-      let text = `Half-open support ${range(...observation.time)} UTC; ${price(band[0])}–${price(band[1])} USDT. ${metric.result.tag === "finite" ? usdt(metric.result.value) : E.result.describe(metric.result).long} ${metric.unit}. Source ${observation.source}; n=${observation.level.n}, m=${observation.level.m}. Counts are reported trade records, not independent orders or participants.`;
+      let text = `Half-open support ${range(...observation.time)} UTC; ${price(band[0])}–${price(band[1])} USDT. ${metric.result.tag === "finite" ? Object.values(cardValue(metric.result.value, metric.unit, true)).join(" ") : E.result.describe(metric.result).long}. Source ${observation.source}; n=${observation.level.n}, m=${observation.level.m}. Counts are reported trade records, not independent orders or participants.`;
       if (id === "path" || id === "dwell") text += " Path includes the prior-column entry move. Movement and activity can end at different cutoffs; no joint inference is made across them.";
       if (details.open) {
         text += ` Seasonal activity is all-price quote volume: ${seasonal?.result.tag === "finite" ? cardValue(seasonal.result.value, "ratio").text + "×" : seasonal ? E.result.describe(seasonal.result).long : "Complete all-price support unavailable"}.`;
@@ -3865,8 +3867,10 @@
     const profileText = `Half-open profile ${range(...time)} UTC; ${2 ** q.m * PR} USDT rows. POC uses quote volume; Buy POC uses buyer-initiated quote volume and is unavailable with no buy population. Lower row wins ties. Value area grows contiguously in whole bins from POC: ${area && !refusal ? (area.share * 100).toPrecision(4) + "% actual volume" : "unavailable"}, nominal 70%. Independent amount domain. All-price close support ${range(...response.time)} UTC${response.paired ? "" : "; Different measured-through boundaries"}.`;
     if (profileDetails.lastElementChild.textContent !== profileText) profileDetails.lastElementChild.textContent = profileText;
     const normalized = E.measure.normalized(refusal || response.close === null || poc === null ? NaN : response.close - poc, response.atr);
-    const text = `All-price close versus this profile's POC: ${normalized.result.tag === "finite" ? cardValue(normalized.result.value, "daily-atr").text + " daily ATR" : E.result.describe(normalized.result).long}. Raw POC and value boundaries remain USDT; this is location, not a direction forecast.`;
+    const state = normalized.result.tag === "finite" ? null : cardState(normalized.result);
+    const text = `All-price close versus this profile's POC: ${state ? state.text : cardValue(normalized.result.value, "daily-atr").text + " daily ATR"}. Raw POC and value boundaries remain USDT; this is location, not a direction forecast.`;
     if (location.textContent !== text) location.textContent = text;
+    location.title = state?.reason ?? "";
     return { seasonal, response };
   }
   // A selection is one measured region, not an average of its cells. Reuse the cell
@@ -4241,7 +4245,8 @@
   // Wilder ATR at this cell's time, never a later day's volatility or an estimate from price rows.
   // PRD-0007: presentation consumes observations; it never schedules transport from a hover or draw.
   function cardObservation(result, formula, unit, time, priceBand = null, extra = {}) {
-    return E.readout.observation({ result, formula, unit, time, price: priceBand,
+    // "price" is how a USDT price reads (never shortened); the record keeps its unit, USDT.
+    return E.readout.observation({ result, formula, unit: unit === "price" ? "usdt" : unit, time, price: priceBand,
       level: { n: renderN(), m: renderM() }, exposure: { seconds: Math.max(0, time[1] - time[0]) * BASE },
       source: PACK.live ? "cube" : "recorded", pack: PACK.state_token ?? null, measuredThrough: Math.min(time[1], activeCutoff()),
       completeness: time[1] > Math.floor(CUT) ? "open" : CANON !== null && time[1] > CANON ? "provisional" : "complete",
@@ -4378,12 +4383,18 @@
   }
   function cardValue(value, unit, exact = nav.shift) {
     if (unit === "base-time") return { text: when(value), unit: "UTC" };
-    if (unit === "daily-atr/bar") return { text: Number(value.toPrecision(3)).toString(), unit: "daily ATR / native bar" };
+    if (unit === "price") { const f = exact ? usdt : price; return { text: value < 0 ? "−" + f(-value) : f(value), unit: "USDT" }; }
+    if (unit === "daily-atr/bar") return { text: Number(value.toPrecision(3)).toString().replace("-", "−"), unit: "daily ATR / native bar" };
     if (unit === "share" || unit === "signed-share") return { text: unit === "signed-share" ? signed(value * 100, (x) => x.toFixed(exact ? 2 : 1)) : (value * 100).toFixed(exact ? 2 : 1), unit: "%" };
-    if (unit === "daily-atr") return { text: value === 0 ? "0" : Number(value.toPrecision(exact ? 6 : 3)).toString(), unit: "daily ATR" };
+    if (unit === "daily-atr") return { text: value === 0 ? "0" : Number(value.toPrecision(exact ? 6 : 3)).toString().replace("-", "−"), unit: "daily ATR" };
     if (unit === "log2-ratio") return { text: signed(value, (x) => x.toFixed(exact ? 4 : 2)), unit: "log₂ ratio" };
     const names = { usdt: "USDT", trades: "trades", "usdt-per-trade": "USDT / trade", ratio: "×", seconds: "seconds", "trades-per-minute": "trades / min", "row-spans": "row spans", "path-per-range": "path / range", "usdt-per-usdt-moved": "USDT / USDT moved" };
     return { text: exact ? usdt(value) : compact(value), unit: names[unit] ?? unit };
+  }
+  // A value that could not be measured reads as its state at label size; its reason stays one hover away.
+  function cardState(result) {
+    const { short, long } = E.result.describe(result);
+    return { text: short.split(": ")[0], reason: long };
   }
   function coreCardPresentation(tip, { primary, companions = [], groups = [], observation, profile = null, detailed = false }) {
     const raw = tip.querySelector(".ol-tip-rows") ?? Object.assign(document.createElement("dl"), { className: "ol-tip-rows" });
@@ -4403,7 +4414,10 @@
       value.dataset.canonical = String(result.tag === "finite" ? result.value : result.tag);
       if (metric.text !== undefined) value.dataset.fact = metric.text;
       value.dataset.formula = metric.formula ?? observation.formula;
-      const shown = metric.text !== undefined ? { text: metric.text, unit: "" } : result.tag === "finite" ? (metric.format ? metric.format(result.value) : cardValue(result.value, metric.unit)) : { text: E.result.describe(result).short, unit: metric.unit === "daily-atr" ? "daily ATR" : "" };
+      const typed = metric.text === undefined && result.tag !== "finite" && parent === stats, state = typed ? cardState(result) : null;
+      const shown = metric.text !== undefined ? { text: metric.text, unit: "" } : result.tag === "finite" ? (metric.format ? metric.format(result.value) : cardValue(result.value, metric.unit)) : typed ? { text: state.text, unit: "" } : { text: E.result.describe(result).short, unit: "" };
+      value.toggleAttribute("data-typed", typed);
+      value.title = typed ? state.reason : "";
       if (result.tag === "finite" && metric.signed && result.value > 0) shown.text = "+" + shown.text;
       if (result.tag === "finite" && metric.signed) value.dataset.sign = result.value > 0 ? "positive" : result.value < 0 ? "negative" : "zero";
       value.replaceChildren(document.createTextNode(shown.text));
@@ -4429,7 +4443,7 @@
       section.append(Object.assign(document.createElement("h3"), { textContent: group.name }));
       const list = document.createElement("dl"); for (const metric of group.metrics) append(list, metric); section.append(list); details.append(section);
     }
-    const context = Object.assign(document.createElement("div"), { className: "ol-cell-context", textContent: `${range(...observation.time)} UTC · ${observation.completeness} · ${observation.source} · ${observation.precision}` });
+    const context = Object.assign(document.createElement("div"), { className: "ol-cell-context", textContent: `${range(...observation.time)} UTC · ${observation.completeness} · ${observation.source}` });
     details.append(raw, ...notes, Object.assign(document.createElement("pre"), { className: "ol-card-provenance", textContent: JSON.stringify(observation, null, 2) }));
     tip.replaceChildren(...[head, sub, stats, context, details, ...actions].filter(Boolean));
     tip.dataset.presentation = "core"; tip.dataset.observation = JSON.stringify(observation);
@@ -4470,7 +4484,7 @@
     return svg;
   }
   const referenceMissing = (reason) => E.result.make("unsupported", { reason });
-  const referenceMetric = (label, value, unit = "usdt", field = null) => ({ label, unit, field, result: Number.isFinite(value) ? E.result.finite(value) : referenceMissing(label + " unavailable") });
+  const referenceMetric = (label, value, unit = "price", field = null) => ({ label, unit, field, result: Number.isFinite(value) ? E.result.finite(value) : referenceMissing(label + " unavailable") });
   function referenceEmptyLocation(t, reason) { return { result: referenceMissing(reason), close: null, reference: null, numerator: null, atr: null, time: [t, t] }; }
   function referenceCard(tip, { primary, companions, groups = [], time, knownAt = null, candidate = false, status = "As of effective edge", profile = null, timeline = null, construction = "", family = "reference", location = null, eventKind = null }) {
     const t = Math.min(hover?.t ?? activeCutoff(), activeCutoff()), loc = location ?? (["calendar", "squeeze"].includes(family) ? referenceEmptyLocation(t, "Calendar or duration has no price location") : referenceLocation(primary.result.value, t, knownAt, candidate));
@@ -4478,11 +4492,11 @@
     const locationHistory = referenceLocationHistory(loc.reference, t, knownAt, candidate);
     const observation = cardObservation(primary.result, primary.formula ?? `reference.${family}@1`, primary.unit, support, null, { source: family === "drawing" ? "Authored coordinates; placement time unrecorded" : family === "calendar" ? "Calendar definition" : PACK.live ? "cube" : "recorded", completeness: status, visibility: "visible", history: locationHistory, denominators: [{ formula: "context.daily-atr@1", observedAt: t, numerator: loc.numerator ?? null, denominator: loc.atr ?? null, time: loc.time, knownAt, candidate, status, construction, close: loc.close, closeAgeSeconds: loc.age ?? null }] });
     const activity = loc.volume === undefined ? { result: referenceMissing("Completed native quote-volume support not held") } : seasonalContext(9, loc.time[0], loc.time[1], loc.volume);
-    groups = [...groups, { name: "Measured price/activity context · completed 8-hour close support", metrics: [referenceMetric("Completed native quote volume", loc.volume), { label: "Seasonal activity on that support", unit: "ratio", result: activity.result }, referenceMetric("Prior completed-day daily ATR", loc.atr)] }];
-    const compact = companions ?? [{ label: "Close − reference / prior daily ATR", unit: "daily-atr", field: "location", result: loc.result, signed: true, history: locationHistory }, referenceMetric("Completed 8-hour close", loc.close, "usdt", "close"), { label: "Reference status", unit: "", text: status, result: referenceMissing("Textual reference status"), field: "referenceStatus" }];
+    groups = [...groups, { name: "Measured price/activity context · completed 8-hour close support", metrics: [referenceMetric("Completed native quote volume", loc.volume, "usdt"), { label: "Seasonal activity on that support", unit: "ratio", result: activity.result }, referenceMetric("Prior completed-day daily ATR", loc.atr)] }];
+    const compact = companions ?? [{ label: "Close − reference / prior daily ATR", unit: "daily-atr", field: "location", result: loc.result, signed: true, history: locationHistory }, referenceMetric("Completed 8-hour close", loc.close, "price", "close"), { label: "Reference status", unit: "", text: status, result: referenceMissing("Textual reference status"), field: "referenceStatus" }];
     coreCardPresentation(tip, { primary, companions: compact, groups, observation, profile: profile ?? timeline ?? referenceTrack(loc.reference, loc), detailed: inspect.on && inspect.surface === "references" });
     const context = tip.querySelector(".ol-cell-context");
-    context.textContent += ` · ${status} · ${construction}${loc.close === null ? "" : " · Close at " + when(loc.time[1]) + " UTC; age " + dur(loc.age)}`;
+    context.textContent += ` · ${construction}${loc.close === null ? "" : " · Close at " + when(loc.time[1]) + " UTC; age " + dur(loc.age)}`;
     tip.dataset.referenceKnownAt = String(knownAt); tip.dataset.referenceFamily = family;
     eventKind ??= ({ ath: "ath", priorCycle: "priorCycle", fibonacci: "fibonacci", vwap: "vwap", open: "session", prev: "session", drawing: "drawing" })[family];
     if (eventKind) {
@@ -4591,15 +4605,15 @@
       companions = [metric("Price in envelope · unclamped %B", null, "share", null, percentB), metric("Close − middle / prior daily ATR", null, "daily-atr", null, normal(frame.closes[i] - bb.mid[i])), metric("Envelope width / prior daily ATR", null, "daily-atr", null, normal(width))];
       plot = relatedIndicatorPlot(["upper", "mid", "lower"].map((key) => ({ label: key + " band", history: nativeHistory(frame, bb[key], i) })));
       construction = `SMA(20) ± 2 population standard deviations on ${TF_NAMES[frame.tf]}; ` + (frame.tf === "4h" ? "compression below trailing 500-bar Type-7 10th percentile" : frame.tf === "1d" ? "compression at trailing 182-day minimum; not a percentile" : "no compression cohort for this timeframe") + "; compression assigns no expansion direction.";
-      groups = [{ name: "Envelope", metrics: [metric("Upper", bb.upper[i], "usdt"), metric("Middle", bb.mid[i], "usdt"), metric("Lower", bb.lower[i], "usdt")] }];
+      groups = [{ name: "Envelope", metrics: [metric("Upper", bb.upper[i], "price"), metric("Middle", bb.mid[i], "price"), metric("Lower", bb.lower[i], "price")] }];
     } else {
       const values = l.values;
-      primary = metric(l.name, values[i], "usdt", nativeHistory(frame, values, i));
-      companions = [metric("Close − average / prior daily ATR", null, "daily-atr", null, normal(frame.closes[i] - values[i])), metric("Average slope / daily ATR per native bar", null, "daily-atr/bar", null, slope(values)), metric("Native close", frame.closes[i], "usdt")];
+      primary = metric(l.name, values[i], "price", nativeHistory(frame, values, i));
+      companions = [metric("Close − average / prior daily ATR", null, "daily-atr", null, normal(frame.closes[i] - values[i])), metric("Average slope / daily ATR per native bar", null, "daily-atr/bar", null, slope(values)), metric("Native close", frame.closes[i], "price")];
       plot = relatedIndicatorPlot([{ label: l.name, history: nativeHistory(frame, values, i) }, { label: "Native close", history: nativeHistory(frame, frame.closes, i) }]);
       construction = `${l.what.toUpperCase()}(${l.n}) on ${TF_NAMES[frame.tf]}; ` + (frame.tf === "3m" ? "12/28 EMA on 3.75-minute bars is the existing 5-minute 9/21 proxy; " : "") + (l.key === "bmsb" ? "Bull market support band is the conventional weekly SMA(20)/EMA(21) name, not a regime claim; " : "") + "one-bar slope requires adjacent completed native bars; daily ATR uses the prior completed UTC day.";
     }
-    groups = [...groups, { name: "Native price/activity support", metrics: [metric("Native close", frame.closes[i], "usdt"), metric("Native quote volume", frame.bars[i].v, "usdt"), metric("Prior completed-day daily ATR", c.atr, "usdt")] }];
+    groups = [...groups, { name: "Native price/activity support", metrics: [metric("Native close", frame.closes[i], "price"), metric("Native quote volume", frame.bars[i].v, "usdt"), metric("Prior completed-day daily ATR", c.atr, "usdt")] }];
     const observation = cardObservation(primary.result, "reference.indicator@1", primary.unit, c.time, null, { source: "cube native bars", completeness: c.status, history: primary.history, denominators: [{ formula: "context.daily-atr@1", denominator: c.atr, time: c.time, nativeTimeframe: frame.tf, knownAt }] });
     coreCardPresentation(tip, { primary, companions, groups, observation, profile: plot, detailed: inspect.on && inspect.surface === "references" });
     tip.querySelector(".ol-cell-context").textContent += " · " + construction;
@@ -4623,7 +4637,7 @@
       const d = divergence;
       groups.push({ name: d.bearish ? "Price higher / RSI lower" : "Price lower / RSI higher", metrics: [referenceMetric("Earlier swing price", d.a.price), referenceMetric("Later swing price", d.b.price), referenceMetric("Earlier swing RSI", d.r0, "RSI points"), referenceMetric("Later swing RSI", d.r1 ?? values[d.b.i], "RSI points")] });
     }
-    groups.push({ name: "Native price/activity support", metrics: [referenceMetric("Native close", frame.closes[i]), referenceMetric("Native quote volume", frame.bars[i].v), referenceMetric("Prior completed-day daily ATR", c.atr)] });
+    groups.push({ name: "Native price/activity support", metrics: [referenceMetric("Native close", frame.closes[i]), referenceMetric("Native quote volume", frame.bars[i].v, "usdt"), referenceMetric("Prior completed-day daily ATR", c.atr)] });
     const observation = cardObservation(primary.result, "reference.momentum@1", primary.unit, c.time, null, { source: "cube native bars", completeness: c.status, history: primary.history, denominators: [{ formula: "context.daily-atr@1", denominator: c.atr, nativeTimeframe: frame.tf, time: c.time }] });
     coreCardPresentation(tip, { primary, companions, groups, observation, profile: relatedIndicatorPlot(series), detailed: inspect.on && inspect.surface === "columns" });
     tip.querySelector(".ol-cell-context").textContent += ` · ${TF_NAMES[frame.tf]} · momentum, not a reversal guarantee · prior completed UTC-day ATR; correlated series are not independent confirmations`;
@@ -4652,7 +4666,7 @@
     const retrospective = candidate || knownAt !== null && t < knownAt;
     const dispersion = retrospective ? { result: referenceMissing("Retrospective comparison before VWAP measurement or anchor confirmation"), sigma: null }
       : bins && loc.close !== null ? E.measure.weightedBins({ rows: bins, rowWidth: width, vwap: value, close: loc.close }) : { result: referenceMissing(reason), sigma: null };
-    referenceCard(tip, { primary: referenceMetric("VWAP · quote / base volume", value), companions: [{ label: "Close − VWAP / prior daily ATR", unit: "daily-atr", result: loc.result, signed: true }, { label: "Stretch / weighted-bin σ · approximation", unit: "σ", result: dispersion.result, signed: true }, referenceMetric("Reported quote volume", quote)], time: [start, end ?? start], knownAt, candidate, status: candidate ? "Candidate swing anchor; retrospective before confirmation" : "As of quote/base cutoff", family: "vwap", location: loc, groups: [{ name: "Construction timing", metrics: [referenceMetric("Quote/base measured through", end, "base-time", "vwapMeasuredThrough"), referenceMetric("Anchor confirmation", swing?.knownAt, "base-time", "vwapAnchorKnownAt")] }], construction: `Σ quote USDT / Σ BTC; base sum ${Number.isFinite(base) ? base : "unavailable"} BTC. Dispersion uses quote/bin-centre estimated base weights on ${width} USDT bins; σ ${dispersion.sigma ?? "unavailable"} USDT, not exact tick moments. ${l.swing ? "The 8-hour-bar-start anchor includes trades before the extreme." : ""}` });
+    referenceCard(tip, { primary: referenceMetric("VWAP · quote / base volume", value), companions: [{ label: "Close − VWAP / prior daily ATR", unit: "daily-atr", result: loc.result, signed: true }, { label: "Stretch / weighted-bin σ · approximation", unit: "σ", result: dispersion.result, signed: true }, referenceMetric("Reported quote volume", quote, "usdt")], time: [start, end ?? start], knownAt, candidate, status: candidate ? "Candidate swing anchor; retrospective before confirmation" : "As of quote/base cutoff", family: "vwap", location: loc, groups: [{ name: "Construction timing", metrics: [referenceMetric("Quote/base measured through", end, "base-time", "vwapMeasuredThrough"), referenceMetric("Anchor confirmation", swing?.knownAt, "base-time", "vwapAnchorKnownAt")] }], construction: `Σ quote USDT / Σ BTC; base sum ${Number.isFinite(base) ? base : "unavailable"} BTC. Dispersion uses quote/bin-centre estimated base weights on ${width} USDT bins; σ ${dispersion.sigma ?? "unavailable"} USDT, not exact tick moments. ${l.swing ? "The 8-hour-bar-start anchor includes trades before the extreme." : ""}` });
   }
   function drawingReferencePresentation(tip, h) {
     const t = Math.min(hover?.t ?? activeCutoff(), activeCutoff()), object = h.drawing ? drawingById(h.drawing) : null;
@@ -4691,8 +4705,7 @@
   function readingATR(t) { return contextATR(t); }
   function readingDistance(value, atr, exact) {
     const normalized = E.measure.normalized(value, atr);
-    return normalized.result.tag === "finite" ? cardValue(normalized.result.value, "daily-atr", exact)
-      : { text: E.result.describe(normalized.result).short, unit: "daily ATR" };
+    return normalized.result.tag === "finite" ? cardValue(normalized.result.value, "daily-atr", exact) : null;
   }
   const cellContextResults = new Map(), cellMotionResults = new Map();
   function cellContextSpec(n, m, c, cut = activeCutoff(), moving = false) {
@@ -5014,7 +5027,7 @@
         location.dataset.poc = String(reference.poc); location.dataset.through = String(reference.through);
         const levels = document.createElement("div"); levels.className = "ol-cell-context";
         const distance = readingDistance(Math.abs(reference.distance), atr, exact);
-        levels.textContent = `POC ${price(reference.poc)} · Value ${price(reference.valueLow)}–${price(reference.valueHigh)} USDT` + (reference.distance ? ` · Nearest band edge ${reference.distance > 0 ? "+" : "−"}${distance.text} ${distance.unit} from POC` : "");
+        levels.textContent = `POC ${price(reference.poc)} · Value ${price(reference.valueLow)}–${price(reference.valueHigh)} USDT` + (reference.distance && distance ? ` · Nearest band edge ${reference.distance > 0 ? "+" : "−"}${distance.text} ${distance.unit} from POC` : "");
         location.append(levels);
       }
     }
@@ -5227,7 +5240,7 @@
     const metrics = {
       volume: { label: "Volume", unit: "usdt", field: "volume", result: finite(compositionInput.v), history: series((v) => finite(v.v)) },
       trades: { label: "Trades", unit: "trades", field: "trades", result: finite(counters.ct), history: series((v) => finite(v.ct)) },
-      imbalance: { label: "Delta / volume", unit: "signed-share", field: "imbalance", result: composition.imbalance.result, history: series((v) => E.measure.cellComposition({ z: v }).imbalance.result) },
+      imbalance: { label: "Net taker imbalance", unit: "signed-share", field: "imbalance", result: composition.imbalance.result, history: series((v) => E.measure.cellComposition({ z: v }).imbalance.result) },
       buySize: { label: "Buyer-initiated mean", unit: "usdt-per-trade", field: "buySize", result: composition.buySize.result, history: series((v) => E.measure.cellComposition({ z: v }).buySize.result) },
       sellSize: { label: "Seller-initiated mean", unit: "usdt-per-trade", field: "sellSize", result: composition.sellSize.result, history: series((v) => E.measure.cellComposition({ z: v }).sellSize.result) },
       buyAmount: { label: "Buyer-initiated USDT", unit: "usdt", result: finite(counters.bv) },
@@ -5388,7 +5401,7 @@
                     ? [
                         ["Buy − sell trades", signed(value, count), "value", value],
                         ["Trades", count(x.ct), "trades", x.ct],
-                        ["Taker-buy trades", share(x.ct ? x.bt / x.ct : 0), "takerShare", x.ct ? x.bt / x.ct : 0],
+                        ["Buyer-initiated trades", share(x.ct ? x.bt / x.ct : 0), "takerShare", x.ct ? x.bt / x.ct : 0],
                       ]
                     : key === "size"
                       ? [
@@ -5761,7 +5774,7 @@
     try {
       const input = frame.legendInput();
       if (!input) return "";
-      return ` · Scale: ${scaleText({ state: input.state, id: input.mappingId || null, policy: input.policy, external: input.external })}`;
+      return ` · Scale: ${scaleText({ state: input.state, id: null, policy: input.policy, external: input.external })}`;
     } catch (error) {
       scaleFault(error);
       return "";
@@ -5780,9 +5793,9 @@
       ["Volume", f.money(z.v), "volume", z.v],
       ["Trades", f.count(z.ct), "trades", z.ct],
       ["Trade size", text(size, f.money), "size", canonical(size)],
-      ["Taker buys", `${f.money(z.bv)} · ${text(flow, f.share)}`, "buyVolume", z.bv],
-      ["Taker sells", f.money(z.v - z.bv), "sellVolume", z.v - z.bv],
-      ["Taker-buy trades", `${f.count(z.bt)} · ${text(flowTrades, f.share)}`, "buyTrades", z.bt],
+      ["Buyer-initiated USDT", `${f.money(z.bv)} · ${text(flow, f.share)}`, "buyVolume", z.bv],
+      ["Seller-initiated USDT", f.money(z.v - z.bv), "sellVolume", z.v - z.bv],
+      ["Buyer-initiated trades", `${f.count(z.bt)} · ${text(flowTrades, f.share)}`, "buyTrades", z.bt],
       ["Delta · taker-buy minus taker-sell USDT", text(delta, (x) => signed(x, f.money)), "delta", canonical(delta)],
     ];
   }
@@ -5909,8 +5922,8 @@
             ["Volume", money(row.v)],
             ["Of the profile", share(row.v / last.query.v)],
             ["Trades", count(row.ct)],
-            ["Taker buys", `${money(row.bv)} · ${share(row.bv / row.v)}`],
-            ["Taker-buy trades", `${count(row.bt)} · ${share(row.ct ? row.bt / row.ct : 0)}`],
+            ["Buyer-initiated USDT", `${money(row.bv)} · ${share(row.bv / row.v)}`],
+            ["Buyer-initiated trades", `${count(row.bt)} · ${share(row.ct ? row.bt / row.ct : 0)}`],
             ...times,
           ],
           note,
@@ -7777,7 +7790,6 @@
         MODE_NAMES[S.mode],
         // TEXT(S1): "Shared scale" has no key of its own in E.text
         S.scale.local ? E.text.policy.local : "Shared scale",
-        (built.input.desc?.id ?? built.input.mappingId ?? "").slice(0, 8),
         state,
       ]
         .filter(Boolean)
@@ -7937,7 +7949,7 @@
   // The details that are instants arrive as milliseconds (the canonical number stays in data-value); they
   // read as UTC times.
   function uiUtcMs(ms) {
-    return new Date(ms).toISOString().replace(/(:\d\d)?\.000Z$/, "Z");
+    return `${when(E.time.msToBase(ms, T0, BASE))} UTC`;
   }
   // A detail row's label: the module's own, except where it is the same long sentence as the value (the model's
   // applicability), which would make the label column as wide as the popover.
@@ -10308,7 +10320,7 @@
             ? `Sign not marked under ${min} px: read it in the readout, the table or Inspect`
             : markCount.signSmall === 0
               ? "+ above, − below, ring at the midpoint"
-              : `+ above, − below, ring at the midpoint · ${integer(markCount.signSmall)} cells under ${min} px unmarked`;
+              : `+ above, − below, ring at the midpoint · ${integer(markCount.signSmall)} ${markCount.signSmall === 1 ? "cell" : "cells"} under ${min} px unmarked`;
       if (el("key-sign-text").textContent !== text) el("key-sign-text").textContent = text;
     }
     if (markCount.detail > 0) {
@@ -11049,7 +11061,7 @@
         live: true,
       },
       dopen: { family: "session", name: "Daily open", desc: "Each UTC day's first trade, across its day", live: true },
-      pdhlc: { family: "session", name: "Previous day's high, low and close", desc: "Across the following day", live: true },
+      pdhlc: { family: "session", name: "Previous day's high, low and close", desc: "PDH, PDL and PDC, across the following day", live: true },
       wopen: { family: "session", name: "Weekly open", desc: "Monday 00:00 UTC, across its week", live: true },
       mopen: { family: "session", name: "Monthly open", desc: "The 1st, 00:00 UTC, across its month", live: true },
       ath: { family: "structure", name: "All-time high", desc: "The highest trade in the cube's history, from its time on", live: true },
@@ -11061,11 +11073,11 @@
       },
       swing4h: {
         family: "structure",
-        name: "4-hour swings",
+        name: "4h swings",
         desc: "Highs and lows a 3 ATR reversal confirms on the 4-hour bars, until price trades through them; equal ones flagged",
         live: true,
       },
-      swing1d: { family: "structure", name: "Daily swings", desc: "The same on the daily bars", live: true },
+      swing1d: { family: "structure", name: "1D swings", desc: "The same on the daily bars", live: true },
       fib30: {
         family: "structure",
         name: "Retracements · 30 days",
@@ -11101,25 +11113,25 @@
       ema3m: {
         family: "average",
         group: "intraday",
-        name: "12 and 28 EMA · 3.75 min",
+        name: "12 and 28 EMA · 3.75m",
         desc: "On 3.75-minute bars, standing in for the 5-minute 9 and 21",
         live: true,
       },
-      ema15m: { family: "average", group: "intraday", name: "9 and 21 EMA · 15 min", desc: "On 15-minute bars", live: true },
-      ema1h: { family: "average", group: "intraday", name: "50 and 200 EMA · 1 h", desc: "On hourly bars", live: true },
-      ema4h: { family: "average", group: "intraday", name: "50 and 200 EMA · 4 h", desc: "On 4-hour bars", live: true },
+      ema15m: { family: "average", group: "intraday", name: "9 and 21 EMA · 15m", desc: "On 15-minute bars", live: true },
+      ema1h: { family: "average", group: "intraday", name: "50 and 200 EMA · 1h", desc: "On hourly bars", live: true },
+      ema4h: { family: "average", group: "intraday", name: "50 and 200 EMA · 4h", desc: "On 4-hour bars", live: true },
       bb15m: {
         family: "average",
         group: "bb",
-        name: "Bollinger · 15 min",
+        name: "Bollinger · 15m",
         desc: "The 20-bar SMA ± 2 population standard deviations, on 15-minute bars",
         live: true,
       },
-      bb1h: { family: "average", group: "bb", name: "Bollinger · 1 h", desc: "The same on hourly bars", live: true },
+      bb1h: { family: "average", group: "bb", name: "Bollinger · 1h", desc: "The same on hourly bars", live: true },
       bb4h: {
         family: "average",
         group: "bb",
-        name: "Bollinger · 4 h",
+        name: "Bollinger · 4h",
         desc: "The same on 4-hour bars; squeezes are intervals in the event strip, bandwidth below its 10th percentile of the last 500 bars",
         live: true,
       },
@@ -11523,16 +11535,16 @@
         denominators: [{ ...displacement, time: [bar.start, bar.through], source: "Prior completed UTC day · Wilder ATR(14)" }],
       });
       coreCardPresentation(tip, {
-        primary: { label: "Close", result: observation.result, unit: "usdt", history: observation.history },
+        primary: { label: "Close", result: observation.result, unit: "price", history: observation.history },
         companions: [
           { label: "Net move / prior daily ATR", result: displacement.result, unit: "daily-atr", signed: true, history: series((v) => v.close - v.open, true) },
           { label: "High − low / prior daily ATR", result: range.result, unit: "daily-atr", history: series((v) => v.high - v.low, true) },
           { label: "Reported quote volume", result: E.result.finite(bar.v), unit: "usdt", history: series((v) => v.v) },
         ],
         groups: [{ name: "Raw price and movement", metrics: [
-          ...["Open", "High", "Low"].map((label) => ({ label, result: E.result.finite(bar[label.toLowerCase()]), unit: "usdt" })),
-          { label: "Signed close − open", result: E.result.finite(bar.close - bar.open), unit: "usdt" },
-          { label: "High − low", result: E.result.finite(bar.high - bar.low), unit: "usdt" },
+          ...["Open", "High", "Low"].map((label) => ({ label, result: E.result.finite(bar[label.toLowerCase()]), unit: "price" })),
+          { label: "Signed close − open", result: E.result.finite(bar.close - bar.open), unit: "price" },
+          { label: "High − low", result: E.result.finite(bar.high - bar.low), unit: "price" },
         ] }], observation, detailed,
       });
       tip.dataset.presentation = "candle";
@@ -11548,7 +11560,7 @@
     for (const bar of r.bars.slice(tablePage * CELLS_PAGE, (tablePage + 1) * CELLS_PAGE)) {
       const row = document.createElement("tr"); row.tabIndex = -1; row.dataset.candle = bar.c;
       const atr = contextATR(bar.start), displacement = bar.close - bar.open, spread = bar.high - bar.low;
-      const values = [[range(bar.start, bar.stop)], ...[["open",bar.open],["high",bar.high],["low",bar.low],["close",bar.close],["netMove",displacement],["range",spread]].map(([field,value])=>[price(value),field,value]), ...[["netMoveATR",displacement],["rangeATR",spread]].map(([field,value])=>{const result=E.measure.normalized(value,atr).result;return [result.tag === "finite" ? result.value.toFixed(4) + " ATR" : E.result.describe(result).short,field,result.tag === "finite" ? result.value : result.tag];}), [bar.direction], [bar.state === "so-far" ? "So far" : "Complete"]];
+      const values = [[range(bar.start, bar.stop)], ...[["open",bar.open],["high",bar.high],["low",bar.low],["close",bar.close],["netMove",displacement],["range",spread]].map(([field,value])=>[price(value),field,value]), ...[["netMoveATR",displacement],["rangeATR",spread]].map(([field,value])=>{const result=E.measure.normalized(value,atr).result;return [result.tag === "finite" ? result.value.toFixed(4).replace("-", "−") + " ATR" : E.result.describe(result).short,field,result.tag === "finite" ? result.value : result.tag];}), [bar.direction], [bar.state === "so-far" ? "So far" : "Complete"]];
       for (const [text,field,value] of values) { const td=document.createElement("td");td.textContent=text;if(field){td.dataset.field=field;td.dataset.canonical=String(value);}row.append(td); }
       row.addEventListener("focus", () => { if (!inspect.on) inspectEnter(); inspect.surface = "cells"; inspect.t = (bar.start + bar.stop) / 2; inspect.p = bar.close / PR; inspectRender(true); });
       row.addEventListener("keydown", (e) => { const next = e.key === "ArrowDown" ? row.nextElementSibling : e.key === "ArrowUp" ? row.previousElementSibling : null; if (next) { e.preventDefault(); next.focus(); } });
@@ -14164,7 +14176,7 @@
             from: day.t,
             to: Math.min(day.z, end),
             on: latest,
-            tag: latest ? tag("Day open", day.open / PR) : null,
+            tag: latest ? tag("Daily open", day.open / PR) : null,
           });
         const prev = cal.days.by.get(day.k - 1);
         if (keys.includes("pdhlc") && prev?.whole)
@@ -14185,6 +14197,7 @@
               from: day.t,
               to: Math.min(day.z, end),
               on: latest,
+              name,
               tag: latest ? tag(name, value / PR) : null,
             });
       }
@@ -14203,7 +14216,7 @@
           from: Math.max(0, week.t),
           to: Math.min(week.z, end),
           on: latest,
-          tag: latest ? tag("Week open", week.open / PR) : null,
+          tag: latest ? tag("Weekly open", week.open / PR) : null,
         });
       }
     }
@@ -15912,14 +15925,14 @@
       }
     }
     const cleared = !S.lines.length && S.level === null,
-      daysHead = days.length ? "Since a day" : "Since a day · none yet",
+      daysHead = days.length ? "Since a UTC day" : "Since a UTC day · none yet",
       last = date(Math.max(0, activeCutoff() - 1e-6)).toISOString().slice(0, 10);
     if (el("lines-clear").disabled !== cleared) el("lines-clear").disabled = cleared;
     if (el("lines-days-head").textContent !== daysHead) el("lines-days-head").textContent = daysHead;
     // The VWAPs from a day need the live cube, as every VWAP does.
     for (const node of [el("lines-vdate"), el("lines-vadd").querySelector("button")])
       if (node.disabled !== !PACK.live) node.disabled = !PACK.live;
-    const vHead = vdays.length ? "From a day" : "From a day · none yet";
+    const vHead = vdays.length ? "From a UTC day" : "From a UTC day · none yet";
     if (el("lines-vdays-head").textContent !== vHead) el("lines-vdays-head").textContent = vHead;
     for (const id of ["lines-date", "lines-vdate"]) {
       if (el(id).min !== "2021-01-01") el(id).min = "2021-01-01";
@@ -17044,7 +17057,7 @@
       for (const [component, label] of [["conditional", "Matching"], ["baseline", "All seasonally eligible states"], ["difference", "Difference"]]) {
         const record = e.uncertainty.intervals[kind][component], span = document.createElement("span"), result = record.result;
         span.dataset.component = component; span.dataset.direction = kind; span.dataset.canonical = JSON.stringify(result);
-        span.textContent = label + " " + (result.tag === "finite" ? result.value.map((v) => v.toFixed(2)).join("–") + (component === "difference" ? " pp" : "%") : result.reason) + "; "; line.append(span);
+        span.textContent = label + " " + (result.tag === "finite" ? result.value.map((v) => v.toFixed(2).replace("-", "−")).join(" to ") + (component === "difference" ? " pp" : "%") : result.reason) + "; "; line.append(span);
       }
       host.append(line);
     }
@@ -19745,7 +19758,7 @@
     // The diagonal is the recorded model's: the one string says how it stands at the cutoff (timing, and
     // whether the requested level lies outside the levels it was fitted on).
     const model = modelStatusLine("diagonal", S.n);
-    nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""} · diagonal m = round(${ISO_A} + ${ISO_B} n)${model ? ` · ${model}` : ""}`;
+    nav.planeStatus = `Requested n ${S.n} · m ${S.m}${renderN() !== S.n || renderM() !== S.m ? ` · displayed n ${renderN()} · m ${renderM()}` : ""}${model ? ` · ${model}` : ""}`;
     if (!nav.planeHover) setPlaneStatus(nav.planeStatus);
     const gesture = trendTool
       ? "Place A and B, or drag · G: previous tool · Esc: cancel · Keep drawing repeats"
@@ -20202,7 +20215,6 @@
     const parts = [];
     if (lens.scope === "shared") parts.push(LENS_SHARED_TEXT);
     else if (lens.pending) parts.push(E.text.state.localPending);
-    if (lens.mappingId) parts.push(lens.mappingId.slice(0, 6));
     // the legend's short text can repeat a word (a fixed scale is both its transform and its policy): once is enough
     if (lensRt.chipText) parts.push([...new Set(lensRt.chipText.split(" · "))].join(" · "));
     if (report.shares.marks > 0 || report.shares.area > 0)
@@ -22529,7 +22541,7 @@
     measure("size","size","mean");measure("flow","flow");measure("flowtrades","flowtrades");
     measure("path","path","amount","spans",true);measure("dwell","dwell","share","spans",true);
     const addDetail=(label,value,unit,supportEnd=factSupport,knownThrough=supportEnd,tag="finite")=>detail.push({label,value:Number.isFinite(value)||typeof value==="string"?value:null,unit,tag,supportEnd,knownThrough});
-    addDetail("Taker buys",z.bv,"usdt");addDetail("Taker sells",z.v-z.bv,"usdt");addDetail("Taker-buy trades",z.bt,"trades");
+    addDetail("Buyer-initiated USDT",z.bv,"usdt");addDetail("Seller-initiated USDT",z.v-z.bv,"usdt");addDetail("Buyer-initiated trades",z.bt,"trades");
     const composition=E.measure.cellComposition({z,column:cellColumn(n,m,c,cut,[t0,t1])});
     for(const [key,label] of [["imbalance","Net taker imbalance · cell volume"],["buySize","Buyer-initiated mean reported trade"],["sellSize","Seller-initiated mean reported trade"],["sizeRatio","Seller / buyer mean reported trade"],["columnShare","Cell share of interval volume · all prices"]]) {
       const record=composition[key];addDetail(label,record.result.value??null,record.unit,factSupport,factSupport,record.result.tag);
@@ -22778,7 +22790,7 @@
     comparisonRefresh(true);
   }
   function comparisonInit() {
-    comparisonUI=window.explorerComparisonUI.create({root:el("comparisonWorkspace"),dispatch:comparisonDispatch});
+    comparisonUI=window.explorerComparisonUI.create({root:el("comparisonWorkspace"),dispatch:comparisonDispatch,time:{when:ms=>`${when(E.time.msToBase(ms,T0,BASE))} UTC`,range:(a,b)=>`${range(E.time.msToBase(a,T0,BASE),E.time.msToBase(b,T0,BASE))} UTC`}});
     const openContext = event => { if (!drawingOpenContext(event)) comparisonOpenMenu(event,comparisonTarget(at(event))); };
     canvas.addEventListener("contextmenu",openContext);
     const menuPresses=new Set();

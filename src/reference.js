@@ -41,7 +41,7 @@
     { id: "rows", group: "Read the market", title: "Rows & reference period",
       purpose: "Place the view or selection against a longer history at each price level.",
       read: "Rows has its own period. Its narrow strip shows full-strength values; its faint backdrop extends behind the grid. Volume and Delta are period totals; Time at price is period dwell. Row volume versus mean traded row compares a row's period volume with the mean of all traded rows in that period: 0 is average, +1 is double, −1 is half. Untraded rows have no concentration band. The strip retains the period’s native row width; the drawn profile may use coarser bins. Profile-share log₂ ratio separately compares overlapping clipped bins on common support; Shared row share uses wholly-in-view bins. Each profile has its own amount axis unless a supported shared axis is selected.",
-      use: "Turn Rows on, choose a measure and set its period. All history is the available reference history. Fixed periods ignore navigation and selections; Visible range follows the chart's time window. A selection changes Profile-share log₂ ratio, while background values retain their period basis.",
+      use: "Turn Rows on, choose a measure and set its period. All history is the available reference history. Fixed periods ignore navigation and selections; Visible range follows the chart's time window. A selection changes Profile-share log₂ ratio, while Rows values retain their period basis.",
       targets: [{ label: "Show Rows control", selector: "#ol-rows" }, { label: "Show row strip", region: "rows" }] },
     { id: "profiles", group: "Read the market", title: "Profile tracks",
       purpose: "Compare how activity is distributed across price levels.",

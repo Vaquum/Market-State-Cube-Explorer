@@ -149,6 +149,7 @@ test("historical visible-range VWAP withholds later profile stretch", async ({ p
   const figures = card.locator(".ol-core-stats > .ol-cell-stat dd");
   await expect(figures.nth(1)).toHaveAttribute("data-canonical", "unsupported");
   await expect(figures.nth(2)).toHaveAttribute("data-canonical", "unsupported");
-  await expect(figures.nth(2)).toContainText("Retrospective comparison before VWAP measurement or anchor confirmation");
+  await expect(figures.nth(2)).toHaveText("Not supported here");
+  await expect(figures.nth(2)).toHaveAttribute("title", /Retrospective comparison before VWAP measurement or anchor confirmation/);
   await expect(card).toContainText("σ unavailable USDT");
 });

@@ -139,10 +139,13 @@ for (const state of ["pending","failed"]) test(`${state}: missing motion still r
 });
 
 test("selection details retain the earlier movement cutoff alongside activity", async ({page,fakeFor,probe}) => {
-  await open(page,fakeFor,probe,"&sel=2021-01-01T00:00Z~2021-01-01T00:05Z,25000~25375&mode=path");
+  // The open activity interval has no motion yet; scale completion is not the
+  // card's independently measured rectangle readiness.
+  const fake=await fakeFor("micro:mixed");
+  await page.goto(fake.url+"/"+VIEW+"&sel=2021-01-01T00:00Z~2021-01-01T00:06Z,25000~25375&mode=path");
   await canonical(page,"path",1000/375);
   const details=page.locator(`${CARD} .ol-cell-details`); await details.locator("summary").click();
-  await expect(details).toContainText("Movement support 1 Jan 00:00–1 Jan 00:04:41.250 UTC");
+  await expect(details).toContainText("Movement support 1 Jan 00:00–00:04:41.250 UTC");
   await expect(details).toContainText("281.25 covered seconds; 375 USDT price width");
   await expect(details).toContainText("Raw path 1000 USDT; raw dwell 163.75 seconds");
   await expect(details).toContainText("Movement ends before activity.");

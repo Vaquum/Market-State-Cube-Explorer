@@ -4493,7 +4493,7 @@
     const locationHistory = referenceLocationHistory(loc.reference, t, knownAt, candidate);
     const observation = cardObservation(primary.result, primary.formula ?? `reference.${family}@1`, primary.unit, support, null, { source: family === "drawing" ? "Authored coordinates; placement time unrecorded" : family === "calendar" ? "Calendar definition" : PACK.live ? "cube" : "recorded", completeness: status, visibility: "visible", history: locationHistory, denominators: [{ formula: "context.daily-atr@1", observedAt: t, numerator: loc.numerator ?? null, denominator: loc.atr ?? null, time: loc.time, knownAt, candidate, status, construction, close: loc.close, closeAgeSeconds: loc.age ?? null }] });
     const activity = loc.volume === undefined ? { result: referenceMissing("Completed native quote-volume support not held") } : seasonalContext(9, loc.time[0], loc.time[1], loc.volume);
-    groups = [...groups, { name: "Measured price/activity context · completed 8-hour close support", metrics: [referenceMetric("Completed native quote volume", loc.volume, "usdt"), { label: "Seasonal activity on that support", unit: "ratio", result: activity.result }, referenceMetric("Prior completed-day daily ATR", loc.atr)] }];
+    groups = [...groups, { name: "Measured price/activity context · completed 8-hour close support", metrics: [referenceMetric("Completed native quote volume", loc.volume, "usdt"), { label: "Seasonal activity on that support", unit: "ratio", result: activity.result }, referenceMetric("Prior completed-day daily ATR", loc.atr, "usdt")] }];
     const compact = companions ?? [{ label: "Close − reference / prior daily ATR", unit: "daily-atr", field: "location", result: loc.result, signed: true, history: locationHistory }, referenceMetric("Completed 8-hour close", loc.close, "price", "close"), { label: "Reference status", unit: "", text: status, result: referenceMissing("Textual reference status"), field: "referenceStatus" }];
     coreCardPresentation(tip, { primary, companions: compact, groups, observation, profile: profile ?? timeline ?? referenceTrack(loc.reference, loc), detailed: inspect.on && inspect.surface === "references" });
     const context = tip.querySelector(".ol-cell-context");
@@ -4638,7 +4638,7 @@
       const d = divergence;
       groups.push({ name: d.bearish ? "Price higher / RSI lower" : "Price lower / RSI higher", metrics: [referenceMetric("Earlier swing price", d.a.price), referenceMetric("Later swing price", d.b.price), referenceMetric("Earlier swing RSI", d.r0, "RSI points"), referenceMetric("Later swing RSI", d.r1 ?? values[d.b.i], "RSI points")] });
     }
-    groups.push({ name: "Native price/activity support", metrics: [referenceMetric("Native close", frame.closes[i]), referenceMetric("Native quote volume", frame.bars[i].v, "usdt"), referenceMetric("Prior completed-day daily ATR", c.atr)] });
+    groups.push({ name: "Native price/activity support", metrics: [referenceMetric("Native close", frame.closes[i]), referenceMetric("Native quote volume", frame.bars[i].v, "usdt"), referenceMetric("Prior completed-day daily ATR", c.atr, "usdt")] });
     const observation = cardObservation(primary.result, "reference.momentum@1", primary.unit, c.time, null, { source: "cube native bars", completeness: c.status, history: primary.history, denominators: [{ formula: "context.daily-atr@1", denominator: c.atr, nativeTimeframe: frame.tf, time: c.time }] });
     coreCardPresentation(tip, { primary, companions, groups, observation, profile: relatedIndicatorPlot(series), detailed: inspect.on && inspect.surface === "columns" });
     tip.querySelector(".ol-cell-context").textContent += ` · ${TF_NAMES[frame.tf]} · momentum, not a reversal guarantee · prior completed UTC-day ATR; correlated series are not independent confirmations`;
@@ -5028,7 +5028,7 @@
         location.dataset.poc = String(reference.poc); location.dataset.through = String(reference.through);
         const levels = document.createElement("div"); levels.className = "ol-cell-context";
         const distance = readingDistance(Math.abs(reference.distance), atr, exact);
-        levels.textContent = `POC ${price(reference.poc)} · Value ${price(reference.valueLow)}–${price(reference.valueHigh)} USDT` + (reference.distance && distance ? ` · Nearest band edge ${reference.distance > 0 ? "+" : "−"}${distance.text} ${distance.unit} from POC` : "");
+        levels.textContent = `POC ${price(reference.poc)} · Value ${price(reference.valueLow)}–${price(reference.valueHigh)} USDT` + (reference.distance ? ` · Nearest band edge ${reference.distance > 0 ? "+" : "−"}${distance ? `${distance.text} ${distance.unit}` : `${price(Math.abs(reference.distance))} USDT`} from POC` : "");
         location.append(levels);
       }
     }

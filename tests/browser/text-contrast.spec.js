@@ -108,6 +108,7 @@ test.describe("B43 every text of the composed chart reads against the pixels it 
     await page.setViewportSize({ width: 1500, height: 950 });
     await page.goto(`${fake.url}/#w=24h&vis=2`);
     await S.atRest(page, fake, probe);
+    await page.keyboard.press("c"); // Continuations is explicit, never enabled by the Pan click.
     const box = await page.locator("#ol-canvas").boundingBox();
     // an anchored column: the cone, with "Matching states" and "All states" beside its last boxes
     await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.4);

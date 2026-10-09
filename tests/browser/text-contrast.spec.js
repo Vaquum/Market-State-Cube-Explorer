@@ -117,9 +117,9 @@ test.describe("B43 every text of the composed chart reads against the pixels it 
     await probe.waitForQuiet({ quietMs: 800, timeout: 60000 });
     const cone = await audit(page, pane, "the cone", 8);
     expect(cone.includes("Matching states") && cone.includes("All eligible"), "the empirical-range labels are among them").toBe(true);
-    // the lens, with its caption
+    // the lens, with its caption, clear of the cone: the lens is drawn last, so a label under it is covered, not shown
     await page.keyboard.press("l");
-    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.5);
     await probe.waitForQuiet({ quietMs: 800, timeout: 60000 });
     const lens = await audit(page, pane, "the lens", 8);
     expect(lens.some((s) => /^Lens|Finest|Base cells|Detail/.test(s)), "the lens caption is among them").toBe(true);

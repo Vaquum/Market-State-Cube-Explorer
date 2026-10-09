@@ -134,7 +134,7 @@ test.describe("B01 no production test hook (DD-T04, S1-003)", () => {
     expect(await page.evaluate(() => Object.keys(window.explorerComparison).sort())).toEqual(["METRICS", "analyze", "captureText", "frozenHistories", "frozenHistory", "identity", "normalizedPoc", "originating", "sort", "value"]);
     expect(await page.evaluate(() => Object.keys(window.explorerComparisonUI).sort())).toEqual(["PAGE_SIZE", "create"]);
     expect(await page.evaluate(() => Object.keys(window.explorerReference).sort())).toEqual(["create"]);
-    expect(await page.evaluate(() => Object.keys(window.explorerState).sort())).toEqual(["backup", "comparison", "drawings", "history", "namedViews", "namedViewsStatus", "notice", "read", "save", "saveHistory", "saveNamedViews", "saveNotice", "saveScales", "saveViews", "saved", "scales", "views", "viewsKey"]);
+    expect(await page.evaluate(() => Object.keys(window.explorerState).sort())).toEqual(["backup", "comparison", "drawings", "history", "namedViews", "namedViewsStatus", "notice", "read", "returning", "save", "saveHistory", "saveNamedViews", "saveNotice", "saveScales", "saveViews", "saved", "scales", "views", "viewsKey"]);
   });
 
   test("the shipped sources name no test global and no control route", async ({ pageRoots }) => {
@@ -212,6 +212,20 @@ test.describe("B01 live mode on the mini profile", () => {
     await atRest(page, fake, probe);
     await expect(page.locator("#ol-state-pill")).toHaveAttribute("data-state", "stale");
     await expect(page.locator("#ol-fresh")).toContainText("no new data for");
+  });
+
+  test("in replay the state pill says REPLAY and the replay time, and LIVE again after", async ({ page, fakeFor, probe }) => {
+    const fake = await fakeFor("mini");
+    await page.goto(`${fake.url}/#w=24h`);
+    await atRest(page, fake, probe);
+    await page.locator("#ol-replay").click();
+    await expect(page.locator("#ol-market")).toHaveText("REPLAY");
+    await expect(page.locator("#ol-snapshot")).toHaveText(await page.locator("#ol-replay-at").textContent());
+    await expect(page.locator("#ol-fresh")).toBeHidden();
+    await page.locator("#ol-replay").click();
+    await expect(page.locator("#ol-market")).toHaveText("LIVE");
+    await expect(page.locator("#ol-snapshot")).toHaveText("");
+    await expect(page.locator("#ol-fresh")).toBeVisible();
   });
 
   test("a bridge that stops answering is stopped after 45 s, and the loading line says so", async ({ page, fakeFor, allowConsole }) => {

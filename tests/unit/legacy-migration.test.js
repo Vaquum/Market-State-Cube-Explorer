@@ -209,6 +209,10 @@ function storage(seed) {
   const writes = [];
   const area = {
     getItem: (k) => (map.has(k) ? map.get(k) : null),
+    get length() {
+      return map.size;
+    },
+    key: (i) => [...map.keys()][i] ?? null,
     setItem: (k, v) => {
       writes.push(k);
       map.set(k, String(v));
@@ -267,7 +271,7 @@ test("legacy history:v1 entries serve Back and Forward only: their hashes are ke
   assert.equal(C.parseAddress("#w=30d&t=2026-09-24T00:00Z~2026-09-24T12:00Z&p=64000~66000&r=4,0&mode=delta", ENV).place, "w=30d&t=2026-09-24T00:00Z~2026-09-24T12:00Z&p=64000~66000&r=4,0");
 });
 
-test("the bare-root rule (DR-14) from its inputs: stored v2 restores silently, stored legacy restores with the legacy notice, nothing stored is the default with one neutral version notice", () => {
+test("the bare-root rule (DR-14) from its inputs: stored v2 restores silently, stored legacy restores with the legacy notice, nothing usable stored is the default, with one neutral version notice only in a browser used before", () => {
   const decide = (hash, seed) => {
     const local = storage(seed);
     const state = loadState({ localStorage: local.area, sessionStorage: storage().area });
@@ -282,14 +286,15 @@ test("the bare-root rule (DR-14) from its inputs: stored v2 restores silently, s
     }
     if (stored.status === "unknown-version") return { path: "preserve-and-default", notice: "import-rejected-or-version" };
     const flag = state.notice();
-    return { path: "default", notice: flag.status === "absent" ? "version-default" : null };
+    return { path: "default", notice: flag.status === "absent" && state.returning() ? "version-default" : null };
   };
   const v2 = JSON.stringify({ version: 5, visualVersion: 2, prefs: {}, view: "#w=30d&vis=2&ap=slate2-8f7890f7&mode=delta" });
   const legacy = JSON.stringify({ version: 5, prefs: {}, view: "#w=30d&mode=delta" });
   assert.deepEqual(decide("", { [P + "view:v5"]: v2 }), { path: "stored-v2", notice: null });
   assert.equal(decide("#", { [P + "view:v5"]: legacy }).notice, "legacy-migrated");
   assert.equal(decide("", { [P + "view:v5"]: legacy }).changes, 2);
-  assert.deepEqual(decide("", {}), { path: "default", notice: "version-default" });
+  assert.deepEqual(decide("", {}), { path: "default", notice: null }, "a new browser: nothing changed for it");
+  assert.deepEqual(decide("", { [P + "views:v1"]: "[]" }), { path: "default", notice: "version-default" }, "a browser used before");
   assert.deepEqual(decide("", { [P + "notice:v2"]: JSON.stringify({ shown: true, visualVersion: 2 }) }), { path: "default", notice: null }, "one-time: the flag says it was shown");
   assert.equal(decide("", { [P + "view:v5"]: JSON.stringify({ version: 5, visualVersion: 3 }) }).path, "preserve-and-default");
   // a link restores prefs only: the stored view is skipped whatever it is (no migration, no notice for it)

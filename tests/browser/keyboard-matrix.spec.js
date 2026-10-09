@@ -15,14 +15,21 @@
 const { test, expect } = require("./fixtures.js");
 const S = require("./rows-support.js");
 
-// The address as the state it holds, without the keys that only the visual version adds.
-const normal = (hash) =>
-  hash
+// The address as the state it holds, without the keys that only the visual version adds. Column POCs start off in this
+// build and on in the original, so this build's marks are said the way the original writes them.
+const normal = (hash, current = false) => {
+  let parts = hash
     .replace(/^#/, "")
     .split("&")
-    .filter((p) => p && !/^(vis|ap|sc|pc|po)=/.test(p))
-    .sort()
-    .join("&");
+    .filter((p) => p && !/^(vis|ap|sc|pc|po)=/.test(p));
+  if (current) {
+    const marks = parts.find((p) => p.startsWith("marks="));
+    parts = parts.filter((p) => !p.startsWith("marks="));
+    if (!marks) parts.push("marks=none");
+    else if (marks !== "marks=poc") parts.push(marks);
+  }
+  return parts.sort().join("&");
+};
 const snapshot = (page) =>
   page.evaluate(() => {
     const open = (id) => {
@@ -61,7 +68,8 @@ test.describe("B49 the documented shortcuts are the original's", () => {
     const fake = await fakeFor("standard");
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width: 1500, height: 950 });
-    await page.goto(`${fake.url}/#w=24h`);
+    // with Column POCs on, as the original starts
+    await page.goto(`${fake.url}/#w=24h&marks=poc`);
     await S.atRest(page, fake, probe);
     await old.probe.waitForReady({ timeout: 120000 });
     await page.locator("#ol-canvas").focus();
@@ -74,7 +82,7 @@ test.describe("B49 the documented shortcuts are the original's", () => {
       const a = await snapshot(old.page),
         b = await snapshot(page);
       const was = { ...a, hash: normal(a.hash) },
-        now = { ...b, hash: normal(b.hash) };
+        now = { ...b, hash: normal(b.hash, true) };
       if (JSON.stringify(was) !== JSON.stringify(now)) different.push(`after ${key}: original ${JSON.stringify(was)} / now ${JSON.stringify(now)}`);
       // keep both on the canvas for the next key
       if (!(await page.evaluate(() => document.getElementById("ol-keys")?.open))) await page.locator("#ol-canvas").focus();

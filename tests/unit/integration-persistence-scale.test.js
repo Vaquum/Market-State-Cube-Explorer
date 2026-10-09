@@ -38,7 +38,7 @@ const ENV = { T0: 1609459200, BASE: 56.25, PR: 125, CUT: 3214083 };
 
 const VIEW_DEFAULTS = {
   window: "24h", tA: NaN, tB: NaN, pA: NaN, pB: NaN, auto: true, n: null, m: null, selection: null, anchor: null, replay: false,
-  follow: "refit", mode: "volume", pane: "cells", rows: "off", period: "90d", level: null, poc: true, area: false, untested: false,
+  follow: "refit", mode: "volume", pane: "cells", rows: "off", period: "90d", level: null, poc: false, area: false, untested: false,
   lines: [], tab: "context", evidenceKind: "poc", horizon: 1, barrier: 1, profileCmp: "independent", profileOpen: false, appearance: AP, scales: [], axes: [],
 };
 const SCALE_FIELDS = ["basis", "pathBasis", "transform", "curve", "rowsTransform", "cells", "rows", "local", "window", "lock"];
@@ -59,7 +59,7 @@ const LEGS = {
   rows: ["off", "volume", "delta", "relvol", "time"].map((r) => [{ rows: r }, null, r === "off" ? null : "rows=" + r]),
   period: [[{ period: "90d" }, null, null], [{ period: "1y" }, null, "period=1y"], [{ period: "7d" }, null, "period=7d"], [{ period: "2026-09-01" }, null, "period=2026-09-01"]],
   level: [[{ level: null }, null, null], [{ level: 520.004 }, null, "level=65000.5"]],
-  marks: [[{ poc: true, area: false, untested: false }, null, null], [{ poc: false, area: true, untested: false }, null, "marks=area"], [{ poc: true, area: true, untested: true }, null, "marks=poc,area,untested"]],
+  marks: [[{ poc: false, area: false, untested: false }, null, null], [{ poc: true, area: false, untested: false }, null, "marks=poc"], [{ poc: false, area: true, untested: false }, null, "marks=area"], [{ poc: true, area: true, untested: true }, null, "marks=poc,area,untested"]],
   lines: [[{ lines: [] }, null, null], [{ lines: ["1d", "7d"] }, null, "lines=1d,7d"]],
   tab: [[{ tab: "context" }, null, null], [{ tab: "evidence" }, null, "tab=continuations"]],
   evidenceKind: [[{ evidenceKind: "poc" }, null, null], [{ evidenceKind: "barrier" }, null, "outcome=barrier"]],

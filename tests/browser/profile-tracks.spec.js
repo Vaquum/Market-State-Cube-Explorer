@@ -398,7 +398,8 @@ test.describe("B25 the adjacent profile tracks", () => {
   test("the period's POC stays Volume-derived under Delta, with its glyph and letter, and the popover says so", async ({ page, probe, fakeFor, pane }) => {
     const sc = scenario();
     const fake = await fakeFor("standard");
-    const { frame } = await open(page, fake, probe, pane, addressOf(sc, { kind: "delta" }));
+    // the POC glyphs and letters are drawn with Column POCs
+    const { frame } = await open(page, fake, probe, pane, addressOf(sc, { kind: "delta", extra: "&marks=poc" }));
     const letters = frame.texts.filter((t) => t.text === "P");
     expect(letters.length, "a P for the current track and one for the reference track").toBe(2);
     const pop = await popover(page);

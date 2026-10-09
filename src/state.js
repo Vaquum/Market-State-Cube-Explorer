@@ -11,6 +11,17 @@
   // running state usable. This file cannot import the encoding module (it loads before it), so the few
   // rules it needs about versions are written here, in their smallest form.
   const prefix = "market-state-cube-explorer:";
+  // Whether this browser had used the explorer before this page: its keys were in storage when the page
+  // loaded, before anything here wrote one. A browser without any has nothing a version change altered.
+  const returning = (() => {
+    try {
+      const area = window.localStorage;
+      for (let i = 0; i < area.length; i++) if (String(area.key(i)).startsWith(prefix)) return true;
+    } catch {
+      /* storage that cannot be read holds nothing from before */
+    }
+    return false;
+  })();
   // The one version this build writes (visualVersion, DR-14). A stored payload without it is legacy and
   // is still read; one that names a version other than this is a newer build's and is never overwritten.
   const VISUAL_VERSION = 2;
@@ -782,5 +793,6 @@
     saveScales,
     notice: () => read("notice:v2"),
     saveNotice,
+    returning: () => returning,
   };
 })();

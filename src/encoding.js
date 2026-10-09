@@ -10137,16 +10137,14 @@
       param: "marks",
       fields: ["poc", "area", "untested"],
       legacy: true,
-      defaults: { poc: true, area: false, untested: false },
+      // Column POCs are off by default: an address without marks has none ("none" still reads as none).
+      defaults: { poc: false, area: false, untested: false },
       read: (text) => {
-        const marks = String(text === undefined ? "poc" : text).split(",");
+        const marks = String(text === undefined ? "" : text).split(",");
         return { poc: marks.indexOf("poc") >= 0, area: marks.indexOf("area") >= 0, untested: marks.indexOf("untested") >= 0 };
       },
-      check: (raw) => ({ poc: raw.poc !== false, area: raw.area === true, untested: raw.untested === true }),
-      write: (view) => {
-        const marks = ["poc", "area", "untested"].filter((k) => (k === "poc" ? view.poc !== false : view[k] === true)).join(",");
-        return marks === "poc" ? null : marks || "none";
-      },
+      check: (raw) => ({ poc: raw.poc === true, area: raw.area === true, untested: raw.untested === true }),
+      write: (view) => ["poc", "area", "untested"].filter((k) => view[k] === true).join(",") || null,
     },
     {
       id: "lines",

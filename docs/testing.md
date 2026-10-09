@@ -30,7 +30,7 @@ Node 22 or newer and `python3` on the path (the build test calls `tools/build.py
 | the committed page is what the sources build | `python3 tools/build.py --check` | the deploy gate |
 | syntax of every JavaScript file | the `node --check` loop in the `static` job of `.github/workflows/check.yml` | |
 
-Never run `python3 tools/build.py` without `--out` while working on a branch: it rewrites the tracked `index.html`, which only the merger regenerates. Reports, builds and screenshots go to `reports/`, `test-results/`, `playwright-report/` or `.playwright-mcp/`, all ignored; none of them is committed.
+Use `npm run build:tmp` during development so the tracked page stays untouched. Before publishing source changes, regenerate `index.html` with `python3 tools/build.py --out index.html` and commit it with the sources: CI checks and deploys that exact page. Reports, temporary builds and screenshots go to `reports/`, `test-results/`, `playwright-report/` or `.playwright-mcp/`, all ignored; none of them is committed.
 
 Which page the browser tests serve is decided in one place, `tests/support/pageroot.js`: `EXPLORER_PAGE_ROOT` if set, else with `CONVERGENCE=1` the repository root, else a temporary build of the working tree.
 

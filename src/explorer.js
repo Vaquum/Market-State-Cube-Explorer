@@ -17191,7 +17191,7 @@
     el("evidence-note").textContent = e.loading
       ? ""
       : e.error
-      ? "Choose a completed column containing trades."
+      ? e.error
       : (supported
           ? "Empirical shares; overlapping cases, not calibrated odds."
           : "Below 30 matches: percentages and matching boxes withheld.") +
@@ -17201,9 +17201,9 @@
         " Every completed outcome ends by the anchor. " + (e.provenance?.reconstruction ?? "") +
         ` seasonal-state@1; fitted before anchor ${when((e.a + 1) * stepT())} UTC; shares ${JSON.stringify(e.thresholds?.share)}; seasonal ${JSON.stringify(e.thresholds?.seasonal)}; ${sample?.overlapping ?? 0} matching/${base?.overlapping ?? 0} baseline overlapping forward windows. Six-week denominators and fixed thresholds create additional dependence.`;
     el("evidence-brief").textContent = e.loading
-      ? "Reading history…"
+      ? e.error || "Reading history…"
       : e.error
-      ? "Choose a completed column containing trades."
+      ? e.error
       : supported
         ? "Empirical shares, not calibrated odds."
         : "Below 30 matches: percentages withheld.";
@@ -17283,7 +17283,7 @@
     el("case-definition").textContent =
       filter === "failure"
         ? `Non-modal POC outcomes: all matching completed cases except ${modal}. Neutral may qualify; ties choose lower, unchanged, higher. Sample mode; rates below 30 are withheld.`
-        : "Open a date to replay its recorded starting state. Excursions use column-end POCs.";
+        : "Open a date to replay its starting state from the currently loaded source. Excursions use column-end POCs.";
     const fragment = document.createDocumentFragment(),
       cell = (tr, content) => {
         const td = document.createElement("td");
@@ -17376,7 +17376,7 @@
   }
   // Continuations on the chart: for each column ahead, a box over the rows
   // where the POC landed, the middle 80% of outcomes light and the middle 50%
-  // darker, with the median row marked. All states are outlined across the
+  // darker, with the median row marked. All eligible states are outlined across the
   // column and matching states fill its middle, so the two read side by side.
   // Boxes cover whole rows, so an outcome that stayed in its row still shows.
   function drawCone(e) {
@@ -17421,7 +17421,7 @@
         ctx.globalAlpha = 1;
         line(left, median, left + width, median, color, chosen ? REFERENCE_STROKE + 1 : REFERENCE_STROKE, 0.9);
         // The two sets share the neutral hue and are told apart by the shape of the median's marker: a square for the matching states, a
-        // ring for all states (PRD-0002 S3 section 1); the legend and the inspector's tracks carry the same shapes.
+        // ring for all eligible states (PRD-0002 S3 section 1); the legend and the inspector's tracks carry the same shapes.
         medianMarker(ctx, key, left + width / 2, median, color);
         ends[key] = { x: xb, y: median };
       }
@@ -17443,7 +17443,7 @@
     ctx.restore();
     // Each set named beside its last box, at its median.
     if (ends.match) chartLabel("Matching states", ends.match.x + 6, ends.match.y);
-    if (ends.all) chartLabel("All states", ends.all.x + 6, ends.all.y);
+    if (ends.all) chartLabel("All eligible", ends.all.x + 6, ends.all.y);
   }
   function bindEvidence() {
     el("evidence").addEventListener("click", (event) => {

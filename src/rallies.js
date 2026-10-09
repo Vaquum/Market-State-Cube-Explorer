@@ -9,6 +9,15 @@
     const whole = Math.floor(us / 1000000), fraction = us - whole * 1000000;
     return new Date(whole * 1000).toISOString().slice(0, 19) + "." + String(fraction).padStart(6, "0") + "Z";
   }
+  function definitionText(d) {
+    const unit = d.scale === "atr" ? "ATR14-SMA" : "bps";
+    const name = {first_hit: "First passage", controlled_advance: "Controlled advance", swing: "Swing"}[d.mode];
+    const parts = [name, `target ${d.target} ${unit}`];
+    if (d.mode === "swing") parts.push(`confirming reversal ${d.reversal} ${unit}`);
+    else parts.push(`anchors every ${d.anchor_minutes} min`);
+    if (d.mode === "controlled_advance") parts.push(`max pullback ${d.pullback} ${unit}`);
+    return parts.join(" · ");
+  }
   function create({root, context, changed, inspect}) {
     const el = id => root.querySelector("#ol-rally-" + id);
     const fmt = (n, digits = 2) => Number(n).toLocaleString("en-US", {maximumFractionDigits:digits});
@@ -27,7 +36,7 @@
       el("pullback-label").hidden = mode !== "controlled_advance";
       el("reversal-label").hidden = mode !== "swing";
       el("deadline-label").hidden = (result ? swing() : mode === "swing");
-      el("scale-note").textContent = atr ? "ATR14-SMA · native UTC 15m bars; frozen at anchor or trough. The book uses Wilder ATR." : "Thresholds in basis points of the frozen reference price.";
+      el("scale-note").textContent = atr ? "ATR14-SMA · native UTC 15m bars; frozen at anchor or trough. Chart context uses Wilder ATR(14)." : "Thresholds in basis points of the frozen reference price.";
       for (const name of ["target", "pullback", "reversal"]) el(name).max = atr ? 100 : name === "reversal" ? 9999.999 : 10000;
       el("discover").disabled = busy || !context().live;
       el("discover").textContent = busy ? "Discovering…" : result ? "Refresh discovery" : "Discover";
@@ -56,8 +65,8 @@
         box.append(row("State", stale ? "Source changed · refresh discovery" : errorMessage || (inFlight ? "Reading membership…" : "Hidden by replay or time-to-target filter")));
         return;
       }
-      const d = result.metadata.normalized_definition;
-      box.append(row("Definition", `${d.mode.replaceAll("_", " ")} · ${d.target} ${d.scale}`),
+      const {normalized_definition: d, analysis} = result.metadata;
+      box.append(row("Retained definition", definitionText(d)), row("Analysis · UTC", `${analysis.start} → ${analysis.end}`),
         row("Reference", `${fmt(event.reference_price)} USDT`), row("Return", `${fmt(event.return_bps)} bps`),
         row("Duration", `${fmt(event.duration_seconds)} s`), row("Max drawdown", `${fmt(event.max_drawdown)} USDT`),
         row("USDT volume", fmt(event.volume)), row("Trades", fmt(event.trade_count, 0)),
@@ -80,6 +89,8 @@
     }
     function render() {
       controls();
+      const definition = el("definition"); definition.hidden = !result;
+      definition.textContent = result ? `Retained discovery · ${definitionText(result.metadata.normalized_definition)}. Analysis · UTC: ${result.metadata.analysis.start} → ${result.metadata.analysis.end}. Retained until Refresh discovery; form edits apply only to the next discovery.` : "";
       const events = shown(), pages = Math.max(1, Math.ceil(events.length / PAGE)); page = Math.min(page, pages - 1);
       const body = el("rows"); body.replaceChildren();
       for (const e of events.slice(page * PAGE, (page + 1) * PAGE)) {
@@ -174,6 +185,6 @@
     el("previous").onclick = () => { page--; render(); }; el("next").onclick = () => { page++; render(); };
     return {sync, paint, get busy(){return busy;}, get events(){return projection && !stale && projection.pack === context().pack ? shown().filter(e => projection.visible_ids.includes(e.rally_id)) : [];}, get selectedId(){return selectedId;}, get enabled(){return !!result && !stale;}};
   }
-  scope.explorerRallies = {create, visible, iso};
+  scope.explorerRallies = {create, visible, iso, definitionText};
   if (typeof module !== "undefined") module.exports = scope.explorerRallies;
 })(typeof window === "undefined" ? globalThis : window);

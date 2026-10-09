@@ -1269,7 +1269,8 @@
               <button id="ol-rally-discover" type="submit" class="ol-action cursor-interaction">Discover</button>
             </form>
             <p class="ol-muted" id="ol-rally-scale-note">Thresholds in basis points of the frozen reference price.</p>
-            <p class="ol-muted">A rally is an observed upward move. Thresholds are your operational definition. Confirmation does not imply reversal, durability or future gains. Spot data cannot establish short covering or derivatives leadership.</p>
+            <p class="ol-muted" id="ol-rally-definition" hidden></p>
+            <p class="ol-muted">A rally is an observed upward move. Thresholds are your operational definition. Confirmation does not predict reversal, durability or future gains. Spot data cannot establish short covering or derivatives leadership.</p>
             <div class="ol-panel-head">
               <label id="ol-rally-deadline-label">Time to target · minutes, exclusive<input id="ol-rally-deadline" type="number" min="0.001" max="240" step="any" value="240" aria-describedby="ol-rally-deadline-note"></label>
               <span id="ol-rally-deadline-note" class="ol-muted">Local filter · at most 240 minutes. Swing ends on a reversal. Grid, replay and filters reuse the discovery.</span>

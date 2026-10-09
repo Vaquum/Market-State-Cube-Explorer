@@ -2,6 +2,12 @@
 // Oracle: recorded canonical Origo output; explicit exclusive boundary and immutable ID contracts.
 const {test}=require("node:test"),assert=require("node:assert/strict"),{spawnSync}=require("node:child_process");
 const api=require("../../src/rallies.js"),record=require("../fixtures/rallies/canonical.json");
+test("retained rally definitions disclose the mode's normalized thresholds and anchor cadence",()=>{
+  assert.equal(api.definitionText(record.discovery.metadata.normalized_definition),"First passage · target 30 bps · anchors every 1 min");
+  // Presentation-only examples; no claim that these parameters produced the recorded events.
+  assert.equal(api.definitionText({mode:"controlled_advance",scale:"bps",target:"60",anchor_minutes:5,pullback:"10"}),"Controlled advance · target 60 bps · anchors every 5 min · max pullback 10 bps");
+  assert.equal(api.definitionText({mode:"swing",scale:"atr",target:"2",reversal:"0.5"}),"Swing · target 2 ATR14-SMA · confirming reversal 0.5 ATR14-SMA");
+});
 test("canonical rallies appear strictly after native confirmation, independent of grid",()=>{
   const first=record.events[0],edge=first.confirmed_at_us;
   assert.equal(api.visible(record.events,edge,null,false).length,0);

@@ -1966,6 +1966,13 @@
   overflow-x: auto;
   scrollbar-width: none;
 }
+/* Above phone width the footer stays one line: each key keeps its width, so a long row scrolls rather than
+   wrapping onto a second line that shrinks the chart when keys come and go. */
+@media (min-width: 761px) {
+  #origo-lens .ol-status-keys > * {
+    flex: none;
+  }
+}
 #origo-lens .ol-data-key {
   display: inline-block;
   width: 11px;

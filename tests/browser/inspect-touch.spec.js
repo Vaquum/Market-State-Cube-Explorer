@@ -36,13 +36,15 @@ test.describe("B47 Inspect and touch", () => {
     const fake = await fakeFor("standard");
     await open(page, fake, probe, "#w=24h&vis=2&lines=7d");
     expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), "a coarse pointer").toBe(true);
-    const { layout, box } = await plot(page),
-      at = (fx, fy) => [box.x + layout[0] + layout[2] * fx, box.y + layout[1] + layout[3] * fy];
+    let { layout, box } = await plot(page);
+    const at = (fx, fy) => [box.x + layout[0] + layout[2] * fx, box.y + layout[1] + layout[3] * fy];
     // 1. Pan's tap leaves the default off; explicitly enable Continuations to anchor.
     const off = await state(page);
     await page.touchscreen.tap(...at(0.4, 0.5));
     expect(await state(page)).toEqual(off);
     await page.keyboard.press("c");
+    await probe.waitForReady();
+    ({ layout, box } = await plot(page));
     // Pan's tap now anchors the column: the evidence has its cases
     await page.touchscreen.tap(...at(0.4, 0.5));
     await expect.poll(async () => (await state(page)).cases, { message: "the tap anchored the column and its cases are counted", timeout: 60000 }).not.toBe("—");
@@ -51,6 +53,7 @@ test.describe("B47 Inspect and touch", () => {
     await expect(page.locator("#ol-inspect")).toBeVisible();
     const before = await state(page),
       start = await where(page);
+    ({ layout, box } = await plot(page));
     await page.touchscreen.tap(...at(0.7, 0.3));
     await probe.waitForQuiet({ quietMs: 500, timeout: 30000 });
     const moved = await where(page);

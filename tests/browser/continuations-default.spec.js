@@ -19,6 +19,7 @@ async function point(page) {
     const b = n.getBoundingClientRect(), g = n.dataset.layout.split(",").map(Number);
     return { x: b.x + g[0] + g[2] * .4, y: b.y + g[1] + g[3] * .4 };
   });
+}
 for (const profile of ["recorded", "mini"]) {
   test(`${profile}: default stays off through Pan clicks and inactive anchor keys; C explicitly enables it`, async ({ page, fakeFor, probe }) => {
     const fake = await fakeFor(profile);

@@ -394,8 +394,20 @@
 #origo-lens .ol-background-controls .ol-period-group {
   border-left: 1px solid var(--ol-line);
 }
+/* Cells and Columns name themselves in the chart header, as the Rows group does. */
+#origo-lens :is(#ol-mode, #ol-pane) > .ol-label {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ol-muted);
+}
 @container (max-width: 1100px) {
   #origo-lens .ol-background-label { display: none; }
+  #origo-lens .ol-surfaces :is(#ol-mode, #ol-pane) > .ol-label { display: none; }
 }
 @container (max-width: 600px) {
   #origo-lens .ol-background-controls { flex-wrap: wrap; }
@@ -1925,10 +1937,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The footer is the key. Its diagnostics (cell size in px, blocks read, cutoff) stay in the page,
+   not on it: the LIVE pill names the data's reach and the resolution plane the cell size. */
 #origo-lens .ol-status-meta {
-  display: flex;
-  gap: var(--sp-3);
-  margin-left: auto;
+  display: none;
+}
+/* With many line families on, the keys scroll instead of being cut off at the edge. */
+#origo-lens .ol-status-keys {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 #origo-lens .ol-data-key {
   display: inline-block;

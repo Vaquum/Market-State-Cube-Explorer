@@ -2368,18 +2368,18 @@
     ctx.restore();
     if (S.mode !== "candles") markings(shown, cut);
     occlusionPlan(cut);
+    // The continuation boxes go under the reference lines, so the lines' tags stay readable over them.
+    const coneEvidence = S.tab === "evidence" ? settledEvidence() : null;
+    if (coneEvidence) drawCone(coneEvidence);
     drawClock(cut);
     drawLines(cut);
     occlusionNotice();
     referenceInventoryCommit();
     if (S.tab === "evidence") {
-      const ev = settledEvidence();
+      const ev = coneEvidence;
       // Busy until a result for this view is up: the panel may still show the last one.
       el("evidence").setAttribute("aria-busy", String(!ev || ev !== evidence.ready || Boolean(ev.loading)));
-      if (ev) {
-        drawCone(ev);
-        evidenceUI(ev);
-      }
+      if (ev) evidenceUI(ev);
     } else if (S.drawerOpen && S.drawer === "cases") {
       const ev = settledEvidence();
       if (ev) evidenceCases(ev);
@@ -9217,8 +9217,10 @@
     const selected = steps.slice(1).flatMap(entry => [...entry.group.querySelectorAll('[aria-checked="true"]')])
       .map(b => b.querySelector(".ol-item-text > span")?.textContent).filter(Boolean),
       datasetName = id === "mode" ? MODE_NAMES[S.mode] : id === "pane" ? (S.pane.startsWith("rsi") ? "RSI 14" : PANE_INFO[S.pane].name) : ROWS_INFO[S.rows].name;
-    header.append(uiEl("div", "ol-flow-caption", `${name} · Step ${at + 1} of ${steps.length}`), progress,
+    // A menu with one step is a plain list: no step count and no stepper.
+    if (steps.length > 1) header.append(uiEl("div", "ol-flow-caption", `${name} · Step ${at + 1} of ${steps.length}`), progress,
       uiEl("div", "ol-flow-summary", [datasetName, ...selected].join(" · ")));
+    else header.append(uiEl("div", "ol-flow-caption", name));
     const heading = uiEl("div", "ol-flow-title", step.title);
     heading.id = `ol-${id}-step-title`;
     body.setAttribute("role", "group");
@@ -22782,6 +22784,8 @@
   function comparisonOpenMenu(event,target) {
     const capture=comparisonCapture(target);if(!capture)return;
     event.preventDefault();comparisonCloseMenu();closePop();
+    // The menu replaces the hover card at the pointer; the card does not sit under it.
+    hover=null;el("tip").hidden=true;
     const node=document.createElement("div");node.id="ol-cell-menu";node.className="ol-pop ol-cell-menu";node.setAttribute("role","menu");node.setAttribute("aria-label","Cell actions");
     comparisonMenu={node,owner:document.activeElement,target,capture,fingerprint:comparisonFingerprint(capture)};
     const existing=comparisonModel.captures.some(c=>c.id===capture.id);

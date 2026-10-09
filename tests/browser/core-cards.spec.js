@@ -190,7 +190,7 @@ test("leading no-trade intervals retain the later response support and mismatch"
   const fake = await fakeFor({ trades: [{ t_ms: 57250, price: 2500000, qty: 1200000, takerBuy: true }], cutoffIso: "2021-01-01T00:10:00Z" });
   await page.goto(`${fake.url}/#t=2021-01-01T00:00Z~2021-01-01T00:10Z&p=24875~25250&r=0,0&vis=2&sel=2021-01-01T00:00Z~2021-01-01T00:01:52.500Z,25000~25125`);
   await probe.waitForReady();
-  const card = page.locator("#ol-vol").locator("..");
+  const card = page.locator("#ol-selection-card");
   await card.locator(".ol-core-details > summary").click();
   await expect(card.locator(".ol-core-details")).toContainText("Different measured-through boundaries");
   await expect.poll(async () => {

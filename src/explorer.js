@@ -2293,11 +2293,12 @@
       labelsTaken.push([right - el("latest").offsetWidth, 16, right, 16 + el("latest").offsetHeight]);
     }
     // The lens's controls sit at the plot's top left while it is the tool.
-    let lensRight = 0;
+    let lensRight = 0, leftHeight = 0;
     if (S.lens || inspect.lens !== null) {
       const bar = el("lensbar");
       bar.style.left = G.x + 4 + "px";
       lensRight = G.x + 4 + bar.offsetWidth;
+      leftHeight = bar.offsetHeight;
       labelsTaken.push([G.x + 4, 16, lensRight, 20 + bar.offsetHeight]);
     }
     // Trend's controls take the same place while it is the tool.
@@ -2306,6 +2307,7 @@
       bar.style.left = G.x + 4 + "px";
       bar.style.maxWidth = Math.max(0, G.w - 8) + "px";
       lensRight = Math.max(lensRight, G.x + 4 + bar.offsetWidth);
+      leftHeight = Math.max(leftHeight, bar.offsetHeight);
       labelsTaken.push([G.x + 4, 16, G.x + 4 + bar.offsetWidth, 20 + bar.offsetHeight]);
     }
     if (S.replay) {
@@ -2317,7 +2319,7 @@
       const w = bar.offsetWidth,
         beside = lensRight ? lensRight + 8 : G.x + 4,
         room = beside <= G.x + G.w - w - 4,
-        top = room ? 20 : 26 + el("lensbar").offsetHeight,
+        top = room ? 20 : 26 + leftHeight,
         left = clamp(G.X(cut) - w / 2, room ? beside : G.x + 4, G.x + G.w - w - 4);
       bar.style.left = left + "px";
       bar.style.top = top + "px";

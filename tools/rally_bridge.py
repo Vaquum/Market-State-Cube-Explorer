@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 from market_state_reader import MarketStateError, open_file, rallies
 
 META = b"origo.market_state_rallies"
-MAX_EVENTS = 20000
-MAX_MEMBERS = 100000
+MAX_EVENTS = 5000
+MAX_MEMBERS = 25000
 MAX_REPLY = 8 * 1024 * 1024
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 FIELDS = ("volume", "taker_buy_volume", "trade_count", "taker_buy_trade_count")
@@ -125,7 +125,7 @@ class RallyStore:
             answer = bounded({"result_id": result.result_id, "metadata": metadata, "events": events})
             with self.lock:
                 self.results[result.result_id] = item
-                while len(self.results) > 16:
+                while len(self.results) > 4:
                     del self.results[next(iter(self.results))]
             return answer
         finally:

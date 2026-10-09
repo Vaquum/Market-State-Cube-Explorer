@@ -5,20 +5,5 @@
   "seed": null,
   "source": "Binance BTCUSDT spot, native Origo canonical rally files",
   "extractedOn": "2026-10-09",
-  "notes": {
-    "source": "Binance BTCUSDT spot, native Origo canonical rally files",
-    "analysis": {
-      "start": "2026-06-27T11:39:00Z",
-      "end": "2026-06-27T11:55:00Z"
-    },
-    "definition": {
-      "mode": "first_hit",
-      "scale": "bps",
-      "target": 30,
-      "anchor_minutes": 1
-    },
-    "recorded_at": "2026-10-09T09:55:20.719693+00:00",
-    "rallies_sha256": "911c3c90eee5c92fff98b1ab1655f2b7c4fead83632b7d5aa23e5e1310040a98",
-    "members_sha256": "ddd3cf74d538937b532971dea53f80ae3145280e35a7f9be825f3463a2995197"
-  }
+  "notes": "Recorded directly from deployed Origo /v1/market-state/rallies and the canonical Arrow files. No rally detector is implemented in the fixture or fake. Published file hashes and request parameters: {\"analysis\": {\"end\": \"2026-06-27T11:55:00Z\", \"start\": \"2026-06-27T11:39:00Z\"}, \"definition\": {\"anchor_minutes\": 1, \"mode\": \"first_hit\", \"scale\": \"bps\", \"target\": 30}, \"members_sha256\": \"ddd3cf74d538937b532971dea53f80ae3145280e35a7f9be825f3463a2995197\", \"rallies_sha256\": \"911c3c90eee5c92fff98b1ab1655f2b7c4fead83632b7d5aa23e5e1310040a98\", \"recorded_at\": \"2026-10-09T09:55:20.719693+00:00\", \"source\": \"Binance BTCUSDT spot, native Origo canonical rally files\"}"
 }

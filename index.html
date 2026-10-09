@@ -26298,8 +26298,11 @@
     el("table-body").addEventListener("pointerover", (e) => {
       const tr = e.target.closest("tr");
       if (!tr) return;
-      const [n, m] = tr.dataset.level.split(":").map(Number);
-      tableHover = { c: Number(tr.dataset.c), r: Number(tr.dataset.r), n, m };
+      const [n, m] = tr.dataset.level.split(":").map(Number), c = Number(tr.dataset.c), r = Number(tr.dataset.r);
+      // Replacing a row re-enters its descendants under a stationary pointer. The same cell
+      // must not schedule another rebuild and keep its native buttons perpetually detaching.
+      if (tableHover?.c === c && tableHover.r === r && tableHover.n === n && tableHover.m === m) return;
+      tableHover = { c, r, n, m };
       rowMarker();
       requestDraw();
     });

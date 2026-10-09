@@ -1,5 +1,19 @@
 # Data and semantics
 
+## Rallies
+
+The Rallies drawer makes an operational definition of an observed upward move explicit. It does not label bullishness, durability, reversal or future returns. Binance spot cannot establish short covering, open interest, liquidations or derivatives leadership.
+
+Discover/Refresh sends a fixed UTC analysis window and the whole displayed pack commitment to Origo's native `/v1/market-state/rallies` endpoint. First hit measures from epoch-aligned anchors to the first target-reaching native trade. Controlled advance adds a maximum pullback constraint. Swing establishes a trough through an initial reversal and confirms the completed rise on a later reversal; that confirming trade is outside membership. Targets, pullbacks and reversals use basis points or frozen ATR14-SMA on native UTC 15-minute bars. This is arithmetic-mean ATR, distinct from the book's Wilder ATR. Thresholds are user choices, not thresholds supplied by the book.
+
+Anchored modes have an exclusive 240-minute backend deadline. Time to target is an exclusive local filter from the retained result; shortening it never redetects. Swing uses reversal rather than a deadline. Discovery is bounded by Origo's native row, memory and time budgets and 48 hours including 3h45 of ATR warmup. Refusals remain typed failures, not truncated results.
+
+Overlapping events retain separate identities and measurements. Selection outlines grid cells containing native members without moving the camera or changing the cell's ordinary measurement. The separate rally inspector and its 125 USDT profile sum member contributions only; unrelated trades may share an outlined cell. Native IDs travel as strings. Event path, dwell and indicators remain unavailable. The ordinary inspector provides surrounding auction context separately.
+
+Replay shows an event only when its native confirmation is strictly before the exact replay edge, independent of the display grid. Earlier replay hides diagnostics known only at the discovery ceiling. Pack updates revalidate every relevant revision/build identity before membership paints; changed sources or reclaimed files require explicit Refresh. New data never silently reruns discovery. Discovery pauses the page's heavy reads and drains both bridge slots before calling the native service.
+
+The standalone recorded page cannot discover rallies. Tests use recorded canonical Origo output from June 27, 2026; fixture provenance includes the native Arrow hashes. GUI results are session-local and not included in shared view codes.
+
 ## Cube coordinates
 
 Time starts at 2021-01-01 00:00:00 UTC. The base cell is 56.25 seconds × 125 USDT. Time and price exponents are independent nonnegative integers. Time edges are anchored to the history start; price edges are multiples of the price resolution. Intervals include the lower edge and exclude the upper edge.

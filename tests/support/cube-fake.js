@@ -32,6 +32,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // The slot a request would take in the bridge: reads with measures (motion, bars) hold the motion slot, the other reads the cube slot, the
 // poll neither. The page keeps one read per slot in flight, so two overlapping in one slot is a page bug (or a test gate left open).
 function slotOf(pathname, args) {
+  if (pathname === "/cube/rallies" || pathname === "/cube/rallies/view") return "rallies";
   if (pathname === "/cube/pack") return "poll";
   if (pathname === "/cube/motion" || pathname === "/cube/bars") return "motion";
   if ((pathname === "/cube/tile" || pathname === "/cube/query") && args.motion?.[0] === "1") return "motion";
@@ -300,6 +301,31 @@ class FakeCube {
       else if (rule.kind === "malformed") transform = (body) => corrupt(body, rule.how);
     }
     if (this.closed) return;
+
+    // Recorded canonical output exercises this boundary without inventing market events.
+    if (req.method === "POST" && (pathname === "/cube/rallies" || pathname === "/cube/rallies/view")) {
+      if (args.proto?.[0] !== PROTOCOL) return sendJson({error:OUTDATED, reload:true}, 409);
+      let raw = ""; for await (const chunk of req) raw += chunk;
+      const body = JSON.parse(raw), record = require("../fixtures/rallies/canonical.json"), discovery = record.discovery;
+      try { this.bridge.holding(body.pack); } catch (error) { return sendJson({error:"cube_changed",detail:error.message},409); }
+      if (pathname === "/cube/rallies") {
+        if (!require("node:util").isDeepStrictEqual(body.definition, record.provenance.definition) || Date.parse(body.analysis.start) !== Date.parse(record.provenance.analysis.start) || Date.parse(body.analysis.end) !== Date.parse(record.provenance.analysis.end))
+          return sendJson({error:"recorded_definition_only",detail:"The test boundary serves only the recorded canonical request."}, 400);
+        return sendJson(discovery);
+      }
+      if (body.result_id !== discovery.result_id) return sendJson({error:"rally_result_expired"}, 410);
+      const edgeUs = Date.parse(body.known_at) * 1000 + Number((body.known_at.match(/\.(\d{6})Z$/)?.[1] ?? "000000").slice(3));
+      const visible = record.events.filter(e => e.confirmed_at_us < edgeUs && (body.deadline_minutes === null || e.duration_seconds < body.deadline_minutes * 60));
+      const selected = visible.find(e => e.rally_id === body.rally_id) ?? null, cells = new Map(), profile = new Map();
+      for (const member of record.members.filter(r => r.rally_id === selected?.rally_id)) {
+        const c = Math.floor(member.base_time_index / 2 ** body.n), r = Math.floor(member.base_price_index / 2 ** body.m), k = c + "," + r;
+        if (!cells.has(k)) cells.set(k, {c,r,volume:0,taker_buy_volume:0,trade_count:0,taker_buy_trade_count:0,partial_base_cells:0});
+        if (!profile.has(member.base_price_index)) profile.set(member.base_price_index,{r:member.base_price_index,volume:0,taker_buy_volume:0,trade_count:0,taker_buy_trade_count:0});
+        for (const field of ["volume","taker_buy_volume","trade_count","taker_buy_trade_count"]) { cells.get(k)[field] += member[field]; profile.get(member.base_price_index)[field] += member[field]; }
+        cells.get(k).partial_base_cells += Number(member.partial);
+      }
+      return sendJson({result_id:body.result_id,pack:body.pack,n:body.n,m:body.m,visible_ids:visible.map(e=>e.rally_id),selected,cells:[...cells.values()],profile:[...profile.values()],diagnostics:edgeUs >= Date.parse(discovery.metadata.observation_ceiling)*1000 ? discovery.metadata.diagnostic_counts : null});
+    }
 
     const answered = this.answer(req, pathname, args, entry);
     if (answered.json !== undefined) {

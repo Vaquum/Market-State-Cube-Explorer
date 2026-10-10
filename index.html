@@ -25768,7 +25768,7 @@
   //   References    Up and Down: the previous and next enabled reference in the stable list; it keeps its identity through a redraw
   //   Home, End     the first and last visible item along the surface's primary axis (time; for Rows the highest and lowest row; for References the list)
   //   Enter, Space  open the record's detail, and nothing else: no anchor, no Pin, no Play
-  //   Escape        close the detail; then leave Inspect for the tool it came from; only a later Escape does what it did before
+  //   Escape        close an open menu; then the detail; then leave Inspect for the tool it came from; only a later Escape does what it did before
   // At the edge of the visible items the cursor stays and the edge is announced; the view is never panned and a replay edge never moved.
   const INSPECT_SURFACES = [
     { id: "cells", name: "Cells" },
@@ -26458,7 +26458,7 @@
   function bindInspect() {
     const nav2 = el("inspect");
     nav2.addEventListener("keydown", (e) => {
-      // a native control inside the navigator (a tab, a button, the chooser) keeps its own keys, but Escape still leaves
+      // a native control inside the navigator (a tab, a button, the chooser) keeps its own keys, but Escape is still the navigator's
       if (e.target !== nav2 && e.target.closest("button, select, input, [role=tab]") && e.key !== "Escape") {
         if (e.target.matches("[role=tab]") && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
         // a native control of the navigator keeps its own keys; an arrow that is no key of the control's (Up and Down on a button or on a horizontal tab) is not the
@@ -26472,6 +26472,9 @@
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
+        // an open menu first, as the page's Escape closes it: H opens History without taking the focus, and a menu the focus leaves stays open. The
+        // focus stays here, where Inspect's keys are read; on the menu's button an arrow would pan the view
+        if (closePop()) return;
         if (inspect.detail) inspectDetail(false);
         else inspectExit();
         return;

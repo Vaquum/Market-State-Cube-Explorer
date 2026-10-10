@@ -6104,8 +6104,10 @@
   // The enabled references in a stable order (the menu's families, then each family's own order), whether the budget drew them or not: the
   // lines, the curves, the clock's kinds and the user's Level. Each entry has what the tooltip's builders take as a hit.
   function inspectReferences() {
-    // once for a draw and a state of the lines: it walks the same items the plot is drawn from
-    const key = [last?.sc?.stamp ?? "", S.lines.join(","), S.level, drawingStore.revision, S.tA, S.tB, S.pA, S.pB, S.n, S.m, activeCutoff()].join("|");
+    // once for a draw and a state of the lines and their data: it walks the same items the plot is drawn from. A line built on bars or on a cube
+    // read has none until they arrive, so the pack, the data's edge, the bars and the reads applied or failed are in the key, or a list read before
+    // them would stay empty after; and so is the plot's width, which spaces the days and thins the swings.
+    const key = [last?.sc?.stamp ?? "", S.lines.join(","), S.level, drawingStore.revision, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.w, activeCutoff(), live.generation, CUT, barsVersion, comparisonSourceRevision, cube.failed.size, motion.failed.size].join("|");
     if (inspect.listKey === key) return inspect.list;
     inspect.listKey = key;
     inspect.list = inspectReferencesNow();

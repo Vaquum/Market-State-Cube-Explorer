@@ -16223,7 +16223,9 @@
     if (key === "cme") return bad(barSeries(6).state) ? "missing" : "none";
     if (FOUR_HOUR_LINES.includes(key)) return bad(barSeries(8).state) || (key === "fibswing4h" && bad(barSeries(9).state)) ? "missing" : "none";
     if (isFibDay(key)) return bad(barSeries(9).state) ? "missing" : "none";
-    if (RETRACEMENT_MORE[key]) return retracementsOn() && bad(barSeries(9).state) ? "missing" : "none";
+    // The level rows add to the retracements on, so they wait on what those read: the days, and the 4-hour bars for the 4-hour move.
+    if (RETRACEMENT_MORE[key])
+      return retracementsOn() && (bad(barSeries(9).state) || (S.lines.includes("fibswing4h") && bad(barSeries(8).state))) ? "missing" : "none";
     if (key === "svwap" || key === "avwaph" || key === "avwapl" || isVwapDay(key)) {
       const need = vwapBarNeed(),
         r = need ? barsBetween(...need) : null;

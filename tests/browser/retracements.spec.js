@@ -135,3 +135,14 @@ test("Retracements · last 4h swing measures the last two 4-hour swings", async 
     expect(JSON.parse(await card.getAttribute("data-observation")).time).toEqual([29 * 1536, 39 * 1536 + 256]);
   }
 });
+
+test("while the 4-hour bars cannot be read, a level row on the 4h swing retracement says so", async ({ page, fakeFor, probe, allowConsole }) => {
+  allowConsole(/Failed to load resource/);
+  const fake = await fakeFor({ trades: SHAPED, cutoffIso: CUTOFF });
+  fake.on({ route: "/cube/bars", when: (q) => q.n === "8" }).fail({ status: 500, body: { error: "the 4-hour bars are down" } });
+  await page.goto(`${fake.url}/${VIEW}&p=9000~15500&lines=fibswing4h,fibclassic`);
+  await probe.waitForReady();
+  // Both rows wait on the 4-hour bars: neither has "no event to draw".
+  const reasons = () => page.locator("#ol-canvas").evaluate((el) => el.dataset.referenceReasons ?? "");
+  await expect.poll(reasons, { timeout: 60000 }).toBe("missing:2");
+});

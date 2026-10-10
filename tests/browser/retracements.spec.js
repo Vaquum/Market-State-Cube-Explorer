@@ -131,5 +131,7 @@ test("Retracements · last 4h swing measures the last two 4-hour swings", async 
     const { card, value } = await namedLevel(page, `4h Swing ${percent(f)}`);
     expect(value, `4h Swing ${percent(f)}`).toBeCloseTo(level(13050, 9950, f), 6);
     await expect(card).toContainText("Confirmed swing anchor");
+    // From the earlier swing's 4-hour bar (day 29, 00:00) to the end of the later one's (day 39, 00:00–04:00), in base columns (1,536 a day).
+    expect(JSON.parse(await card.getAttribute("data-observation")).time).toEqual([29 * 1536, 39 * 1536 + 256]);
   }
 });

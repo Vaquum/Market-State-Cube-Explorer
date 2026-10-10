@@ -34080,8 +34080,8 @@
     }
     // The retracements on, each with its three key levels; then the levels the
     // level rows add to every one of them, under the row's key as a value area
-    // is under va's: tagged only while their price is in view, and the first
-    // the budget holds back (minor).
+    // is under va's: tagged only while their price is in view, planned last by
+    // the budget and drawn only with their key levels (minor).
     const moves = [],
       percent = (f) => `${(f * 100).toFixed(1)}%`;
     for (const [key, name] of RETRACEMENT_ROWS) if (on.has(key) && st[key]) moves.push({ key, name, m: st[key] });
@@ -34557,8 +34557,8 @@
         if (l.tag) fixed.push({ id: l.id, y: raw, w: tagPlateWidth(l.tag.name + arrow, l.tag.value) });
         continue;
       }
-      // A retracement's added levels are its family's last: the budget holds them back before any other of its marks.
-      candidates.push({ id: l.id, hot, rank: (OCC_PRIORITY[familyOf(l.key)] ?? 6) + (l.minor ? 0.5 : 0), rects: [[xl, y - width / 2, xe, y + width / 2]], tag: l.tag ? { y: raw, w: tagPlateWidth(l.tag.name + arrow, l.tag.value) } : null });
+      // A retracement's added levels are planned after every other mark of its family (and below, drawn only with its key levels).
+      candidates.push({ id: l.id, hot, rank: (OCC_PRIORITY[familyOf(l.key)] ?? 6) + (l.minor ? 0.5 : 0), move: l.kind === "fib" ? l.move : undefined, minor: Boolean(l.minor), rects: [[xl, y - width / 2, xe, y + width / 2]], tag: l.tag ? { y: raw, w: tagPlateWidth(l.tag.name + arrow, l.tag.value) } : null });
     }
     for (const c of items.curves || []) {
       const { xs, ys, vals } = curveVertices(c.r.points, right);
@@ -34697,6 +34697,14 @@
       for (const r of reserved) next.off.delete(r.id);
       next.eligible -= reserved.length;
       next.shown -= reserved.length;
+      // The planner fills what is left with whatever still fits, so a cheap added level could stand where its retracement's key levels
+      // were held back: a retracement's added levels are drawn only while every one of its key levels on the plot is, unless focused.
+      const held = new Set(candidates.filter((c) => c.move !== undefined && !c.minor && next.off.has(c.id)).map((c) => c.move));
+      for (const c of candidates)
+        if (c.minor && !c.hot && held.has(c.move) && !next.off.has(c.id)) {
+          next.off.add(c.id);
+          next.shown--;
+        }
       const stable = plan !== null && same(next.off, off);
       plan = next;
       notice = plan.eligible > plan.shown || plan.focusOver;

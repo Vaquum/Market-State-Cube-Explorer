@@ -52,9 +52,12 @@ test.describe("B45 the lines are the same lines with the same values", () => {
     const read = Object.values(before).filter((r) => /\d/.test(r.value)).length;
     console.log(`B45: ${Object.keys(before).length} rows, ${read} with a number in the original`);
     expect(read, "most rows carry a number, so the comparison is of numbers and not of blanks").toBeGreaterThan(25);
-    expect(Object.keys(after).sort(), "original keys plus the visible-range POC and VWAP").toEqual([...Object.keys(before), "visible", "vvwap"].sort());
+    // Rows added since: the visible-range POC and VWAP, the last 4-hour swing's retracements and the two rows of retracement levels (#108).
+    const added = ["visible", "vvwap", "fibswing4h", "fibclassic", "fibext"];
+    expect(Object.keys(after).sort(), "original keys plus the rows added since").toEqual([...Object.keys(before), ...added].sort());
     expect(after.visible).toEqual({ family: "profile", value: "" });
     expect(after.vvwap).toEqual({ family: "vwap", value: "" });
+    for (const key of ["fibswing4h", "fibclassic", "fibext"]) expect(after[key]).toEqual({ family: "structure", value: "" });
     const different = [];
     for (const key of Object.keys(before)) {
       if (before[key].family !== after[key].family) different.push(`${key}: family ${before[key].family} became ${after[key].family}`);

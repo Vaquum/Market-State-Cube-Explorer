@@ -75,7 +75,7 @@
       targets: [{ label: "Show Lens tool", selector: "#ol-lens" }] },
     { id: "references", group: "Work with the view", title: "Reference lines & events",
       purpose: "Locate profile, session, structural, average, VWAP and calendar landmarks.",
-      read: "POC is the highest-volume row; Buy POC uses taker buys; a value area reaches at least 70% of volume in whole rows. These depend on the measured period and row width. Session and structure marks locate ranges, equal highs/lows, gaps and swings. Averages and VWAP trace price summaries. Clock schedules are vertical marks; squeezes and the spot weekend proxy occupy event lanes. A reference locates a hypothesis; it does not establish support, resistance or future direction.",
+      read: "POC is the highest-volume row; Buy POC uses taker buys; a value area reaches at least 70% of volume in whole rows. These depend on the measured period and row width. Session and structure marks locate ranges, equal highs/lows, gaps, swings and retracements. Averages and VWAP trace price summaries. Clock schedules are vertical marks; squeezes and the spot weekend proxy occupy event lanes. A reference locates a hypothesis; it does not establish support, resistance or future direction.",
       use: "Open Lines to choose families, periods and dates. Click a reference to focus it; Show all restores the rest. Inspect References reads each enabled item by name. X places or clears your own horizontal price level.",
       targets: [{ label: "Show Lines menu", selector: "#ol-lines" }, { label: "Show event lanes", region: "events" }] },
     { id: "drawings", group: "Work with the view", title: "Trend drawings",

@@ -21864,42 +21864,43 @@
   function drawingLabelLayout(object, g) {
     if (drawingLabelLayouts.has(object)) return drawingLabelLayouts.get(object);
     drawingLabelLayouts.set(object, null);
-    if (!object.label) return null;
+    const text = drawingCanvasLabel(object);
+    if (!text) return null;
     if (g === undefined) g = drawingGeometry(object);
     if (!g) return null;
     const rect = drawingPlot(), dx = g.b.x - g.a.x, dy = g.b.y - g.a.y, length = Math.hypot(dx, dy);
     if (length <= 16) return null;
     const direction = dx < 0 || (dx === 0 && dy > 0) ? -1 : 1,
       ux = direction * dx / length, uy = direction * dy / length,
-      mid = { x: (g.a.x + g.b.x) / 2, y: (g.a.y + g.b.y) / 2 },
+      start = direction === 1 ? g.a : g.b,
       // Without grapheme segmentation, keep the label indivisible: render it
       // whole when it fits, otherwise omit rather than alter its characters.
-      parts = drawingLabelSegmenter ? [...drawingLabelSegmenter.segment(object.label)].map((p) => p.segment) : [object.label];
+      parts = drawingLabelSegmenter ? [...drawingLabelSegmenter.segment(text)].map((p) => p.segment) : [text];
     // No shortening can rescue ink whose above-line bottom edge misses the plot.
     if (rect.w <= 2 || rect.h <= 2 || !E.drawings.clip(
       { x: g.a.x + uy * 5.5, y: g.a.y - ux * 5.5 },
       { x: g.b.x + uy * 5.5, y: g.b.y - ux * 5.5 },
       { x: rect.x + 1, y: rect.y + 1, w: rect.w - 2, h: rect.h - 2 },
     )) return null;
-    ctx.save(); ctx.font = `${TYPE.s}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-    let layout = null, display = object.label;
+    ctx.save(); ctx.font = `${TYPE.s}px ${FONT}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    let layout = null, display = text;
     while (parts.length) {
       const metric = ctx.measureText(display), ascent = metric.actualBoundingBoxAscent, descent = metric.actualBoundingBoxDescent,
         left = -metric.actualBoundingBoxLeft - .5, right = metric.actualBoundingBoxRight + .5,
         top = -6 - ascent - descent - .5, bottom = -6 + .5;
-      let lo = -length / 2 + 8 - left, hi = length / 2 - 8 - right;
+      let lo = 8 - left, hi = length - 8 - right;
       // Intersect all four corner constraints with the allowed along-line slide.
       for (const x of [left, right]) for (const y of [top, bottom]) {
         for (const [base, offset, step, min, max] of [
-          [mid.x, ux * x - uy * y, ux, rect.x + 1, rect.x + rect.w - 1],
-          [mid.y, uy * x + ux * y, uy, rect.y + 1, rect.y + rect.h - 1],
+          [start.x, ux * x - uy * y, ux, rect.x + 1, rect.x + rect.w - 1],
+          [start.y, uy * x + ux * y, uy, rect.y + 1, rect.y + rect.h - 1],
         ]) {
           if (Math.abs(step) < 1e-9) { if (base + offset < min || base + offset > max) hi = -Infinity; }
           else { const a = (min - base - offset) / step, b = (max - base - offset) / step; lo = Math.max(lo, Math.min(a, b)); hi = Math.min(hi, Math.max(a, b)); }
         }
       }
       if (lo <= hi && metric.width <= length - 16) {
-        const slide = clamp(0, lo, hi), origin = { x: mid.x + ux * slide + uy * (6 + descent), y: mid.y + uy * slide - ux * (6 + descent) },
+        const slide = lo, origin = { x: start.x + ux * slide + uy * (6 + descent), y: start.y + uy * slide - ux * (6 + descent) },
           project = (x, y) => ({ x: origin.x + ux * x - uy * y, y: origin.y + uy * x + ux * y }),
           height = ascent + descent + 1, count = Math.ceil(height / 3.5), width = height / count, strokes = [];
         // Parallel solid strips conservatively cover the rotated ink rectangle on
@@ -21917,7 +21918,7 @@
   function drawingPaintLabel(object, label) {
     if (!label) return;
     ctx.save(); ctx.translate(label.origin.x, label.origin.y); ctx.rotate(label.angle);
-    ctx.font = `${TYPE.s}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.font = `${TYPE.s}px ${FONT}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
     ctx.lineWidth = 1; ctx.lineJoin = "round"; ctx.strokeStyle = drawingCasing(object.color); ctx.fillStyle = object.color;
     ctx.strokeText(label.text, 0, 0); ctx.fillText(label.text, 0, 0); ctx.restore();
   }
@@ -22133,6 +22134,9 @@
   let drawingInventoryKey = "";
   let drawingUIInitialized = false, drawingRowsKey = "", drawingRecoveryKey = "", drawingActionsKey = "", drawingToolbarKey = "";
   const drawingFieldIds = ["name", "label", "color", "a-time", "a-price", "b-time", "b-price"];
+  function drawingCustomName(object) { return object.name && object.name !== `Trend line ${object.ordinal + 1}` ? object.name : ""; }
+  function drawingDisplayName(object) { return drawingCustomName(object) || object.label || object.name; }
+  function drawingCanvasLabel(object) { return object.label || drawingCustomName(object); }
   function drawingWrite(node, value) {
     const text = String(value ?? ""); if (node.textContent !== text) node.textContent = text;
   }
@@ -22230,6 +22234,7 @@
     if (!trendTool) setTool("trend");
     drawingCancelOperation(); closePop(); setSheet(false);
     drawingEditorState = { id: object.id, origin: from, isNew: Boolean(draft), object: draft };
+    el("drawing-editor-delete").hidden = Boolean(draft);
     el("drawing-editor").dataset.drawingId = object.id;
     drawingWrite(el("drawing-editor-title"), draft ? "New trend line" : "Edit trend line");
     el("drawing-name").value = object.name; el("drawing-label").value = object.label || ""; el("drawing-color").value = el("drawing-color-picker").value = object.color;
@@ -22271,7 +22276,7 @@
       const button = document.createElement("button"), swatch = document.createElement("i"), name = document.createElement("span");
       button.type = "button"; button.className = "ol-action cursor-interaction"; button.dataset.drawingChoice = id;
       swatch.className = "ol-drawing-swatch"; swatch.style.setProperty("--drawing-rgb", object.color); swatch.setAttribute("aria-hidden", "true");
-      name.textContent = object.name + (object.locked ? " · Locked" : ""); button.append(swatch, name);
+      name.textContent = drawingDisplayName(object) + (object.locked ? " · Locked" : ""); button.append(swatch, name);
       button.addEventListener("click", () => { drawingCloseChooser(); if (onChoose) onChoose(id); else { drawingActivate(id, time); canvas.focus({ preventScroll: true }); } }); choices.append(button);
     }
     if (Number.isFinite(time)) {
@@ -22314,11 +22319,20 @@
     drawingSyncInventory(); return section;
   }
   function drawingRow(object) {
-    const row = document.createElement("label"), box = document.createElement("input"), swatch = document.createElement("i"), name = document.createElement("span"), status = document.createElement("span");
-    row.className = "ol-line-row cursor-interaction"; row.dataset.drawingRow = object.id; row.dataset.id = object.id;
+    const row = document.createElement("div"), toggle = document.createElement("label"), box = document.createElement("input"), swatch = document.createElement("i"), name = document.createElement("span"), status = document.createElement("span"), remove = document.createElement("button");
+    row.className = "ol-line-row"; row.dataset.drawingRow = object.id; row.dataset.id = object.id;
+    toggle.className = "ol-drawing-row-toggle cursor-interaction";
     box.type = "checkbox"; box.dataset.drawingAction = "visible"; box.dataset.drawingId = object.id; box.addEventListener("change", () => drawingUICmd("visible", object.id, box.checked));
     swatch.className = "ol-line-swatch"; swatch.setAttribute("aria-hidden", "true"); swatch.style.setProperty("--weight", "1.5px"); name.className = "ol-line-name"; status.className = "ol-line-reason ol-num";
-    row.append(box, swatch, name, status); return row;
+    remove.type = "button"; remove.className = "ol-icon-button ol-s cursor-interaction"; remove.dataset.drawingAction = "delete"; remove.dataset.drawingId = object.id;
+    remove.innerHTML = '<svg class="ol-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M6 4.5v-2h4v2M4 4.5l.5 9h7l.5-9M6.5 7v4.5M9.5 7v4.5"/></svg>';
+    remove.addEventListener("click", (event) => {
+      event.stopPropagation(); const index = drawingCollection().objects.findIndex((o) => o.id === object.id);
+      drawingUICmd("delete", object.id);
+      const rows = [...el("drawing-list").querySelectorAll("[data-drawing-row]")];
+      (rows[Math.min(index, rows.length - 1)]?.querySelector('[data-drawing-action="delete"]') || el("drawing-group-visible")).focus({ preventScroll: true });
+    });
+    toggle.append(box, swatch, name, status); row.append(toggle, remove); return row;
   }
   function drawingSyncInventory() {
     const section = el("drawing-section"); if (!section) return;
@@ -22332,11 +22346,12 @@
       for (const object of objects) list.append(existing.get(object.id) || drawingRow(object)); drawingRowsKey = key;
     }
     for (const row of list.querySelectorAll("[data-drawing-row]")) {
-      const object = drawingById(row.dataset.drawingRow), state = drawingStatus(object.id), box = row.querySelector('[data-drawing-action="visible"]');
+      const object = drawingById(row.dataset.drawingRow), state = drawingStatus(object.id), name = drawingDisplayName(object), box = row.querySelector('[data-drawing-action="visible"]'), remove = row.querySelector('[data-drawing-action="delete"]');
       for (const [attr, value] of Object.entries({ name: object.name, label: object.label || "", color: object.color, visible: String(object.visible), locked: String(object.locked), active: String(object.id === activeDrawingId), state, timeA: object.a.timeMs, timeB: object.b.timeMs, priceA: object.a.priceCents, priceB: object.b.priceCents, aTimeMs: object.a.timeMs, aPriceCents: object.a.priceCents, bTimeMs: object.b.timeMs, bPriceCents: object.b.priceCents })) if (row.dataset[attr] !== String(value)) row.dataset[attr] = String(value);
-      drawingWrite(row.querySelector(".ol-line-name"), object.name); drawingWrite(row.querySelector(".ol-line-reason"), [object.locked ? "Locked" : "", state === "Shown" ? "" : state].filter(Boolean).join(" · "));
+      drawingWrite(row.querySelector(".ol-line-name"), name); drawingWrite(row.querySelector(".ol-line-reason"), [object.locked ? "Locked" : "", state === "Shown" ? "" : state].filter(Boolean).join(" · "));
       const swatch = row.querySelector(".ol-line-swatch"); if (swatch.style.getPropertyValue("--line") !== object.color) swatch.style.setProperty("--line", object.color);
-      box.checked = object.visible; drawingAttr(box, "aria-label", `Show ${object.name}`); row.title = `${object.name} · ${object.locked ? "Locked · " : ""}${state}`;
+      box.checked = object.visible; drawingAttr(box, "aria-label", `Show ${name}`); row.title = `${name} · ${object.locked ? "Locked · " : ""}${state}`;
+      drawingAttr(remove, "aria-label", `Delete ${name}`); remove.title = `Delete ${name}`;
     }
     section.querySelector(".ol-family-dot").style.background = colors.ink;
     const enabled = objects.filter((o) => collection.visible && o.visible).length, shown = objects.filter((o) => drawingStatus(o.id) === "Shown").length;
@@ -22351,10 +22366,10 @@
     const object = activeDrawingId ? drawingById(activeDrawingId) : null, toolbar = el("drawing-toolbar"),
       state = object ? drawingStatus(object.id) : "", replay = canvas.dataset.drawingReplay || "",
       draft = drawingDraft ? [drawingDraft.a.timeMs, drawingDraft.a.priceCents, drawingDraft.b?.timeMs, drawingDraft.b?.priceCents] : null,
-      key = JSON.stringify([Boolean(trendTool), object?.id, object?.name, object?.color, object?.locked, state, replay, draft]);
+      key = JSON.stringify([Boolean(trendTool), object?.id, object?.name, object?.label, object?.color, object?.locked, state, replay, draft]);
     if (key !== drawingToolbarKey) {
       toolbar.hidden = !trendTool; toolbar.dataset.activeId = object?.id || "";
-      drawingWrite(el("drawing-toolbar-name"), !draft && object ? object.name : "Trend line"); el("drawing-toolbar-name").title = object?.name || "";
+      drawingWrite(el("drawing-toolbar-name"), !draft && object ? drawingDisplayName(object) : "Trend line"); el("drawing-toolbar-name").title = object ? drawingDisplayName(object) : "";
       const placement = draft ? ["a", "b"].filter((point) => drawingDraft[point]).map((point) => `${point.toUpperCase()} · ${E.drawings.formatTime(drawingDraft[point].timeMs)} · ${E.drawings.formatPrice(drawingDraft[point].priceCents)} USDT`).join("\n") : "Click two points or drag";
       drawingWrite(el("drawing-toolbar-status"), draft || !object ? placement : object.locked ? "Locked · Right-click for line actions" : state !== "Shown" ? state : "Drag line to move · Drag an endpoint to resize");
       el("drawing-toolbar-swatch").hidden = !object; if (object) el("drawing-toolbar-swatch").style.setProperty("--drawing-rgb", object.color);
@@ -22422,7 +22437,7 @@
     const object = drawingById(id); if (!trendTool || !object) return;
     drawingActivate(id); el("tip").hidden = true;
     const node = document.createElement("div"); node.id = "ol-drawing-context"; node.className = "ol-pop ol-cell-menu";
-    node.dataset.drawingUi = ""; node.setAttribute("role", "menu"); node.setAttribute("aria-label", `Actions for ${object.name}`);
+    node.dataset.drawingUi = ""; node.setAttribute("role", "menu"); node.setAttribute("aria-label", `Actions for ${drawingDisplayName(object)}`);
     drawingContext = { node, id };
     for (const [action, label] of [["edit", "Edit line"], ["delete", "Delete line"]]) {
       const button = document.createElement("button"); button.type = "button"; button.className = "ol-item cursor-interaction";
@@ -22472,6 +22487,10 @@
       } catch (error) { drawingWrite(el("drawing-editor-error"), error.message || String(error)); }
     });
     for (const id of ["drawing-cancel", "drawing-editor-close"]) el(id).addEventListener("click", () => drawingCloseEditor(true));
+    el("drawing-editor-delete").addEventListener("click", () => {
+      if (!drawingEditorState || drawingEditorState.isNew) return;
+      const { id, origin } = drawingEditorState; drawingCloseEditor(true); drawingUICmd("delete", id); drawingRestoreFocus(origin, id, origin.index);
+    });
     el("drawing-editor-undo").addEventListener("click", () => drawingUICmd("undo")); el("drawing-chooser-close").addEventListener("click", drawingCloseChooser); el("drawing-confirm-cancel").addEventListener("click", drawingCloseConfirm);
     el("drawing-confirm-delete").addEventListener("click", () => { if (el("drawing-confirm").dataset.ids !== drawingCollection().objects.map((o) => o.id).join(",")) { drawingConfirmDelete(drawingDeleteOrigin); return; } drawingCloseConfirm(); drawingUICmd("delete-all"); });
     for (const [id, close] of [["drawing-editor", drawingCloseEditor], ["drawing-chooser", drawingCloseChooser], ["drawing-confirm", drawingCloseConfirm]]) {

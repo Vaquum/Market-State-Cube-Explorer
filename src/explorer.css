@@ -3106,6 +3106,10 @@
 #origo-lens .ol-drawing-section-tools .ol-drawing-check { margin-right: auto; }
 #origo-lens .ol-drawing-summary { margin: var(--sp-1) 0 var(--sp-2); font-size: var(--fs-s); color: var(--ol-muted); }
 #origo-lens .ol-drawing-list { display: flex; flex-direction: column; gap: var(--sp-1); }
+#origo-lens .ol-drawing-row-toggle { display: flex; align-items: center; flex: 1; min-width: 0; min-height: var(--h-m); gap: var(--sp-2); }
+#origo-lens [data-drawing-row]:hover { background: var(--ol-hover); }
+#origo-lens [data-drawing-row] > button { flex: none; }
+#origo-lens #ol-drawing-editor-delete[hidden] { display: none; }
 #origo-lens .ol-drawing-row { padding: var(--sp-2) 0; border-top: 1px solid var(--ol-line); }
 #origo-lens .ol-drawing-row-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 #origo-lens .ol-drawing-row-name { min-width: 0; flex: 1; overflow-wrap: anywhere; font-weight: 500; }

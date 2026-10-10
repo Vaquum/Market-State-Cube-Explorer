@@ -388,7 +388,51 @@
               aria-labelledby="ol-family-structure-head"
               hidden
             >
-              <div class="ol-lines-list" data-toggles="structure"></div>
+              <div class="ol-list-head" id="ol-lines-highs-head">Highs and swings</div>
+              <div
+                class="ol-lines-list"
+                data-toggles="structure"
+                data-group="highs"
+                role="group"
+                aria-labelledby="ol-lines-highs-head"
+              ></div>
+              <div class="ol-list-head" id="ol-lines-fib-head">Retracements</div>
+              <p class="ol-lines-note">
+                Each draws 38.2, 50 and 61.8% of its move, measured back from
+                the later extreme.
+              </p>
+              <div
+                class="ol-lines-list"
+                data-toggles="structure"
+                data-group="fib"
+                role="group"
+                aria-labelledby="ol-lines-fib-head"
+              ></div>
+              <div class="ol-list-head" id="ol-lines-fdays-head">Since a UTC day</div>
+              <div
+                class="ol-lines-list"
+                id="ol-lines-fdays"
+                role="group"
+                aria-labelledby="ol-lines-fdays-head"
+              ></div>
+              <form class="ol-lines-add" id="ol-lines-fadd">
+                <input
+                  type="date"
+                  id="ol-lines-fdate"
+                  aria-label="A day in UTC: its retracements measure the move between the highest and lowest trade from that day's 00:00 to the latest data"
+                  required
+                /><button type="submit" class="ol-action ol-s cursor-interaction">
+                  Add day
+                </button>
+              </form>
+              <div class="ol-list-head" id="ol-lines-fiblevels-head">Levels for every retracement</div>
+              <div
+                class="ol-lines-list"
+                data-toggles="structure"
+                data-group="fiblevels"
+                role="group"
+                aria-labelledby="ol-lines-fiblevels-head"
+              ></div>
               <p class="ol-family-status" data-family-status="structure" role="status"></p>
             </div>
           </section>

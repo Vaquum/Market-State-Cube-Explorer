@@ -47,9 +47,9 @@ test("E pressed in the open Lines menu closes it: the navigator has the focus, n
   await tickSevenDays(page);
   await page.keyboard.press("e");
   await expect(page.locator("#ol-inspect")).toBeVisible();
+  expect(await covered(page), "a click at each surface tab's centre lands on it").toEqual([]);
   await closedMenu(page);
   await expect(page.locator("#ol-inspect"), "the navigator has the focus").toBeFocused();
-  expect(await covered(page), "a click at each surface tab's centre lands on it").toEqual([]);
   const tab = page.locator('[data-surface="references"]');
   await expect(tab, "the 7-day line is a reference").toBeEnabled();
   await tab.click();
@@ -84,8 +84,8 @@ test("the Inspect tool button closes the open menu whether the pointer or the ke
   await tickSevenDays(page);
   await button.click();
   await expect(page.locator("#ol-inspect")).toBeVisible();
-  await closedMenu(page);
   expect(await covered(page), "the pointer: nothing covers the surface tabs").toEqual([]);
+  await closedMenu(page);
   await page.keyboard.press("Escape");
   await expect(page.locator("#ol-inspect")).toBeHidden();
   // the keyboard: the button focused from the open menu and pressed with Enter, with no click outside the menu
@@ -96,6 +96,6 @@ test("the Inspect tool button closes the open menu whether the pointer or the ke
   await page.keyboard.press("Enter");
   await expect(page.locator("#ol-inspect")).toBeVisible();
   await expect(page.locator('[data-tool="inspect"]')).toHaveAttribute("aria-pressed", "true");
-  await closedMenu(page);
   expect(await covered(page), "the keyboard: nothing covers the surface tabs").toEqual([]);
+  await closedMenu(page);
 });

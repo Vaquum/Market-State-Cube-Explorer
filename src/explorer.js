@@ -4614,7 +4614,8 @@
   }
   function averageReferencePresentation(tip, l) {
     const frame = l.kind === "cross" ? l.c.frame : l.frame, i = l.kind === "cross" ? l.c.x.i : barNear(frame, hover?.t ?? frame.end);
-    if (i < 0) return;
+    // an average with no value yet keeps averageTip's warm-up readout: none of the measures here would have one
+    if (i < 0 || (l.kind === "average" && !l.r.points.length)) return;
     const c = frameContext(frame, i), normal = (x) => E.measure.normalized(x, c.atr).result;
     const slope = (values) => E.measure.referenceSlope({ value: values[i], previous: values[i - 1], adjacent: c.adjacent, complete: c.complete, atr: c.atr }).result;
     const metric = (label, value, unit, history = null, result = null) => ({ ...referenceMetric(label, value, unit), ...(history ? { history } : {}), ...(result ? { result } : {}) });
@@ -13082,7 +13083,14 @@
     const f = l.frame,
       i = barNear(f, hover?.t ?? f.end),
       first = l.r.points[0]?.[2];
-    if (i < 0 || first === undefined) return false;
+    // No value in its bars (fewer than its first full window, or none): warming up, as the Lines menu says. It never falls through to
+    // structureTip, whose curve branch reads a VWAP's points.
+    if (i < 0 || first === undefined) {
+      tipRows(tip, l.name, "Warming up: no value yet", [
+        [{ "1d": "Days", "1w": "Weeks" }[f.tf] ?? "Bars", `${f.closes.length} of the ${l.what === "bb" ? 20 : l.n} its first value needs`],
+      ]);
+      return true;
+    }
     const at = Math.max(i, first),
       when0 = `At the close of ${frameBar(f, at)}`,
       tf = TF_NAMES[f.tf];

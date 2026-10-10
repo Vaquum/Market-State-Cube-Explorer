@@ -220,11 +220,14 @@
     last = null,
     raf = 0,
     ready = false;
+  // The rallies make their own reads (a discovery, then membership views), outside the cube's and motion's slots: this counts their changes,
+  // so that what is kept from their events (Inspect's references) is made again.
+  let rallyRevision = 0;
   const rallyController = window.explorerRallies.create({root,
     context: () => ({ready, live:!!PACK.live, pack:PACK.state_token, n:renderN(), m:renderM(),
       edgeUs:Math.round((T0 + Math.min(CUT, S.replay && S.anchor !== null ? S.anchor : CUT) * BASE) * 1000000),
       viewStartUs:Math.round((T0 + S.tA * BASE) * 1000000), viewEndUs:Math.round((T0 + S.tB * BASE) * 1000000)}),
-    changed: () => { if (ready) { requestDraw(); scheduleCube(); scheduleMotion(); } },
+    changed: () => { rallyRevision++; if (ready) { requestDraw(); scheduleCube(); scheduleMotion(); } },
     inspect: () => { S.sideOpen = true; applyPanels(); requestDraw(); }
   });
   const groups = new Map(),
@@ -6104,8 +6107,10 @@
   // The enabled references in a stable order (the menu's families, then each family's own order), whether the budget drew them or not: the
   // lines, the curves, the clock's kinds and the user's Level. Each entry has what the tooltip's builders take as a hit.
   function inspectReferences() {
-    // once for a draw and a state of the lines: it walks the same items the plot is drawn from
-    const key = [last?.sc?.stamp ?? "", S.lines.join(","), S.level, drawingStore.revision, S.tA, S.tB, S.pA, S.pB, S.n, S.m, activeCutoff()].join("|");
+    // once for a draw and a state of the lines and their data: it walks the same items the plot is drawn from. A line built on bars or on a cube
+    // read has none until they arrive, so the pack, the data's edge, the bars and the reads applied or failed are in the key, or a list read before
+    // them would stay empty after; so are the rallies' own reads, and the plot's width, which spaces the days and thins the swings.
+    const key = [last?.sc?.stamp ?? "", S.lines.join(","), S.level, drawingStore.revision, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.w, activeCutoff(), live.generation, CUT, barsVersion, comparisonSourceRevision, cube.failed.size, motion.failed.size, rallyRevision].join("|");
     if (inspect.listKey === key) return inspect.list;
     inspect.listKey = key;
     inspect.list = inspectReferencesNow();
@@ -6147,7 +6152,8 @@
     for (const lane of eventLanes(cut)) for (const event of lane.events) {
       if (event.gap) continue; // Existing gap identity already appears above.
       const id = `strip|${lane.id}|${event.t0}`;
-      out.push({ id, key: lane.id === "squeeze4h" ? "bb4h" : "bb1d", name: `${EVENT_NAMES[lane.id].name} · ${when(event.t0)}`, at: null, kind: "strip", hit: { key: lane.id, id, strip: { lane: lane.id, span: { events: [event], t0: event.t0, t1: event.t1 } } } });
+      // a squeeze is its Bollinger line's; a rally has no line of its own and goes by its lane
+      out.push({ id, key: { squeeze4h: "bb4h", squeeze1d: "bb1d" }[lane.id] ?? lane.id, name: `${EVENT_NAMES[lane.id].name} · ${when(event.t0)}`, at: null, kind: "strip", hit: { key: lane.id, id, strip: { lane: lane.id, span: { events: [event], t0: event.t0, t1: event.t1 } } } });
     }
     for (const kind of S.lines.filter((k) => CLOCK[k])) out.push({ id: "clock|" + kind, key: kind, name: CLOCK[kind].name, hit: null, at: null, kind: "clock" });
     if (drawingCollection().visible) for (const object of [...drawingCollection().objects].sort((a, b) => a.ordinal - b.ordinal)) {
@@ -6548,7 +6554,8 @@
     if (open) {
       if (inspect.surface === "references" && inspect.ref && inspect.ref !== "level") {
         const e = inspectEntry();
-        if (e) focusBegin(e.kind === "drawing" ? { drawing: e.hit.drawing } : { key: e.key });
+        // a reference with no line of its own to bring forward (a rally) leaves the focus as it was
+        if (e && (e.kind === "drawing" || focusOn(e.key))) focusBegin(e.kind === "drawing" ? { drawing: e.hit.drawing } : { key: e.key });
       }
       renderInspectDetail();
       el("inspect-detail-close").focus();
@@ -6613,7 +6620,7 @@
   // A draw that changed what the cursor stands on (the view, the level, the data) reads it again, so a pan or a refresh never leaves a stale readout.
   function inspectSync() {
     if (!inspect.on) return;
-    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", comparisonSourceRevision, cube.failed.size, motion.failed.size, barsVersion, S.mode === "candles" ? [candleVersion, candleEdge(), PACK.state_token].join(":") : "", inspectReferences().length, drawingStore.revision, nav.shift].join("|");
+    const sig = [inspect.surface, inspect.t, inspect.p, inspect.ref, S.tA, S.tB, S.pA, S.pB, S.n, S.m, G.x, G.w, G.tracks, last?.sc?.stamp ?? "", comparisonSourceRevision, cube.failed.size, motion.failed.size, barsVersion, rallyRevision, S.mode === "candles" ? [candleVersion, candleEdge(), PACK.state_token].join(":") : "", inspectReferences().length, drawingStore.revision, nav.shift].join("|");
     if (sig === inspect.sig) return;
     inspect.sig = sig;
     inspectRender(false, false);

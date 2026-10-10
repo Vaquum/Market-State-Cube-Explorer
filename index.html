@@ -34080,8 +34080,9 @@
     }
     // The retracements on, each with its three key levels; then the levels the
     // level rows add to every one of them, under the row's key as a value area
-    // is under va's: tagged only while their price is in view, planned last by
-    // the budget and drawn only with their key levels (minor).
+    // is under va's: planned last by the budget and drawn only with their key
+    // levels (minor). Every level keeps its tag, at the plot's edge while its
+    // price is off it.
     const moves = [],
       percent = (f) => `${(f * 100).toFixed(1)}%`;
     for (const [key, name] of RETRACEMENT_ROWS) if (on.has(key) && st[key]) moves.push({ key, name, m: st[key] });
@@ -34125,7 +34126,7 @@
             from: m.to.t,
             to: end,
             on: true,
-            tag: at >= S.pA && at <= S.pB ? tag(`${name} ${percent(f)}`, at) : null,
+            tag: tag(`${name} ${percent(f)}`, at),
           });
         }
     }
@@ -36089,8 +36090,10 @@
     el("lines-pop").addEventListener("change", (e) => {
       const key = e.target.dataset?.line;
       if (!key) return;
-      setLines(e.target.checked ? [...S.lines, key] : S.lines.filter((k) => k !== key));
-      linesStatus(`${TOGGLES[key]?.name || lineName(key)} ${e.target.checked ? "on" : "off"}`);
+      // A level row adds to the retracements on: ticked while none is, it brings the 30-day one with it, so its levels show at once.
+      const move = e.target.checked && RETRACEMENT_MORE[key] && !retracementsOn() ? "fib30" : null;
+      setLines(e.target.checked ? [...S.lines, key, ...(move ? [move] : [])] : S.lines.filter((k) => k !== key));
+      linesStatus(`${TOGGLES[key]?.name || lineName(key)} ${e.target.checked ? "on" : "off"}${move ? `, with ${TOGGLES[move].name}` : ""}`);
     });
     for (const f of FAMILIES)
       el(`family-${f.id}-head`).addEventListener("click", () => {

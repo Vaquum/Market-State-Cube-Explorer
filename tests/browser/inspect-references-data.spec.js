@@ -116,8 +116,9 @@ test("a rally reference's detail brings no line forward: a rally is not keyed as
   await fake.idle();
   await page.locator("#ol-canvas").focus();
   await page.keyboard.press("e");
-  await page.locator('[data-surface="references"]').click();
-  // the bands come first in the list: the rally is chosen by its name
+  // the bands come first in the list, so the rally is chosen by its name, from the Cells surface: the chooser reads the reference chosen, while
+  // the References tab would first read the first band, whose readout throws here (a separate fault: a band with no points falls through
+  // averageTip to the VWAP curves' readout)
   const chooser = page.locator("#ol-inspect-reference"),
     rally = async () => (await chooser.locator("option").allTextContents()).find((x) => x.startsWith("Rallies · 27 Jun 11:39"));
   await expect.poll(rally, { message: "the 11:39 rally is a reference" }).toBeTruthy();

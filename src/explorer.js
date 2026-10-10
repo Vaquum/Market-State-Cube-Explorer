@@ -4613,7 +4613,8 @@
     return { complete, time, atr, adjacent, status: complete ? "Completed native bar" : "So far; native bar still forming" };
   }
   function averageReferencePresentation(tip, l) {
-    const frame = l.kind === "cross" ? l.c.frame : l.frame, i = l.kind === "cross" ? l.c.x.i : barNear(frame, hover?.t ?? frame.end);
+    // the bar averageTip's heading reads: the cursor's, or, while the cursor is before the average's first value, that value's
+    const frame = l.kind === "cross" ? l.c.frame : l.frame, i = l.kind === "cross" ? l.c.x.i : Math.max(barNear(frame, hover?.t ?? frame.end), l.r.points[0]?.[2] ?? -1);
     // an average with no value yet keeps averageTip's warm-up readout: none of the measures here would have one
     if (i < 0 || (l.kind === "average" && !l.r.points.length)) return;
     const c = frameContext(frame, i), normal = (x) => E.measure.normalized(x, c.atr).result;

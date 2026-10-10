@@ -43,6 +43,8 @@ async function lateReferences(page, fake, probe, { hash, family, line, rule }) {
   const tab = page.locator('[data-surface="references"]');
   await expect(tab, "no reference is on while the line's data is held").toBeDisabled();
   const view = await camera(page);
+  // a window (w=) would leave both out of the address and blind this guard, so each case gives its ranges
+  expect(view.t && view.p, "the address holds the time and price ranges").toBeTruthy();
   gate.open();
   await expect(tab, "the line's references are on once its data arrives").toBeEnabled();
   expect(await camera(page), "no pan or zoom between").toEqual(view);
@@ -59,7 +61,7 @@ test("Retracements · 30 days entered while its 8-hour bars are read: References
 
 test("a 90-day POC entered while the cube reads its rows: References is enabled once they arrive and lists it", async ({ page, fakeFor, probe }) => {
   const fake = await fakeFor("standard");
-  const options = await lateReferences(page, fake, probe, { hash: "#w=24h&vis=2", family: "profile", line: "90d", rule: { route: "/cube/query", when: (q) => !("r0" in q) } });
+  const options = await lateReferences(page, fake, probe, { hash: "#t=2026-09-23T12:00Z~2026-09-24T12:00Z&p=22000~24500&vis=2", family: "profile", line: "90d", rule: { route: "/cube/query", when: (q) => !("r0" in q) } });
   await expect(options).toHaveText(["90D"]);
   await expect(page.locator("#ol-inspect-position")).toHaveText("90D · 1 of 1");
 });

@@ -7302,13 +7302,18 @@
   // Popovers: one open at a time; outside clicks and Escape close them.
   const pop = { open: null };
   const menuFlows = { mode: { step: "dataset" }, pane: { step: "dataset", rsi: "rsi1d" }, rows: { step: "dataset" } };
+  // restoreFocus gives the focus back to the popover's button when the focus was in it (hidden, it would drop it) or nowhere (a pointer
+  // press that focuses no button, as Safari's). A focus it never had stays where it is, so the keys there keep their meaning: H opens
+  // History without taking the focus from the chart or the navigator, and a menu the focus leaves by keyboard stays open
   function closePop(restoreFocus = false) {
     if (!pop.open) return false;
-    const { button, panel } = pop.open;
+    const { button, panel } = pop.open,
+      at = document.activeElement,
+      elsewhere = Boolean(at) && at !== document.body && !panel.contains(at);
     panel.hidden = true;
     button.setAttribute("aria-expanded", "false");
     pop.open = null;
-    if (restoreFocus) button.focus();
+    if (restoreFocus && !elsewhere) button.focus();
     return true;
   }
   function bindPop(buttonId, panelId, onOpen) {

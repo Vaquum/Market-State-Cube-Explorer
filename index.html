@@ -26082,6 +26082,9 @@
   }
   function inspectEnter() {
     if (inspect.on) return;
+    // an open menu closes, as a press on the tool button closes it (a click outside it), whether E, the keyboard or the pointer chose the tool:
+    // the navigator takes the focus and keeps Escape for itself, so a menu left open would cover its surface tabs and outlive Inspect
+    closePop();
     inspect.prev = tool();
     drawingCancelOperation(); activeDrawingId = null; trendTool = false;
     const lensWas = S.lens || nav.alt || nav.hold;

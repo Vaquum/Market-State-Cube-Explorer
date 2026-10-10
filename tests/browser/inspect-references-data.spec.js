@@ -108,7 +108,8 @@ test("rallies discovered while Inspect is open: References lists their events on
 
 test("a rally reference's detail brings no line forward: a rally is not keyed as Bollinger · 1D", async ({ page, fakeFor, probe }) => {
   const fake = await fakeFor("mini");
-  await page.goto(`${fake.url}/${RALLY_VIEW}`);
+  // Bollinger · 1D is on, so a focus keyed bb1d would be valid and would stay: the Lines button drops only a focus whose line is off
+  await page.goto(`${fake.url}/${RALLY_VIEW}&lines=bb1d`);
   await probe.waitForReady();
   await discoverRallies(page);
   // the membership view has arrived, so the list Inspect reads holds the rallies
@@ -116,15 +117,19 @@ test("a rally reference's detail brings no line forward: a rally is not keyed as
   await page.locator("#ol-canvas").focus();
   await page.keyboard.press("e");
   await page.locator('[data-surface="references"]').click();
-  await page.locator("#ol-inspect").focus();
-  await page.keyboard.press("Home");
-  await expect(page.locator("#ol-inspect-position")).toHaveText(/^Rallies · 27 Jun 11:39:\S+ · 1 of 4$/);
+  // the bands come first in the list: the rally is chosen by its name
+  const chooser = page.locator("#ol-inspect-reference"),
+    rally = async () => (await chooser.locator("option").allTextContents()).find((x) => x.startsWith("Rallies · 27 Jun 11:39"));
+  await expect.poll(rally, { message: "the 11:39 rally is a reference" }).toBeTruthy();
+  await chooser.selectOption({ label: await rally() });
+  await expect(page.locator("#ol-inspect-position")).toHaveText(/^Rallies · 27 Jun 11:39:\S+ · \d+ of \d+$/);
   await expect(page.locator("#ol-inspect-readout")).toContainText("Confirmed rallies");
-  await expect(page.locator("#ol-focus-chip")).toBeHidden();
+  const chip = page.locator("#ol-focus-chip");
+  await expect(chip).toBeHidden();
+  await page.locator("#ol-inspect").focus();
   await page.keyboard.press("Enter");
   await expect(page.locator("#ol-inspect-detail")).toBeVisible();
-  // read once, as the detail opens: a focus taken here would be dropped later, when the Lines button finds its key off
-  expect(await page.locator("#ol-focus-chip").isHidden(), `no focus is taken: ${await page.locator("#ol-focus-chip").textContent()}`).toBe(true);
+  expect(await chip.isHidden(), `no focus is taken: ${await chip.textContent()}`).toBe(true);
   await page.keyboard.press("Escape");
   await expect(page.locator("#ol-inspect-detail")).toBeHidden();
 });

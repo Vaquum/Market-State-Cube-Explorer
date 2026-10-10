@@ -36,12 +36,15 @@ async function references(page) {
   await page.locator('[data-surface="references"]').click();
   return page.locator("#ol-inspect-reference option");
 }
-// The Lines menu with Structure open (it opens by itself while one of its lines is on).
-async function openStructure(page) {
-  await page.locator("#ol-lines").click();
+// The Lines menu with Structure open (it opens by itself while one of its lines is on, and closes with the last of them unless opened by hand).
+async function expandStructure(page) {
   const head = page.locator("#ol-family-structure-head");
   if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
   await expect(head).toHaveAttribute("aria-expanded", "true");
+}
+async function openStructure(page) {
+  await page.locator("#ol-lines").click();
+  await expandStructure(page);
 }
 async function namedLevel(page, name) {
   await page.locator("#ol-inspect-reference").selectOption({ label: name });
@@ -74,14 +77,16 @@ test("Classic levels and Extensions add theirs to every retracement at later −
   await expect(card).toContainText("this line is its 161.8% level");
 });
 
-test("the added levels are tagged only while their price is in view", async ({ page, fakeFor, probe, pane }) => {
+test("every level keeps its tag: on its line in view, at the edge with an arrow off the plot", async ({ page, fakeFor, probe, pane }) => {
   const fake = await fakeFor({ trades: RAMP, cutoffIso: CUTOFF });
-  // 12,800–13,700 holds 38.2, 50 and 61.8% (13,610.18, 13,255, 12,899.82) and none of 0, 23.6, 78.6 or 100% (14,760, 14,049.64, 12,394.14, 11,750).
+  // 12,800–13,700 holds 38.2, 50 and 61.8% (13,610.18, 13,255, 12,899.82); 0 and 23.6% (14,760, 14,049.64) are above it, 78.6 and 100%
+  // (12,394.14, 11,750) below.
   await page.goto(`${fake.url}/${VIEW}&p=12800~13700&lines=fib30,fibclassic`);
   await probe.waitForReady();
   const tags = async () => paneCanvas.textsOf(await pane.last()).filter((x) => x.startsWith("30D"));
-  await expect.poll(tags).toEqual(expect.arrayContaining(["30D 38.2%", "30D 50.0%", "30D 61.8%"]));
-  for (const f of [0, 0.236, 0.786, 1]) expect((await tags()).some((x) => x.startsWith(`30D ${percent(f)}`)), `no tag for ${percent(f)}, at the edge or in view`).toBe(false);
+  await expect
+    .poll(tags)
+    .toEqual(expect.arrayContaining(["30D 38.2%", "30D 50.0%", "30D 61.8%", "30D 0.0% ↑", "30D 23.6% ↑", "30D 78.6% ↓", "30D 100.0% ↓"]));
   await openStructure(page);
   await expect(page.locator('.ol-line-row[data-ref-key="fibclassic"]')).toHaveAttribute("data-ref-state", "offscreen");
   await expect(page.locator('.ol-line-row[data-ref-key="fib30"]')).toHaveAttribute("data-ref-state", "shown");
@@ -90,6 +95,34 @@ test("the added levels are tagged only while their price is in view", async ({ p
   await page.reload();
   await probe.waitForReady();
   await expect.poll(tags).toEqual(expect.arrayContaining([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1].map((f) => `30D ${percent(f)}`)));
+});
+
+test("ticking Classic levels with no retracement on brings the 30-day one; an address keeps what it says", async ({ page, fakeFor, probe }) => {
+  const fake = await fakeFor({ trades: RAMP, cutoffIso: CUTOFF });
+  const lines = () => page.evaluate(() => new URLSearchParams(decodeURIComponent(location.hash).slice(1)).get("lines") ?? "");
+  // An address with only the level row opens as written: nothing is turned on for it.
+  await page.goto(`${fake.url}/${VIEW}&p=9000~15500&lines=fibclassic`);
+  await probe.waitForReady();
+  expect(await lines()).toBe("fibclassic");
+  await openStructure(page);
+  await page.locator('input[data-line="fibclassic"]').uncheck();
+  await expect.poll(lines).toBe("");
+  // Ticked with no retracement on, it brings Retracements · 30 days, and says so.
+  await expandStructure(page);
+  await page.locator('input[data-line="fibclassic"]').check();
+  await expect(page.locator("#ol-lines-status")).toHaveText("Classic levels on, with Retracements · 30 days");
+  await expect(page.locator('input[data-line="fib30"]')).toBeChecked();
+  await expect.poll(lines).toBe("fib30,fibclassic");
+  await page.keyboard.press("Escape");
+  const options = await references(page);
+  await expect.poll(async () => (await options.allTextContents()).filter((x) => x.startsWith("30D")).sort()).toEqual([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1].map((f) => `30D ${percent(f)}`).sort());
+  // With a retracement on, Extensions brings nothing else.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await openStructure(page);
+  await page.locator('input[data-line="fibext"]').check();
+  await expect(page.locator("#ol-lines-status")).toHaveText("Extensions on");
+  await expect.poll(lines).toBe("fib30,fibclassic,fibext");
 });
 
 test("a chosen UTC day adds a removable retracement since that day, kept in the address", async ({ page, fakeFor, probe }) => {

@@ -25,8 +25,8 @@ const camera = (page) => page.evaluate(() => {
   return { t: p.get("t"), p: p.get("p") };
 });
 
-// With the view at rest, hold the reads `rule` matches, turn the line on from the Lines menu, close it and enter Inspect (E) while the read is
-// held; then let the held reads through. Returns the reference chooser's options, on the References surface.
+// With the view at rest, hold the reads `rule` matches, turn the line on from the Lines menu and enter Inspect (E) from the open menu, which
+// closes it, while the read is held; then let the held reads through. Returns the reference chooser's options, on the References surface.
 async function lateReferences(page, fake, probe, { hash, family, line, rule }) {
   await page.goto(`${fake.url}/${hash}`);
   await probe.waitForReady();
@@ -37,12 +37,9 @@ async function lateReferences(page, fake, probe, { hash, family, line, rule }) {
   if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
   await page.locator(`[data-line="${line}"]`).check();
   await gate.arrived();
-  // the open menu would cover Inspect's surface tabs
-  await page.keyboard.press("Escape");
-  await expect(page.locator("#ol-lines-pop")).toBeHidden();
-  await page.locator("#ol-canvas").focus();
   await page.keyboard.press("e");
   await expect(page.locator("#ol-inspect")).toBeVisible();
+  await expect(page.locator("#ol-lines-pop"), "entering Inspect closed the menu").toBeHidden();
   const tab = page.locator('[data-surface="references"]');
   await expect(tab, "no reference is on while the line's data is held").toBeDisabled();
   const view = await camera(page);

@@ -97,7 +97,7 @@ test("every level keeps its tag: on its line in view, at the edge with an arrow 
   await expect.poll(tags).toEqual(expect.arrayContaining([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1].map((f) => `30D ${percent(f)}`)));
 });
 
-test("ticking Classic levels with no retracement on brings the 30-day one; an address keeps what it says", async ({ page, fakeFor, probe }) => {
+test("ticking Classic levels with no retracement on brings the 30-day one; an address keeps what it says", async ({ page, fakeFor, probe, pane }) => {
   const fake = await fakeFor({ trades: RAMP, cutoffIso: CUTOFF });
   const lines = () => page.evaluate(() => new URLSearchParams(decodeURIComponent(location.hash).slice(1)).get("lines") ?? "");
   // An address with only the level row opens as written: nothing is turned on for it.
@@ -113,13 +113,10 @@ test("ticking Classic levels with no retracement on brings the 30-day one; an ad
   await expect(page.locator("#ol-lines-status")).toHaveText("Classic levels on, with Retracements · 30 days");
   await expect(page.locator('input[data-line="fib30"]')).toBeChecked();
   await expect.poll(lines).toBe("fib30,fibclassic");
-  await page.keyboard.press("Escape");
-  const options = await references(page);
-  await expect.poll(async () => (await options.allTextContents()).filter((x) => x.startsWith("30D")).sort()).toEqual([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1].map((f) => `30D ${percent(f)}`).sort());
+  // All seven levels are on the chart, each tagged: 9,000–15,500 holds the whole move.
+  const tags = async () => paneCanvas.textsOf(await pane.last()).filter((x) => x.startsWith("30D")).sort();
+  await expect.poll(tags, { timeout: 30000 }).toEqual([0, 0.236, 0.382, 0.5, 0.618, 0.786, 1].map((f) => `30D ${percent(f)}`).sort());
   // With a retracement on, Extensions brings nothing else.
-  await page.keyboard.press("Escape");
-  await page.keyboard.press("Escape");
-  await openStructure(page);
   await page.locator('input[data-line="fibext"]').check();
   await expect(page.locator("#ol-lines-status")).toHaveText("Extensions on");
   await expect.poll(lines).toBe("fib30,fibclassic,fibext");

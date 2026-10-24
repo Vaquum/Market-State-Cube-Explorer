@@ -25467,6 +25467,12 @@
     beforeChange: () => { closePop(); setSheet(false); },
     colourKey: guiReferenceColourKey,
     reveal: target => {
+      // Show can reveal a menu or drawer without choosing an option or running a workflow.
+      const opener = target.open ? root.querySelector(target.open) : null;
+      if (opener && opener.getAttribute("aria-expanded") !== "true") {
+        if (PHONE.matches && opener.closest("#ol-controls")) setSheet(true);
+        opener.click();
+      }
       const element = target.selector ? root.querySelector(target.selector) : canvas;
       if (element?.closest("#ol-view-keys")) el("view-keys").hidden = false;
       if (PHONE.matches && element?.closest("#ol-controls")) setSheet(true);

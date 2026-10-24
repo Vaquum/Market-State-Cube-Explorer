@@ -51,7 +51,7 @@
   terms("direction", "The direction of the observed change or fitted feature relationship.");
   terms("rank", "This value's position among comparable captured cells, using the selected comparison basis.");
   terms("difference", "Difference from the chosen comparison reference; share differences are percentage points.");
-  terms("poc distance", "Signed price distance from the selected POC reference, in USDT.");
+  terms("poc distance", "Nonnegative distance from the captured price band to the selected POC, in USDT; zero means it contains or touches the POC.");
   terms("rsi|rsi 14", "Wilder's 14-bar relative strength index, with 70 and 30 guides; it describes past closes.");
   terms("macd", "Difference between fast and slow exponential moving averages, with its signal and histogram.");
   terms("cascade", "Log2 of four times child volume divided by parent volume; zero is an even quarter share.");
@@ -132,7 +132,7 @@
     "features-copy": "Copy the selected feature's fitted rule as a Limen manifest.",
     "features-unpreview": "End the feature preview and restore the regular Columns measure.",
     "features-clear-windows": "Remove all marked feature windows from this session.",
-    "reference-search": "Filter reference topics by words in their purpose, interpretation or use.",
+    "reference-search": "Filter reference topics by UI names, article text, tables and Show labels.",
     "reference-topic": "Choose the System reference topic to read in the left panel.",
     "reference-back": "Return to the reference panel after locating a control or chart region.",
     "reference-prev": "Read the previous matching System reference topic.",

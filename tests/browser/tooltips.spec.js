@@ -20,7 +20,8 @@ const bubble = page => page.locator("#ol-help-tooltip");
 async function frozen(page) {
   const now = new Date("2026-10-17T12:00:00Z");
   await page.clock.install({ time: now });
-  await page.clock.pauseAt(now);
+  // Pause ahead of installation so elapsed setup time cannot put the target in the past.
+  await page.clock.pauseAt(new Date(now.getTime() + 1000));
 }
 test("the read value itself explains its quantity at 500 ms and preserves existing descriptions", async ({ page, fakeFor, probe }) => {
   await open(page, fakeFor, probe);
@@ -169,7 +170,9 @@ test("title-only help hides on leave and value labels take precedence over broad
     distance: window.explorerHelp.meaning("POC distance", "poc"),
     path: window.explorerHelp.meaning("Path / price span", "path"),
   }));
-  expect(meanings.distance).toContain("Signed price distance");
+  // The collection metric is a nonnegative band gap; signed ATR context is separate.
+  expect(meanings.distance).toContain("Nonnegative distance");
+  expect(meanings.distance).toContain("contains or touches");
   expect(meanings.path).toContain("divided by the price-row width");
 });
 test("changing a hovered value refreshes its help without polling or stale title restoration", async ({ page, fakeFor, probe }) => {
